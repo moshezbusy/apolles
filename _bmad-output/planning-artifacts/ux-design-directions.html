@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apolles — UX Design Directions</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary: #635BFF;
+    --primary-hover: #5046E5;
+    --primary-light: #EEF0FF;
+    --dark: #0A2540;
+    --dark-secondary: #1A3A5C;
+    --accent: #00D4FF;
+    --surface: #F6F9FC;
+    --card: #FFFFFF;
+    --border: #D6E3F0;
+    --border-subtle: #E8EDF4;
+    --text-primary: #1F2937;
+    --text-secondary: #6B7280;
+    --text-muted: #9CA3AF;
+    --success: #059669;
+    --success-bg: #ECFDF5;
+    --warning: #D97706;
+    --warning-bg: #FFFBEB;
+    --error: #DC2626;
+    --error-bg: #FEF2F2;
+    --info: #2563EB;
+    --info-bg: #EFF6FF;
+    --neutral: #6B7280;
+    --neutral-bg: #F3F4F6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', system-ui, sans-serif; color: var(--text-primary); background: var(--dark); }
+
+  /* Navigation */
+  .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: var(--dark); border-bottom: 1px solid var(--dark-secondary); padding: 12px 32px; display: flex; align-items: center; justify-content: space-between; }
+  .nav-title { color: #fff; font-size: 16px; font-weight: 600; }
+  .nav-tabs { display: flex; gap: 4px; }
+  .nav-tab { padding: 8px 16px; border-radius: 6px; border: none; background: transparent; color: rgba(255,255,255,0.6); font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s ease; }
+  .nav-tab:hover { color: #fff; background: rgba(255,255,255,0.08); }
+  .nav-tab.active { color: #fff; background: var(--primary); }
+
+  /* Sections */
+  .section { display: none; padding-top: 60px; min-height: 100vh; }
+  .section.active { display: block; }
+
+  /* Intro */
+  .intro { background: var(--dark); color: #fff; padding: 80px 40px 60px; text-align: center; }
+  .intro h1 { font-size: 36px; font-weight: 700; margin-bottom: 12px; }
+  .intro p { font-size: 16px; color: rgba(255,255,255,0.6); max-width: 700px; margin: 0 auto 32px; line-height: 1.6; }
+  .direction-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 900px; margin: 0 auto; }
+  .direction-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 24px; text-align: left; cursor: pointer; transition: all 0.2s ease; }
+  .direction-card:hover { background: rgba(255,255,255,0.08); border-color: var(--primary); transform: translateY(-2px); }
+  .direction-card h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .direction-card p { font-size: 13px; color: rgba(255,255,255,0.5); line-height: 1.5; }
+  .direction-card .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; background: rgba(99,91,255,0.2); color: var(--primary); margin-bottom: 8px; }
+
+  /* Mockup Container */
+  .mockup-wrapper { background: var(--surface); min-height: calc(100vh - 60px); }
+  .mockup-header { background: var(--dark); padding: 24px 32px 16px; color: #fff; }
+  .mockup-header h2 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .mockup-header p { font-size: 14px; color: rgba(255,255,255,0.5); margin-bottom: 16px; }
+  .mockup-traits { display: flex; gap: 8px; flex-wrap: wrap; }
+  .trait { padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 500; background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); }
+
+  /* ===== DIRECTION 1: Classic SaaS Dashboard ===== */
+  .d1 { display: flex; height: calc(100vh - 140px); }
+  .d1-sidebar { width: 240px; background: var(--dark); padding: 20px 0; flex-shrink: 0; }
+  .d1-sidebar-brand { padding: 0 20px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px; }
+  .d1-sidebar-brand span { color: #fff; font-size: 18px; font-weight: 700; }
+  .d1-sidebar-brand small { display: block; font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+  .d1-nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; color: rgba(255,255,255,0.6); font-size: 14px; cursor: pointer; transition: all 0.15s; }
+  .d1-nav-item:hover { color: #fff; background: rgba(255,255,255,0.05); }
+  .d1-nav-item.active { color: #fff; background: rgba(99,91,255,0.15); border-right: 2px solid var(--primary); }
+  .d1-nav-item .icon { width: 18px; text-align: center; }
+  .d1-nav-badge { margin-left: auto; background: var(--error); color: #fff; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 10px; }
+  .d1-wallet { margin: 16px 20px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; }
+  .d1-wallet-label { font-size: 11px; color: rgba(255,255,255,0.4); margin-bottom: 4px; }
+  .d1-wallet-amount { font-size: 18px; font-weight: 600; color: #fff; font-family: 'JetBrains Mono', monospace; }
+  .d1-main { flex: 1; padding: 24px 32px; overflow-y: auto; background: var(--surface); }
+  .d1-page-title { font-size: 24px; font-weight: 700; color: var(--text-primary); margin-bottom: 20px; }
+  .d1-search-bar { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; display: flex; gap: 12px; align-items: end; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .d1-field { flex: 1; }
+  .d1-field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; }
+  .d1-field input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; background: var(--surface); }
+  .d1-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+  .d1-search-btn { padding: 10px 24px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; transition: background 0.15s; }
+  .d1-search-btn:hover { background: var(--primary-hover); }
+  .d1-results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .d1-results-count { font-size: 14px; color: var(--text-secondary); }
+  .d1-results-count strong { color: var(--text-primary); }
+  .d1-sort { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; background: var(--card); color: var(--text-secondary); }
+  .d1-hotel-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .d1-hotel-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: all 0.2s; cursor: pointer; }
+  .d1-hotel-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px rgba(99,91,255,0.1); transform: translateY(-1px); }
+  .d1-hotel-img { height: 140px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); position: relative; }
+  .d1-hotel-img .stars { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.6); color: #fbbf24; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+  .d1-hotel-body { padding: 16px; }
+  .d1-hotel-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; line-height: 1.3; }
+  .d1-hotel-loc { font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; }
+  .d1-hotel-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .d1-hotel-tag { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .d1-hotel-tag.free { background: var(--success-bg); color: var(--success); }
+  .d1-hotel-tag.meal { background: var(--info-bg); color: var(--info); }
+  .d1-hotel-tag.nonref { background: var(--warning-bg); color: var(--warning); }
+  .d1-hotel-prices { display: flex; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+  .d1-hotel-price { font-size: 20px; font-weight: 600; color: var(--text-primary); }
+  .d1-hotel-price small { font-size: 12px; font-weight: 400; color: var(--text-secondary); }
+  .d1-hotel-suppliers { font-size: 11px; color: var(--text-muted); }
+  .d1-add-quote { padding: 6px 14px; background: var(--primary); color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.15s; }
+  .d1-add-quote:hover { background: var(--primary-hover); }
+
+  /* ===== DIRECTION 2: Workspace Centric ===== */
+  .d2 { display: flex; height: calc(100vh - 140px); }
+  .d2-sidebar { width: 60px; background: var(--dark); display: flex; flex-direction: column; align-items: center; padding: 16px 0; gap: 8px; flex-shrink: 0; }
+  .d2-sidebar-icon { width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.5); font-size: 16px; cursor: pointer; transition: all 0.15s; }
+  .d2-sidebar-icon:hover { color: #fff; background: rgba(255,255,255,0.08); }
+  .d2-sidebar-icon.active { color: #fff; background: var(--primary); }
+  .d2-main { flex: 1; display: flex; flex-direction: column; background: var(--surface); }
+  .d2-tabs { display: flex; background: var(--card); border-bottom: 1px solid var(--border); padding: 0 16px; gap: 0; }
+  .d2-tab { padding: 12px 20px; font-size: 13px; font-weight: 500; color: var(--text-secondary); border-bottom: 2px solid transparent; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.15s; white-space: nowrap; }
+  .d2-tab:hover { color: var(--text-primary); }
+  .d2-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .d2-tab .close { font-size: 14px; color: var(--text-muted); margin-left: 4px; }
+  .d2-tab-new { padding: 12px; color: var(--text-muted); cursor: pointer; font-size: 16px; }
+  .d2-content { flex: 1; padding: 20px 24px; overflow-y: auto; }
+  .d2-split { display: grid; grid-template-columns: 320px 1fr; gap: 20px; height: 100%; }
+  .d2-search-panel { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .d2-search-panel h3 { font-size: 14px; font-weight: 600; margin-bottom: 16px; }
+  .d2-form-group { margin-bottom: 14px; }
+  .d2-form-group label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 5px; }
+  .d2-form-group input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; }
+  .d2-results-panel { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  .d2-hotel-row { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; gap: 16px; transition: all 0.15s; cursor: pointer; }
+  .d2-hotel-row:hover { border-color: var(--primary); box-shadow: 0 2px 8px rgba(99,91,255,0.08); }
+  .d2-hotel-thumb { width: 100px; height: 80px; border-radius: 8px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); flex-shrink: 0; }
+  .d2-hotel-info { flex: 1; min-width: 0; }
+  .d2-hotel-info h4 { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+  .d2-hotel-info .loc { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+  .d2-hotel-info .tags { display: flex; gap: 4px; }
+  .d2-hotel-info .tag { padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 500; }
+  .d2-hotel-info .tag.g { background: var(--success-bg); color: var(--success); }
+  .d2-hotel-info .tag.b { background: var(--info-bg); color: var(--info); }
+  .d2-hotel-pricing { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; min-width: 120px; }
+  .d2-hotel-pricing .price { font-size: 18px; font-weight: 600; }
+  .d2-hotel-pricing .per { font-size: 11px; color: var(--text-muted); }
+  .d2-hotel-pricing .rates { font-size: 11px; color: var(--accent); }
+  .d2-quote-btn { padding: 5px 12px; background: var(--primary); color: #fff; border: none; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; }
+
+  /* ===== DIRECTION 3: Dense Pro ===== */
+  .d3 { display: flex; height: calc(100vh - 140px); }
+  .d3-sidebar { width: 200px; background: var(--dark); padding: 16px 0; flex-shrink: 0; overflow-y: auto; }
+  .d3-sidebar h4 { padding: 8px 16px; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: rgba(255,255,255,0.3); }
+  .d3-nav { padding: 4px 8px; font-size: 13px; color: rgba(255,255,255,0.6); cursor: pointer; border-radius: 4px; margin: 1px 8px; transition: all 0.1s; display: flex; align-items: center; justify-content: space-between; }
+  .d3-nav:hover { color: #fff; background: rgba(255,255,255,0.06); }
+  .d3-nav.active { color: #fff; background: rgba(99,91,255,0.2); }
+  .d3-nav .cnt { font-size: 10px; background: rgba(255,255,255,0.1); padding: 1px 5px; border-radius: 3px; }
+  .d3-main { flex: 1; background: var(--surface); display: flex; flex-direction: column; }
+  .d3-toolbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 8px 16px; display: flex; gap: 8px; align-items: center; }
+  .d3-toolbar input { flex: 1; padding: 7px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; }
+  .d3-toolbar .btn { padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); font-size: 12px; font-family: inherit; cursor: pointer; color: var(--text-secondary); }
+  .d3-toolbar .btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .d3-table-wrap { flex: 1; overflow: auto; padding: 12px 16px; }
+  .d3-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .d3-table th { text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); border-bottom: 1px solid var(--border); background: var(--card); position: sticky; top: 0; }
+  .d3-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); background: var(--card); vertical-align: middle; }
+  .d3-table tr:hover td { background: var(--primary-light); }
+  .d3-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; display: inline-block; }
+  .d3-badge.success { background: var(--success-bg); color: var(--success); }
+  .d3-badge.warning { background: var(--warning-bg); color: var(--warning); }
+  .d3-badge.error { background: var(--error-bg); color: var(--error); }
+  .d3-badge.info { background: var(--info-bg); color: var(--info); }
+  .d3-badge.neutral { background: var(--neutral-bg); color: var(--neutral); }
+  .d3-price { font-weight: 600; font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+  .d3-mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-secondary); }
+
+  /* ===== DIRECTION 4: Airy Modern ===== */
+  .d4 { min-height: calc(100vh - 140px); background: #FAFAFA; }
+  .d4-topbar { background: #fff; border-bottom: 1px solid #eee; padding: 16px 40px; display: flex; align-items: center; justify-content: space-between; }
+  .d4-topbar-brand { font-size: 20px; font-weight: 700; color: var(--dark); }
+  .d4-topbar-nav { display: flex; gap: 32px; }
+  .d4-topbar-nav a { font-size: 14px; color: var(--text-secondary); text-decoration: none; font-weight: 500; padding-bottom: 2px; }
+  .d4-topbar-nav a.active { color: var(--text-primary); border-bottom: 2px solid var(--primary); }
+  .d4-topbar-right { display: flex; align-items: center; gap: 16px; }
+  .d4-topbar-wallet { font-size: 13px; color: var(--text-secondary); }
+  .d4-topbar-wallet strong { color: var(--text-primary); font-family: 'JetBrains Mono', monospace; }
+  .d4-topbar-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; }
+  .d4-page { max-width: 1100px; margin: 0 auto; padding: 40px; }
+  .d4-page h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  .d4-page .sub { font-size: 15px; color: var(--text-secondary); margin-bottom: 32px; }
+  .d4-search-card { background: #fff; border-radius: 16px; padding: 32px; margin-bottom: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .d4-search-row { display: flex; gap: 16px; align-items: end; }
+  .d4-search-field { flex: 1; }
+  .d4-search-field label { display: block; font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-bottom: 8px; }
+  .d4-search-field input { width: 100%; padding: 12px 16px; border: 1px solid #e5e5e5; border-radius: 10px; font-size: 15px; font-family: inherit; }
+  .d4-search-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+  .d4-search-button { padding: 12px 32px; background: var(--primary); color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; font-family: inherit; cursor: pointer; }
+  .d4-hotel-list { display: flex; flex-direction: column; gap: 16px; }
+  .d4-hotel { background: #fff; border-radius: 16px; padding: 24px; display: flex; gap: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); transition: all 0.2s; cursor: pointer; }
+  .d4-hotel:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); transform: translateY(-1px); }
+  .d4-hotel-image { width: 200px; height: 150px; border-radius: 12px; background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%); flex-shrink: 0; }
+  .d4-hotel-content { flex: 1; display: flex; flex-direction: column; }
+  .d4-hotel-content h3 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  .d4-hotel-content .loc { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
+  .d4-hotel-content .features { display: flex; gap: 8px; margin-bottom: auto; }
+  .d4-hotel-content .feature { padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 500; background: var(--surface); color: var(--text-secondary); }
+  .d4-hotel-action { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; min-width: 150px; }
+  .d4-hotel-action .price-block { text-align: right; }
+  .d4-hotel-action .price { font-size: 24px; font-weight: 700; color: var(--text-primary); }
+  .d4-hotel-action .pn { font-size: 12px; color: var(--text-muted); }
+  .d4-hotel-action .suppliers { font-size: 11px; color: var(--accent); font-weight: 500; margin-top: 4px; }
+  .d4-add { padding: 10px 20px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+
+  /* ===== DIRECTION 5: Command Palette ===== */
+  .d5 { display: flex; height: calc(100vh - 140px); background: #FAFBFC; }
+  .d5-sidebar { width: 220px; background: #fff; border-right: 1px solid #eee; padding: 16px; flex-shrink: 0; }
+  .d5-sidebar-brand { font-size: 16px; font-weight: 700; color: var(--dark); margin-bottom: 20px; }
+  .d5-cmd { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--text-muted); margin-bottom: 20px; display: flex; justify-content: space-between; cursor: pointer; }
+  .d5-cmd kbd { font-family: inherit; font-size: 11px; background: var(--card); border: 1px solid var(--border); padding: 1px 5px; border-radius: 3px; }
+  .d5-nav-section { margin-bottom: 16px; }
+  .d5-nav-section h5 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 8px; }
+  .d5-nav-link { padding: 7px 10px; border-radius: 6px; font-size: 13px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.1s; }
+  .d5-nav-link:hover { background: var(--surface); color: var(--text-primary); }
+  .d5-nav-link.active { background: var(--primary-light); color: var(--primary); font-weight: 500; }
+  .d5-main { flex: 1; padding: 24px 32px; overflow-y: auto; }
+  .d5-breadcrumb { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+  .d5-breadcrumb span { color: var(--text-primary); }
+  .d5-page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .d5-page-header h1 { font-size: 22px; font-weight: 700; }
+  .d5-page-header .actions { display: flex; gap: 8px; }
+  .d5-btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer; border: 1px solid var(--border); background: #fff; color: var(--text-primary); transition: all 0.15s; }
+  .d5-btn:hover { background: var(--surface); }
+  .d5-btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .d5-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .d5-stat { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 16px; }
+  .d5-stat .label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+  .d5-stat .value { font-size: 22px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  .d5-stat .value.green { color: var(--success); }
+  .d5-stat .value.amber { color: var(--warning); }
+  .d5-list { background: #fff; border: 1px solid #eee; border-radius: 10px; overflow: hidden; }
+  .d5-list-header { padding: 12px 16px; font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #eee; display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 100px; gap: 12px; }
+  .d5-list-row { padding: 14px 16px; display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 100px; gap: 12px; align-items: center; border-bottom: 1px solid #f5f5f5; font-size: 13px; transition: background 0.1s; cursor: pointer; }
+  .d5-list-row:hover { background: #FAFBFC; }
+  .d5-list-row:last-child { border-bottom: none; }
+  .d5-list-row .name { font-weight: 500; }
+  .d5-list-row .mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+  /* ===== DIRECTION 6: Split Panel ===== */
+  .d6 { display: flex; height: calc(100vh - 140px); }
+  .d6-left { width: 380px; background: #fff; border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+  .d6-left-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .d6-left-header h3 { font-size: 15px; font-weight: 600; }
+  .d6-left-header .badge { background: var(--primary-light); color: var(--primary); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .d6-search-form { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .d6-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .d6-form-row.full { grid-template-columns: 1fr; }
+  .d6-input { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; width: 100%; }
+  .d6-search-action { display: flex; gap: 8px; margin-top: 12px; }
+  .d6-search-action button { flex: 1; padding: 9px; border-radius: 6px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; border: none; }
+  .d6-search-action .primary { background: var(--primary); color: #fff; }
+  .d6-search-action .secondary { background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border); }
+  .d6-results { flex: 1; overflow-y: auto; }
+  .d6-result-item { padding: 14px 20px; border-bottom: 1px solid var(--border-subtle); display: flex; gap: 12px; cursor: pointer; transition: background 0.1s; }
+  .d6-result-item:hover { background: var(--primary-light); }
+  .d6-result-item.selected { background: var(--primary-light); border-left: 3px solid var(--primary); }
+  .d6-result-thumb { width: 60px; height: 48px; border-radius: 6px; background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); flex-shrink: 0; }
+  .d6-result-info { flex: 1; min-width: 0; }
+  .d6-result-info h5 { font-size: 13px; font-weight: 600; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .d6-result-info .meta { font-size: 11px; color: var(--text-muted); }
+  .d6-result-price { font-size: 15px; font-weight: 600; text-align: right; white-space: nowrap; }
+  .d6-result-price small { display: block; font-size: 10px; font-weight: 400; color: var(--text-muted); }
+  .d6-right { flex: 1; background: var(--surface); display: flex; flex-direction: column; }
+  .d6-right-header { padding: 16px 24px; background: #fff; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .d6-right-tabs { display: flex; gap: 4px; }
+  .d6-right-tab { padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--text-secondary); cursor: pointer; border: none; background: transparent; font-family: inherit; }
+  .d6-right-tab.active { background: var(--primary-light); color: var(--primary); }
+  .d6-detail { flex: 1; padding: 24px; overflow-y: auto; }
+  .d6-detail-card { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 16px; border: 1px solid var(--border-subtle); }
+  .d6-detail-card h3 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  .d6-detail-card .sub { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+  .d6-rate-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border-subtle); }
+  .d6-rate-row:last-child { border-bottom: none; }
+  .d6-rate-info { }
+  .d6-rate-info .room { font-size: 14px; font-weight: 500; }
+  .d6-rate-info .policy { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .d6-rate-action { display: flex; align-items: center; gap: 12px; }
+  .d6-rate-price { font-size: 18px; font-weight: 600; text-align: right; }
+  .d6-rate-price small { display: block; font-size: 11px; font-weight: 400; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-title">Apolles — Design Directions</div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showSection('overview')">Overview</button>
+    <button class="nav-tab" onclick="showSection('d1')">1. Classic SaaS</button>
+    <button class="nav-tab" onclick="showSection('d2')">2. Workspace</button>
+    <button class="nav-tab" onclick="showSection('d3')">3. Dense Pro</button>
+    <button class="nav-tab" onclick="showSection('d4')">4. Airy Modern</button>
+    <button class="nav-tab" onclick="showSection('d5')">5. Command-First</button>
+    <button class="nav-tab" onclick="showSection('d6')">6. Split Panel</button>
+  </div>
+</nav>
+
+<!-- OVERVIEW -->
+<div class="section active" id="overview">
+  <div class="intro">
+    <h1>Apolles Design Directions</h1>
+    <p>6 design directions exploring different layout, density, and interaction approaches — all using Apolles' established color palette, typography, and design tokens.</p>
+    <div class="direction-grid">
+      <div class="direction-card" onclick="showSection('d1')">
+        <div class="tag">Recommended</div>
+        <h3>1. Classic SaaS Dashboard</h3>
+        <p>Dark sidebar nav + card grid. Clean, proven, Stripe-like. Best balance of professionalism and usability.</p>
+      </div>
+      <div class="direction-card" onclick="showSection('d2')">
+        <div class="tag">Alternative</div>
+        <h3>2. Workspace Centric</h3>
+        <p>Collapsed icon sidebar + tab workspace. Figma-like multi-context. Maximum tab real estate.</p>
+      </div>
+      <div class="direction-card" onclick="showSection('d3')">
+        <div class="tag">Power User</div>
+        <h3>3. Dense Pro</h3>
+        <p>Table-driven, information-dense. Bloomberg-inspired data display. Booking management focus.</p>
+      </div>
+      <div class="direction-card" onclick="showSection('d4')">
+        <div class="tag">Clean</div>
+        <h3>4. Airy Modern</h3>
+        <p>Top nav + generous whitespace. Notion-like spaciousness. Maximum visual clarity.</p>
+      </div>
+      <div class="direction-card" onclick="showSection('d5')">
+        <div class="tag">Keyboard-First</div>
+        <h3>5. Command Palette</h3>
+        <p>Linear/Raycast-inspired. Command palette navigation. Dashboard-centric with list views.</p>
+      </div>
+      <div class="direction-card" onclick="showSection('d6')">
+        <div class="tag">Focused</div>
+        <h3>6. Split Panel</h3>
+        <p>Master-detail layout. Search on left, detail on right. Email-client pattern for focused exploration.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DIRECTION 1: Classic SaaS -->
+<div class="section" id="d1">
+  <div class="mockup-header">
+    <h2>Direction 1: Classic SaaS Dashboard</h2>
+    <p>Dark sidebar navigation + clean card grid. The most proven B2B SaaS pattern — Stripe, Linear, Vercel.</p>
+    <div class="mockup-traits">
+      <span class="trait">Dark sidebar</span>
+      <span class="trait">Card grid results</span>
+      <span class="trait">Inline search bar</span>
+      <span class="trait">Wallet in sidebar</span>
+      <span class="trait">3-column hotel cards</span>
+    </div>
+  </div>
+  <div class="mockup-wrapper">
+    <div class="d1">
+      <div class="d1-sidebar">
+        <div class="d1-sidebar-brand">
+          <span>Apolles</span>
+          <small>Hotel Booking Platform</small>
+        </div>
+        <div class="d1-nav-item active"><span class="icon">&#x1F50D;</span> Search</div>
+        <div class="d1-nav-item"><span class="icon">&#x1F4C4;</span> Quotes <span class="d1-nav-badge">3</span></div>
+        <div class="d1-nav-item"><span class="icon">&#x1F4CB;</span> Bookings</div>
+        <div class="d1-nav-item"><span class="icon">&#x2705;</span> HCN Status <span class="d1-nav-badge" style="background:var(--warning)">2</span></div>
+        <div class="d1-nav-item"><span class="icon">&#x1F4B3;</span> Wallet</div>
+        <div class="d1-nav-item"><span class="icon">&#x2699;</span> Settings</div>
+        <div class="d1-wallet">
+          <div class="d1-wallet-label">Wallet Balance</div>
+          <div class="d1-wallet-amount">$4,230.00</div>
+        </div>
+      </div>
+      <div class="d1-main">
+        <div class="d1-page-title">Hotel Search</div>
+        <div class="d1-search-bar">
+          <div class="d1-field"><label>Destination</label><input type="text" value="Santorini, Greece" /></div>
+          <div class="d1-field"><label>Check-in</label><input type="text" value="Apr 15, 2026" /></div>
+          <div class="d1-field"><label>Check-out</label><input type="text" value="Apr 20, 2026" /></div>
+          <div class="d1-field" style="max-width:100px"><label>Rooms</label><input type="text" value="1" /></div>
+          <div class="d1-field" style="max-width:100px"><label>Adults</label><input type="text" value="2" /></div>
+          <button class="d1-search-btn">Search Hotels</button>
+        </div>
+        <div class="d1-results-header">
+          <div class="d1-results-count"><strong>47 hotels</strong> found from 2 suppliers &middot; 5 nights &middot; Rates as of 2 min ago</div>
+          <select class="d1-sort"><option>Sort: Price (Low to High)</option></select>
+        </div>
+        <div class="d1-hotel-grid">
+          <div class="d1-hotel-card">
+            <div class="d1-hotel-img" style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%)"><div class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div></div>
+            <div class="d1-hotel-body">
+              <div class="d1-hotel-name">Canaves Oia Suites</div>
+              <div class="d1-hotel-loc">Oia, Santorini</div>
+              <div class="d1-hotel-tags"><span class="d1-hotel-tag free">Free cancellation</span><span class="d1-hotel-tag meal">Breakfast</span></div>
+              <div class="d1-hotel-prices">
+                <div><div class="d1-hotel-price">$1,245 <small>/night</small></div><div class="d1-hotel-suppliers">2 rate options</div></div>
+                <button class="d1-add-quote">+ Quote</button>
+              </div>
+            </div>
+          </div>
+          <div class="d1-hotel-card">
+            <div class="d1-hotel-img" style="background:linear-gradient(135deg, #f093fb 0%, #f5576c 100%)"><div class="stars">&#9733;&#9733;&#9733;&#9733;</div></div>
+            <div class="d1-hotel-body">
+              <div class="d1-hotel-name">Santo Maris Oia</div>
+              <div class="d1-hotel-loc">Oia, Santorini</div>
+              <div class="d1-hotel-tags"><span class="d1-hotel-tag free">Free cancellation</span></div>
+              <div class="d1-hotel-prices">
+                <div><div class="d1-hotel-price">$890 <small>/night</small></div><div class="d1-hotel-suppliers">2 rate options</div></div>
+                <button class="d1-add-quote">+ Quote</button>
+              </div>
+            </div>
+          </div>
+          <div class="d1-hotel-card">
+            <div class="d1-hotel-img" style="background:linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)"><div class="stars">&#9733;&#9733;&#9733;&#9733;</div></div>
+            <div class="d1-hotel-body">
+              <div class="d1-hotel-name">Mystique Luxury Hotel</div>
+              <div class="d1-hotel-loc">Oia, Santorini</div>
+              <div class="d1-hotel-tags"><span class="d1-hotel-tag nonref">Non-refundable</span><span class="d1-hotel-tag meal">Half board</span></div>
+              <div class="d1-hotel-prices">
+                <div><div class="d1-hotel-price">$720 <small>/night</small></div><div class="d1-hotel-suppliers">1 rate option</div></div>
+                <button class="d1-add-quote">+ Quote</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DIRECTION 2: Workspace -->
+<div class="section" id="d2">
+  <div class="mockup-header">
+    <h2>Direction 2: Workspace Centric</h2>
+    <p>Collapsed icon sidebar + tab-based workspace. Maximum screen estate for content. Figma-like multi-context switching.</p>
+    <div class="mockup-traits">
+      <span class="trait">Icon-only sidebar</span>
+      <span class="trait">Client tabs</span>
+      <span class="trait">Split panel search</span>
+      <span class="trait">Row-based results</span>
+      <span class="trait">Max content area</span>
+    </div>
+  </div>
+  <div class="mockup-wrapper">
+    <div class="d2">
+      <div class="d2-sidebar">
+        <div class="d2-sidebar-icon active" title="Search">&#x1F50D;</div>
+        <div class="d2-sidebar-icon" title="Quotes">&#x1F4C4;</div>
+        <div class="d2-sidebar-icon" title="Bookings">&#x1F4CB;</div>
+        <div class="d2-sidebar-icon" title="HCN">&#x2705;</div>
+        <div class="d2-sidebar-icon" title="Wallet">&#x1F4B3;</div>
+        <div style="flex:1"></div>
+        <div class="d2-sidebar-icon" title="Settings">&#x2699;</div>
+      </div>
+      <div class="d2-main">
+        <div class="d2-tabs">
+          <div class="d2-tab active">&#x1F50D; Santorini — Cohen <span class="close">&times;</span></div>
+          <div class="d2-tab">&#x1F4C4; Barcelona Quote — Levy <span class="close">&times;</span></div>
+          <div class="d2-tab">&#x1F50D; London — Shapiro <span class="close">&times;</span></div>
+          <div class="d2-tab-new">+</div>
+        </div>
+        <div class="d2-content">
+          <div class="d2-split">
+            <div class="d2-search-panel">
+              <h3>Search Parameters</h3>
+              <div class="d2-form-group"><label>Destination</label><input value="Santorini, Greece" /></div>
+              <div class="d2-form-group"><label>Check-in</label><input value="Apr 15, 2026" /></div>
+              <div class="d2-form-group"><label>Check-out</label><input value="Apr 20, 2026" /></div>
+              <div style="display:flex;gap:8px">
+                <div class="d2-form-group" style="flex:1"><label>Rooms</label><input value="1" /></div>
+                <div class="d2-form-group" style="flex:1"><label>Adults</label><input value="2" /></div>
+              </div>
+              <button class="d1-search-btn" style="width:100%;margin-top:8px">Search Hotels</button>
+              <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Active Quote: <strong style="color:var(--primary)">Cohen — Santorini</strong></div>
+                <div style="font-size:12px;color:var(--text-secondary)">3 hotels selected &middot; 1 city</div>
+              </div>
+            </div>
+            <div class="d2-results-panel">
+              <div class="d2-hotel-row">
+                <div class="d2-hotel-thumb"></div>
+                <div class="d2-hotel-info">
+                  <h4>Canaves Oia Suites</h4>
+                  <div class="loc">&#9733;&#9733;&#9733;&#9733;&#9733; &middot; Oia, Santorini</div>
+                  <div class="tags"><span class="tag g">Free cancellation</span><span class="tag b">Breakfast</span></div>
+                </div>
+                <div class="d2-hotel-pricing">
+                  <div><div class="price">$1,245</div><div class="per">/night</div></div>
+                  <div class="rates">2 rates available</div>
+                  <button class="d2-quote-btn">+ Quote</button>
+                </div>
+              </div>
+              <div class="d2-hotel-row">
+                <div class="d2-hotel-thumb" style="background:linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)"></div>
+                <div class="d2-hotel-info">
+                  <h4>Santo Maris Oia Luxury Suites & Spa</h4>
+                  <div class="loc">&#9733;&#9733;&#9733;&#9733; &middot; Oia, Santorini</div>
+                  <div class="tags"><span class="tag g">Free cancellation</span></div>
+                </div>
+                <div class="d2-hotel-pricing">
+                  <div><div class="price">$890</div><div class="per">/night</div></div>
+                  <div class="rates">2 rates available</div>
+                  <button class="d2-quote-btn">+ Quote</button>
+                </div>
+              </div>
+              <div class="d2-hotel-row">
+                <div class="d2-hotel-thumb" style="background:linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)"></div>
+                <div class="d2-hotel-info">
+                  <h4>Mystique Luxury Collection Hotel</h4>
+                  <div class="loc">&#9733;&#9733;&#9733;&#9733; &middot; Oia, Santorini</div>
+                  <div class="tags"><span class="tag" style="background:var(--warning-bg);color:var(--warning)">Non-refundable</span></div>
+                </div>
+                <div class="d2-hotel-pricing">
+                  <div><div class="price">$720</div><div class="per">/night</div></div>
+                  <div class="rates">1 rate available</div>
+                  <button class="d2-quote-btn">+ Quote</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DIRECTION 3: Dense Pro -->
+<div class="section" id="d3">
+  <div class="mockup-header">
+    <h2>Direction 3: Content-Dense Pro</h2>
+    <p>Table-driven, maximum information density. Booking management and HCN dashboard focused. For power users who want everything visible.</p>
+    <div class="mockup-traits">
+      <span class="trait">Narrow sidebar</span>
+      <span class="trait">Toolbar actions</span>
+      <span class="trait">Table-driven</span>
+      <span class="trait">Status badges</span>
+      <span class="trait">Monospace data</span>
+    </div>
+  </div>
+  <div class="mockup-wrapper">
+    <div class="d3">
+      <div class="d3-sidebar">
+        <h4>Navigation</h4>
+        <div class="d3-nav">Search</div>
+        <div class="d3-nav">Quotes <span class="cnt">3</span></div>
+        <div class="d3-nav active">Bookings <span class="cnt">24</span></div>
+        <div class="d3-nav">HCN Status <span class="cnt" style="background:rgba(217,119,6,0.3);color:var(--warning)">2</span></div>
+        <div class="d3-nav">Voucher Queue <span class="cnt">5</span></div>
+        <h4 style="margin-top:16px">Finance</h4>
+        <div class="d3-nav">Wallet</div>
+        <div class="d3-nav">Transactions</div>
+        <div class="d3-nav">Invoices</div>
+        <h4 style="margin-top:16px">Account</h4>
+        <div class="d3-nav">Profile</div>
+        <div class="d3-nav">Settings</div>
+      </div>
+      <div class="d3-main">
+        <div class="d3-toolbar">
+          <input placeholder="Filter bookings..." />
+          <button class="btn">Status: All</button>
+          <button class="btn">Date Range</button>
+          <button class="btn">Export</button>
+          <button class="btn primary">+ New Search</button>
+        </div>
+        <div class="d3-table-wrap">
+          <table class="d3-table">
+            <thead><tr>
+              <th>Booking ID</th><th>Hotel</th><th>Guest</th><th>Dates</th><th>Status</th><th>HCN</th><th>Amount</th><th>Auto-Cancel</th>
+            </tr></thead>
+            <tbody>
+              <tr>
+                <td class="d3-mono">APL-2026-0847</td>
+                <td><strong>Canaves Oia Suites</strong><br><span style="font-size:11px;color:var(--text-muted)">Santorini, Greece</span></td>
+                <td>Sarah Cohen</td>
+                <td class="d3-mono">Apr 15-20</td>
+                <td><span class="d3-badge success">Vouchered</span></td>
+                <td><span class="d3-badge success">Confirmed</span></td>
+                <td class="d3-price">$6,225</td>
+                <td style="color:var(--text-muted)">—</td>
+              </tr>
+              <tr>
+                <td class="d3-mono">APL-2026-0848</td>
+                <td><strong>Hotel Arts Barcelona</strong><br><span style="font-size:11px;color:var(--text-muted)">Barcelona, Spain</span></td>
+                <td>Dan Levy</td>
+                <td class="d3-mono">Apr 22-26</td>
+                <td><span class="d3-badge info">Confirmed</span></td>
+                <td><span class="d3-badge info">Email Sent</span></td>
+                <td class="d3-price">$3,480</td>
+                <td><span style="color:var(--warning);font-size:12px;font-weight:500">2d 14h</span></td>
+              </tr>
+              <tr>
+                <td class="d3-mono">APL-2026-0849</td>
+                <td><strong>The Savoy London</strong><br><span style="font-size:11px;color:var(--text-muted)">London, UK</span></td>
+                <td>Mike Shapiro</td>
+                <td class="d3-mono">May 1-4</td>
+                <td><span class="d3-badge info">Confirmed</span></td>
+                <td><span class="d3-badge warning">Waiting</span></td>
+                <td class="d3-price">$2,100</td>
+                <td><span style="color:var(--error);font-size:12px;font-weight:600">8h 30m</span></td>
+              </tr>
+              <tr>
+                <td class="d3-mono">APL-2026-0850</td>
+                <td><strong>Grand Hotel Rome</strong><br><span style="font-size:11px;color:var(--text-muted)">Rome, Italy</span></td>
+                <td>Rachel Gold</td>
+                <td class="d3-mono">Apr 18-23</td>
+                <td><span class="d3-badge success">Vouchered</span></td>
+                <td><span class="d3-badge error">Mismatch</span></td>
+                <td class="d3-price">$4,750</td>
+                <td style="color:var(--text-muted)">—</td>
+              </tr>
+              <tr>
+                <td class="d3-mono">APL-2026-0844</td>
+                <td><strong>Hilton Prague</strong><br><span style="font-size:11px;color:var(--text-muted)">Prague, Czech Rep.</span></td>
+                <td>Noa Peretz</td>
+                <td class="d3-mono">Apr 10-14</td>
+                <td><span class="d3-badge neutral">Cancelled</span></td>
+                <td><span class="d3-badge neutral">N/A</span></td>
+                <td class="d3-price" style="text-decoration:line-through;color:var(--text-muted)">$1,200</td>
+                <td style="color:var(--text-muted)">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DIRECTION 4: Airy Modern -->
+<div class="section" id="d4">
+  <div class="mockup-header">
+    <h2>Direction 4: Airy Modern</h2>
+    <p>Top navigation + generous whitespace. Notion-like spaciousness. Maximum visual clarity with large typography and breathable layouts.</p>
+    <div class="mockup-traits">
+      <span class="trait">Top navigation</span>
+      <span class="trait">Centered content</span>
+      <span class="trait">Large cards</span>
+      <span class="trait">Generous spacing</span>
+      <span class="trait">No sidebar</span>
+    </div>
+  </div>
+  <div class="mockup-wrapper">
+    <div class="d4">
+      <div class="d4-topbar">
+        <div class="d4-topbar-brand">Apolles</div>
+        <div class="d4-topbar-nav">
+          <a href="#" class="active">Search</a>
+          <a href="#">Quotes</a>
+          <a href="#">Bookings</a>
+          <a href="#">HCN</a>
+          <a href="#">Wallet</a>
+        </div>
+        <div class="d4-topbar-right">
+          <div class="d4-topbar-wallet">Balance: <strong>$4,230.00</strong></div>
+          <div class="d4-topbar-avatar">YK</div>
+        </div>
+      </div>
+      <div class="d4-page">
+        <h1>Find the perfect hotel</h1>
+        <div class="sub">Search across all suppliers at once. Results in seconds.</div>
+        <div class="d4-search-card">
+          <div class="d4-search-row">
+            <div class="d4-search-field"><label>Destination</label><input value="Santorini, Greece" /></div>
+            <div class="d4-search-field"><label>Check-in</label><input value="Apr 15, 2026" /></div>
+            <div class="d4-search-field"><label>Check-out</label><input value="Apr 20, 2026" /></div>
+            <div class="d4-search-field" style="max-width:100px"><label>Guests</label><input value="2" /></div>
+            <button class="d4-search-button">Search</button>
+          </div>
+        </div>
+        <div class="d4-hotel-list">
+          <div class="d4-hotel">
+            <div class="d4-hotel-image"></div>
+            <div class="d4-hotel-content">
+              <h3>Canaves Oia Suites</h3>
+              <div class="loc">&#9733;&#9733;&#9733;&#9733;&#9733; &middot; Oia, Santorini, Greece</div>
+              <div class="features"><span class="feature">Free cancellation</span><span class="feature">Breakfast included</span><span class="feature">Sea view</span></div>
+            </div>
+            <div class="d4-hotel-action">
+              <div class="price-block">
+                <div class="price">$1,245</div>
+                <div class="pn">per night</div>
+                <div class="suppliers">2 rates from 2 suppliers</div>
+              </div>
+              <button class="d4-add">Add to Quote</button>
+            </div>
+          </div>
+          <div class="d4-hotel">
+            <div class="d4-hotel-image" style="background:linear-gradient(135deg, #fbc2eb 0%, #a6c1ee 100%)"></div>
+            <div class="d4-hotel-content">
+              <h3>Santo Maris Oia Luxury Suites & Spa</h3>
+              <div class="loc">&#9733;&#9733;&#9733;&#9733; &middot; Oia, Santorini, Greece</div>
+              <div class="features"><span class="feature">Free cancellation</span><span class="feature">Pool</span></div>
+            </div>
+            <div class="d4-hotel-action">
+              <div class="price-block">
+                <div class="price">$890</div>
+                <div class="pn">per night</div>
+                <div class="suppliers">2 rates from 2 suppliers</div>
+              </div>
+              <button class="d4-add">Add to Quote</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DIRECTION 5: Command Palette -->
+<div class="section" id="d5">
+  <div class="mockup-header">
+    <h2>Direction 5: Command-Palette First</h2>
+    <p>Linear/Raycast-inspired. Keyboard navigation with command palette. Dashboard with stats and list views.</p>
+    <div class="mockup-traits">
+      <span class="trait">Light sidebar</span>
+      <span class="trait">Command palette</span>
+      <span class="trait">Stat cards</span>
+      <span class="trait">List views</span>
+      <span class="trait">Keyboard-first</span>
+    </div>
+  </div>
+  <div class="mockup-wrapper">
+    <div class="d5">
+      <div class="d5-sidebar">
+        <div class="d5-sidebar-brand">Apolles</div>
+        <div class="d5-cmd">Search... <kbd>&#8984;K</kbd></div>
+        <div class="d5-nav-section">
+          <h5>Workspace</h5>
+          <div class="d5-nav-link active">&#x1F3E0; Dashboard</div>
+          <div class="d5-nav-link">&#x1F50D; Hotel Search</div>
+          <div class="d5-nav-link">&#x1F4C4; Quotes</div>
+        </div>
+        <div class="d5-nav-section">
+          <h5>Management</h5>
+          <div class="d5-nav-link">&#x1F4CB; Bookings</div>
+          <div class="d5-nav-link">&#x2705; HCN Status</div>
+          <div class="d5-nav-link">&#x1F4E6; Voucher Queue</div>
+        </div>
+        <div class="d5-nav-section">
+          <h5>Finance</h5>
+          <div class="d5-nav-link">&#x1F4B3; Wallet</div>
+          <div class="d5-nav-link">&#x1F4CA; Transactions</div>
+        </div>
+      </div>
+      <div class="d5-main">
+        <div class="d5-breadcrumb">Workspace &rsaquo; <span>Dashboard</span></div>
+        <div class="d5-page-header">
+          <h1>Dashboard</h1>
+          <div class="actions">
+            <button class="d5-btn">Export</button>
+            <button class="d5-btn primary">+ New Search</button>
+          </div>
+        </div>
+        <div class="d5-stats">
+          <div class="d5-stat"><div class="label">Wallet Balance</div><div class="value">$4,230</div></div>
+          <div class="d5-stat"><div class="label">Active Bookings</div><div class="value">12</div></div>
+          <div class="d5-stat"><div class="label">HCN Verified</div><div class="value green">8/12</div></div>
+          <div class="d5-stat"><div class="label">Pending Vouchers</div><div class="value amber">4</div></div>
+        </div>
+        <div class="d5-list">
+          <div class="d5-list-header">
+            <span>Hotel</span><span>Guest</span><span>Status</span><span>HCN</span><span>Amount</span><span></span>
+          </div>
+          <div class="d5-list-row">
+            <span class="name">Canaves Oia Suites</span>
+            <span>Sarah Cohen</span>
+            <span><span class="d3-badge success">Vouchered</span></span>
+            <span><span class="d3-badge success">Confirmed</span></span>
+            <span class="mono">$6,225</span>
+            <span><button class="d5-btn" style="padding:4px 10px;font-size:11px">View</button></span>
+          </div>
+          <div class="d5-list-row">
+            <span class="name">Hotel Arts Barcelona</span>
+            <span>Dan Levy</span>
+            <span><span class="d3-badge info">Confirmed</span></span>
+            <span><span class="d3-badge info">Email Sent</span></span>
+            <span class="mono">$3,480</span>
+            <span><button class="d5-btn" style="padding:4px 10px;font-size:11px">View</button></span>
+          </div>
+          <div class="d5-list-row">
+            <span class="name">The Savoy London</span>
+            <span>Mike Shapiro</span>
+            <span><span class="d3-badge warning" style="display:flex;align-items:center;gap:4px;width:fit-content">&#9202; 8h 30m</span></span>
+            <span><span class="d3-badge warning">Waiting</span></span>
+            <span class="mono">$2,100</span>
+            <span><button class="d5-btn primary" style="padding:4px 10px;font-size:11px">Voucher</button></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DIRECTION 6: Split Panel -->
+<div class="section" id="d6">
+  <div class="mockup-header">
+    <h2>Direction 6: Split Panel Workflow</h2>
+    <p>Master-detail layout. Search/list on left, detail/preview on right. Email-client pattern optimized for focused hotel exploration.</p>
+    <div class="mockup-traits">
+      <span class="trait">Split panel</span>
+      <span class="trait">Master-detail</span>
+      <span class="trait">Inline detail</span>
+      <span class="trait">No page transitions</span>
+      <span class="trait">Compact list</span>
+    </div>
+  </div>
+  <div class="mockup-wrapper">
+    <div class="d6">
+      <div class="d6-left">
+        <div class="d6-left-header">
+          <h3>Santorini Search</h3>
+          <span class="badge">47 results</span>
+        </div>
+        <div class="d6-search-form">
+          <div class="d6-form-row full"><input class="d6-input" value="Santorini, Greece" /></div>
+          <div class="d6-form-row">
+            <input class="d6-input" value="Apr 15" />
+            <input class="d6-input" value="Apr 20" />
+          </div>
+          <div class="d6-form-row">
+            <input class="d6-input" value="1 Room" />
+            <input class="d6-input" value="2 Adults" />
+          </div>
+          <div class="d6-search-action">
+            <button class="primary">Search</button>
+            <button class="secondary">Filters</button>
+          </div>
+        </div>
+        <div class="d6-results">
+          <div class="d6-result-item selected">
+            <div class="d6-result-thumb" style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%)"></div>
+            <div class="d6-result-info"><h5>Canaves Oia Suites</h5><div class="meta">&#9733;&#9733;&#9733;&#9733;&#9733; &middot; Oia</div></div>
+            <div class="d6-result-price">$1,245<small>/night</small></div>
+          </div>
+          <div class="d6-result-item">
+            <div class="d6-result-thumb" style="background:linear-gradient(135deg, #f093fb 0%, #f5576c 100%)"></div>
+            <div class="d6-result-info"><h5>Santo Maris Oia</h5><div class="meta">&#9733;&#9733;&#9733;&#9733; &middot; Oia</div></div>
+            <div class="d6-result-price">$890<small>/night</small></div>
+          </div>
+          <div class="d6-result-item">
+            <div class="d6-result-thumb" style="background:linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)"></div>
+            <div class="d6-result-info"><h5>Mystique Luxury Hotel</h5><div class="meta">&#9733;&#9733;&#9733;&#9733; &middot; Oia</div></div>
+            <div class="d6-result-price">$720<small>/night</small></div>
+          </div>
+          <div class="d6-result-item">
+            <div class="d6-result-thumb" style="background:linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)"></div>
+            <div class="d6-result-info"><h5>Andronis Boutique Hotel</h5><div class="meta">&#9733;&#9733;&#9733;&#9733; &middot; Oia</div></div>
+            <div class="d6-result-price">$650<small>/night</small></div>
+          </div>
+        </div>
+      </div>
+      <div class="d6-right">
+        <div class="d6-right-header">
+          <div class="d6-right-tabs">
+            <button class="d6-right-tab active">Details</button>
+            <button class="d6-right-tab">Photos</button>
+            <button class="d6-right-tab">Reviews</button>
+            <button class="d6-right-tab">Map</button>
+          </div>
+          <button class="d1-add-quote">+ Add to Quote</button>
+        </div>
+        <div class="d6-detail">
+          <div class="d6-detail-card">
+            <h3>Canaves Oia Suites</h3>
+            <div class="sub">&#9733;&#9733;&#9733;&#9733;&#9733; &middot; Oia, Santorini, Greece &middot; 5 nights &middot; Apr 15-20, 2026</div>
+            <div class="d6-rate-row">
+              <div class="d6-rate-info">
+                <div class="room">Superior Suite — Sea View</div>
+                <div class="policy"><span class="d3-badge success">Free cancellation until Apr 10</span> &middot; Breakfast included</div>
+              </div>
+              <div class="d6-rate-action">
+                <div class="d6-rate-price">$1,245<small>/night &middot; $6,225 total</small></div>
+                <button class="d1-add-quote" style="font-size:11px;padding:5px 10px">Select</button>
+              </div>
+            </div>
+            <div class="d6-rate-row">
+              <div class="d6-rate-info">
+                <div class="room">Superior Suite — Sea View</div>
+                <div class="policy"><span class="d3-badge warning">Non-refundable</span> &middot; Breakfast included</div>
+              </div>
+              <div class="d6-rate-action">
+                <div class="d6-rate-price">$1,080<small>/night &middot; $5,400 total</small></div>
+                <button class="d1-add-quote" style="font-size:11px;padding:5px 10px;background:var(--text-secondary)">Select</button>
+              </div>
+            </div>
+            <div class="d6-rate-row">
+              <div class="d6-rate-info">
+                <div class="room">Deluxe Room — Garden View</div>
+                <div class="policy"><span class="d3-badge success">Free cancellation until Apr 12</span> &middot; Room only</div>
+              </div>
+              <div class="d6-rate-action">
+                <div class="d6-rate-price">$980<small>/night &middot; $4,900 total</small></div>
+                <button class="d1-add-quote" style="font-size:11px;padding:5px 10px">Select</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>
