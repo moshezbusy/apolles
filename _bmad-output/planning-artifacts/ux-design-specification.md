@@ -1,95 +1,152 @@
 ---
 stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
 lastStep: 14
-completedAt: 2026-03-10
+completedAt: 2026-03-11
+revision: lean-alignment-v1
+previousVersion: ux-design-specification (2026-03-10)
 inputDocuments:
-  - _bmad-output/planning-artifacts/product-brief-Apolles-2026-03-09.md
+  - _bmad-output/planning-artifacts/product-brief-Apolles-2026-03-11.md
   - _bmad-output/planning-artifacts/prd.md
-  - _bmad-output/planning-artifacts/prd-validation-report.md
 ---
 
-# UX Design Specification Apolles
+# UX Design Specification Apolles (Lean MVP)
 
 **Author:** Moshe
-**Date:** 2026-03-10
+**Date:** 2026-03-11
+**Revision:** Lean scope alignment
 
 ---
 
-<!-- UX design content will be appended sequentially through collaborative workflow steps -->
+## UX Alignment Summary
+
+This is a scope-alignment revision of the existing UX design specification. The visual system, design direction, color palette, typography, component library choice, and overall UI structure are **preserved**. Only flows, screens, states, and UX logic that conflict with the approved lean product brief (2026-03-11) and lean PRD (2026-03-11) have been changed.
+
+**Source of truth clarification:** This UX specification is aligned to the **approved lean PRD (prd.md, dated 2026-03-11)**, which defines a dual-supplier MVP (TBO + Expedia from day one). The product brief file (product-brief-Apolles-2026-03-11.md) still contains language suggesting a TBO-first / Expedia-later phasing in some sections, but the PRD supersedes it on supplier scope. Wherever the brief and PRD disagree on whether Expedia is MVP or Phase 2, the PRD is authoritative. This UX treats both suppliers as MVP Core.
+
+### What Was Preserved
+
+- **Visual identity**: Color palette (#635BFF primary, #0A2540 dark sidebar, #F6F9FC surface, full status color system), flat/no-gradient aesthetic, Stripe-inspired professional feel
+- **Design system**: shadcn/ui + Tailwind CSS + Radix UI on React/Next.js
+- **Typography**: Inter primary, JetBrains Mono for codes/numbers, full type scale
+- **Layout direction**: Classic SaaS Dashboard (Direction 1) — dark sidebar + card grid
+- **Spacing and layout foundation**: 4px base unit, 240px sidebar, 12-column grid, 1440px max-width
+- **Component library strategy**: shadcn/ui foundation + custom Apolles components
+- **Accessibility strategy**: WCAG 2.1 AA, Radix primitives, full keyboard/screen reader support
+- **Responsive strategy**: Desktop-first, tablet/mobile as secondary
+- **Feedback patterns**: Toast system (Sonner), inline feedback, status badges
+- **Form patterns**: Single column, label above field, validation strategy
+- **Navigation patterns**: Sidebar primary, back navigation, page transitions
+- **Modal patterns**: Confirmation gates for high-stakes actions
+- **Empty states and loading states**: Skeleton screens, progressive loading
+- **Micro-interaction patterns**: All animation timings and rules
+- **Button hierarchy**: Primary/Secondary/Ghost/Destructive/Link system
+- **Data table patterns**: Sticky headers, row click, pagination, responsive collapse
+- **Keyboard shortcuts**: Core shortcuts preserved
+- **Performance guardrails**: LCP, INP, CLS targets
+- **Testing strategy**: Responsive and accessibility testing matrices
+- **Implementation guidelines**: Responsive and accessibility development rules
+- **Next.js App Router boundary map**: Server/client component strategy
+
+### What Was Changed
+
+- **Executive Summary**: Rewritten for lean MVP scope (no mapping, no dedup, dual-supplier, no wallet, no quotes, no HCN)
+- **Target Users**: Simplified to two roles only (Yael — Agent, Moshe — Admin). Removed David (Agency Owner) and Noa (Sub Agent).
+- **Key Design Challenges**: Replaced multi-supplier dedup challenge with dual-supplier no-dedup challenge. Removed wallet awareness, quote builder session challenge, HCN background monitoring. Added: dual-supplier result disambiguation, Expedia payment step, price recheck UX.
+- **Core User Experience**: Rewritten. Primary loop is now Search-to-Book-to-Voucher (not Search-to-Quote). No quote builder workflow. No HCN automation workflow.
+- **User Journey Flows**: Replaced with lean journeys matching PRD (Daily Booking Flow, Price Change During Booking, Admin Monitoring). Removed: Onboarding/Setup Wizard journey, HCN Mismatch Recovery journey, Quote Builder journey.
+- **Hotel Card**: Removed "Add to Quote" primary action. "Book" is now primary. Removed wallet insufficiency flag. Added neutral source indicator badge.
+- **Sidebar navigation**: Simplified. Removed: Quotes, HCN Dashboard, Voucher Queue, Wallet. Kept: Search (Home), Reservations, Admin section.
+- **Component Strategy**: Removed WalletWidget, QuoteIndicator, QuoteTemplateSelector, QuotePDFPreview, HCNTimeline, AutoCancelCountdown, RateComparisonTable. Added SourceIndicatorBadge, PriceChangeNotice, PaymentFieldsContainer.
+- **StatusBadge variants**: Simplified. Removed all HCN, wallet, quote, and auto-cancel variants. Kept booking status variants. Added `booking-pending`, `booking-price-changed`, `booking-failed`.
+- **Search results UX**: Added dual-supplier progressive loading, partial failure handling, neutral source indicators, supplier unavailability banner.
+- **Booking flow**: Added price recheck step, price change decision screen, Expedia hosted payment fields step.
+- **Page hierarchy**: Simplified from 8 pages to 5 agent pages + 3 admin pages.
+- **Confirmation gate pattern**: Updated — no wallet deduction language, payment is handled by supplier flow.
+
+### What Was Removed from Old UX Scope
+
+| Removed UX Element | Reason |
+|---|---|
+| Wallet system (WalletWidget, wallet balance, wallet transactions, top-up flow, wallet page, wallet-gated booking indicator) | Wallet cut from MVP. Agents pay through supplier payment flows. |
+| Quote builder (QuoteIndicator, QuoteTemplateSelector, QuotePDFPreview, quote workspace, quote history page, quote settings, quote flow, multi-city quote accumulation, re-search from quote) | Quote builder cut from MVP. Prove booking flow first. |
+| HCN automation (HCNTimeline, HCN Dashboard, HCN mismatch recovery journey, HCN alerts, HCN status badges, HCN email configuration) | HCN automation cut from MVP. Agents verify manually. |
+| Auto-cancellation (AutoCancelCountdown, auto-cancel warnings, progressive urgency states, voucher queue/batch) | Auto-cancellation cut from MVP. Manual cancellation sufficient. |
+| Agent self-registration and setup wizard (Journey 0, registration page, email verification, 3-step setup wizard) | Cut. Moshe onboards agents manually. |
+| Workspace tabs for multi-client context switching | Cut. Simplify for MVP. Agents use browser tabs if needed. |
+| Command palette (`Ctrl+K` global search) | Cut. Future power-user feature. |
+| Profile branding/logo upload | Cut. No quote builder = no branded PDFs at MVP. |
+| Secondary target users (David — Agency Owner, Noa — Sub Agent) | Cut. Two roles only at MVP: Agent and Admin. |
+| Deduplication / unified hotel view / rate comparison across suppliers | Cut. No hotel mapping in MVP. Results are supplier-specific. |
+| Multi-layer cascading markup UI | Cut. One platform-wide markup only. |
+| Booking modification requests | Cut. Agents contact supplier directly. |
+| Notification preferences | Cut. Hardcode defaults. |
+| Invoice generation | Cut. Not needed for search-to-book. |
+| Advanced admin dashboard | Cut. Replaced with minimal admin. |
+| SSE/WebSocket real-time push updates | Cut. No features require push in MVP. |
+
+---
 
 ## Executive Summary
 
 ### Project Vision
 
-Apolles is a B2B hotel booking platform that replaces the fragmented multi-portal workflow travel agents endure today with a single system for searching, comparing, quoting, booking, and verifying hotel reservations across multiple suppliers. The platform aggregates hotel inventory from Expedia Rapid and TBO Holidays (MVP), presents Vervotech-powered deduplicated results, and provides workflow tools no competitor offers: a multi-city quote/itinerary PDF builder and automated HCN verification. The UX must serve as both a competitive differentiator (modern, fast, intuitive vs. dated competitor portals) and a productivity multiplier (agents respond to clients in minutes, not hours).
+Apolles is a B2B hotel booking platform that replaces the fragmented multi-portal workflow travel agents endure today with a single system for searching, booking, and managing hotel reservations. The MVP delivers the shortest path from hotel search to confirmed booking: search, view rooms, book with guest details, get confirmation, generate a voucher, manage reservations.
+
+The platform launches with two suppliers from day one: TBO Holidays and Expedia Rapid API. Both are queried in parallel on every search. Results from each supplier are displayed independently — there is no hotel mapping, no deduplication, and no cross-supplier merging in MVP. The same physical hotel may appear twice (once from each supplier) and that is acceptable. When an agent selects a rate, booking continues with whichever supplier returned that rate.
+
+The UX must serve as a competitive differentiator: a modern, fast, intuitive interface in a market where everything else looks like 2010. Agents get a responsive, well-designed booking experience that respects their time.
 
 ### Target Users
 
 **Primary (MVP): Yael — Freelance Travel Agent**
 - One-person operation, 2-10 bookings/day
-- Constantly juggles multiple client requests simultaneously
-- Responds to client inquiries within minutes — speed is competitive advantage
-- Works primarily at a desk (desktop/laptop), occasionally checks from mobile
+- Uses 2-3 supplier portals daily with bad UX
+- Needs: one clean interface to search, book, get a voucher, and track reservations
+- Works primarily at a desk (desktop/laptop)
 - Intermediate tech-savviness — expects intuitive, modern tools
-- Quote PDF quality is a direct reflection of her professionalism to clients
+- Success: completes search-to-voucher in under 5 minutes
 
-**Secondary (Fast-Follow): David — Agency Owner**
-- Manages 3-15 agents, needs operational oversight
-- Controls permissions, margins, and team activity
-- Dashboard-oriented: wants single-glance visibility into agency performance
-
-**Secondary (Fast-Follow): Noa — Sub Agent**
-- Works within permission boundaries set by agency owner
-- Needs an efficient, uncluttered workflow within her authorized scope
-
-**Indirect: End Client (Traveler)**
-- Never interacts with Apolles directly
-- Experiences the platform through quote PDFs and hotel vouchers
-- These documents represent the agent's brand — quality matters
-
-**Admin: Moshe — Platform Operator**
-- Monitors API health, hotel mapping accuracy, and support escalations
-- Intervenes on failed auto-cancellations and supplier issues
+**Admin: Moshe — Platform Owner / Operator**
+- Founder and operator. Onboards agents manually. Monitors platform health.
+- Needs: see all bookings, check supplier errors, manage agent accounts
+- Controls platform-wide markup percentage
 
 ### Key Design Challenges
 
-1. **Multi-client, multi-task workspace**: Agents juggle multiple client requests simultaneously with minutes-level response pressure. The UX must support rapid context-switching with persistent state across multiple in-progress searches and quotes — not a single-task linear flow.
+1. **Two suppliers, no deduplication**: Results from TBO and Expedia are displayed independently. The same hotel may appear twice at different prices. The UX must help agents understand this without revealing supplier identity. Neutral source indicators ("Source A" / "Source B") provide disambiguation without brand exposure.
 
-2. **Complex information density with speed requirements**: Search results contain rooms from multiple suppliers with different cancellation policies, meal plans, bed types, and prices. The UX needs progressive disclosure — fast scanning for comparison, deep detail on demand — to balance information richness with speed.
+2. **Progressive loading with partial failure**: Two supplier APIs may respond at different speeds or one may fail. The UX must show results as they arrive (progressive loading), clearly indicate when one supplier is slow or unavailable, and provide retry actions — without blocking the responsive supplier's results.
 
-3. **High-stakes, irreversible actions**: Non-refundable bookings charge the wallet, auto-cancellation has financial consequences, voucher generation is a commitment signal. Critical moments must be unmistakably clear without creating friction on routine low-stakes actions.
+3. **Price recheck and rate volatility**: Supplier rates can change between search and booking. The price recheck step must clearly communicate price changes and give the agent a confident decision point (proceed at new price or go back).
 
-4. **Ambient wallet awareness**: Wallet balance affects what agents can book. Status must be visible when relevant (flagging rates requiring credit the agent lacks) without obstructing the primary workflow.
+4. **Expedia payment step**: Expedia bookings require card capture via hosted payment fields (Stripe Elements iframe). This adds an extra step to the Expedia booking flow that doesn't exist for TBO. The UX must handle this cleanly without confusing agents about why payment is sometimes required.
 
-5. **Quote builder as a session-spanning, multi-search workflow**: Building a quote requires multiple searches across different cities, hotel selections, and customization. The workflow must survive interruptions (urgent client requests) and allow agents to park quotes, switch context, and return.
+5. **High-stakes irreversible actions**: Non-refundable bookings are commitments. Critical moments must be unmistakably clear without creating friction on routine low-stakes actions.
 
-6. **HCN verification as background monitoring**: HCN status is critical but secondary to the booking/quoting workflow. It must surface problems (mismatches, failures) proactively without cluttering the main workspace.
+6. **Information density with speed requirements**: Search results contain rooms from multiple suppliers with different cancellation policies, meal plans, bed types, and prices. The UX needs progressive disclosure — fast scanning for comparison, deep detail on demand.
 
 ### Design Opportunities
 
-1. **Speed as a UX feature**: Progressive loading (first results in 2 seconds), minimal clicks from search to "Add to Quote," and keyboard shortcuts for power users can make the search-to-quote flow feel dramatically faster than any competitor portal.
+1. **Speed as a UX feature**: Progressive loading (first results in 2 seconds), minimal clicks from search to booking, clean scanning of results. The search-to-book flow should feel dramatically faster than any competitor portal.
 
-2. **Quote PDF as a brand differentiator**: Professional, agent-branded templates that make agents' businesses look premium. This is the artifact clients see — it represents the agent's professionalism and is described as "very important" to competitive positioning.
+2. **Modern UX for B2B**: A clean, fast interface in a market where everything else looks like 2010. This is the core competitive differentiator at MVP.
 
-3. **Dashboard as command center**: A mission-control view showing in-progress quotes, bookings needing vouchers, HCN alerts, and auto-cancel countdowns — giving agents a single-glance understanding of their entire workload across all clients.
+3. **Two suppliers, one search**: Agents search once and see results from both TBO and Expedia. No tab-switching between portals. Immediate value over any single-portal experience.
 
-4. **Smart defaults and memory**: Recent searches, default markup, preferred settings — reducing repetitive input for agents who make similar searches daily.
+4. **Clean voucher PDF**: Professional voucher with hotel details, confirmation info, and agent company name. The artifact the client receives.
+
+---
 
 ## Core User Experience
 
 ### Defining Experience
 
-The core experience of Apolles is defined by two primary loops:
+The core experience of Apolles at MVP is defined by one primary loop:
 
-**Primary Loop — Search to Quote (high frequency, speed-critical):**
-Client request arrives → Agent searches (one search, all suppliers) → Agent scans and selects hotel options → Agent adds to quote (one click per hotel) → Agent generates branded PDF → Agent sends to client
+**Primary Loop — Search to Book to Voucher (the complete agent workflow):**
+Client request arrives → Agent searches (one search, two suppliers) → Agent scans results → Agent selects a room → Agent enters guest details → Price recheck → Booking confirmed → Agent generates voucher PDF → Agent sends voucher to client
 
-This loop happens dozens of times daily. The target is under 5 minutes from client request to quote sent — replacing a 30+ minute manual process. This is the "aha moment" and the reason agents adopt Apolles.
-
-**Secondary Loop — Booking to Delivery (per-booking, sequential):**
-Agent books selected hotel → Booking confirmed → Agent generates voucher (commitment signal, stops auto-cancel timer) → Agent sends voucher to client → HCN verification email sent automatically → Agent monitors HCN status over following days (hotel response time varies)
-
-The voucher is the immediate client-facing deliverable after booking. HCN verification is an asynchronous background process that can take hours to days, depending on hotel responsiveness.
+This loop happens multiple times daily. The target is under 5 minutes from search to voucher sent. This is the reason agents adopt Apolles — one tool, two suppliers, clean UX.
 
 ### Platform Strategy
 
@@ -103,179 +160,106 @@ The voucher is the immediate client-facing deliverable after booking. HCN verifi
 ### Effortless Interactions
 
 **Must be effortless (zero cognitive load):**
-- Adding hotels to a quote from search results — single click, no modal, no confirmation
-- Switching between in-progress quotes/searches for different clients
-- HCN verification — fully automated background process, agent never initiates unless re-sending
-- Generating a quote PDF — one click with sensible defaults, preview, send
+- Scanning search results — hotel name, price, cancellation status immediately visible
+- Filtering and sorting results — client-side, instant
+- Navigating between search results and room details
 
 **Must be clear but not burdensome:**
-- Booking flow — clear display of cancellation policy, price breakdown, wallet impact, but streamlined steps
-- Voucher generation — clear commitment signal without friction for routine bookings
+- Booking flow — clear display of cancellation policy, price breakdown, but streamlined steps
+- Voucher generation — one click from reservation detail
 
 **Must be deliberate and unmistakable:**
-- Non-refundable booking confirmation — wallet charge is irreversible, requires explicit confirmation
-- Booking cancellation — penalty display with confirmation gate
-- Auto-cancellation override — agent explicitly vouchers to prevent auto-cancel
+- Non-refundable booking confirmation — explicit consequences before commitment
+- Price change acceptance — agent must actively accept the new price
+- Booking cancellation (Late MVP) — penalty display with confirmation gate
 
 ### Critical Success Moments
 
-1. **First quote PDF generated** (Aha moment): The first time an agent builds a multi-city quote and sees the professional branded PDF. This is when they know Apolles is different. If this moment fails (ugly PDF, slow generation, confusing builder), the agent may never return.
+1. **First search results** (Proof of concept): Seeing results from two suppliers in under 5 seconds, with a clean modern interface. Proves the aggregation value proposition instantly.
 
-2. **First search results** (Proof of concept): Seeing deduplicated results from multiple suppliers in under 5 seconds, with rate comparison. Proves the aggregation value proposition instantly.
+2. **First booking completion** (Confidence): Agent completes a booking without confusion about pricing, penalties, or room details. The flow communicates clearly what will happen at every step.
 
-3. **First HCN mismatch caught** (Trust-building): When the HCN system flags a reservation mismatch the agent would have missed. This is when agents become evangelists — they tell every agent they know.
-
-4. **Booking flow completion** (Confidence): Agent completes a booking without confusion about pricing, penalties, or wallet impact. The flow communicates clearly what will happen at every step.
+3. **First voucher generated** (Deliverable): Agent generates a clean PDF voucher and sends it to the client. The complete workflow works end to end.
 
 ### Experience Principles
 
-1. **Speed-to-Quote is everything**: The defining metric is how fast an agent goes from client request to professional quote PDF. Every UX decision in the search/quote flow must optimize for fewer clicks, faster scanning, and instant actions. If a feature adds a step, it must justify itself.
+1. **Speed-to-book is everything**: The defining metric is how fast an agent goes from search to confirmed booking. Every UX decision must optimize for fewer clicks, faster scanning, and instant actions.
 
-2. **One-click accumulation**: Adding hotels to a quote from search results is a single, frictionless action. The agent is mentally "shopping" across searches — the UX feels like dropping items into a basket, not filling out forms.
+2. **Real-time confidence**: All data is live from supplier APIs. The UX communicates freshness and handles price volatility gracefully — clear messaging without creating anxiety about rate changes.
 
-3. **Background intelligence, foreground simplicity**: HCN verification, auto-cancellation warnings, and wallet status work in the background. The foreground experience stays clean and focused on the active task. Background systems surface alerts only when they need attention.
+3. **Background intelligence, foreground simplicity**: Supplier source tracking, markup application, and API routing happen invisibly. The foreground experience stays clean and focused on the active task.
 
-4. **The quote PDF is the product the client sees**: The branded quote is the single most visible output of the platform. It must look professional enough that agents are proud to send it. This is where Apolles becomes the agent's brand partner.
+4. **Graceful degradation, not failure**: When one supplier times out or errors occur, the system degrades gracefully with clear messaging. The agent never feels abandoned or confused. "One source is slow" is different from "something broke."
 
-5. **Real-time confidence**: All data is live from supplier APIs. The UX communicates freshness and handles price volatility gracefully — clear messaging without creating anxiety about rate changes.
+---
 
 ## Desired Emotional Response
 
 ### Primary Emotional Goals
 
-**Core Emotion: Efficient and Powerful**
-Agents should feel like Apolles amplifies their capability — the same work that takes 30 minutes on competitor portals takes 5 minutes here. The tool is a professional superpower that makes them faster and more productive.
-
-**Viral Emotion: Professional Pride**
-The word-of-mouth trigger is "my quotes look amazing now." Agents are proud of the output they send to clients. The quote PDF elevates their professional image and their business brand. This emotion drives organic adoption among agent networks.
+**Core Emotion: Efficient and Modern**
+Agents should feel that Apolles is a professional-grade tool that makes their work faster. The same work that takes switching between portals and manual processes takes a few minutes here.
 
 **Error Emotion: Informed and Guided**
-When something goes wrong (supplier timeout, HCN mismatch, price change), the agent should feel informed — "I know exactly what happened" — and guided — "I know exactly what to do next." Every error state must have a clear explanation and a specific next action. No dead ends.
+When something goes wrong (supplier timeout, price change, booking failure), the agent should feel informed — "I know exactly what happened" — and guided — "I know exactly what to do next." Every error state must have a clear explanation and a specific next action.
 
 ### Emotional Journey Mapping
 
 | Stage | Target Emotion | Anti-Pattern to Avoid |
 |-------|---------------|----------------------|
-| First discovery / registration | Curious, optimistic — "this looks like what I've been wanting" | Overwhelmed by features or lengthy onboarding |
-| First search results | Impressed, validated — "this actually works, and it's fast" | Skeptical about rate accuracy or mapping quality |
-| First quote PDF generated | Proud, delighted — "this makes my business look premium" | Disappointed by generic or ugly output |
-| Core daily workflow | Efficient, powerful, in flow — "I'm getting more done" | Frustrated by extra steps or slow interactions |
-| Booking confirmation | Confident, accomplished — "I know exactly what I just committed to" | Anxious about charges, penalties, or unclear terms |
-| Supplier timeout / error | Informed, guided — "I know what happened and what to do" | Confused by vague errors or stuck with no next action |
-| HCN mismatch caught | Relieved, grateful — "the system saved me from a disaster" | Stressed by the mismatch without clear resolution path |
-| Auto-cancel countdown | Aware, unhurried — "I see the deadline and I'm in control" | Panicked by sudden warnings or unclear consequences |
-| Returning next day | Comfortable, ready — "everything's where I left it" | Disoriented by lost state or changed layout |
-
-### Micro-Emotions
-
-**Most Critical: Confidence vs. Confusion**
-The agent must always know where they are, what will happen next, and what the consequences are. Confidence is the foundational emotional state — without it, every other positive emotion collapses. This is especially critical during:
-- Booking flow (pricing, refundability, wallet impact)
-- Auto-cancellation countdowns (time remaining, consequences)
-- Wallet status (booking eligibility)
-- HCN verification (current status, what it means)
-
-**Supporting: Accomplishment vs. Frustration**
-Completing key tasks (quote sent, booking confirmed, voucher generated) should feel like micro-accomplishments. Subtle positive feedback — a confirmation animation, a clear success state — reinforces the "efficient and powerful" core emotion.
-
-**Trust vs. Skepticism**
-Agents must trust the data: that mapping is accurate (same hotel across suppliers), that pricing is current, that HCN status reflects reality. Trust is built through transparency (showing data freshness, mapping confidence) and consistency (system behaves predictably).
+| First search results | Impressed, validated — "this works, and it's fast" | Skeptical about rate accuracy or confused by duplicate results |
+| Core daily workflow | Efficient, in flow — "I'm getting more done" | Frustrated by extra steps or slow interactions |
+| Price change during booking | Informed, in control — "I see what changed and I decide" | Anxious about surprise charges or confused about which price is real |
+| Booking confirmation | Confident, accomplished — "I know what I committed to" | Anxious about charges, penalties, or unclear terms |
+| Voucher generation | Satisfied — "I have what I need for the client" | Disappointed by missing info or ugly output |
+| Supplier timeout / error | Informed, guided — "I see results from the other source, I can retry" | Confused by vague errors or stuck with no next action |
+| Returning next day | Comfortable, ready — "I know where everything is" | Disoriented by unfamiliar layout |
 
 ### Design Implications
 
 | Emotional Goal | UX Design Approach |
 |---------------|-------------------|
-| Efficient and powerful | Minimal clicks, fast transitions, keyboard shortcuts, progressive loading, no unnecessary confirmations on routine actions |
-| Professional pride | Premium quote PDF templates, clean typography, agent branding prominently displayed, high-quality hotel imagery |
+| Efficient and modern | Minimal clicks, fast transitions, progressive loading, no unnecessary confirmations on routine actions |
 | Informed and guided | Every error state includes: what happened (plain language), what it means (impact), what to do next (specific action button). No generic error messages. |
-| Confidence over confusion | Clear state indicators everywhere (booking status, wallet balance, HCN status), explicit consequences before irreversible actions, consistent visual language for status states |
-| Trust in data | Show data freshness ("rates as of 2 min ago"), mapping confidence indicators for platform admin, consistent pricing display, transparent cancellation policies |
-| Accomplishment on completion | Subtle positive feedback on task completion (quote sent, booking confirmed), clear success states, progress indicators during multi-step flows |
+| Confidence over confusion | Clear state indicators everywhere (booking status, cancellation terms, price breakdown), explicit consequences before irreversible actions |
+| Trust in data | Show search freshness context, transparent cancellation policies, consistent pricing display |
 
-### Emotional Design Principles
-
-1. **Confidence first**: Every screen answers "where am I?", "what can I do?", and "what will happen if I do it?" without the agent having to think. Status, consequences, and next actions are always visible.
-
-2. **Speed feels powerful**: Fast load times, instant interactions, and progressive disclosure create the feeling of a tool that keeps up with the agent's pace. Latency is the enemy of the "powerful" emotion.
-
-3. **Pride in output**: The quote PDF and voucher are emotional touchpoints — they represent the agent's brand to their clients. These documents must feel premium, not utilitarian.
-
-4. **Graceful degradation, not failure**: When suppliers time out or errors occur, the system degrades gracefully with clear messaging. The agent never feels abandoned or confused. "One supplier is slow" is different from "something broke."
-
-5. **Calm urgency**: Auto-cancellation warnings and HCN mismatches need attention, but should create awareness, not panic. Use progressive escalation (information → reminder → urgent) rather than sudden alarms.
+---
 
 ## UX Pattern Analysis & Inspiration
 
 ### Inspiring Products Analysis
 
-**Figma / Notion — Modern SaaS Workspace Tools**
-- Clean, uncluttered interfaces with generous whitespace despite being feature-rich
-- Contextual tooling that appears when needed and hides when not
-- Real-time, responsive feel — everything is instant
-- Keyboard-first power-user support alongside beginner-friendly interfaces
-- Workspace model: multiple projects coexist, easy context switching
-- Progressive disclosure: simple surface, depth on demand
-- **Relevance**: Workspace model for multi-client juggling, contextual tools, keyboard shortcuts
-
 **Stripe Dashboard — Financial Data Done Right**
 - Data density without overwhelm: clean tables, clear hierarchy, status-coded color system
 - Consistent visual language for states (succeeded, pending, failed)
-- Transaction detail views with click-to-expand and clear audit trails
 - Error handling: every failure has a reason and suggested next action
-- Financial precision: numbers always exact, well-formatted, unambiguous
-- **Relevance**: Booking management, wallet transactions, HCN dashboard, auto-cancel tracking
+- **Relevance**: Booking management, reservation list, admin views
+
+**Figma / Notion — Modern SaaS Workspace Tools**
+- Clean, uncluttered interfaces with generous whitespace despite being feature-rich
+- Real-time, responsive feel
+- Progressive disclosure: simple surface, depth on demand
+- **Relevance**: Clean layout, progressive disclosure for room details
 
 **Arbitrip — Best B2B Hotel Platform UX (Current Bar)**
-- Cleaner search interface than legacy platforms (Hotelbeds, TBO, RateHawk)
+- Cleaner search interface than legacy platforms
 - Better visual hotel cards with scannable key information
-- More modern visual design than B2B competitors
-- Still lacks: multi-supplier aggregation, quote module, HCN automation
 - **Relevance**: The UX quality bar in the B2B hotel space — Apolles must exceed this
-
-### Transferable UX Patterns
-
-| Pattern | Source | Apolles Application |
-|---------|--------|-------------------|
-| Workspace with tabs/panels | Figma/Notion | Multiple in-progress quotes and searches, tab-based context switching between clients |
-| Contextual actions on hover/selection | Figma | "Add to Quote" on hotel cards, quick actions on booking rows |
-| Keyboard shortcuts for power users | Figma/Notion | Search, add-to-quote, navigate results — keyboard accessible |
-| Clean data tables with status badges | Stripe | Booking list, transaction history, HCN dashboard |
-| Consistent status color system | Stripe | Booking status, HCN status, wallet status — unified color language |
-| Click-to-expand detail views | Stripe | Room details, booking details, transaction details |
-| Error states with guided next actions | Stripe | Supplier timeout, booking failure, HCN mismatch resolution |
-| Progressive loading / skeleton screens | All three | Search results loading progressively as suppliers respond |
-| Clean hotel cards with scannable info | Arbitrip (improved) | Hotel cards with price, stars, amenities, cancellation, supplier comparison |
 
 ### Anti-Patterns to Avoid
 
 | Anti-Pattern | Why to Avoid |
 |-------------|-------------|
-| Cluttered, information-overloaded search results | Agents can't scan quickly — violates speed-to-quote principle |
-| Tiny text, dense forms, dated styling | Creates "cheap tool" feeling — violates professional pride emotion |
-| Modal confirmation on every action | Slows agents down on routine tasks — violates efficiency principle |
-| Hidden or ambiguous cancellation policies | Creates booking anxiety — violates confidence-first emotion |
-| Full-page loading between workflow steps | Breaks flow state — violates "efficient and powerful" emotion |
-| Generic error messages ("Something went wrong") | Violates "informed and guided" principle — no next action for agent |
-| Single-task linear flows without state persistence | Breaks multi-client juggling — forces agents to start over when switching context |
+| Cluttered, information-overloaded search results | Agents can't scan quickly |
+| Tiny text, dense forms, dated styling | Creates "cheap tool" feeling |
+| Modal confirmation on every action | Slows agents down on routine tasks |
+| Hidden or ambiguous cancellation policies | Creates booking anxiety |
+| Full-page loading between workflow steps | Breaks flow state |
+| Generic error messages ("Something went wrong") | No next action for agent |
+| Revealing supplier identity to agents | Violates business rules — agents see neutral source indicators only |
 
-### Design Inspiration Strategy
-
-**Adopt Directly:**
-- Figma's workspace/tab model for multi-client context switching
-- Stripe's status badge system and consistent color language for all status indicators
-- Stripe's error handling pattern (clear reason + specific next action) for all error states
-- Progressive loading with skeleton screens for search results
-
-**Adapt for Apolles:**
-- Arbitrip's hotel card design — enhance with multi-supplier rate comparison, one-click quote addition, and wallet eligibility indicator
-- Notion's generous whitespace approach — balance with travel data density (more info per screen, but cleaner than legacy portals)
-- Stripe's transaction detail pattern — adapt for booking detail with HCN status, voucher status, auto-cancel countdown
-
-**Avoid Completely:**
-- Legacy B2B hotel portal aesthetics (Hotelbeds, TBO, RateHawk visual style)
-- Modal-heavy confirmation patterns on routine actions
-- Full-page loads between workflow steps
-- Generic or unhelpful error messages without guided next actions
+---
 
 ## Design System Foundation
 
@@ -283,177 +267,29 @@ Agents must trust the data: that mapping is accurate (same hotel across supplier
 
 **Selected: shadcn/ui + Tailwind CSS** on React (Next.js)
 
-shadcn/ui is a copy-paste component library built on Radix UI primitives with Tailwind CSS styling. Unlike traditional component libraries (MUI, Ant Design), shadcn/ui components are copied into your project — you own the code and have full control to customize every detail without fighting library defaults.
+shadcn/ui is a copy-paste component library built on Radix UI primitives with Tailwind CSS styling. Components are copied into the project — full control to customize.
 
 **Core stack:**
-- **shadcn/ui**: UI components (buttons, forms, tables, dialogs, badges, tabs, command palette, etc.)
+- **shadcn/ui**: UI components (buttons, forms, tables, dialogs, badges, tabs, etc.)
 - **Radix UI**: Accessible, composable headless primitives (underlying shadcn/ui)
 - **Tailwind CSS**: Utility-first CSS framework for consistent styling
 - **React / Next.js**: Application framework
 
 ### Rationale for Selection
 
-1. **Aesthetic match**: shadcn/ui's default aesthetic is very close to Stripe and Notion — clean, minimal, professional typography, generous whitespace. Minimal customization needed to achieve the target feel.
-
-2. **Code ownership**: Components are copied into the project, not imported as a dependency. Full control to customize any component without fighting library opinions or waiting for upstream changes.
-
+1. **Aesthetic match**: shadcn/ui's default aesthetic is very close to Stripe and Notion — clean, minimal, professional typography, generous whitespace.
+2. **Code ownership**: Components are copied into the project, not imported as a dependency. Full control to customize.
 3. **Accessibility built-in**: Radix UI primitives provide WCAG-compliant keyboard navigation, focus management, screen reader support, and ARIA attributes out of the box.
+4. **Development velocity**: Tailwind CSS enables rapid UI development with consistent design tokens. Ideal for vibe-coding approach.
+5. **Component coverage**: Covers all critical Apolles UI needs: data tables, status badges, forms, dialogs, toast notifications.
 
-4. **Development velocity**: Tailwind CSS enables rapid UI development with consistent design tokens (spacing, colors, typography). shadcn/ui components are production-ready and well-documented.
-
-5. **Component coverage**: The library covers all critical Apolles UI needs:
-   - Data tables (with react-table integration) for bookings, transactions, HCN dashboard
-   - Tabs for workspace model / multi-client context switching
-   - Status badges for booking status, HCN status, wallet indicators
-   - Command palette for keyboard shortcuts / power-user navigation
-   - Forms for search, booking, profile settings
-   - Dialogs for confirmations on irreversible actions
-   - Toast notifications for background alerts (HCN, auto-cancel)
-
-6. **Ecosystem**: React/Next.js has the largest developer ecosystem and strongest support for shadcn/ui, Tailwind, and related tooling.
-
-### Visual Identity Direction
-
-The overall design style must feel **clean, modern, and highly polished**, similar to Stripe or Notion. A professional SaaS aesthetic with:
-
-- **Minimal clutter**: Every element on screen earns its place. Remove before adding.
-- **Strong typography**: Clear type hierarchy with a modern sans-serif (Inter or equivalent). Headlines, body, and metadata are immediately distinguishable by weight and size.
-- **Generous whitespace**: Breathing room between elements. Content doesn't feel cramped or dense, even when displaying complex hotel data.
-- **Clear visual hierarchy**: The most important information (price, hotel name, status) is immediately scannable. Supporting details are visually subordinate.
-- **Innovative and premium feel**: The interface should feel like a tool built by a world-class team — not a generic admin panel. Soft details, refined spacing, and sleek layouts.
-- **Trustworthy and credible**: Financial data, booking status, and pricing must feel precise and reliable. No ambiguity in numbers or states.
-- **Soft details**: Subtle shadows, gentle border radius, refined transitions. Nothing harsh, nothing heavy.
-
-### Implementation Approach
-
-**Phase 1 — Foundation setup:**
-- Initialize shadcn/ui with Tailwind CSS in the Next.js project
-- Define design tokens (colors, typography, spacing, border radius) aligned with visual identity
-- Set up consistent status color system (from Stripe-inspired patterns)
-- Create base layout components (sidebar navigation, workspace tabs, page shells)
-
-**Phase 2 — Core component customization:**
-- Customize hotel card component (not in shadcn/ui — custom build on top of Card primitive)
-- Customize data table for booking list, transaction history (shadcn/ui table + react-table)
-- Build quote builder workspace components (tab management, hotel selection)
-- Design status badge system with consistent color coding
-
-**Phase 3 — Specialized components:**
-- PDF preview/builder interface
-- Search results with progressive loading states
-- HCN status dashboard with timeline view
-- Wallet balance indicators and transaction detail views
-
-### Customization Strategy
-
-**Design Tokens to Define:**
-
-| Token Category | Purpose | Direction |
-|---------------|---------|-----------|
-| Colors — Primary | Brand identity, primary actions | A refined, confident primary color (deep blue or similar). Subtle hover states. No harsh saturated colors. |
-| Colors — Status | Consistent status communication | Green (confirmed/success), Amber (pending/warning), Red (alert/mismatch/error), Gray (inactive/disabled). Muted tones, not screaming. |
-| Colors — Neutral | Backgrounds, borders, text | Off-whites and light grays for backgrounds. Clear contrast for text. Stripe-like subtlety. |
-| Colors — Accent | Highlights, interactive elements | Used sparingly for emphasis — price highlights, wallet indicators, quote builder selection |
-| Typography | Clean, professional readability | Inter (or equivalent modern sans-serif). Clear size hierarchy: 14px body, 12px metadata, 18-24px headings. Medium weight for emphasis, regular for body. |
-| Spacing | Generous, consistent rhythm | 4px base unit. 16-24px between sections. 8-12px within components. Feels spacious, not cramped. |
-| Border radius | Modern, softened feel | 6-8px for cards and containers. 4px for inputs and buttons. Consistent across all components. |
-| Shadows | Subtle depth and elevation | Very subtle drop shadows for cards (1-2px offset, low opacity). Slightly more defined for dropdowns and modals. Never heavy. |
-| Transitions | Smooth, refined interactions | 150-200ms ease transitions. Subtle fade-ins for loading states. No jarring state changes. |
-
-**Custom Components Needed (not in shadcn/ui):**
-- Hotel result card (search results) — with rate comparison, one-click quote action
-- Rate comparison row (multi-supplier pricing within a hotel card)
-- Quote builder workspace (multi-city, hotel selection, drag/drop ordering)
-- HCN status timeline (per-booking verification history)
-- Auto-cancel countdown indicator (progressive urgency visualization)
-- Wallet balance widget (header-level, ambient awareness)
-- PDF preview pane (quote and voucher preview before generation)
-
-## Defining Core Experience
-
-### Defining Experience
-
-**"One place for everything."**
-
-Apolles' defining experience is the unification itself — that everything a travel agent needs to serve their clients lives in a single, cohesive workspace. Search, compare, quote, book, verify, manage — all in one tool, replacing the fragmented multi-portal workflow. The agent opens Apolles in the morning and doesn't need another tool for hotel bookings.
-
-The interaction agents will describe to colleagues: "I search all my suppliers at once, build beautiful quotes in minutes, book with a click, and the system verifies my reservations automatically. It's all in one place."
-
-### User Mental Model
-
-**Current mental model (fragmented):**
-- Each supplier portal = a separate tool with its own login, UI, and quirks
-- Quote creation = manual Word/Excel document assembly
-- HCN verification = manual email process easily forgotten
-- Booking tracking = spreadsheets or memory
-- The agent is the integration layer — holding everything together in their head
-
-**Apolles mental model (unified workspace):**
-- One platform = one login, one workflow, one interface
-- Context-switching happens between clients (tabs), not between tools
-- Quote creation = integrated workflow from search results to PDF
-- HCN verification = automated background system with dashboard
-- Booking tracking = built-in management with status indicators
-- The platform is the integration layer — the agent focuses on serving clients
-
-**Key mental model shift**: Agents are accustomed to context-switching between tools. Apolles replaces that with context-switching between clients within one tool. The workspace model (tabs/panels) supports this — each tab represents a client's context, not a different tool.
-
-### Success Criteria
-
-The "one place for everything" experience succeeds when:
-
-1. **Agents stop opening other portals**: Apolles becomes the first (and only) tool opened each morning for hotel bookings. Success = daily login as primary tool.
-2. **Quote generation in under 5 minutes**: Multi-city, multi-hotel quote PDF sent to client within 5 minutes of starting the search — replacing 30+ minutes of manual work.
-3. **Zero missed HCN verifications**: Every booking gets verified automatically. The agent doesn't need to remember to check.
-4. **Seamless client switching**: Agent can switch between Client A's Santorini search and Client B's Barcelona quote without losing state or context.
-5. **"This just works" feeling**: Agent completes a search → quote → book → verify cycle without confusion, without wondering "what do I do next?", without leaving Apolles.
-
-### Novel UX Patterns
-
-| Aspect | Pattern Type | Approach |
-|--------|-------------|----------|
-| Hotel search form | Established | Familiar search fields (destination, dates, rooms). No learning curve. |
-| Multi-supplier deduplicated results | Novel combination | Familiar hotel cards, novel rate comparison across hidden suppliers. Requires clear visual design to show "same hotel, different rates." |
-| One-click add-to-quote | Established adaptation | "Add to cart" interaction — universally understood. Adapted for quote context. |
-| Quote builder (multi-city) | Novel for domain | No B2B competitor has this. Interaction maps to familiar patterns: select → organize → preview → generate. |
-| Workspace tabs for multi-client | Established | Browser/Figma tab pattern. Agents already use multiple browser tabs — this formalizes it. |
-| HCN dashboard | Novel for domain | Agents have never had automated verification. Maps to "notification center" pattern — familiar UI for a new capability. |
-| Auto-cancel countdown | Novel for domain | Progressive urgency visualization. No direct precedent in B2B hotel — adapts from countdown/deadline patterns in project management tools. |
-| Wallet-gated booking | Established adaptation | E-commerce "insufficient balance" pattern. Clear eligibility indicators on search results prevent frustration at checkout. |
-
-### Experience Mechanics
-
-**1. Initiation — Agent opens Apolles:**
-- Dashboard as command center: in-progress quotes, recent bookings needing vouchers, HCN alerts, auto-cancel warnings
-- Single-glance workload overview — agent knows immediately what needs attention
-- "New Search" button prominently placed for starting fresh client requests
-- Existing in-progress quotes accessible as tabs or from dashboard
-
-**2. Core Interaction — Search, Select, Quote:**
-- Search: familiar form (destination, dates, rooms, guests). Type destination → autocomplete. Select dates → search.
-- Results: progressive loading (skeleton → first supplier results in 2s → second supplier appended). Hotel cards with: name, star rating, price (cheapest highlighted), cancellation summary, "Add to Quote" button.
-- Selection: one click "Add to Quote" → hotel added. Toast confirms. Quote counter in sidebar/header updates. No page navigation. No modal. No confirmation dialog.
-- Multi-city: agent searches next city (new search within same quote context or new tab). Adds more hotels. Quote accumulates selections across cities.
-- Quote builder: view all selected hotels organized by city. Reorder, add notes, preview PDF layout. One click to generate.
-
-**3. Feedback — How the agent knows it's working:**
-- Progressive loading skeleton → results appearing = "it's actively searching suppliers"
-- "Added to Quote" toast + counter update = "my selection is saved, I can keep going"
-- PDF preview = "I see exactly what my client will see — I'm in control"
-- Booking confirmation with reference number + voucher ready = "it's done, it's real"
-- HCN status badge on booking = "verification is being handled"
-
-**4. Completion — Output delivered:**
-- Quote PDF generated and sent → success state ("Quote sent to client@email.com")
-- Booking confirmed → voucher generated → sent to client → booking card shows "Vouchered" status
-- HCN verification runs in background → booking card updates status over following days
-- Agent's workspace for this client persists — they can return anytime to check status or create new quotes
+---
 
 ## Visual Design Foundation
 
 ### Color System
 
-**Primary Palette (Stripe-inspired, distinctly Apolles):**
+**Primary Palette:**
 
 | Token | Value | Usage |
 |-------|-------|-------|
@@ -462,7 +298,7 @@ The "one place for everything" experience succeeds when:
 | `--primary-light` | `#EEF0FF` | Primary tinted backgrounds (selected states, highlights) |
 | `--dark` | `#0A2540` | Sidebar navigation, dark UI areas, high-contrast sections |
 | `--dark-secondary` | `#1A3A5C` | Secondary dark elements, dark hover states |
-| `--accent` | `#00D4FF` | Secondary accent — used sparingly for highlights, price callouts, special indicators |
+| `--accent` | `#00D4FF` | Secondary accent — used sparingly for highlights, price callouts |
 
 **Neutral Palette:**
 
@@ -476,38 +312,35 @@ The "one place for everything" experience succeeds when:
 | `--text-secondary` | `#6B7280` | Secondary text, metadata, labels |
 | `--text-muted` | `#9CA3AF` | Disabled text, placeholder text |
 
-**Status Colors (Muted, professional tones — not screaming):**
+**Status Colors (Muted, professional tones):**
 
 | Token | Value | Usage |
 |-------|-------|-------|
-| `--success` | `#059669` | Confirmed, verified, completed. HCN confirmed, booking vouchered. |
+| `--success` | `#059669` | Confirmed, completed. Booking confirmed. |
 | `--success-bg` | `#ECFDF5` | Success background tint |
-| `--warning` | `#D97706` | Pending, waiting, attention needed. HCN waiting, approaching deadline. |
+| `--warning` | `#D97706` | Pending, attention needed. Price changed. |
 | `--warning-bg` | `#FFFBEB` | Warning background tint |
-| `--error` | `#DC2626` | Error, mismatch, failed. HCN mismatch, booking failed, auto-cancel imminent. |
+| `--error` | `#DC2626` | Error, failed. Booking failed, supplier error. |
 | `--error-bg` | `#FEF2F2` | Error background tint |
-| `--info` | `#2563EB` | Informational states, email sent. |
+| `--info` | `#2563EB` | Informational states. Pending booking. |
 | `--info-bg` | `#EFF6FF` | Info background tint |
-| `--neutral` | `#6B7280` | Inactive, disabled, archived. |
+| `--neutral` | `#6B7280` | Inactive, cancelled, archived. |
 | `--neutral-bg` | `#F3F4F6` | Neutral background tint |
 
-**Status Color Application (Apolles-specific):**
+**Status Color Application (Lean MVP):**
 
 | Status | Color Token | Examples |
 |--------|------------|---------|
-| Booking: Confirmed (unvouchered) | `--info` | Blue badge — action available (generate voucher) |
-| Booking: Vouchered | `--success` | Green badge — committed, safe |
-| Booking: Auto-cancel warning | `--warning` | Amber badge + countdown — needs attention |
+| Booking: Pending | `--info` | Blue badge — awaiting supplier confirmation |
+| Booking: Price Changed | `--warning` | Amber badge — agent decision required |
+| Booking: Confirmed | `--success` | Green badge — confirmed with supplier |
+| Booking: Failed | `--error` | Red badge — supplier rejected or system error |
 | Booking: Cancelled | `--neutral` | Gray badge — final state |
-| HCN: Email Sent | `--info` | Blue — in progress |
-| HCN: Confirmed | `--success` | Green — verified |
-| HCN: Mismatch | `--error` | Red — requires action |
-| HCN: Waiting | `--warning` | Amber — pending hotel response |
-| Wallet: Sufficient | No indicator | Default — no visual noise |
-| Wallet: Insufficient for rate | `--warning` | Amber flag on rate — requires top-up |
-| Wallet: Blocked | `--error` | Red — cannot book |
+| Supplier: Available | No indicator | Default — no visual noise |
+| Supplier: Unavailable | `--warning` | Amber banner in results |
+| Supplier: Failed | `--error` | Red indicator — retry available |
 
-**Color Mode:** Light mode only for MVP. Tailwind CSS and shadcn/ui design token architecture supports future dark mode addition without refactoring.
+**Color Mode:** Light mode only for MVP. Design token architecture supports future dark mode.
 
 ### Typography System
 
@@ -518,13 +351,11 @@ The "one place for everything" experience succeeds when:
 | Primary (UI) | Inter | system-ui, -apple-system, sans-serif |
 | Monospace (codes, numbers) | JetBrains Mono | ui-monospace, monospace |
 
-Inter is chosen for its excellent readability at small sizes, clear distinction between similar characters (1, l, I), wide language support, and free availability. It matches the Stripe/Notion aesthetic directly.
-
 **Type Scale:**
 
 | Level | Size | Weight | Line Height | Usage |
 |-------|------|--------|-------------|-------|
-| Display | 30px | 700 (Bold) | 1.2 | Page titles ("Hotel Search", "Quote Builder") |
+| Display | 30px | 700 (Bold) | 1.2 | Page titles ("Hotel Search", "Reservations") |
 | H1 | 24px | 600 (Semibold) | 1.3 | Section headers |
 | H2 | 20px | 600 (Semibold) | 1.3 | Sub-section headers |
 | H3 | 16px | 600 (Semibold) | 1.4 | Card titles (hotel name), table headers |
@@ -532,13 +363,13 @@ Inter is chosen for its excellent readability at small sizes, clear distinction 
 | Body (emphasis) | 14px | 500 (Medium) | 1.5 | Prices, important values, inline emphasis |
 | Small | 13px | 400 (Regular) | 1.4 | Secondary info, metadata, timestamps |
 | Caption | 12px | 400 (Regular) | 1.4 | Labels, badges, helper text |
-| Micro | 11px | 500 (Medium) | 1.3 | Status badges, counters, tags |
+| Micro | 11px | 500 (Medium) | 1.3 | Status badges, counters, source indicators |
 
 **Typography Principles:**
 - Prices always displayed in medium weight (500) for scanability
 - Hotel names in semibold (600) — the most scanned element on result cards
-- Status text uses the `Micro` scale with matching status color for maximum information density
-- Monospace font for booking reference numbers, confirmation codes, and wallet amounts for precision
+- Status text uses the `Micro` scale with matching status color
+- Monospace font for booking reference numbers, confirmation codes
 
 ### Spacing & Layout Foundation
 
@@ -559,63 +390,22 @@ Inter is chosen for its excellent readability at small sizes, clear distinction 
 
 - **Sidebar navigation**: Fixed left sidebar (240px collapsed to 64px icon-only). Dark (`--dark`) background. Always visible.
 - **Main content area**: Fluid width, responsive. `--surface` background.
-- **Content max-width**: 1440px centered within the main area for readable line lengths on wide screens.
-- **Card grid**: 12-column CSS grid within content area. Hotel cards: 3-column grid on desktop (4-column on ultrawide). Booking list: full-width table.
+- **Content max-width**: 1440px centered within the main area.
+- **Card grid**: 12-column CSS grid within content area. Hotel cards: 3-column grid on desktop.
 - **Page padding**: `--space-6` (24px) on sides, `--space-8` (32px) top.
 
-**Layout Principles:**
-1. **Generous whitespace between sections, compact within components**: Cards have breathing room between them, but information within a card is efficiently organized.
-2. **Fixed sidebar, fluid content**: Sidebar provides persistent navigation context. Content area adapts to available width.
-3. **Tab-based workspace**: Top of content area supports tabs for multi-client context switching (search tabs, quote tabs).
-4. **Sticky headers**: Table headers, search filters, and action bars stay visible when scrolling.
+---
 
-### Accessibility Considerations
-
-**Color Contrast:**
-- All text meets WCAG 2.1 AA minimum contrast ratios: 4.5:1 for normal text, 3:1 for large text
-- `--text-primary` (#1F2937) on `--card` (#FFFFFF): ~13.5:1 contrast ratio (exceeds AAA)
-- `--text-secondary` (#6B7280) on `--card` (#FFFFFF): ~5.0:1 contrast ratio (meets AA)
-- Status colors chosen to maintain contrast on both white and tinted backgrounds
-- Status is never communicated by color alone — always paired with text label or icon
-
-**Keyboard Accessibility:**
-- All interactive elements focusable via Tab key
-- Visible focus indicators (2px primary color outline with 2px offset)
-- Keyboard shortcuts for power-user workflows (search, add-to-quote, navigate)
-- Escape key to close modals, dismiss toasts, cancel actions
-
-**Screen Reader Support:**
-- Radix UI primitives (via shadcn/ui) provide ARIA attributes and roles automatically
-- Dynamic content changes (progressive loading, toast notifications) announced via aria-live regions
-- Status changes (HCN status, booking status) communicated via aria-live="polite"
-
-**Motion Preferences:**
-- Respect `prefers-reduced-motion` OS setting
-- Disable animations and transitions for users who prefer reduced motion
-- Skeleton loading states remain static (no shimmer animation) when reduced motion is active
-
-## Design Direction Decision
-
-### Design Directions Explored
-
-6 design directions were generated and explored as interactive HTML mockups (`ux-design-directions.html`):
-
-1. **Classic SaaS Dashboard** — Dark sidebar + card grid (Stripe-like)
-2. **Workspace Centric** — Collapsed icon sidebar + tab workspace (Figma-like)
-3. **Content-Dense Pro** — Table-driven, maximum data density
-4. **Airy Modern** — Top navigation + generous whitespace (Notion-like)
-5. **Command-Palette First** — Keyboard-driven with dashboard stats (Linear-like)
-6. **Split Panel Workflow** — Master-detail layout (email-client pattern)
+## Design Direction
 
 ### Chosen Direction
 
-**Direction 1: Classic SaaS Dashboard** — selected as the primary layout pattern.
+**Direction 1: Classic SaaS Dashboard** — dark sidebar + card grid.
 
 **Key Layout Decisions:**
 - **Dark sidebar** (`#0A2540`) with persistent navigation — always visible, provides consistent context
 - **Card grid** for search results — hotel cards in a responsive grid (3 columns on desktop)
-- **Home page = Search engine** — after login, the agent lands directly on the hotel search page, not a separate dashboard. Search is the primary action and the first thing agents see.
-- **Sidebar as workspace context** — wallet balance, in-progress quote indicator, HCN alerts, and navigation all accessible from the sidebar without leaving the current page
+- **Home page = Search engine** — after login, the agent lands directly on the hotel search page. Search is the primary action.
 - **Clean, flat design** — no gradients anywhere. Solid colors only.
 
 ### Color Palette (Confirmed)
@@ -624,284 +414,569 @@ Inter is chosen for its excellent readability at small sizes, clear distinction 
 |-------|-------|------|
 | Dark / Sidebar | `#0A2540` | Sidebar background, dark UI areas |
 | Primary / Brand | `#635BFF` | Primary actions, buttons, active states, links |
-| Accent | `#00D4FF` | Secondary highlights, rate comparison callouts, special indicators |
-| Light Accent | `#E6F4FF` | Light blue tint for informational backgrounds, selected states |
+| Accent | `#00D4FF` | Secondary highlights, special indicators |
+| Light Accent | `#E6F4FF` | Light blue tint for informational backgrounds |
 | Surface | `#F6F9FC` | Page background, content area |
 | Card | `#FFFFFF` | Card backgrounds, content containers |
 
-No gradients. Flat, solid colors throughout. Clean and professional.
-
-### Design Rationale
-
-1. **Search-first home page**: Agents open Apolles to search. Making search the landing page eliminates one click and reinforces the "one place for everything" experience — the tool is ready to work the moment the agent logs in.
-
-2. **Dark sidebar**: Provides strong visual contrast between navigation and content. Creates a professional, premium feel. The dark sidebar with light content area is the proven pattern for data-dense SaaS tools (Stripe, Linear, Vercel). Wallet balance and key alerts live in the sidebar for persistent ambient awareness.
-
-3. **Card grid for results**: Hotel cards in a grid allow agents to scan multiple options quickly. Cards accommodate images, pricing, cancellation badges, and one-click "Add to Quote" actions without feeling cluttered.
-
-4. **No gradients**: Flat, solid colors create a cleaner, more professional appearance. Gradients can feel decorative — the Apolles aesthetic is functional and refined.
-
-### Quote System UX Architecture
-
-**Quote presence in the system — 3 consistent touchpoints + contextual access:**
-
-| Location | Purpose | Agent Action |
-|----------|---------|-------------|
-| **Settings → Quote Settings Tab** | Template configuration | Select from pre-built PDF templates, customize branding (logo, colors, disclaimer text) |
-| **Quotes History Page** | Browse, manage, re-search past quotes | View sent/saved quotes, re-search rooms from a past quote |
-| **Search Results Page** | Add hotels to current quote | "Add to Quote" button on hotel cards → select rooms → added to in-progress quote |
-| **Room Detail Page** | Add specific room to current quote | "Add to Quote" from room detail view with rate/policy context |
-
-**Quote Flow:**
-
-1. Agent searches hotels (any city/dates)
-2. From search results, agent clicks "Add to Quote" on a hotel card
-3. Agent selects 1 or more rooms from that hotel (minimum 1 room required)
-4. Selected rooms added to the current in-progress quote
-5. Agent can continue searching — same city for more options or different city for multi-city quote
-6. Agent can view/edit the current quote at any point (sidebar panel or quote builder page)
-7. Agent sends quote to client via email **or** downloads as PDF
-8. On send or download, the quote is automatically saved to Quotes History
-9. Agent can also manually save a draft quote before sending
-
-**Re-Search from Quote History:**
-
-From the Quotes History page, an agent can select a past quote, choose 1 or more rooms from that quote, and trigger a re-search. The system pre-fills: hotel name, check-in/check-out dates, and number of guests from the original search. This enables quick rate refreshes for returning clients or re-quoting after rate changes.
-
-**Quote State Management:**
-
-| State | Description | How It's Created |
-|-------|-------------|-----------------|
-| In-Progress | Current working quote, not yet sent | Agent adds first hotel/room to a new quote |
-| Draft (Saved) | Manually saved but not sent | Agent clicks "Save Draft" |
-| Sent | Delivered to client | Agent clicks "Send" (auto-saves) |
-| Downloaded | Downloaded as PDF | Agent clicks "Download PDF" (auto-saves) |
-
-**Consistent Quote Indicator:**
-
-A persistent quote widget in the sidebar shows:
-- Current quote name/client (editable)
-- Number of cities and rooms selected
-- "View Quote" shortcut to open the quote builder
-- Visual indicator when a quote is in progress (so the agent always knows there's an active quote)
-
-**Quote Settings (Settings → Quote Settings Tab):**
-
-- Pre-built PDF template gallery (3-5 templates at launch)
-- Template preview with live data
-- Branding customization: logo placement, primary/secondary colors, header/footer text
-- Default disclaimer text (editable, max 1000 characters)
-- Default markup percentage for new quotes
-
-### Implementation Approach
-
-**Layout Shell (reused across all pages):**
-- Fixed dark sidebar (240px) with: brand, navigation items, wallet widget, quote indicator
-- Collapsible sidebar (to 64px icon-only) for more content space
-- Main content area (fluid width) with `#F6F9FC` background
-- Sticky top bar within content area for page title + contextual actions
-- Tab bar below top bar for multi-context workspace (search tabs, quote tabs)
-
-**Page Hierarchy:**
-1. **Search (Home)** — Search form + results grid. The default landing page after login.
-2. **Quote Builder** — Multi-city hotel/room organization, notes, PDF preview, send/download
-3. **Quotes History** — All saved/sent quotes with re-search capability
-4. **Bookings** — Table view with status badges, filters, search, voucher actions
-5. **HCN Dashboard** — Status overview with filters and timeline per booking
-6. **Voucher Queue** — Batch voucher management
-7. **Wallet** — Balance, top-up, transaction history
-8. **Settings** — Profile, branding, Quote Settings tab, HCN email config, notifications
-
-## User Journey Flows
-
-### Journey 0: First-Time Agent Onboarding
-
-**Goal:** New agent registers, configures account, completes first search and first booking within 24 hours.
-
-**Entry Point:** Registration page (linked from marketing site or word-of-mouth referral)
-
-```mermaid
-flowchart TD
-    A[Agent visits registration page] --> B[Enter: name, email, company, password]
-    B --> C[Email verification sent]
-    C --> D[Agent clicks verification link]
-    D --> E[Logged in — Setup Wizard launches]
-    E --> F[Step 1: Upload logo]
-    F --> G[Step 2: Configure HCN sending email]
-    G --> H[Step 3: Set default markup %]
-    H --> I[Setup complete — Redirect to Search Home]
-    I --> J[Agent runs first search]
-    J --> K{Results found?}
-    K -->|Yes| L[Agent explores results, tries Add to Quote]
-    K -->|No| M[Adjust search parameters]
-    M --> J
-    L --> N[Agent generates first quote PDF — Aha moment!]
-    N --> O[Agent tops up wallet — small test amount]
-    O --> P[Agent books a free-cancellation room]
-    P --> Q[Booking confirmed, HCN email sent automatically]
-    Q --> R[First booking complete — agent is onboarded]
-```
-
-**Flow Details:**
-
-| Step | Page | Agent Action | System Response | Feedback |
-|------|------|-------------|-----------------|----------|
-| 1 | Registration | Fill form, submit | Validate fields, send verification email | "Check your email for verification link" |
-| 2 | Email | Click verification link | Verify email, create account, log in | Redirect to setup wizard |
-| 3 | Setup Wizard (3 steps) | Upload logo, set email, set markup | Save each step, show progress (1/3, 2/3, 3/3) | Each step shows preview of how it will appear |
-| 4 | Search (Home) | Run first search | Progressive loading → results appear | "47 hotels found from 2 suppliers" |
-| 5 | Search Results | Click "Add to Quote" | Hotel added to new quote | Toast: "Added to quote" + sidebar quote counter |
-| 6 | Quote Builder | Click "Generate PDF" | PDF generated with agent's branding | PDF preview — aha moment |
-| 7 | Wallet | Top up via payment gateway | Payment processed, balance updated | Balance shown in sidebar |
-| 8 | Search Results → Book | Click "Book" on a rate | Booking form with guest details | Pre-filled where possible |
-| 9 | Booking Form | Enter guest details, confirm | Price check → book with supplier → confirm | Confirmation page with ref number + "HCN email sent" |
-
-**Time Target:** Registration to first booking in under 30 minutes. Setup wizard: under 2 minutes.
+No gradients. Flat, solid colors throughout.
 
 ---
 
-### Journey 1: Daily Booking Flow (Primary Loop)
+## Defining Core Experience
 
-**Goal:** Agent receives client request → searches → adds to quote → sends quote → books → generates voucher → HCN verifies.
+### User Mental Model
 
-**Entry Point:** Search page (Home) — agent is already logged in.
+**Current mental model (fragmented):**
+- Each supplier portal = a separate tool with its own login, UI, and quirks
+- Booking tracking = spreadsheets or memory
+- The agent is the integration layer — holding everything together in their head
 
-```mermaid
-flowchart TD
-    A[Client sends request via WhatsApp/email] --> B[Agent opens Apolles — lands on Search Home]
-    B --> C[Enter destination, dates, rooms, guests]
-    C --> D[Click Search]
-    D --> E[Progressive loading: skeleton → first results in 2s → more appended]
-    E --> F[Agent scans hotel cards — each shows cheapest rate, basis, cxl]
-    
-    F --> G{Agent wants to quote?}
-    G -->|Yes| H[Click 'Add to Quote' on hotel card]
-    H --> I[Select rooms — minimum 1]
-    I --> J[Toast: 'Added to quote' — sidebar counter updates]
-    J --> K{More hotels/cities needed?}
-    K -->|Yes — same city| F
-    K -->|Yes — different city| C
-    K -->|No| L[Open Quote Builder]
-    
-    G -->|No — wants to book directly| M[Click 'Book' on rate]
-    M --> N[Booking form: guest details, payment review]
-    
-    F --> O{Agent wants more room options?}
-    O -->|Yes| P[Click 'More Rooms' — new window with all rooms/rates]
-    P --> Q[Agent reviews rooms, selects preferred]
-    Q --> G
-    
-    L --> R[Review quote: hotels by city, notes, preview]
-    R --> S{Send or save?}
-    S -->|Send| T[Enter client email, send]
-    T --> U[Quote auto-saved to Quotes History]
-    S -->|Download PDF| V[Download PDF, auto-saved]
-    S -->|Save Draft| W[Saved as draft in Quotes History]
-    
-    U --> X[Client responds with selection]
-    X --> M
-    
-    N --> Y[System: price check with supplier]
-    Y --> Z{Price changed?}
-    Z -->|No| AA[Display confirmed price, cxl policy, wallet impact]
-    Z -->|Yes| AB[Display: 'Price changed from $X to $Y' — confirm or cancel]
-    AB --> AA
-    AA --> AC[Agent confirms booking]
-    AC --> AD{Wallet check for non-refundable}
-    AD -->|Sufficient or free-cancel| AE[Booking confirmed — ref number displayed]
-    AD -->|Insufficient| AF[Blocked: 'Requires $X wallet credit' — top-up link]
-    AE --> AG[Agent generates voucher — booking committed]
-    AG --> AH[Agent sends voucher to client]
-    AH --> AI[HCN verification email auto-sent to hotel]
-    AI --> AJ[Agent monitors HCN status on dashboard over following days]
-```
+**Apolles mental model (unified booking tool):**
+- One platform = one login, one interface
+- Search both suppliers at once
+- Book, confirm, generate voucher — all in one place
+- Reservations list tracks everything
 
-**Hotel Card Interaction Detail:**
+**Key mental model shift**: Agents are accustomed to switching between portals. Apolles replaces that with one search across two inventories. The agent may see the same hotel twice (from different sources) — the neutral source indicator helps them understand this without confusion.
 
-| Element | Display | Action |
-|---------|---------|--------|
-| Hotel image | Flat color or hotel photo | — |
-| Hotel name | Semibold, 15px | Click → More Rooms window |
-| Star rating | Star icons | — |
-| Price | Cheapest rate, bold, 20px | — |
-| Meal basis | Badge (e.g., "Breakfast", "Room only") | — |
-| Cancellation | Badge (e.g., "Free cancel until Apr 10" or "Non-refundable") | — |
-| Wallet flag | Amber indicator if wallet insufficient for this rate | — |
-| "Add to Quote" | Primary button | Adds hotel to current in-progress quote (select rooms first) |
-| "Book" | Secondary button | Goes directly to booking form for cheapest rate |
-| "More Rooms" | Text link | Opens new window/panel with all available rooms and rates |
+### Success Criteria
+
+1. **Agents stop opening separate portals**: Apolles becomes the primary booking tool.
+2. **Search-to-voucher in under 5 minutes**: Search, book, confirm, voucher — complete flow in minutes.
+3. **"This just works" feeling**: Agent completes a search-to-voucher cycle without confusion, without wondering "what do I do next?", without leaving Apolles.
 
 ---
 
-### Journey 2: HCN Mismatch Recovery
+## Page Hierarchy & Navigation
 
-**Goal:** Agent discovers an HCN mismatch flagged by the system, investigates, resolves with supplier, and re-verifies.
+### MVP Core Pages (Agent-Facing)
 
-**Entry Point:** HCN Dashboard or booking detail (triggered by system notification).
+| # | Page | Purpose | Entry Point |
+|---|------|---------|-------------|
+| 1 | **Login** | Email/password authentication | Direct URL |
+| 2 | **Search (Home)** | Hotel search form + results grid | Default landing after login |
+| 3 | **Room Details** | All rooms/rates for a selected hotel | Click hotel card from search results |
+| 4 | **Booking Flow** | Guest details, price recheck, payment (Expedia), review, confirm | Click "Book" on a room |
+| 5 | **Booking Confirmation** | Reference number, booking details, voucher generation | After successful booking |
+| 6 | **Reservations List** | All agent bookings with filter/sort/search | Sidebar navigation |
+| 7 | **Reservation Detail** | Full booking info, status, cancellation terms, voucher download | Click booking from reservations list |
 
-```mermaid
-flowchart TD
-    A[System sends HCN verification email to hotel] --> B[Hotel responds with details]
-    B --> C{Details match booking?}
-    C -->|Yes| D[HCN status → Confirmed]
-    C -->|No| E[HCN status → Mismatch]
-    E --> F[Agent notified: in-app alert + email]
-    F --> G[Agent opens HCN Dashboard — sees Mismatch badge]
-    G --> H[Agent clicks into booking detail]
-    H --> I[Sees mismatch details: booking says X, hotel says Y]
-    I --> J[Agent contacts supplier to correct]
-    J --> K[Agent updates HCN status to 'Issue — contacting supplier']
-    K --> L[Supplier confirms correction]
-    L --> M[Agent triggers re-verification: 'Resend HCN Email']
-    M --> N[New HCN email sent to hotel]
-    N --> O[Hotel confirms corrected details]
-    O --> P[HCN status → Confirmed]
-    P --> Q[Agent's client never knew there was a problem]
-```
+### MVP Core Pages (Admin-Facing)
 
-**Mismatch Detail View:**
+| # | Page | Purpose |
+|---|------|---------|
+| 8 | **Admin: Bookings** | All bookings across all agents with filters. Shows supplier identity. |
+| 9 | **Admin: Supplier Logs** | Recent API calls — method, latency, status, errors. Filter by supplier. |
+| 10 | **Admin: Platform Settings** | Agent management (list, create, deactivate) + platform markup configuration. Two sections on one page. |
 
-| Element | Display |
-|---------|---------|
-| Booking reference | `APL-2026-XXXX` (monospace) |
-| Hotel name | Hotel name, location |
-| Booking details | Check-in/out dates, room type, guest name |
-| Mismatch details | Side-by-side comparison: "Your booking says: [X]" vs "Hotel says: [Y]" |
-| Status | Red "Mismatch" badge with timestamp |
-| Actions | "Update Status" dropdown, "Resend HCN Email" button, "Add Note" |
-| Timeline | Chronological: email sent → hotel responded → mismatch detected → agent action |
+### Late MVP Pages
+
+| Page | Notes |
+|------|-------|
+| **Password Reset** | Email-based reset flow |
+| **Booking Cancellation** | Cancel button on reservation detail + penalty display + confirmation gate |
+| **Agent Settings** | Basic profile page: saved nationality/residency default, password change. Adds a Settings nav item to agent sidebar. |
+
+### Phase 2 Pages (Not in MVP)
+
+| Page | Notes |
+|------|-------|
+| Quote Builder | Multi-city quote composition and PDF generation |
+| Quote History | Past quotes with re-search capability |
+| Quote Settings | Template selection and branding customization |
+| HCN Dashboard | Automated verification status and timeline |
+| Wallet | Balance, top-up, transaction history |
+| Agent Self-Registration | Public registration flow |
+| Advanced Admin Dashboard | Analytics, metrics, performance data |
+
+### Sidebar Navigation (MVP)
+
+**Agent sidebar:**
+
+| Nav Item | Icon | Page | Badge |
+|----------|------|------|-------|
+| Search | Search icon | Search (Home) | — |
+| Reservations | BookOpen icon | Reservations List | — |
+
+No agent settings page at MVP. The PRD core scope does not define agent-configurable settings. Nationality/residency (required by supplier APIs) is entered per search on the search form. Logout is always available from the sidebar bottom user area (agent name + logout action). A basic agent settings page (saved nationality default, password change) is a Late MVP addition.
+
+**Admin sidebar (additional items):**
+
+| Nav Item | Icon | Page | Badge |
+|----------|------|------|-------|
+| All Bookings | Database icon | Admin: Bookings | — |
+| Supplier Logs | Activity icon | Admin: Supplier Logs | — |
+| Platform Settings | Settings icon | Admin: Platform Settings (agents + markup) | — |
+
+**Sidebar structure:**
+- Top: Apolles logo / brand
+- Main section: Agent navigation items (Search, Reservations)
+- Admin section (admin only): Admin navigation items, visually separated
+- Bottom: Agent name / avatar, logout action
+
+The sidebar is deliberately simple at MVP. No wallet widget, no quote indicator, no HCN alerts, no agent settings page. These are Late MVP or Phase 2 additions.
 
 ---
 
-### Journey Patterns (Reusable Across All Flows)
+## Dual-Supplier Search UX
 
-**Navigation Patterns:**
-- **Search → Results → Detail**: Progressive drill-down. Each level adds more information without losing the previous context (back button returns to results with scroll position preserved).
-- **Sidebar persistence**: Wallet, quote indicator, and HCN alerts remain visible regardless of which page the agent is on. Context is never lost.
-- **Tab-based multi-tasking**: Each client's search/quote can exist in a tab. Switching tabs preserves all state.
+### How Two Suppliers Appear in One Search
 
-**Decision Patterns:**
-- **Low-stakes action → no confirmation**: "Add to Quote," search, filter, sort — all instant, no modal.
-- **Medium-stakes action → inline confirmation**: Voucher generation shows a clear "This commits the booking" message with confirm button.
-- **High-stakes action → confirmation gate**: Non-refundable booking and cancellation show full details (price, penalty, consequences) with explicit "Confirm" button.
+When an agent searches, the system queries TBO and Expedia in parallel. Results arrive independently and may arrive at different times.
 
-**Feedback Patterns:**
-- **Toast notifications**: For quick confirmations ("Added to quote," "Quote sent," "Voucher generated"). Auto-dismiss after 4 seconds. Non-blocking.
-- **Status badges**: For persistent state communication (booking status, HCN status, wallet status). Always visible on relevant cards/rows.
-- **Progressive loading**: Skeleton screens during search. First results appear in 2 seconds, more appended as suppliers respond. Never a blank screen.
-- **Error with next action**: Every error includes what happened + what to do. "Supplier timeout — results from 1 supplier shown. [Retry]"
+**Progressive Loading Sequence:**
 
-### Flow Optimization Principles
+1. Agent clicks "Search"
+2. Skeleton card grid appears immediately (6-9 skeleton cards)
+3. Header shows: "Searching 2 sources..."
+4. First supplier results arrive (~1-3 seconds) — skeleton cards replaced with real hotel cards
+5. Header updates: "47 hotels from Source A — searching Source B..."
+6. Second supplier results arrive — appended to existing results, grid re-sorts
+7. Header updates: "82 hotels from 2 sources"
 
-1. **Minimize clicks to core value**: Search (1 form + 1 click) → Results (immediate) → Add to Quote (1 click) → Generate PDF (1 click). Total: 4 interactions from search to quote.
+**Partial Failure Handling:**
 
-2. **No dead ends**: Every screen has a clear next action. Every error state has a resolution path. Every completed task suggests what to do next.
+| Scenario | UX Response |
+|----------|-------------|
+| Both suppliers respond | "82 hotels from 2 sources" — normal state |
+| One supplier slow (> 3s) | Show available results immediately. Banner: "Source B is taking longer than usual..." with spinner |
+| One supplier fails/times out | Show available results. Warning banner: "Results from 1 source. Source B unavailable. [Retry]" |
+| Both suppliers fail | Error state: "Unable to load results. [Retry All]" |
+| One supplier returns 0 results | Show other supplier's results. Info note: "No results from Source B for these dates." |
 
-3. **Preserve context on navigation**: Back button returns to exact previous state (scroll position, filters, selections). Tab switching preserves all state. Quote persists across searches.
+**Banner Design (supplier unavailability):**
+- Positioned above the results grid, below filters
+- Uses `--warning-bg` background with `--warning` left border (4px)
+- Clear text: "Showing results from 1 source. Source B is unavailable."
+- Action button: "[Retry Source B]" — ghost button style
+- Dismissible after retry attempt
+- Never blocks or hides available results
 
-4. **Progressive commitment**: Low-friction early actions (search, browse, add to quote) build confidence before high-commitment actions (book, pay). The agent builds comfort before spending money.
+### Neutral Source Indicators
 
-5. **Ambient awareness, not interruption**: HCN alerts, auto-cancel warnings, and wallet status are visible but don't interrupt the current task. Notifications escalate gradually (info → reminder → urgent) rather than alarming immediately.
+**Purpose:** Because the same physical hotel may appear twice (once from each supplier), agents need a way to distinguish results without seeing supplier names.
+
+**Implementation:**
+- Each search result card shows a small badge: "Source A" or "Source B"
+- Badge uses the `Micro` type scale (11px, medium weight)
+- Badge color: `--neutral-bg` background with `--text-secondary` text — deliberately subtle
+- Source labels are consistent within a search session: all TBO results share one label, all Expedia results share another
+- Labels do not reveal supplier identity to agents
+- The badge position: top-right corner of the hotel card, below the hotel image
+
+**Agent-facing explanation (help text on first encounter):**
+"Hotels may appear from different sources with different prices and policies. The source label helps you compare options for the same hotel."
+
+**Admin sees full supplier identity:** In admin views (Admin: Bookings, Admin: Supplier Logs), the actual supplier name (TBO / Expedia) is displayed instead of neutral labels.
+
+### Search Results Layout
+
+**Hotel Card Grid:**
+- 3-column grid on desktop (xl+)
+- 2-column on tablet (md-lg)
+- 1-column full-width on mobile (< md)
+- Each card is a `<article>` with hotel info
+
+**Filter Bar (above results):**
+- Price range slider
+- Star rating checkboxes (1-5)
+- Cancellation toggle: "Free cancellation only"
+- Sort dropdown: Price (low-high), Price (high-low), Star rating
+- Active filters shown as removable chips
+- "Clear all filters" link when filters active
+- Result count: "Showing 23 of 82 hotels"
+
+**Filters are client-side** — applied to already-fetched results. Instant, no API call.
+
+---
+
+## Hotel Result Card (MVP)
+
+### Content
+
+- Hotel image (or flat color placeholder)
+- Hotel name (semibold, clickable → Room Details page)
+- Star rating (1-5 stars as icons)
+- Starting price (cheapest rate, bold, prominent — with markup applied)
+- Source indicator badge ("Source A" / "Source B") — `Micro` size, subtle
+- Meal basis badge (e.g., "Breakfast Included", "Room Only")
+- Cancellation policy badge (e.g., "Free cancel until Apr 10", "Non-refundable")
+- Location / area (if provided by supplier)
+
+### Actions
+
+- **"View Rooms"** — Primary button. Navigates to Room Details page showing all available rooms and rates for this hotel.
+- **"Book"** — Secondary button. Navigates directly to booking form for the cheapest displayed rate (shortcut for agents who don't need to compare rooms).
+
+### States
+
+| State | Visual Treatment |
+|-------|-----------------|
+| Default | White card, subtle border, normal shadow |
+| Hover | Slight elevation increase, border tint |
+| Loading (Skeleton) | Skeleton placeholder matching card layout |
+
+### Accessibility
+
+- Card is a `<article>` with `aria-label="[Hotel Name], [Star Rating] stars, from $[Price]"`
+- Action buttons have explicit labels: `aria-label="View rooms at [Hotel Name]"`, `aria-label="Book [Hotel Name]"`
+- Star rating: `aria-label="[N] out of 5 stars"`
+- Source indicator: `aria-label="From Source [A/B]"`
+
+---
+
+## Room Details Page
+
+### Purpose
+
+Display all available rooms and rates for a single hotel. Agents compare rooms by bed type, cancellation policy, meal plan, and price before selecting one to book.
+
+### Layout
+
+- **Header**: Hotel name, star rating, source indicator, location
+- **Room list**: Table or card list showing each available room
+
+### Room Row Content
+
+| Field | Display |
+|-------|---------|
+| Room name | Semibold (e.g., "Deluxe Double Room") |
+| Bed type | Regular text (e.g., "1 King Bed") |
+| Meal plan | Badge (e.g., "Breakfast Included", "Room Only") |
+| Cancellation policy | Clear text with dates: "Free cancellation until Apr 10, 2026" or "Non-refundable" |
+| Cancellation penalty | If applicable: "Penalty: $150 after Apr 10" |
+| Refundability | Badge: "Refundable" (green) or "Non-refundable" (amber) |
+| Total price | Bold, medium weight. Includes taxes/fees where provided. |
+| Taxes/fees breakdown | Small text below price. For Expedia: includes legally mandated tax disclaimer. |
+| "Book This Room" | Primary button per row |
+
+### Expedia Tax Disclaimer
+
+For rooms sourced from Expedia, display the legally mandated text below the price:
+
+> "The taxes are tax recovery charges paid to vendors (e.g. hotels); for details, please see our Terms of Use. Service fees are retained as compensation in servicing your booking and may include fees charged by vendors."
+
+This text appears only on Expedia-sourced rates. TBO rates show TBO-specific tax display per their certification requirements.
+
+### Back Navigation
+
+"Back to Results" button in page header. Returns to search results with scroll position and filters preserved.
+
+---
+
+## Booking Flow
+
+### Overview
+
+The booking flow is a multi-step process from room selection to confirmation. The flow differs slightly depending on the supplier (Expedia requires a payment step).
+
+### Step 1: Guest Details
+
+**Form fields:**
+- Guest full name (required) — text input
+- Guest email (optional) — email input
+- Guest phone (optional) — phone input
+- Special requests (optional) — textarea, free text
+
+**Form layout:** Single column. Label above field. Required fields marked with asterisk.
+
+**Pre-fill behavior:**
+- All fields start blank (different guest per booking)
+
+### Step 2: Price Recheck
+
+After the agent enters guest details and clicks "Continue," the system performs a price recheck with the originating supplier.
+
+**Price Recheck UX:**
+
+| Scenario | UX Response |
+|----------|-------------|
+| Price unchanged | Proceed silently to review step. No interruption. |
+| Price increased | **Price Change Notice** (see below) |
+| Price decreased | **Price Change Notice** (favorable — proceed with lower price, agent informed) |
+| Rate no longer available | Error: "This rate is no longer available. [Back to Rooms] [Search Again]" |
+| Supplier timeout | Error: "Unable to verify the rate. Please try again. [Retry] [Back to Rooms]" |
+
+**Price Change Notice:**
+
+A full-width yellow banner at the top of the booking form:
+
+```
+┌──────────────────────────────────────────────┐
+│  ⚠ Price changed                              │
+│                                                │
+│  The rate for this room has changed since      │
+│  your search.                                  │
+│                                                │
+│  Original price: $1,247.00                     │
+│  Updated price:  $1,277.00  (+$30.00)         │
+│                                                │
+│  [Back to Rooms]        [Continue at $1,277]   │
+└──────────────────────────────────────────────┘
+```
+
+- Background: `--warning-bg`
+- Left border: 4px `--warning`
+- Original price: strikethrough, `--text-secondary`
+- Updated price: bold, `--text-primary`
+- Difference: inline, `--warning` color
+- "Back to Rooms" = ghost button (left)
+- "Continue at $X" = primary button (right)
+
+### Step 3: Payment (Expedia Only)
+
+For Expedia-sourced bookings, the agent must provide card details via hosted payment fields.
+
+**Payment Step UX:**
+
+- Section header: "Payment Details"
+- Explanation text: "Card details are required to complete this booking. Your card information is securely processed and never stored on our servers."
+- Hosted payment fields iframe (Stripe Elements or equivalent): card number, expiry, CVC
+- The iframe is styled to match Apolles design tokens (Inter font, matching border radius, matching input heights)
+- Below the iframe: security badge / PCI compliance indicator — small text: "Secured by [payment provider]"
+- This step appears ONLY for Expedia bookings. TBO bookings skip this step entirely (TBO uses credit-based payment through existing arrangement).
+
+**Why payment is sometimes required (agent-facing help text):**
+"Some sources require card details to complete the booking. This depends on the source providing the rate."
+
+This avoids revealing which supplier requires payment while explaining the difference honestly.
+
+### Step 4: Booking Summary / Review
+
+**Displayed information:**
+- Hotel name, location
+- Room type, bed configuration
+- Check-in / check-out dates
+- Number of nights
+- Guest name(s)
+- Meal plan
+- Cancellation policy (with dates and penalty amounts)
+- Total price (post-recheck, with markup applied)
+- Taxes and fees breakdown
+- For Expedia: mandated display elements (tax disclaimer, payment processing country)
+
+**Actions:**
+- "Back" (ghost button) — return to edit guest details
+- "Confirm Booking" (primary button) — submit to supplier
+
+**Non-refundable booking enhancement:**
+If the rate is non-refundable, the review page shows an explicit warning:
+
+```
+⚠ This booking is non-refundable
+Once confirmed, this booking cannot be cancelled or refunded.
+Total charge: $1,247.00
+```
+
+### Step 5: Booking Confirmation
+
+**On success:**
+- Header: "Booking Confirmed" with success icon (green checkmark)
+- Apolles booking ID (monospace, copyable)
+- Supplier reference number (monospace, copyable — agent sees this as "Confirmation Number")
+- Hotel name, room type, dates, guest name, total price
+- Cancellation terms summary
+- "Generate Voucher" button (primary) — generates PDF immediately
+- "Go to Reservations" link — navigates to reservations list
+
+**On failure:**
+- Header: "Booking Failed" with error icon
+- Failure reason in plain language (e.g., "The rate is no longer available", "Supplier could not process the booking")
+- Actions: "[Search Again]" "[Try Another Room]"
+
+---
+
+## Voucher Generation
+
+### Trigger
+
+From either:
+- Booking Confirmation page: "Generate Voucher" button
+- Reservation Detail page: "Generate Voucher" or "Download Voucher" button
+
+### Voucher PDF Content
+
+- Hotel name
+- Hotel address
+- Check-in date
+- Check-out date
+- Room type
+- Guest name(s)
+- Confirmation number (supplier reference)
+- Agent company name
+- Applicable legal/tax disclaimer text (supplier-specific, but without revealing supplier name)
+
+### Voucher UX
+
+- One voucher per booking (no queue, no batch)
+- Generation takes < 5 seconds
+- Button shows spinner during generation, then "Download" action
+- PDF opens in new tab or downloads depending on browser
+- Once generated, voucher is accessible from Reservation Detail page permanently
+
+---
+
+## Reservations List
+
+### Purpose
+
+Agent views all their bookings. Filter, sort, search, and click through to details.
+
+### Table Columns
+
+| Column | Content |
+|--------|---------|
+| Booking Ref | Apolles booking ID (monospace). Clickable → Reservation Detail. |
+| Hotel | Hotel name |
+| Guest | Guest full name |
+| Check-in | Check-in date ("Mar 15, 2026") |
+| Check-out | Check-out date |
+| Status | StatusBadge — all PRD lifecycle states: pending, price_changed, confirmed, failed, cancelled |
+| Total | Price (medium weight) |
+| Actions | "View" link, "Voucher" download link (if confirmed) |
+
+### Filters
+
+- Status: Pending, Confirmed, Failed, Cancelled (checkbox group). `price_changed` is a transient state and does not appear in reservation filters — it resolves to `pending` (agent accepts) or no record (agent abandons) before a booking record is persisted.
+- Date range: Check-in date range picker
+- Search: Text input — searches guest name or booking reference
+
+### Sort
+
+Default: newest first (by booking date). Sortable by: date, status, hotel name, price.
+
+### Empty State
+
+"No bookings yet. Search for hotels to make your first booking." + "[Go to Search]" button.
+
+---
+
+## Reservation Detail Page
+
+### Purpose
+
+Full booking information for a single reservation. The agent's primary reference page for any booking.
+
+### Layout
+
+**Header:**
+- Hotel name (H1)
+- StatusBadge — shows the current PRD lifecycle state: pending, confirmed, failed, or cancelled
+- Apolles booking ID (monospace, copyable)
+- Back link: "← Back to Reservations"
+
+**Section 1: Booking Details**
+- Confirmation number (monospace, copyable — labeled as "Confirmation Number")
+- Hotel name and address
+- Check-in / check-out dates
+- Number of nights
+- Room type and bed configuration
+- Meal plan
+- Guest name(s), email, phone, special requests
+
+**Section 2: Pricing**
+- Total price paid (confirmed amount — immutable)
+- Taxes/fees breakdown (as shown at booking time)
+- For Expedia bookings: mandated tax disclaimer text
+
+**Section 3: Cancellation Terms**
+- Full cancellation policy with dates and penalty amounts
+- Clear display: "Free cancellation until [date]" or "Non-refundable"
+- If free cancellation period has passed: "Cancellation penalty: $[amount]"
+- Cancellation action button: **Late MVP** — not in day-one core. The button appears here when implemented.
+
+**Section 4: Voucher**
+- If voucher already generated: "Download Voucher" button (immediate PDF download)
+- If voucher not yet generated: "Generate Voucher" button (generates then downloads)
+
+**Source indicator (agent view):**
+- Source indicator badge visible ("Source A" / "Source B") — same neutral label as search results
+- No supplier name shown to agents
+
+**Admin view additions:**
+- Actual supplier name (TBO / Expedia) displayed explicitly
+- Supplier reference number labeled with supplier name
+- Supplier cost vs. markup vs. agent price breakdown visible
+
+---
+
+## Minimal Admin UX
+
+### Admin: Bookings
+
+**Purpose:** Moshe sees all bookings across all agents for support and monitoring.
+
+**Table columns (superset of agent reservations list):**
+
+| Column | Content |
+|--------|---------|
+| Booking Ref | Apolles booking ID |
+| Supplier | Actual supplier name (TBO / Expedia) — admin only |
+| Agent | Agent name |
+| Hotel | Hotel name |
+| Guest | Guest name |
+| Check-in | Date |
+| Status | StatusBadge |
+| Total (Agent) | Agent-visible price |
+| Total (Supplier) | Supplier cost — admin only |
+| Markup | Calculated markup amount — admin only |
+
+**Filters:** By agent, by date range, by status, by supplier.
+
+**Row click:** Opens full booking detail with admin-level visibility (supplier name, cost breakdown).
+
+### Admin: Supplier Logs
+
+**Purpose:** Moshe debugs supplier API issues.
+
+**Table columns:**
+
+| Column | Content |
+|--------|---------|
+| Timestamp | When the API call was made |
+| Supplier | TBO / Expedia |
+| Method | search, priceCheck, book, cancel, getBookingDetail |
+| Latency | Response time in ms |
+| HTTP Status | 200, 400, 500, timeout, etc. |
+| Status | Success / Error badge |
+| Error | Error message (if any) — truncated, expandable |
+
+**Filters:** By supplier, by method, by status (success/error), by date range.
+
+**Key UX:** Most recent logs first. Error rows highlighted with `--error-bg` background. Click to expand full error details.
+
+### Admin: Platform Settings
+
+**Purpose:** Single admin page for agent management and platform markup. Two sections on one page, separated by `Separator` component.
+
+**Section 1: Agents**
+
+**Table columns:**
+
+| Column | Content |
+|--------|---------|
+| Name | Agent full name |
+| Email | Agent email |
+| Status | Active / Inactive badge |
+| Created | Date created |
+| Last Login | Last login date |
+| Actions | "Deactivate" / "Activate" button |
+
+**Actions:**
+- "Create Agent" button (top of section) → opens form: name, email, initial password
+- Per-row: Activate / Deactivate toggle
+
+**Section 2: Platform Markup**
+
+**Simple form:**
+- Current markup: displayed prominently (e.g., "12%")
+- Input field: percentage input
+- "Save" button
+- Confirmation: "Markup updated to 12%. All future searches will use this rate."
+- Note: "This does not affect existing confirmed bookings."
+
+---
 
 ## Component Strategy
 
@@ -911,538 +986,439 @@ flowchart TD
 
 | Component | shadcn/ui Name | Apolles Usage |
 |-----------|---------------|---------------|
-| Button | `Button` | Primary ("Book", "Add to Quote", "Send"), Secondary, Ghost, Destructive variants |
-| Input | `Input` | Search fields, booking form fields, settings fields |
-| Select | `Select` | Destination picker, room type filter, nationality/residency |
+| Button | `Button` | Primary ("Book", "Confirm"), Secondary, Ghost, Destructive |
+| Input | `Input` | Search fields, booking form fields, admin settings |
+| Select | `Select` | Sort dropdown, filter dropdowns, nationality/residency |
 | DatePicker | `Calendar` + `Popover` | Check-in/out date selection |
-| Table | `Table` | Bookings list, wallet transactions, quotes history |
+| Table | `Table` | Reservations list, admin bookings, supplier logs, agents |
 | Dialog | `Dialog` | Confirmation gates (non-refundable booking, cancellation) |
-| Sheet | `Sheet` | Sidebar quote panel (slide-out from right) |
-| Tabs | `Tabs` | Workspace tabs, settings sections, quote builder city tabs |
-| Badge | `Badge` | Meal basis, cancellation policy labels |
-| Toast | `Toast` (Sonner) | "Added to quote", "Quote sent", "Voucher generated" feedback |
-| Tooltip | `Tooltip` | Truncated text, icon-only actions, information hints |
-| Dropdown | `DropdownMenu` | Status updates, bulk actions, more actions menus |
+| Badge | `Badge` | Meal basis, cancellation policy, source indicator |
+| Toast | `Toast` (Sonner) | "Voucher generated", "Booking confirmed" feedback |
+| Tooltip | `Tooltip` | Truncated text, icon-only actions |
+| Dropdown | `DropdownMenu` | More actions menus |
 | Skeleton | `Skeleton` | Progressive loading states for hotel cards, tables |
-| Avatar | `Avatar` | User menu, agency branding |
 | Separator | `Separator` | Section dividers |
-| ScrollArea | `ScrollArea` | Sidebar navigation, long lists |
-| Card | `Card` | Base container for hotel cards, booking cards, quote items |
-| Popover | `Popover` | Wallet balance detail, filter panels |
-| Command | `Command` | Keyboard-driven search/navigation (future power-user feature) |
-| Accordion | `Accordion` | FAQ, expandable booking details, settings sections |
-| Progress | `Progress` | Setup wizard progress, file upload |
+| ScrollArea | `ScrollArea` | Sidebar navigation |
+| Card | `Card` | Base container for hotel cards |
+| Accordion | `Accordion` | Expandable booking details, cancellation policy details |
 
-### Gap Analysis
-
-**Components needed but NOT available in shadcn/ui:**
-
-| Gap | Why Not Available | Priority |
-|-----|-------------------|----------|
-| HotelResultCard | Domain-specific: multi-supplier rate, quote/book actions, wallet flag | P0 — Core |
-| StatusBadge | Enum-driven single component with variant prop for all status states | P0 — Core |
-| AutoCancelCountdown | Push-based (WebSocket/SSE) countdown with progressive urgency | P0 — Core |
-| WalletWidget | Sidebar-persistent balance indicator with insufficiency warnings | P0 — Core |
-| QuoteIndicator | Sidebar-persistent in-progress quote summary | P0 — Core |
-| QuoteTemplateSelector | Template gallery with live preview and branding customization | P1 — Quote Flow |
-| QuotePDFPreview | Real-time PDF preview with selected template and agent branding | P1 — Quote Flow |
-| HCNTimeline | Per-booking verification timeline (sent → response → status) | P1 — HCN Flow |
-| RateComparisonTable | Multi-room, multi-supplier rate table for "More Rooms" view | P1 — Detail |
-| SearchFormComposite | Multi-room, multi-destination search form with nationality/residency default | P0 — Core |
-| VoucherPreview | Booking voucher PDF preview before generation | P2 — Voucher Flow |
-
-### Custom Components
+### Custom Components (Apolles-Specific)
 
 #### HotelResultCard
 
-**Purpose:** Display a single hotel in search results with the cheapest rate, key details, and immediate action buttons. The primary unit of search result interaction.
+**Purpose:** Display a single hotel in search results. The primary unit of search result interaction.
 
-**Content:**
-- Hotel image (or flat color placeholder)
-- Hotel name (semibold, clickable → "More Rooms")
-- Star rating (1-5 stars as icons)
-- Cheapest rate price (bold, prominent)
-- Supplier source (hidden from agent — internal only)
-- Meal basis badge (e.g., "Breakfast Included", "Room Only")
-- Cancellation policy badge (e.g., "Free Cancel until Apr 10", "Non-refundable")
-- Wallet insufficiency flag (amber indicator when wallet < rate for non-refundable)
+**Content:** Hotel image, name, stars, starting price, source indicator, meal badge, cancellation badge, location.
 
 **Actions:**
-- **"Add to Quote"** — Primary button. True 1-click: adds the displayed cheapest rate directly to the in-progress quote. No intermediate selection step from the card itself. Toast confirms.
-- **"Book"** — Secondary button. Navigates directly to booking form for the cheapest displayed rate.
-- **"More Rooms"** — Text link. Opens a new window/panel with all available rooms and rates (RateComparisonTable).
+- **"View Rooms"** — Primary button. Navigates to Room Details page.
+- **"Book"** — Secondary button. Navigates directly to booking form for cheapest rate.
 
-**States:**
-
-| State | Visual Treatment |
-|-------|-----------------|
-| Default | White card, subtle border, normal shadow |
-| Hover | Slight elevation increase, border tint |
-| Adding to Quote | Button shows spinner (200ms), then toast |
-| Added to Quote | Subtle checkmark overlay or "In Quote" indicator |
-| Wallet Insufficient | Amber flag on price area, tooltip: "Requires $X wallet credit" |
-| Loading (Skeleton) | Skeleton placeholder matching card layout |
-
-**Variants:**
-- `grid` — Standard 3-column grid view (default)
-- `list` — Compact single-row view for power users (future)
+**States:** Default, Hover, Loading (Skeleton).
 
 **Accessibility:**
-- Card is a `<article>` with `aria-label="[Hotel Name], [Star Rating] stars, from $[Price]"`
-- Action buttons have explicit labels: `aria-label="Add [Hotel Name] to quote"`, `aria-label="Book [Hotel Name]"`
-- Wallet flag announced: `aria-label="Insufficient wallet balance for this rate"`
-- Star rating: `aria-label="[N] out of 5 stars"`
+- `<article>` with `aria-label="[Hotel Name], [Star Rating] stars, from $[Price]"`
+- Action buttons with explicit labels
+- Source indicator announced: `aria-label="From Source [A/B]"`
 
 ---
 
 #### StatusBadge
 
-**Purpose:** Single reusable component for all status indicators across the platform. Enum-driven via a `variant` prop that maps to the full status taxonomy.
+**Purpose:** Single reusable component for all status indicators. Enum-driven via `variant` prop.
 
-**Content:** Status label text + optional icon.
+**Variants (Lean MVP):**
 
-**Variants (enum-driven):**
-
-| Variant | Color Token | Icon | Label Examples |
-|---------|------------|------|---------------|
-| `booking-confirmed` | `--info` | CheckCircle | "Confirmed" |
-| `booking-vouchered` | `--success` | ShieldCheck | "Vouchered" |
-| `booking-auto-cancel-warning` | `--warning` | Clock | "Auto-cancel: 48h" |
+| Variant | Color Token | Icon | Label |
+|---------|------------|------|-------|
+| `booking-pending` | `--info` | Clock | "Pending" |
+| `booking-price-changed` | `--warning` | AlertTriangle | "Price Changed" |
+| `booking-confirmed` | `--success` | CheckCircle | "Confirmed" |
+| `booking-failed` | `--error` | XCircle | "Failed" |
 | `booking-cancelled` | `--neutral` | XCircle | "Cancelled" |
-| `hcn-sent` | `--info` | Mail | "HCN Sent" |
-| `hcn-confirmed` | `--success` | CheckCircle | "HCN Confirmed" |
-| `hcn-mismatch` | `--error` | AlertTriangle | "Mismatch" |
-| `hcn-waiting` | `--warning` | Clock | "Awaiting Hotel" |
-| `hcn-issue` | `--error` | AlertTriangle | "Issue" |
-| `wallet-insufficient` | `--warning` | Wallet | "Low Balance" |
-| `wallet-blocked` | `--error` | Lock | "Blocked" |
-| `quote-draft` | `--neutral` | FileText | "Draft" |
-| `quote-sent` | `--success` | Send | "Sent" |
+| `agent-active` | `--success` | CheckCircle | "Active" |
+| `agent-inactive` | `--neutral` | XCircle | "Inactive" |
+| `supplier-available` | `--success` | CheckCircle | "Available" |
+| `supplier-error` | `--error` | AlertTriangle | "Error" |
+| `api-success` | `--success` | CheckCircle | "Success" |
+| `api-error` | `--error` | XCircle | "Error" |
 
 **Implementation:**
 
 ```tsx
 interface StatusBadgeProps {
-  variant: StatusVariant; // enum of all status types
-  size?: 'sm' | 'md';    // sm: 11px micro, md: 12px caption
-  showIcon?: boolean;     // default true
+  variant: StatusVariant;
+  size?: 'sm' | 'md';
+  showIcon?: boolean;
 }
 ```
 
 **Accessibility:**
 - `role="status"` with `aria-label="Status: [label]"`
-- Color is NEVER the sole indicator — always paired with icon + text
+- Color is never the sole indicator — always icon + text
 - High contrast on both white and tinted backgrounds
 
 ---
 
-#### AutoCancelCountdown
+#### SourceIndicatorBadge
 
-**Purpose:** Display time remaining before a booking auto-cancels, with progressive urgency escalation. Uses push updates (WebSocket/SSE) for real-time accuracy — no polling.
+**Purpose:** Display the neutral source label on hotel cards and booking details. Agent never sees supplier name.
 
-**Content:**
-- Countdown timer (days, hours, minutes)
-- Booking reference
-- Hotel name
-- Action prompt
+**Content:** "Source A" or "Source B" text badge.
 
-**Progressive Urgency States:**
+**Visual treatment:**
+- `Micro` type scale (11px, medium weight)
+- `--neutral-bg` background, `--text-secondary` text
+- Rounded corners (4px border radius)
+- Deliberately subtle — informational, not attention-grabbing
 
-| Time Remaining | Visual Treatment | Color | Behavior |
-|---------------|-----------------|-------|----------|
-| > 72 hours | Subtle info display | `--info` | Static text: "Auto-cancels in 5 days" |
-| 24–72 hours | Amber warning | `--warning` | "Auto-cancels in 2d 14h" |
-| < 24 hours | Red urgent | `--error` | "Auto-cancels in 18h 32m" — bold, prominent |
-| < 6 hours | Red pulsing | `--error` + pulse | "AUTO-CANCEL IN 4h 12m" — uppercase, pulse animation |
-| < 1 hour | Critical alert | `--error` + persistent | "CANCELS IN 47 MINUTES" — fixed banner |
+**Placement:** Top-right corner of hotel result cards. Inline in booking detail header.
 
-**Push Update Architecture:**
-- Server sends countdown updates via WebSocket/SSE
-- Component subscribes on mount, unsubscribes on unmount
-- Falls back to calculated display if connection drops (based on last known deadline timestamp)
-- No periodic HTTP polling
-
-**Accessibility:**
-- `aria-live="polite"` for updates > 6 hours
-- `aria-live="assertive"` for updates < 6 hours
-- `role="timer"` with accessible label
-- Respects `prefers-reduced-motion` — disables pulse, uses static red background instead
+**Accessibility:** `aria-label="From Source [A/B]"`
 
 ---
 
-#### WalletWidget
+#### PriceChangeNotice
 
-**Purpose:** Persistent sidebar component showing current wallet balance with contextual warnings. Always visible — ambient awareness without requiring navigation to wallet page.
+**Purpose:** Full-width banner displayed when price recheck returns a different amount.
 
 **Content:**
-- Current balance (monospace font, JetBrains Mono)
-- Currency symbol
-- Warning threshold indicator
-- Quick link to wallet page
+- Warning icon
+- Explanation: "The rate for this room has changed since your search."
+- Original price (strikethrough)
+- Updated price (bold)
+- Difference (inline, color-coded: amber for increase, green for decrease)
+- Actions: "Back to Rooms" (ghost), "Continue at $X" (primary)
 
-**States:**
-
-| State | Visual Treatment |
-|-------|-----------------|
-| Sufficient | Balance in white text on dark sidebar, no indicator |
-| Low (< agency threshold) | Amber dot next to balance |
-| Insufficient for pending booking | Amber text + "Top up" link |
-| Blocked (zero/negative) | Red text + "Top up required" link |
-
-**Interaction:**
-- Click balance → navigates to Wallet page
-- Hover → popover with recent transactions summary (last 3)
-
-**Accessibility:**
-- `aria-label="Wallet balance: $[amount]"` updated dynamically
-- `aria-live="polite"` for balance changes
-- Warning states announced to screen readers
+**Visual treatment:**
+- `--warning-bg` background, `--warning` left border (4px)
+- Positioned at top of booking form, above guest details
 
 ---
 
-#### QuoteIndicator
+#### PaymentFieldsContainer
 
-**Purpose:** Persistent sidebar component showing the current in-progress quote status. Enables agents to always know there's an active quote without navigating away.
+**Purpose:** Container for Stripe Elements hosted payment fields (Expedia bookings only).
 
 **Content:**
-- Quote name / client name (editable inline)
-- Number of cities
-- Number of rooms selected
-- "View Quote" shortcut link
+- Section header: "Payment Details"
+- Explanation text about secure processing
+- Stripe Elements iframe (card number, expiry, CVC)
+- Security indicator
 
-**States:**
+**Visual treatment:**
+- Styled to match Apolles design tokens
+- Input fields within iframe match Apolles input height, border radius, font
+- Border: `--border` color
+- On focus: `--primary` border (matching Apolles focus style)
 
-| State | Visual Treatment |
-|-------|-----------------|
-| No active quote | "New Quote" button (subtle, ghost) |
-| In-progress | Compact summary: "Barcelona + Santorini — 3 rooms". Primary color accent bar |
-| Just updated | Brief highlight animation (200ms glow) on room count |
+**Conditional rendering:** This component renders ONLY for Expedia-sourced bookings. TBO bookings skip this step entirely.
 
-**Interaction:**
-- Click "View Quote" → opens Quote Builder page
-- Click client name → inline edit
-- Click "New Quote" → starts fresh quote (confirms if existing in-progress)
+---
+
+#### SupplierStatusBanner
+
+**Purpose:** Inline banner in search results showing supplier availability status.
+
+**Variants:**
+
+| Variant | Display |
+|---------|---------|
+| `both-loading` | "Searching 2 sources..." with spinner |
+| `partial-loaded` | "47 hotels from Source A — searching Source B..." |
+| `both-loaded` | "82 hotels from 2 sources" |
+| `one-failed` | "Showing results from 1 source. Source B unavailable. [Retry]" |
+| `both-failed` | "Unable to load results. [Retry All]" |
+| `one-empty` | "No results from Source B for these dates." |
+
+**Visual treatment:**
+- Positioned above results grid, below filter bar
+- Success states: `--info-bg` background
+- Warning/failure states: `--warning-bg` background with `--warning` left border
+- Action buttons: ghost style
 
 ---
 
 #### SearchFormComposite
 
-**Purpose:** Multi-room search form with destination autocomplete, date pickers, guest configuration, and nationality/residency field. The primary entry point for all agent searches.
+**Purpose:** Search form — the primary entry point for all agent searches.
 
 **Content:**
-- Destination field (autocomplete with city/hotel suggestions)
+- Destination field (free text at MVP; autocomplete added in Late MVP)
 - Check-in / Check-out date pickers
-- Room configuration (number of rooms, adults/children per room)
-- Nationality/Residency dropdown (required by Expedia/TBO APIs — defaults from agent settings, overridable per search)
+- Rooms (1 at MVP — single room per search)
+- Adults per room
+- Children with ages
+- Nationality/Residency dropdown (required by supplier APIs — pre-populated from agent settings if set)
 - Search button
 
 **Variants:**
-- `standard` — Single destination, prominent on Search Home
-- `multi-room` — Expanded: room-by-room guest configuration
-- `re-search` — Pre-filled from Quote History (destination, dates, guests locked but editable)
+- `standard` — Prominent on Search Home page. Horizontal layout on desktop, stacked on mobile.
 
-**Key Behaviors:**
-- Nationality/residency saved as default in Settings, pre-populated on every search
-- "Add Room" button for multi-room configuration (up to 6 rooms)
+**Key behaviors:**
 - Date picker enforces check-out > check-in
-- Destination autocomplete queries as-you-type (debounced 300ms)
+- Rooms field: fixed at 1 for MVP (multi-room is Late MVP)
+- Children ages: show individual age dropdowns when children > 0
+- Search button: shows spinner during search, disabled until all required fields filled
 
 **Accessibility:**
 - All fields have explicit `<label>` elements
 - Date picker fully keyboard-navigable
-- Room configuration uses `aria-label="Room [N]: [X] adults, [Y] children"`
 - Form validation errors announced via `aria-describedby`
 
 ---
 
-#### QuoteTemplateSelector
+### Component Implementation Roadmap
 
-**Purpose:** Gallery of pre-built PDF templates for quote generation. Agents select a template and customize branding — NOT a drag-and-drop canvas. Templates are configured in Settings → Quote Settings Tab and applied when generating quotes.
+**Phase 1 — MVP Core (Sprint 1-3):**
 
-**Content:**
-- Template thumbnail grid (3-5 templates at launch)
-- Live preview panel (shows selected template with real data)
-- Branding controls: logo upload, primary/secondary color pickers, header/footer text
-- Disclaimer text editor (max 1000 chars)
-- Default markup percentage
+| Component | Priority |
+|-----------|----------|
+| SearchFormComposite | P0 — Entry point for all workflows |
+| HotelResultCard | P0 — Primary search result display |
+| StatusBadge | P0 — Used across reservations, admin |
+| SourceIndicatorBadge | P0 — Required for dual-supplier disambiguation |
+| SupplierStatusBanner | P0 — Progressive loading and failure handling |
+| PriceChangeNotice | P0 — Price recheck flow |
+| PaymentFieldsContainer | P0 — Expedia booking flow |
 
-**Interaction:**
-- Click template thumbnail → live preview updates
-- Edit branding controls → live preview updates in real-time
-- "Save as Default" → applies to all future quotes
-- "Apply to This Quote" → uses for current quote only
+**Late MVP (Sprint 4-5):**
 
-**States:**
+| Component | Priority |
+|-----------|----------|
+| CancellationConfirmDialog | P1 — Cancellation action with penalty display |
+| DestinationAutocomplete | P1 — Autocomplete for search destination field |
 
-| State | Visual Treatment |
-|-------|-----------------|
-| No template selected | Gallery with "Select a template" prompt |
-| Template selected | Highlighted thumbnail + live preview |
-| Customizing | Branding panel expanded, live preview updating |
-| Saved | Success toast: "Template saved as default" |
+**Phase 2 (Future):**
 
----
-
-#### HCNTimeline
-
-**Purpose:** Per-booking chronological timeline of HCN verification events. Shows the full lifecycle from email sent → hotel response → status resolution.
-
-**Content:**
-- Timeline entries (chronological, newest at top)
-- Each entry: timestamp, event type, description, actor (system/agent/hotel)
-- Current status badge at top
-- Action buttons: "Resend HCN Email", "Update Status", "Add Note"
-
-**Entry Types:**
-
-| Event | Icon | Description |
-|-------|------|-------------|
-| Email Sent | Mail | "HCN email sent to [hotel email]" |
-| Hotel Responded | Reply | "Hotel confirmed details" / "Hotel reported discrepancy" |
-| Mismatch Detected | AlertTriangle | "Mismatch: [field] — Booking: [X], Hotel: [Y]" |
-| Agent Action | User | "Agent updated status to [new status]" |
-| Re-verification | RefreshCw | "Re-verification email sent" |
-| Confirmed | CheckCircle | "HCN verified — all details match" |
-
-**Accessibility:**
-- Timeline is an ordered list (`<ol>`) with `aria-label="HCN verification timeline"`
-- Each entry has `aria-label="[date]: [event description]"`
-- Action buttons have explicit labels
+| Component | Priority |
+|-----------|----------|
+| QuoteIndicator | P2 — Quote builder sidebar widget |
+| QuoteTemplateSelector | P2 — Quote PDF template gallery |
+| WalletWidget | P2 — Sidebar wallet balance |
+| HCNTimeline | P2 — HCN verification history |
+| AutoCancelCountdown | P2 — Auto-cancel deadline display |
+| RateComparisonTable | P2 — Multi-supplier rate comparison (requires mapping) |
 
 ---
 
-#### RateComparisonTable
+## User Journey Flows
 
-**Purpose:** Display all available rooms and rates for a single hotel across suppliers. Used in the "More Rooms" window/panel opened from HotelResultCard.
+### Journey 1: Daily Booking Flow (Primary Loop)
 
-**Content:**
-- Room type column (room name, bed configuration, max occupancy)
-- Rate per room per night
-- Meal basis
-- Cancellation policy (with date if free-cancel)
-- Total price for stay
-- Wallet eligibility indicator
-- "Add to Quote" and "Book" actions per row
+**Goal:** Agent receives client request → searches → selects room → books → gets confirmation → generates voucher.
 
-**Sorting:** Default by price (cheapest first). Sortable by room type, cancellation policy.
+**Entry Point:** Search page (Home) — agent is already logged in.
 
-**Accessibility:**
-- Proper `<table>` with `<thead>`, `<tbody>`, `<th scope="col">`
-- Sortable columns announced via `aria-sort`
-- Action buttons per row: `aria-label="Book [Room Type] at $[Price]"`
+```mermaid
+flowchart TD
+    A[Client sends request via WhatsApp/email] --> B[Agent opens Apolles — lands on Search Home]
+    B --> C[Enter destination, dates, rooms, guests]
+    C --> D[Click Search]
+    D --> E[Progressive loading: skeleton → Source A results → Source B appended]
+    E --> F[Agent scans hotel cards — each shows price, meal, cancellation, source]
+    
+    F --> G{Agent sees what they want?}
+    G -->|Wants to compare rooms| H[Click 'View Rooms' on hotel card]
+    H --> I[Room Details page: all rooms with rates, policies, bed types]
+    I --> J[Agent clicks 'Book This Room']
+    
+    G -->|Wants cheapest rate directly| K[Click 'Book' on hotel card]
+    
+    J --> L[Booking form: enter guest name, email, phone, special requests]
+    K --> L
+    
+    L --> M[Click 'Continue' — system runs price recheck]
+    M --> N{Price changed?}
+    N -->|No| O[Proceed to review]
+    N -->|Yes| P[Price Change Notice: original vs updated price]
+    P --> Q{Agent decision}
+    Q -->|Accept new price| O
+    Q -->|Go back| I
+    
+    O --> R{Expedia booking?}
+    R -->|Yes| S[Payment step: hosted card fields]
+    S --> T[Booking summary / review page]
+    R -->|No - TBO| T
+    
+    T --> U[Agent reviews: hotel, room, dates, guest, price, cancellation terms]
+    U --> V[Agent clicks 'Confirm Booking']
+    V --> W{Booking result}
+    W -->|Success| X[Confirmation page: ref number, booking ID, details]
+    W -->|Failure| Y[Error page: reason + 'Search Again' / 'Try Another Room']
+    
+    X --> Z[Agent clicks 'Generate Voucher']
+    Z --> AA[PDF voucher generated — download or open]
+    AA --> AB[Agent sends voucher to client]
+```
 
-### Component Implementation Strategy
+**Time Target:** Search to voucher sent in under 5 minutes.
 
-**Foundation Layer (shadcn/ui):**
-All standard UI components (Button, Input, Select, Table, Dialog, etc.) are used directly from shadcn/ui with Apolles design token overrides. No forking — customization via CSS variables and Tailwind classes only.
+---
 
-**Custom Layer (Apolles-specific):**
-Custom components are built using shadcn/ui primitives as building blocks:
-- `HotelResultCard` composes `Card` + `Badge` + `Button` + `Tooltip`
-- `StatusBadge` extends `Badge` with enum-driven variant system
-- `AutoCancelCountdown` uses WebSocket subscription + `Badge` + progressive styles
-- `WalletWidget` composes custom layout + `Popover` + monospace typography
-- `SearchFormComposite` composes `Input` + `Select` + `Calendar` + `Popover` + `Button`
-- `QuoteTemplateSelector` composes `Card` grid + preview pane + `Input` + color pickers
+### Journey 2: Price Change During Booking
 
-**Design Token Consistency:**
-All custom components consume the same CSS custom properties defined in the Visual Design Foundation. No hardcoded colors, spacing, or typography values. Every custom component references `--primary`, `--success`, `--warning`, `--error`, `--space-*`, etc.
+**Goal:** Agent encounters a price change during the booking process and decides how to proceed.
 
-**Component Architecture Principles:**
-1. **Composition over inheritance** — Build complex components from simple shadcn/ui primitives
-2. **Single responsibility** — Each component does one thing well
-3. **Prop-driven variants** — Use props (not separate components) for visual variants
-4. **Accessible by default** — ARIA attributes baked into component implementation, not added after
-5. **Server-component compatible** — Components designed for Next.js App Router (server components where possible, client components only when interactivity required)
+```mermaid
+flowchart TD
+    A[Agent selects a room and enters guest details] --> B[System runs price recheck with supplier]
+    B --> C{Price result}
+    C -->|Unchanged| D[Proceed to review — no interruption]
+    C -->|Increased| E[Price Change Notice displayed]
+    C -->|Decreased| F[Price Change Notice — favorable change]
+    C -->|Rate unavailable| G[Error: 'Rate no longer available' + Back to Rooms / Search Again]
+    
+    E --> H{Agent decision}
+    H -->|Accept new price| D
+    H -->|Go back| I[Return to Room Details to pick different room]
+    
+    F --> J[Agent sees lower price — continues at new price]
+```
 
-### Implementation Roadmap
+---
 
-**Phase 1 — Core Search & Booking (MVP Sprint 1-2):**
+### Journey 3: Admin Monitoring & Agent Management
 
-| Component | Justification |
-|-----------|--------------|
-| SearchFormComposite | Entry point for all agent workflows — nothing works without search |
-| HotelResultCard | Primary search result display — the most-viewed component |
-| StatusBadge | Used across bookings, HCN, wallet — blocks everything downstream |
-| WalletWidget | Persistent sidebar — needed for wallet-gated booking awareness |
-| AutoCancelCountdown | Safety-critical — prevents missed deadlines |
+**Goal:** Moshe checks platform health, investigates issues, manages agents.
 
-**Phase 2 — Quote & Voucher Flow (MVP Sprint 3-4):**
+```mermaid
+flowchart TD
+    A[Moshe opens Apolles admin] --> B[Admin sidebar navigation]
+    
+    B --> C[All Bookings]
+    C --> D[See all bookings across agents]
+    D --> E[Filter by agent, date, status, supplier]
+    E --> F[Click booking → full detail with supplier identity and cost breakdown]
+    
+    B --> G[Supplier Logs]
+    G --> H[See recent API calls to TBO and Expedia]
+    H --> I[Filter by supplier, method, status, date]
+    I --> J[Identify slow or failed calls for debugging]
+    
+    B --> K[Agents]
+    K --> L[List all agents with status and last login]
+    L --> M[Create new agent account]
+    L --> N[Deactivate/activate agent]
+    
+    B --> O[Markup Settings]
+    O --> P[View and update platform-wide markup percentage]
+```
 
-| Component | Justification |
-|-----------|--------------|
-| QuoteIndicator | Sidebar persistence — enables multi-search quote accumulation |
-| QuoteTemplateSelector | Required for quote PDF generation (aha moment) |
-| QuotePDFPreview | Visual confirmation before sending to client |
-| RateComparisonTable | "More Rooms" detail view — unlocks room-level selection |
-| VoucherPreview | Voucher generation preview before committing |
+---
 
-**Phase 3 — HCN & Enhancement (MVP Sprint 5-6):**
+### Journey Patterns (Reusable Across All Flows)
 
-| Component | Justification |
-|-----------|--------------|
-| HCNTimeline | Per-booking verification history — the HCN dashboard core component |
-| Power-user enhancements | List view variant for HotelResultCard, keyboard shortcuts, batch actions |
+**Navigation Patterns:**
+- **Search → Results → Room Details → Booking**: Progressive drill-down. Back button returns to previous state with scroll position preserved.
+- **Sidebar persistence**: Navigation always accessible. Simple, clean.
+
+**Decision Patterns:**
+- **Low-stakes action → no confirmation**: Search, filter, sort, view rooms — all instant, no modal.
+- **Medium-stakes action → inline confirmation**: Voucher generation shows clear "Generate Voucher" button without extra gate.
+- **High-stakes action → confirmation gate**: Non-refundable booking shows full details with explicit "Confirm" button. Cancellation (Late MVP) shows penalty with confirmation.
+
+**Feedback Patterns:**
+- **Toast notifications**: Quick confirmations ("Voucher generated", "Booking confirmed"). Non-blocking.
+- **Status badges**: Persistent state communication on reservations list and detail page.
+- **Progressive loading**: Skeleton screens during search. First results in ~2 seconds.
+- **Error with next action**: Every error includes what happened + what to do. "Source B unavailable — [Retry]"
+
+---
 
 ## UX Consistency Patterns
 
 ### Button Hierarchy
 
-**Button Levels:**
-
-| Level | Component | Visual | Usage | Examples |
-|-------|-----------|--------|-------|----------|
-| **Primary** | `Button variant="default"` | `--primary` (#635BFF) bg, white text, filled | One per context. The single most important action. | "Search", "Book Now", "Send Quote", "Confirm Booking" |
-| **Secondary** | `Button variant="secondary"` | White bg, `--primary` border, `--primary` text | Supporting actions alongside primary. | "Book" (on hotel card alongside "Add to Quote"), "Download PDF", "Save Draft" |
-| **Ghost** | `Button variant="ghost"` | No bg, `--text-secondary` text, hover reveals bg | Tertiary actions, inline actions, less emphasis. | "More Rooms", "Cancel", "Edit", "Add Note" |
-| **Destructive** | `Button variant="destructive"` | `--error` bg, white text | Irreversible or high-consequence actions. | "Cancel Booking", "Delete Quote" |
-| **Link** | Text link style | `--primary` text, underline on hover | Navigation disguised as action, inline references. | "More Rooms" text link, "View all transactions", "Top up" |
+| Level | Visual | Usage | Examples |
+|-------|--------|-------|----------|
+| **Primary** | `--primary` bg, white text | One per context. Most important action. | "Search", "Book This Room", "Confirm Booking", "Generate Voucher" |
+| **Secondary** | White bg, `--primary` border | Supporting actions. | "Book" (on hotel card), "Download Voucher", "Continue at $X" |
+| **Ghost** | No bg, `--text-secondary` text | Tertiary/inline actions. | "Back to Rooms", "Cancel", "Back", "Clear filters" |
+| **Destructive** | `--error` bg, white text | Irreversible high-consequence actions. | "Cancel Booking" (Late MVP) |
+| **Link** | `--primary` text, underline on hover | Navigation references. | "View all bookings", "Go to Search" |
 
 **Button Rules:**
-1. **One primary button per visible context** — Never two filled primary buttons competing for attention on the same card, modal, or form section.
-2. **Primary button goes right** — In forms and modals, the primary action is right-aligned. Destructive action is left-aligned with ghost style (or destructive style if confirmation gate).
-3. **Button labels are verb-first** — "Book Now", "Send Quote", "Add to Quote". Never noun-only ("Quote", "Booking").
-4. **Loading state on submit** — All buttons that trigger async operations show a spinner replacing the label. Button is disabled during loading. Width remains fixed (no layout shift).
-5. **Minimum touch target** — 36px height minimum on desktop, 44px on mobile. Padding: 12px horizontal minimum.
-
-**Button Placement by Context:**
-
-| Context | Primary | Secondary | Ghost |
-|---------|---------|-----------|-------|
-| Hotel card | "Add to Quote" | "Book" | "More Rooms" |
-| Booking form | "Confirm Booking" | "Back" | — |
-| Quote builder | "Send Quote" | "Download PDF" | "Save Draft" |
-| Confirmation dialog | "Confirm" | — | "Cancel" |
-| Destructive dialog | — | — | "Cancel" (left) + "Cancel Booking" destructive (right) |
-
----
+1. One primary button per visible context
+2. Primary button goes right in forms/modals
+3. Button labels are verb-first: "Book Now", "Confirm Booking", "Generate Voucher"
+4. Loading state on submit: spinner replacing label, button disabled, width fixed
+5. Minimum touch target: 36px height on desktop, 44px on mobile
 
 ### Feedback Patterns
 
 **Toast Notifications (Sonner):**
 
-| Type | Duration | Position | Icon | Use Case |
-|------|----------|----------|------|----------|
-| Success | 4s auto-dismiss | Bottom-right | CheckCircle | "Added to quote", "Quote sent", "Voucher generated" |
-| Error | Persistent (manual dismiss) | Bottom-right | XCircle | "Booking failed — supplier timeout", "Payment declined" |
-| Warning | 6s auto-dismiss | Bottom-right | AlertTriangle | "Price changed from $X to $Y" |
-| Info | 4s auto-dismiss | Bottom-right | Info | "Search updated with new supplier results" |
+| Type | Duration | Position | Use Case |
+|------|----------|----------|----------|
+| Success | 4s auto-dismiss | Bottom-right | "Booking confirmed", "Voucher generated" |
+| Error | Persistent (manual dismiss) | Bottom-right | "Booking failed — supplier error" |
+| Warning | 6s auto-dismiss | Bottom-right | "Price changed" |
+| Info | 4s auto-dismiss | Bottom-right | "Results updated from Source B" |
 
 **Toast Rules:**
-1. Toasts are **non-blocking** — they never prevent the agent from continuing work
-2. Success toasts **never require action** — they confirm and disappear
-3. Error toasts **always include a recovery action** — "Retry", "Contact support", "Try again"
-4. Maximum 3 toasts visible simultaneously — oldest dismissed first
-5. Toasts stack vertically, newest at bottom
+1. Non-blocking — never prevent the agent from continuing
+2. Success toasts never require action
+3. Error toasts always include a recovery action
+4. Maximum 3 visible simultaneously
 
 **Inline Feedback:**
 
 | Scenario | Treatment |
 |----------|-----------|
-| Form field validation error | Red border + error message below field. Message appears on blur or submit. |
-| Successful save | Brief green checkmark next to saved field (settings pages) |
-| Price change during booking | Yellow banner at top of booking form: "Price updated from $X to $Y. [Continue] [Cancel]" |
-| Supplier timeout | Inline info bar in results: "Showing results from 1 of 2 suppliers. [Retry]" |
-| Empty wallet | Inline warning in booking form: "Insufficient wallet balance. [Top Up]" |
-
-**Status Communication (persistent, not transient):**
-- All persistent status uses `StatusBadge` component (defined in Step 11)
-- Status is always visible on the relevant card/row — never hidden behind a click
-- Status changes are silent (badge update) unless they require agent action (then: toast + badge)
-
----
+| Form field validation error | Red border + error message below field |
+| Price change during booking | Yellow banner at top of booking form (PriceChangeNotice) |
+| Supplier timeout | Banner above results: "Source B unavailable. [Retry]" |
+| Rate unavailable | Error message with "Back to Rooms" and "Search Again" actions |
 
 ### Form Patterns
 
-**Form Layout:**
-- **Single column** for all forms (booking, settings, registration). No side-by-side fields except logically paired fields (check-in/check-out dates, first/last name).
-- **Label above field** — always. Never placeholder-only labels.
-- **Field width = content width** — Short fields (nationality dropdown) don't stretch full width. Date pickers are date-width. This creates visual rhythm and scannability.
-
-**Validation Strategy:**
-
-| Timing | Behavior |
-|--------|----------|
-| On blur (field exit) | Validate individual field. Show error immediately below field. |
-| On submit | Validate all fields. Scroll to first error. Focus first error field. |
-| On correction | Clear error as soon as field value becomes valid (real-time for typed fields). |
-| Server-side error | Display at field level if attributable, or as a banner at form top if general. |
-
-**Validation Visual Treatment:**
-- Error: Red border (`--error`), error icon inside field (right side), error message in `--error` color below field
-- Valid (after correction): Green border briefly (500ms), then return to default border
-- Required field indicator: Asterisk (*) after label in `--error` color. All required fields marked.
-
-**Form Sections:**
-- Long forms (booking form, settings) are divided into sections with `H3` headers
-- Each section is a logical group (Guest Details, Payment Summary, Cancellation Policy)
-- Sections separated by `Separator` component with `--space-6` gap
-
-**Field Defaults & Smart Pre-fill:**
-- Nationality/residency: pre-filled from agent settings
-- Guest name: blank (different per booking)
-- Payment: wallet balance shown, auto-calculated from rate
-- Settings forms: pre-filled from current saved values
-
----
+- **Single column** for all forms
+- **Label above field** — always
+- **Field width = content width** — short fields don't stretch full width
+- **Validation on blur** for individual fields, validate all on submit
+- **Required field indicator**: Asterisk (*) after label
+- **Sections divided** by `Separator` with `H3` headers for long forms
 
 ### Navigation Patterns
 
 **Sidebar Navigation (Primary):**
+- Icon + label. Active item: `--primary` text + left accent bar.
+- Collapsible: 240px expanded to 64px icon-only. State persisted in localStorage.
+- Agent section: Search, Reservations, Settings
+- Admin section (admin only): All Bookings, Supplier Logs, Agents, Markup
 
-| Element | Behavior |
-|---------|----------|
-| Nav items | Icon + label. Active item: `--primary` color text + left accent bar. Hover: subtle bg change. |
-| Collapse | Toggle between 240px (expanded) and 64px (icon-only). Collapse state persisted in localStorage. |
-| Sections | Grouped: Main (Search, Bookings, Quotes, HCN Dashboard) → Tools (Voucher Queue, Wallet) → Settings. Sections separated by subtle divider. |
-| Badges on nav items | Bookings: count of action-needed. HCN: count of mismatches. Non-intrusive, uses `--error` for urgent, `--warning` for attention. |
-
-**Workspace Tabs (Secondary):**
-
-| Element | Behavior |
-|---------|----------|
-| Tab bar | Horizontal, below sticky top bar. Scrollable if many tabs. |
-| Active tab | `--primary` bottom border, slightly bolder text. |
-| Tab content | Each tab preserves full state (scroll position, form values, filters, selections). |
-| Close tab | "X" on hover. If unsaved state, confirmation: "Discard unsaved changes?" |
-| New tab | "+" button at end of tab bar. Opens new search context. |
-| Maximum tabs | Soft limit of 8. Beyond 8: warning toast, but not blocked. |
-
-**Breadcrumb / Back Navigation:**
-- No breadcrumbs — the sidebar + tabs provide sufficient context
-- "Back" button in page header for drill-down pages (booking detail → bookings list)
-- Back always returns to exact previous state (scroll position, filters preserved)
-- Browser back button works identically to in-app back
+**Back Navigation:**
+- "Back" button in page header for drill-down pages
+- Back always returns to exact previous state (scroll, filters preserved)
+- Browser back button works identically
 
 **Page Transitions:**
-- No animated page transitions — instant content swap
-- Skeleton loading for data-dependent content (search results, booking lists)
+- No animated transitions — instant content swap
+- Skeleton loading for data-dependent content
 - Sticky page header remains during content load
-
----
 
 ### Modal & Overlay Patterns
 
 **Dialog Types:**
 
-| Type | When | Size | Dismiss |
-|------|------|------|---------|
-| Confirmation | Before irreversible actions (cancel booking, non-refundable booking) | Small (max 480px) | Escape key, click outside, Cancel button |
-| Information | Voucher preview, expanded details | Medium (max 640px) | Escape key, click outside, close X |
-| Sheet (slide-out) | Quote panel from sidebar, filter panel | Sheet (from right, 400px) | Escape key, click outside, close X |
+| Type | When | Size |
+|------|------|------|
+| Confirmation | Non-refundable booking, cancellation (Late MVP) | Small (max 480px) |
+| Information | Expanded error details | Medium (max 640px) |
 
 **Modal Rules:**
-1. **Modals are rare** — most interactions happen inline. Modals only for confirmations and previews.
-2. **Never stack modals** — if a second action is needed, replace the current modal content or close first.
-3. **Escape always closes** — no modal traps. Escape key and click-outside always work.
-4. **Focus trapped inside modal** — Tab cycles through modal elements only. Focus returns to trigger element on close.
-5. **Backdrop: semi-transparent dark** — `rgba(10, 37, 64, 0.5)` (using `--dark` at 50% opacity). Content behind is visible but clearly deactivated.
+1. Modals are rare — most interactions are inline
+2. Never stack modals
+3. Escape always closes
+4. Focus trapped inside modal
+5. Backdrop: `rgba(10, 37, 64, 0.5)`
 
-**Confirmation Gate Pattern (high-stakes actions):**
+**Confirmation Gate Pattern (non-refundable booking):**
 
 ```
 ┌──────────────────────────────────────┐
-│  ⚠️ Confirm Non-Refundable Booking   │
+│  ⚠ Confirm Non-Refundable Booking    │
 │                                      │
 │  Hotel: Grand Palace Barcelona       │
 │  Rate: $1,247.00 (non-refundable)    │
@@ -1450,152 +1426,80 @@ All custom components consume the same CSS custom properties defined in the Visu
 │  Guest: Sarah Cohen                  │
 │                                      │
 │  This booking cannot be cancelled     │
-│  or refunded. $1,247.00 will be      │
-│  deducted from your wallet.          │
+│  or refunded once confirmed.          │
 │                                      │
 │  [Cancel]              [Confirm ▸]   │
 └──────────────────────────────────────┘
 ```
 
-- Full context repeated (hotel, rate, dates, guest)
-- Consequences stated explicitly
-- Financial impact in bold
-- Cancel is ghost (left), Confirm is primary (right)
-
----
-
 ### Empty States & Loading States
 
 **Empty States:**
 
-| Page | Empty State Message | Action |
-|------|-------------------|--------|
-| Search results (no results) | "No hotels found for [destination] on [dates]. Try adjusting your dates or searching a nearby city." | "Modify Search" button |
-| Search results (supplier error) | "Results from [Supplier] unavailable. Showing results from [other supplier]." | "Retry [Supplier]" link |
-| Bookings list (new agent) | "No bookings yet. Search for hotels to make your first booking." | "Go to Search" button |
-| Quotes history (new agent) | "No quotes created yet. Add hotels to a quote from search results." | "Go to Search" button |
-| HCN Dashboard (no bookings) | "No HCN verifications in progress. Verifications start automatically after voucher generation." | — |
-| Wallet transactions (new) | "No transactions yet. Top up your wallet to start booking." | "Top Up" button |
-
-**Empty State Design:**
-- Centered in content area
-- Subtle illustration or icon (monochrome, `--text-muted` color) — optional for MVP
-- Message in `--text-secondary`, 14px
-- Action button: primary or secondary depending on importance
-- Never a completely blank page — always context + next action
+| Page | Message | Action |
+|------|---------|--------|
+| Search results (no results) | "No hotels found for [destination] on [dates]. Try adjusting your dates or searching a nearby city." | "Modify Search" |
+| Search results (supplier error) | "Results from Source [X] unavailable. Showing results from the other source." | "Retry" |
+| Search results (both failed) | "Unable to load results. Please try again." | "Retry All" |
+| Reservations list (new agent) | "No bookings yet. Search for hotels to make your first booking." | "Go to Search" |
 
 **Loading States:**
 
-| Content Type | Loading Treatment |
-|-------------|------------------|
-| Hotel search results | Skeleton cards (3-column grid of card-shaped skeletons). First results appear in ~2s, more appended. Header shows: "Searching [X] suppliers..." |
-| Table data (bookings, transactions) | Skeleton rows matching table column layout. 5 skeleton rows as placeholder. |
-| Single page data (booking detail) | Skeleton matching page layout (header skeleton, content sections). |
-| PDF preview | Spinner centered in preview pane + "Generating preview..." |
-| Form submission | Button spinner (inline). Form fields disabled but visible. |
+| Content Type | Treatment |
+|-------------|-----------|
+| Hotel search results | Skeleton cards (3-column grid). First results appear in ~2s, more appended. Header: "Searching 2 sources..." |
+| Table data (reservations, admin) | 5 skeleton rows matching table layout |
+| Single page data (booking detail) | Skeleton matching page layout |
+| PDF generation | Button spinner + "Generating..." |
+| Form submission | Button spinner. Form fields disabled but visible. |
 
 **Loading Rules:**
-1. **Skeleton > spinner** — always prefer skeleton layouts that match the final content shape
-2. **Progressive loading for search** — show results as they arrive, don't wait for all suppliers
-3. **Never a blank page** — skeleton appears immediately on navigation (< 100ms)
-4. **Loading text is specific** — "Searching 2 suppliers..." not "Loading..."
-5. Respect `prefers-reduced-motion` — skeleton shimmer becomes a static gray block
-
----
-
-### Search & Filtering Patterns
-
-**Search Form:**
-- SearchFormComposite (Step 11) is the primary search interface
-- Search button triggers search — no auto-search on field change (deliberate action required for API calls)
-- "Enter" key in any field triggers search (same as clicking Search button)
-
-**Results Filtering:**
-
-| Filter | Type | Behavior |
-|--------|------|----------|
-| Price range | Range slider | Filters client-side. Instant update. Shows count: "47 of 123 hotels" |
-| Star rating | Checkbox group (1-5) | Multi-select. Instant filter. |
-| Meal basis | Checkbox group | Multi-select. Instant filter. |
-| Cancellation | Toggle: "Free cancellation only" | Single toggle. Instant filter. |
-| Sort | Dropdown | Price (low-high), Price (high-low), Star rating, Name A-Z |
-
-**Filter Behavior:**
-1. Filters are **client-side** (applied to already-fetched results) — instant, no API call
-2. Active filters shown as removable chips above results: `[Free cancel ✕] [4+ stars ✕]`
-3. "Clear all filters" link when any filters are active
-4. Filter panel is collapsible (default expanded on desktop, collapsed on mobile)
-5. Result count updates in real-time as filters change: "Showing 23 of 47 hotels"
-
-**Search History:**
-- Last 5 searches shown as quick-access chips below search form
-- Click a chip → pre-fills search form → auto-searches
-- Search history stored in localStorage (per agent)
-
----
+1. Skeleton > spinner — always prefer skeleton layouts
+2. Progressive loading for search — show results as they arrive
+3. Never a blank page — skeleton appears < 100ms
+4. Loading text is specific: "Searching 2 sources..." not "Loading..."
+5. Respect `prefers-reduced-motion`
 
 ### Data Table Patterns
 
-**Table Design (Bookings, Wallet Transactions, Quotes History):**
+- Key column first (booking ref or hotel name)
+- Status column uses StatusBadge
+- Monospace for codes/amounts (JetBrains Mono)
+- Date format: "Mar 10, 2026" everywhere
+- Pagination: "Showing 1-25 of 142". Rows-per-page selector.
+- Entire row clickable for detail navigation
+- Alternating rows: white / `--surface`
+- Sticky header on scroll
 
-| Element | Treatment |
-|---------|-----------|
-| Header row | Sticky on scroll. `--surface` bg. `--text-secondary` text. Semibold. Sortable columns have sort icon. |
-| Data rows | Alternating: white / `--surface` for readability. Hover: slight highlight. |
-| Row click | Navigates to detail view (booking detail, quote detail). Entire row is clickable. |
-| Actions column | Right-aligned. Ghost buttons or dropdown menu for per-row actions. |
-| Pagination | Bottom of table. "Showing 1-25 of 142". Page buttons. Rows-per-page selector (25, 50, 100). |
-| Empty state | Centered message with action (see Empty States above). |
-| Search/filter | Above table. Text search input + filter dropdowns. |
-
-**Table Rules:**
-1. **Key column first** — Booking reference or hotel name is always the leftmost column
-2. **Status column uses StatusBadge** — consistent visual treatment across all tables
-3. **Monospace for codes/amounts** — Booking references, HCN numbers, wallet amounts in JetBrains Mono
-4. **Date format consistent** — "Mar 10, 2026" everywhere. Relative time for recent: "2 hours ago"
-5. **Responsive**: On narrow viewports, less critical columns hide. Key column + status + primary action always visible.
-
----
-
-### Keyboard Shortcuts (Power User)
+### Keyboard Shortcuts
 
 | Shortcut | Action | Context |
 |----------|--------|---------|
-| `/` or `Ctrl+K` | Focus search / open command palette | Global |
-| `Ctrl+N` | New search tab | Global |
-| `Ctrl+W` | Close current tab | Global |
 | `Ctrl+Enter` | Submit form / Confirm action | Forms, dialogs |
-| `Escape` | Close modal / dismiss toast / cancel action | Global |
-| `Tab` / `Shift+Tab` | Navigate between focusable elements | Global |
+| `Escape` | Close modal / dismiss toast | Global |
+| `Tab` / `Shift+Tab` | Navigate focusable elements | Global |
 
-**Keyboard Rules:**
-1. Shortcuts **never conflict** with browser defaults
-2. Shortcuts are **discoverable** — shown in tooltips and in a `?` help overlay
-3. All actions achievable by keyboard have mouse equivalents (and vice versa)
-4. No shortcut is required — all features accessible without keyboard shortcuts
+### Micro-Interaction Patterns
 
----
-
-### Micro-interaction Patterns
-
-| Interaction | Animation | Duration | Easing |
-|-------------|-----------|----------|--------|
-| Button hover | Background color shift | 150ms | ease |
-| Button click | Subtle scale-down (0.98) | 100ms | ease-out |
-| Toast appear | Slide up + fade in | 200ms | ease-out |
-| Toast dismiss | Fade out + slide down | 150ms | ease-in |
-| Modal open | Fade in backdrop + scale up content (0.95 → 1.0) | 200ms | ease-out |
-| Modal close | Fade out | 150ms | ease-in |
-| Skeleton shimmer | Left-to-right gradient sweep | 1.5s loop | linear |
-| Card hover | Elevation increase (shadow) | 150ms | ease |
-| Tab switch | Instant content swap, underline slides | 200ms | ease |
-| Status badge update | Brief pulse (scale 1.0 → 1.05 → 1.0) | 300ms | ease-in-out |
+| Interaction | Duration | Easing |
+|-------------|----------|--------|
+| Button hover | 150ms | ease |
+| Button click (scale-down) | 100ms | ease-out |
+| Toast appear (slide up + fade) | 200ms | ease-out |
+| Toast dismiss (fade + slide) | 150ms | ease-in |
+| Modal open (fade + scale) | 200ms | ease-out |
+| Modal close (fade) | 150ms | ease-in |
+| Skeleton shimmer | 1.5s loop | linear |
+| Card hover (elevation) | 150ms | ease |
+| Status badge update (pulse) | 300ms | ease-in-out |
 
 **Animation Rules:**
-1. **All animations < 300ms** — no slow, cinematic transitions. This is a productivity tool.
-2. **Respect `prefers-reduced-motion`** — all animations disabled, instant state changes
-3. **No animation on first load** — content appears immediately. Animations only on user-triggered state changes.
-4. **Functional, not decorative** — every animation communicates a state change. No animations for aesthetics alone.
+1. All animations < 300ms
+2. Respect `prefers-reduced-motion` — all disabled
+3. No animation on first load
+4. Functional, not decorative
+
+---
 
 ## Responsive Design & Accessibility
 
@@ -1603,238 +1507,84 @@ All custom components consume the same CSS custom properties defined in the Visu
 
 **Platform Priority: Desktop-first.**
 
-Apolles is a professional productivity tool. Agents work primarily at desks with laptops or monitors. Mobile is a secondary context used occasionally for status checks (HCN alerts, booking confirmations) — not for primary workflows like search, quoting, or booking.
+Agents work primarily at desks. Mobile is secondary for status checks.
 
-**Desktop (Primary — full experience):**
-- Full sidebar navigation (240px expanded)
+**Desktop (Primary):**
+- Full sidebar (240px expanded)
 - 3-column hotel card grid
-- Side-by-side panels where useful (quote builder: hotel list + PDF preview)
-- Full data tables with all columns visible
+- Full data tables with all columns
 - Keyboard shortcuts active
-- Workspace tabs for multi-client context switching
-- WalletWidget and QuoteIndicator visible in sidebar
 
-**Tablet (Secondary — functional but adapted):**
-- Sidebar collapsed to icon-only (64px) by default, expandable on tap
+**Tablet (Secondary):**
+- Sidebar collapsed to icon-only (64px)
 - 2-column hotel card grid
-- Data tables show key columns; secondary columns accessible via row expansion
-- Touch targets enlarged to 44px minimum
-- Workspace tabs remain functional (horizontal scroll if many)
-- Quote builder: stacked layout (hotel list above, preview below) instead of side-by-side
+- Tables: key columns visible, secondary in expandable detail
+- Touch targets 44px minimum
 
-**Mobile (Tertiary — monitoring and continuity):**
-- Sidebar replaced by bottom navigation bar (5 items: Search, Bookings, Quotes, Wallet, More)
-- 1-column hotel card grid (full-width cards)
-- Data tables collapse to card-based list view (each row becomes a card)
-- Search form fields stack vertically (full-width)
-- No workspace tabs — single-context view
-- Quote builder: read-only preview mode. Full editing requires desktop.
-- WalletWidget moves to top of "More" section
-- Primary use cases: check booking status, view HCN alerts, respond to client with existing quote link
-
-### Mobile Capability Contract
-
-Mobile is for monitoring and continuity, not full production workflows.
-
-**Allowed on mobile:**
-- Global search (simplified form)
-- Booking/status lookup and detail view
-- HCN alert review and status check
-- Quote preview (read-only) and send-to-client via existing quote link
-- Wallet balance check
-- Notifications and alerts
-
-**Restricted on mobile:**
-- Quote editing/finalization (add rooms, reorder, customize template)
-- Complex multi-step booking actions (multi-room configuration)
-- Settings configuration (template setup, branding)
-- Batch operations (bulk voucher generation)
-
-**Handoff rule:** Every restricted action must show: "Continue on desktop" with a deep link to the exact page/state + preserved draft/context. No dead ends — agents can always return to previous context without data loss.
-
-### Navigation Parity Rule
-
-Desktop sidebar and mobile bottom nav must expose the same core information architecture:
-
-| Desktop Sidebar | Mobile Bottom Nav | Consistency Rule |
-|----------------|-------------------|------------------|
-| Search | Search | Same icon, same label |
-| Bookings | Bookings | Same icon, same label |
-| Quotes | Quotes | Same icon, same label |
-| Wallet | Wallet | Same icon, same label |
-| HCN Dashboard, Voucher Queue, Settings | More (menu) | Grouped under "More" |
-
-**Status visibility parity:**
-- Wallet balance, active quote indicator, and HCN alert count must be accessible within 1 tap from any screen on all breakpoints
-- Desktop: visible in sidebar always
-- Tablet: visible in expanded sidebar or via icon-tap popover
-- Mobile: wallet in "More" header area, quote indicator as floating action button, HCN badge on Bookings nav item
+**Mobile (Tertiary — monitoring only):**
+- Sidebar replaced by bottom navigation (3 items: Search, Reservations, More)
+- 1-column hotel card grid
+- Tables collapse to card-based list view
+- Search form stacks vertically
+- Primary use: check booking status, view reservation detail
 
 ### Breakpoint Strategy
 
-**Tailwind CSS breakpoints (desktop-first with `max-*` modifiers where needed):**
-
-| Breakpoint | Width | Target | Layout Changes |
-|------------|-------|--------|----------------|
-| `sm` | >= 640px | Large phones (landscape) | Card grid: 1 col. Tables: card view. |
-| `md` | >= 768px | Tablets (portrait) | Card grid: 2 col. Sidebar: icon-only. Tables: key columns. |
-| `lg` | >= 1024px | Small laptops / tablets (landscape) | Card grid: 2-3 col. Sidebar: expandable. Tables: most columns. |
-| `xl` | >= 1280px | Standard laptops / desktops | Card grid: 3 col. Sidebar: expanded. Full tables. Full layout. |
-| `2xl` | >= 1536px | Large monitors / ultrawide | Card grid: 4 col. Content max-width: 1440px centered. Extra whitespace. |
-
-**Critical breakpoint: `lg` (1024px)** — this is where the full desktop experience activates. Below 1024px, the sidebar collapses and layouts simplify.
-
-**Content Max-Width:** 1440px. On screens wider than 1440px, content is centered with equal padding on both sides.
-
-**Component-Level Responsive Behavior:**
-
-| Component | >= xl (Desktop) | md-lg (Tablet) | < md (Mobile) |
-|-----------|----------------|-----------------|----------------|
-| Sidebar | 240px expanded | 64px icon-only | Bottom nav bar |
-| HotelResultCard | 3-col grid | 2-col grid | 1-col full-width |
-| Data Tables | Full columns, pagination | Key columns + row expansion | Card list view |
-| SearchFormComposite | Horizontal layout (fields in row) | Fields wrap to 2 rows | Vertical stack (full-width fields) |
-| Quote Builder | Side-by-side (list + preview) | Stacked (list above, preview below) | Read-only preview + "Continue on desktop" |
-| WalletWidget | Sidebar (persistent) | Sidebar icon (tap to expand) | "More" section header |
-| QuoteIndicator | Sidebar (persistent) | Sidebar icon (tap to expand) | Floating action button |
-| Workspace Tabs | Full tab bar | Scrollable tab bar | Not available (single context) |
-| Modal / Dialog | Centered, max-width | Centered, wider (90% viewport) | Full-screen sheet (bottom-up) |
-
-### Responsive Data Table Rule
-
-On narrow viewports, tables transform to preserve critical information:
-- **Always visible:** Primary identifier (booking ref, hotel name), StatusBadge, primary action button
-- **Moved to expandable detail:** Secondary fields (dates, guest name, supplier, price breakdown)
-- **StatusBadge semantics (label + color + icon) must be identical to desktop** — never simplified to color-only chips on mobile
-- Expansion trigger: chevron icon or tap-to-expand row. Expanded detail appears as a card below the row.
-
-### State Persistence Across Breakpoints
-
-**Requirement:** Workspace, search, quote, and tab state must survive viewport resize and breakpoint transitions. No state loss when crossing `md`/`lg`/`xl` boundaries.
-
-**Architecture:**
-- All workspace state (active tabs, search parameters, quote contents, scroll positions, filter selections) stored in a client-side store (e.g., Zustand with persist middleware), keyed by `workspaceTabId`
-- State lifecycle is decoupled from layout — layout panels can mount/unmount on breakpoint change without losing data
-- Resize-safe rendering: prefer CSS visibility/layout toggles over conditional component unmount/remount for core panels
-- Only truly optional panels (e.g., desktop-only filter sidebar) use lazy mount/unmount
-- State store uses versioned migrations for schema changes
+| Breakpoint | Width | Layout |
+|------------|-------|--------|
+| `sm` | >= 640px | 1-col cards, card-view tables |
+| `md` | >= 768px | 2-col cards, icon-only sidebar |
+| `lg` | >= 1024px | 2-3 col cards, expandable sidebar |
+| `xl` | >= 1280px | 3-col cards, full sidebar, full tables |
+| `2xl` | >= 1536px | 4-col cards, content centered at 1440px max |
 
 ### Accessibility Strategy
 
 **Compliance Target: WCAG 2.1 Level AA.**
 
-AA is the industry standard for professional SaaS applications. It ensures usability for users with visual, motor, auditory, and cognitive disabilities.
-
-**WCAG 2.1 AA Acceptance Criteria (Required):**
-
-| Criterion | Requirement | Apolles Implementation |
-|-----------|-------------|----------------------|
-| 1.4.3 Contrast (text) | >= 4.5:1 normal, >= 3:1 large | `--text-primary` on `--card` = ~13.5:1. All text exceeds minimum. |
-| 1.4.11 Non-text contrast | UI boundaries, focus indicators >= 3:1 | Buttons, form borders, icons all meet 3:1 against adjacent colors |
-| 2.4.7 Focus visible | Clear 2px+ indicator, never removed | 2px `--primary` outline with 2px offset on all interactive elements |
-| 1.3.1 Info and relationships | Semantic structure for all content | `<nav>`, `<main>`, `<article>`, `<section>`, proper heading hierarchy |
-| 4.1.2 Name, role, value | All controls programmatically labeled | ARIA labels on all icon-only buttons. Radix primitives provide roles. |
-| 3.3.1 Error identification | Inline error text with recovery guidance | Red border + message below field + `aria-describedby` link |
-| 3.3.3 Error suggestion | Correction guidance provided | Every error includes what happened + what to do |
-| 1.4.10 Reflow | No horizontal scroll at 320px | Content reflows to single column. Data tables use managed horizontal scroll only. |
-| 2.1.1 Keyboard | All functionality via keyboard | Tab order follows visual order. All flows completable without mouse. |
-
-**Color Blindness Considerations:**
-- Status colors tested against deuteranopia, protanopia, and tritanopia simulations
-- Green (success) and red (error) are never the only distinction — icon shape differs (CheckCircle vs. AlertTriangle)
-- Warning (amber) provides a third visual channel distinct from both green and red in all color blindness types
-
-**Keyboard Accessibility:**
-
-| Requirement | Implementation |
-|-------------|---------------|
-| All interactive elements focusable | Tab order follows visual reading order (left-to-right, top-to-bottom) |
-| Visible focus indicators | 2px `--primary` outline with 2px offset. High contrast against all backgrounds. |
-| Skip navigation | "Skip to main content" link visible on first Tab press, bypasses sidebar navigation |
-| No keyboard traps | Escape always available. Tab cycles through modal elements only when modal is open. |
-| Custom component keyboard | HotelResultCard: Enter to open detail, Tab to cycle actions. Tables: arrow keys for row navigation. |
-| Shortcut discoverability | `?` key opens keyboard shortcut overlay (desktop only) |
-
-**Screen Reader Support:**
-
-| Requirement | Implementation |
-|-------------|---------------|
-| Landmark regions | Sidebar = `<nav aria-label="Main navigation">`, Content = `<main>`, Search = `<search>` |
-| ARIA labels | All icon-only buttons have `aria-label`. Decorative images have `aria-hidden="true"`. |
-| Dynamic content | `aria-live="polite"` for search results loading, status changes, toast notifications |
-| Urgent content | `aria-live="assertive"` only for auto-cancel warnings < 6 hours, booking errors |
-| Form association | All inputs have explicit `<label>` with `htmlFor`. Errors linked via `aria-describedby`. |
-| Table accessibility | `<th scope="col">` for headers. `<caption>` for table description. Sortable columns use `aria-sort`. |
-| Route change focus | On route change: focus reset to page `<h1>`. Announced via document title update. |
-| Modal focus management | On open: focus first focusable element. On close: return focus to trigger element. Focus trap active during modal. |
-
-**Live Region Announcement Policy:**
-
-| Event Type | Priority | `aria-live` | Rate Limit |
-|------------|----------|-------------|------------|
-| Toast notification | Normal | `polite` | Max 1 per 2 seconds |
-| Search results loading | Normal | `polite` | Announce once: "X results loaded" |
-| Status badge change | Normal | `polite` | Per-change, deduplicated |
-| Auto-cancel < 6 hours | Urgent | `assertive` | Max 1 per 30 seconds |
-| Booking error/failure | Urgent | `assertive` | Immediate, no rate limit |
-| HCN mismatch detected | Normal | `polite` | Per-event |
-
-**Reduced Motion Behavior:**
-
-When `prefers-reduced-motion: reduce` is active:
-- All CSS transitions and animations disabled (no shimmer, no slide, no pulse)
-- Skeleton loading becomes static gray blocks (no gradient sweep)
-- AutoCancelCountdown pulse replaced with static red background
-- Toast notifications appear/disappear instantly (no slide animation)
-- Equivalent non-motion feedback preserved: text changes, icon swaps, color state changes still occur
-- `aria-live` announcement timing unchanged — screen readers still receive updates at the same cadence
-- Button loading state: spinner replaced with "Loading..." text
+**Key requirements:**
+- All text meets minimum contrast ratios (4.5:1 normal, 3:1 large)
+- Status never communicated by color alone — always icon + text
+- All interactive elements keyboard focusable with visible 2px focus indicator
+- Semantic HTML structure: `<nav>`, `<main>`, `<article>`, `<section>`
+- Screen reader support via Radix UI ARIA attributes
+- `prefers-reduced-motion` respected — all animations disabled
+- Skip navigation link on first Tab press
+- Modal focus trapping and return
+- Form validation errors linked via `aria-describedby`
+- `aria-live="polite"` for search results loading and status changes
+- Touch targets >= 44px on mobile
 
 ### Next.js App Router Boundary Map
 
-**Server Components (default — no client JS):**
+**Server Components (default):**
 - Page layouts, navigation structure, static content
-- Data fetching for initial page load (bookings list, quotes history, wallet transactions)
+- Data fetching for initial page load (reservations list, admin views)
 - SEO metadata, page headers
 
-**Client Components (explicit `"use client"` boundary):**
+**Client Components (explicit `"use client"`):**
 - All interactive form elements (SearchFormComposite, booking form)
-- Real-time components (AutoCancelCountdown, WalletWidget with live balance)
-- WebSocket/SSE subscribers (HCN status updates, auto-cancel push updates)
 - Components using `useState`, `useEffect`, `useRef`
-- Components reading `localStorage` (sidebar collapse state, search history, workspace tabs)
-- Components depending on viewport size (`useMediaQuery` for responsive layout decisions)
+- Components reading `localStorage` (sidebar collapse state)
+- Components depending on viewport size
 
-**Hydration Safety Rules:**
-- Never read `localStorage` or `window` during server render — use `useEffect` for client-only initialization
-- Viewport-dependent layout decisions use CSS (Tailwind responsive classes) first, JS (`useMediaQuery`) only when CSS is insufficient
-- SSE/WebSocket connections established only in `useEffect` on client mount
-- Initial render must match server HTML — defer client-only state to `useEffect` to avoid hydration mismatch
+**Hydration Safety:**
+- Never read `localStorage` or `window` during server render
+- Use CSS (Tailwind responsive classes) first, JS only when insufficient
+- Initial render matches server HTML — defer client-only state to `useEffect`
 
 ### Performance Guardrails
 
 | Metric | Target (Desktop) | Target (Mobile) |
 |--------|------------------|-----------------|
-| LCP (Largest Contentful Paint) | < 2.5s | < 3.5s |
-| INP (Interaction to Next Paint) | < 200ms | < 300ms |
-| CLS (Cumulative Layout Shift) | < 0.1 | < 0.1 |
+| LCP | < 2.5s | < 3.5s |
+| INP | < 200ms | < 300ms |
+| CLS | < 0.1 | < 0.1 |
 | Bundle size (initial JS) | < 200KB gzipped | < 150KB gzipped |
 
-**Image Optimization:**
-- All images via `next/image` with strict `sizes` attribute and server-provided dimensions
-- Hotel images: `sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"` matching grid columns
-- Lazy loading for below-fold images (default `next/image` behavior)
-- WebP/AVIF format auto-negotiation via Next.js
+**Image Optimization:** `next/image` with responsive `sizes`, lazy loading, WebP/AVIF auto-negotiation.
 
-**List Virtualization:**
-- Search results > 50 hotels: virtualized rendering (only visible cards + buffer rendered)
-- Data tables > 100 rows: virtualized row rendering
-- Implementation: `@tanstack/react-virtual` or equivalent
-
-**Real-Time Update Coalescing:**
-- WebSocket/SSE updates batched in 500-1000ms windows before triggering React re-renders
-- Prevents UI thrashing during rapid status changes
-- AutoCancelCountdown: client-side timer between push updates (calculated from deadline timestamp), not per-second re-renders
+**List Virtualization:** Search results > 50 hotels: virtualized rendering. Tables > 100 rows: virtualized.
 
 ### Testing Strategy
 
@@ -1842,98 +1592,102 @@ When `prefers-reduced-motion: reduce` is active:
 
 | Test Type | Tools | Frequency |
 |-----------|-------|-----------|
-| Breakpoint verification | Chrome DevTools responsive mode | Every component change |
-| Real device testing | BrowserStack (iPhone SE, iPhone 15, iPad, iPad Pro, Android flagship) | Per sprint |
-| Cross-browser | Chrome, Firefox, Safari, Edge (latest 2 versions) | Per sprint |
-| Ultrawide testing | Chrome DevTools at 2560px, 3440px | Per layout change |
-| Playwright viewport smoke | 3 required viewports: 390x844, 768x1024, 1366x768 | Every PR (CI) |
-| Resize state persistence | Playwright resize across md/lg/xl with state assertions | Every PR (CI) |
+| Breakpoint verification | Chrome DevTools | Every component change |
+| Real device testing | BrowserStack | Per sprint |
+| Cross-browser | Chrome, Firefox, Safari, Edge | Per sprint |
+| Playwright viewport smoke | 390x844, 768x1024, 1366x768 | Every PR (CI) |
 
 **Accessibility Testing:**
 
 | Test Type | Tools | Frequency |
 |-----------|-------|-----------|
-| Automated audit | axe-core (@axe-core/playwright) | Every PR (CI gate) |
-| Lighthouse accessibility | Chrome Lighthouse CI | Nightly (non-blocking) |
-| Keyboard-only navigation | Manual: complete critical flows without mouse | Per sprint |
-| Screen reader | VoiceOver (macOS/iOS), NVDA (Windows) | Per sprint for new features, per release for full sweep |
-| Color contrast | Chrome DevTools contrast checker | Every color/typography change |
-| Color blindness simulation | Chrome DevTools vision deficiency | Per design change |
-| 200% zoom verification | Manual: verify no layout breakage or lost functionality | Per sprint |
+| Automated audit | axe-core | Every PR (CI gate) |
+| Keyboard-only navigation | Manual | Per sprint |
+| Screen reader | VoiceOver, NVDA | Per sprint for new features |
+| Color contrast | Chrome DevTools | Every color change |
 
-**CI Quality Gates (PR-blocking):**
+**CI Quality Gates:**
+- Zero axe-core `critical` or `serious` violations (block merge)
+- 3 viewport responsive smoke tests pass (block merge)
 
-| Gate | Tool | Threshold | Policy |
-|------|------|-----------|--------|
-| Responsive smoke | Playwright (Chromium) | 3 viewports, critical flows pass 100% | Block merge on failure |
-| Accessibility violations | axe-core | Zero `critical` or `serious` violations | Block merge on failure |
-| axe moderate/minor | axe-core | Total <= 5, non-increasing trend | Warn, don't block |
-| Flaky test stability | Playwright retry | Retry allowed once; < 98% pass-rate over 20 runs = quarantine | Block merge if quarantined |
+---
 
-**Nightly Quality Gates (alerting, not blocking):**
+## MVP Screen List & Key States
 
-| Gate | Tool | Threshold | Policy |
-|------|------|-----------|--------|
-| Lighthouse Accessibility | Lighthouse CI | >= 95 | Alert if regression > 5 points from 7-day baseline |
-| Lighthouse Performance | Lighthouse CI | >= 75 (desktop) / >= 60 (mobile) | Alert on regression |
-| Lighthouse Best Practices | Lighthouse CI | >= 90 | Alert on regression |
+### MVP Core Screens
 
-**Minimum Manual Test Matrix (MVP):**
+| # | Screen | Key States |
+|---|--------|-----------|
+| 1 | Login | Default, validation error, auth error, loading |
+| 2 | Search (Home) | Empty (no search yet), searching (skeleton), results loaded (both sources), partial results (one source), no results, both failed |
+| 3 | Room Details | Loading, rooms loaded, back to results |
+| 4 | Booking: Guest Details | Empty form, validation errors, submitting |
+| 5 | Booking: Price Recheck | Checking (spinner on button), price unchanged (pass-through), price changed (PriceChangeNotice), rate unavailable (error) |
+| 6 | Booking: Payment (Expedia only) | Hosted fields loading, fields ready, validation error, processing |
+| 7 | Booking: Review/Summary | All details displayed, non-refundable warning (if applicable), submitting |
+| 8 | Booking: Confirmation | Success (with ref number + voucher button), failure (with reason + next actions) |
+| 9 | Reservations List | Empty (new agent), populated, filtered, searching |
+| 10 | Reservation Detail | Pending, confirmed (with voucher access), failed (with reason), cancelled, voucher generating |
+| 11 | Admin: Bookings | Populated, filtered, empty |
+| 12 | Admin: Supplier Logs | Populated, filtered, error rows highlighted |
+| 13 | Admin: Platform Settings | Agents section (list, create, deactivate) + markup section (view, edit, save). Two sections on one page. |
 
-| Dimension | Required Values |
-|-----------|----------------|
-| Browsers | Chrome (Win + Mac), Safari (Mac + iPhone), Android Chrome |
-| Input modes | Mouse, keyboard-only, screen reader smoke (VoiceOver Mac + iPhone, NVDA Win once per release) |
-| Viewports | 390px, 768px, 1366px widths; portrait + landscape for phone |
-| Critical scenarios | Search results grid, filter collapse/expand, modal confirmation gate, toast/status announcements, quote builder actions, wallet gate messaging, HCN dashboard status |
-| A11y checks per scenario | Tab order, visible focus, ESC close, dialog focus trap/return, semantic labels, contrast spot-check, 200% zoom |
+### Late MVP Screens
 
-**Accessibility Acceptance Criteria (per story/feature):**
-1. Zero axe-core `critical` or `serious` violations on affected pages
-2. Keyboard-only user completes the affected flow without mouse (Search -> Add to Quote -> Booking confirmation)
-3. All dialogs trap focus and return focus to invoking control on close
-4. Status/toast/HCN updates announced via live regions (verified in automated + manual smoke)
-5. At 200% zoom and at 390px width, core actions remain available with no horizontal page scroll
-6. Touch targets for primary mobile actions >= 44x44 CSS px
-7. All form fields have associated `<label>` elements with `htmlFor`
-8. Color is not the sole information channel for any status indicator
+| # | Screen | Key States |
+|---|--------|-----------|
+| 14 | Password Reset | Request form, email sent confirmation, reset form, success |
+| 15 | Booking Cancellation | Penalty display, confirmation gate, cancellation confirmed, cancellation failed |
+| 16 | Agent Settings | Nationality/residency default, password change form, save confirmation |
 
-### Implementation Guidelines
+### Phase 2 Screens (Not in MVP)
 
-**Responsive Development:**
+| Screen | Notes |
+|--------|-------|
+| Quote Builder | Multi-city composition, PDF preview, send/download |
+| Quote History | Past quotes, re-search capability |
+| Quote Settings | Template gallery, branding customization |
+| HCN Dashboard | Verification status, timeline, mismatch resolution |
+| Wallet | Balance, top-up, transaction history |
+| Registration | Self-registration, email verification |
+| Advanced Admin | Analytics, performance metrics |
 
-Key rules for Tailwind-based responsive implementation:
+---
 
-1. Use Tailwind responsive classes (`xl:`, `lg:`, `md:`, `sm:`) — avoid custom media queries where possible
-2. Use `rem` for typography and spacing (scales with user font-size preference)
-3. Use `%` and `fr` units for layout widths (fluid containers)
-4. Images: `next/image` with responsive `sizes` attribute and server-provided dimensions
-5. Test touch targets on actual devices — emulators miss real-world finger imprecision
-6. Prefer CSS visibility/layout toggles over conditional JS mount/unmount for responsive changes
-7. Never couple state lifecycle to layout regions — state persists regardless of which panels are visible
+## Implementation Guidelines
 
-**Accessibility Development:**
+### Responsive Development
+
+1. Use Tailwind responsive classes — avoid custom media queries
+2. Use `rem` for typography and spacing
+3. Use `%` and `fr` units for layout widths
+4. Images: `next/image` with responsive `sizes`
+5. Test touch targets on actual devices
+6. Prefer CSS visibility toggles over conditional JS mount/unmount
+
+### Accessibility Development
 
 | Practice | Implementation |
 |----------|---------------|
-| Semantic HTML first | Use `<button>` not `<div onClick>`. Use `<a>` for navigation. Use `<table>` for tabular data. |
-| ARIA as supplement | ARIA attributes supplement semantic HTML, never replace it. |
-| Landmark structure | `<header>`, `<nav aria-label="Main navigation">`, `<main>`, `<aside>`, `<footer>` on every page |
-| Route change focus | On navigation: focus reset to page `<h1>`. Document title updated. |
-| Modal focus management | On open: focus first focusable. On close: return to trigger. Focus trapped inside. |
-| Error announcements | Validation errors linked via `aria-describedby`. Form-level errors in `aria-live="polite"` region. |
-| Dynamic content | Search results container: `aria-live="polite"` + `aria-atomic="false"`. New results announced without re-reading list. |
-| Reduced motion | Wrap all animations in `@media (prefers-reduced-motion: no-preference) { }` — animations are opt-in, not opt-out. |
+| Semantic HTML first | `<button>` not `<div onClick>`, `<a>` for navigation, `<table>` for data |
+| ARIA as supplement | Supplements HTML, never replaces |
+| Landmark structure | `<header>`, `<nav>`, `<main>`, `<aside>`, `<footer>` |
+| Route change focus | Focus reset to `<h1>`, document title updated |
+| Modal focus management | Focus first focusable on open, return to trigger on close |
+| Error announcements | `aria-describedby` for field errors, `aria-live` for form-level |
+| Dynamic content | Search results: `aria-live="polite"` + `aria-atomic="false"` |
+| Reduced motion | Wrap animations in `@media (prefers-reduced-motion: no-preference)` |
 
-**Component-Level Accessibility Checklist (for every new component):**
-- [ ] Has appropriate semantic HTML element
+### Component-Level Accessibility Checklist
+
+- [ ] Appropriate semantic HTML element
 - [ ] Keyboard focusable and operable
-- [ ] Has visible focus indicator (2px `--primary` outline)
-- [ ] Has appropriate ARIA label/role (if not self-evident from HTML)
+- [ ] Visible focus indicator (2px `--primary` outline)
+- [ ] Appropriate ARIA label/role
 - [ ] Color is not the sole information channel
 - [ ] Touch target >= 44px on mobile
-- [ ] Tested with VoiceOver screen reader
-- [ ] Tested with keyboard-only navigation
-- [ ] Respects `prefers-reduced-motion` with equivalent non-motion feedback
-- [ ] Tested at 200% browser zoom without layout breakage
-- [ ] No hydration mismatch (client-only state deferred to `useEffect`)
+- [ ] Tested with VoiceOver
+- [ ] Tested keyboard-only
+- [ ] Respects `prefers-reduced-motion`
+- [ ] Tested at 200% zoom
+- [ ] No hydration mismatch
