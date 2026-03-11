@@ -1,0 +1,93 @@
+# generated: 2026-03-11
+# project: Apolles
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-03-11
+project: Apolles
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1: Foundation, Authentication & Admin-Created Users
+  epic-1: in-progress
+  1-1-initialize-project-and-deploy-baseline-app: in-progress
+  1-2-auth-ready-data-model-and-seed: ready-for-dev
+  1-3-agent-login-logout-secure-sessions: backlog
+  1-4-dashboard-shell-with-sidebar-navigation: backlog
+  1-5-simple-role-based-authorization: backlog
+  1-6-admin-creates-and-deactivates-agent-accounts: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: Search & Supplier Adapters
+  epic-2: backlog
+  2-1-supplier-adapter-interface-and-normalized-data-model: backlog
+  2-2-tbo-holidays-api-search-adapter: backlog
+  2-3-expedia-rapid-api-v3-search-adapter: backlog
+  2-4-platform-markup-service: backlog
+  2-5-search-service-with-parallel-supplier-calls: backlog
+  2-6-search-form-ui: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Results Display, Room Details & Source Indicators
+  epic-3: backlog
+  3-1-hotel-result-cards-with-source-indicators: backlog
+  3-2-client-side-filtering-and-sorting: backlog
+  3-3-room-details-page: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Booking Flow & Expedia Payment
+  epic-4: backlog
+  4-1-booking-data-model-and-status-machine: backlog
+  4-2-price-recheck-via-supplier-adapter: backlog
+  4-3-guest-details-form-and-price-change-notice: backlog
+  4-4-expedia-hosted-payment-fields: backlog
+  4-5-booking-summary-and-review: backlog
+  4-6-booking-submission-and-confirmation: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: Reservations, Voucher & Booking Detail
+  epic-5: backlog
+  5-1-reservations-list-page: backlog
+  5-2-reservation-detail-page: backlog
+  5-3-voucher-pdf-generation: backlog
+  5-4-voucher-pdf-download: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Minimal Admin & Supplier Logs
+  epic-6: backlog
+  6-1-admin-bookings-view: backlog
+  6-2-supplier-api-logs-view: backlog
+  6-3-platform-markup-configuration: backlog
+  epic-6-retrospective: optional
