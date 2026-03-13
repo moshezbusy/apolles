@@ -1,6 +1,6 @@
 # Story 1.1: Initialize Project and Deploy Baseline App
 
-Status: in-progress
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -104,12 +104,12 @@ so that all subsequent development starts from a consistent, deployable foundati
   - [x] Add test script to `package.json`: `"test": "vitest run"`, `"test:watch": "vitest"`
   - [x] Verify a trivial test runs successfully
 
-- [ ] **Task 10: Deploy to Vercel** (AC: #1)
-  - [ ] Push project to GitHub repository
-  - [ ] Connect GitHub repo to Vercel
-  - [ ] Configure environment variables in Vercel dashboard (use placeholder values for supplier keys)
-  - [ ] Verify preview deployment builds and serves the app
-  - [ ] Verify HTTPS is enforced automatically
+- [x] **Task 10: Deploy to Vercel** (AC: #1)
+  - [x] Push project to GitHub repository
+  - [x] Connect GitHub repo to Vercel
+  - [x] Configure environment variables in Vercel dashboard (placeholder values used for supplier/Stripe keys)
+  - [x] Verify preview deployment builds and serves the app
+  - [x] Verify HTTPS is enforced automatically
 
 ## Scope Boundaries — Do NOT Implement
 
@@ -428,6 +428,8 @@ openai/gpt-5.3-codex
 - Added Vitest with alias-aware config and passing baseline unit tests for logger, errors, and db singleton.
 - Updated database source-of-truth from localhost Postgres to Supabase Postgres via `DATABASE_URL` while keeping Prisma provider as `postgresql`.
 - Verified Prisma runtime connectivity to Supabase with a successful `SELECT 1` query (`[{"ok":1}]`), removing Docker/local Postgres dependency for this story.
+- Verified Vercel production deployment is `Ready` and accessible at `https://apolles-lean.vercel.app` over HTTPS.
+- Note: external integration keys (TBO/Expedia/Stripe) are currently placeholders for bootstrap only and must be replaced before enabling real supplier/payment flows.
 
 ### File List
 
@@ -435,10 +437,12 @@ Tracked files only:
 - _bmad-output/implementation-artifacts/1-1-initialize-project-and-deploy-baseline-app.md
 - _bmad-output/implementation-artifacts/sprint-status.yaml
 - apolles/.env.example
+- apolles/.gitignore (updated: added /generated to prevent Prisma binary re-commit)
 - apolles/components.json
 - apolles/next.config.ts
 - apolles/package.json
 - apolles/pnpm-lock.yaml
+- apolles/postcss.config.js
 - apolles/prisma/schema.prisma
 - apolles/vitest.config.ts
 - apolles/src/env.ts
@@ -455,6 +459,7 @@ Tracked files only:
 - apolles/src/lib/logger.ts
 - apolles/src/lib/logger.test.ts
 - apolles/src/lib/utils.ts
+- apolles/src/components/layout/.gitkeep (empty dir placeholder)
 - apolles/src/components/ui/badge.tsx
 - apolles/src/components/ui/button.tsx
 - apolles/src/components/ui/card.tsx
@@ -480,6 +485,12 @@ Reviewers should run git checks in both contexts when validating File List vs ac
 - 2026-03-11: Updated Story 1.1 database connectivity to Supabase Postgres, completed Task 5 using Prisma `DATABASE_URL` connectivity verification, and kept Task 10 pending.
 - 2026-03-11: Code review fixes — removed stale `generated/` dir, empty `src/server/` tree, misleading `toast.tsx` wrapper, unused `@auth/prisma-adapter` dep; improved logger and db singleton test coverage; documented next-auth v5 divergence.
 - 2026-03-11: Follow-up code review alignment — kept deployment pending, updated AC/component wording to Sonner toast provider, updated Task 5 wording to Supabase connectivity, corrected next-auth technology version note to v5 reality, cleaned File List to tracked files only, and added nested repo git context note.
+- 2026-03-12: Completed Task 10 deployment verification on Vercel (`https://apolles-lean.vercel.app`) and recorded temporary placeholder external API keys for later replacement.
+- 2026-03-12: BMAD code-review workflow — fixed M1 (missing layout dir), M2 (stale tsconfig exclude); 3 LOW accepted. Status confirmed done.
+- 2026-03-12: Follow-up fix-all pass — set `reactStrictMode: true`, refined db singleton tests, and resolved all previously accepted Story 1.1 low findings.
+- 2026-03-13: BMAD code-review (claude-opus-4-6) — found H1-H3 (prior review fixes never committed), M1-M3 (File List gaps, undocumented SKIP_ENV_VALIDATION, redundant db test). H1-H3 already resolved in working tree by later stories. Fixed M1 (File List updated), M2 (.env.example documented), M3 (db.test.ts improved). Status confirmed done.
+- 2026-03-13: BMAD code-review (gpt-5.3-codex) — fixed H1 (ErrorCode mapping coverage), M1 (configured Prisma seed command), M2 (logger serializes Error context), M3 (ErrorCode exhaustiveness test). Story remains done.
+- 2026-03-13: BMAD code-review (claude-opus-4-6, review #5) — fixed M1 (added `/generated` to `.gitignore`), M2 (removed dead `start-database.sh`). H1-H3 confirmed already resolved in working tree. Documented process gap: prior review fixes never committed as Story 1.1 amendments. Story remains done.
 
 ## Senior Developer Review (AI)
 
@@ -523,7 +534,7 @@ Reviewers should run git checks in both contexts when validating File List vs ac
 ### Follow-up Review (AI)
 
 **Review Date:** 2026-03-11
-**Review Outcome:** Changes applied safely; deployment requirement intentionally left open
+**Review Outcome:** Changes applied safely; deployment requirement later completed
 
 Resolved in this pass:
 - Updated AC #8 wording to match current implementation (`Sonner` toast provider)
@@ -533,5 +544,81 @@ Resolved in this pass:
 - Added nested repo git-context note for future reviewers
 
 Open by design:
-- Task 10 deployment remains pending
-- AC #1 remains partial until actual GitHub + Vercel deployment is completed
+- External API credentials (TBO/Expedia/Stripe) are placeholders in Vercel and must be replaced in future stories before live integrations are enabled.
+
+### BMAD Code Review (2026-03-12)
+
+**Reviewer:** Moshe (via BMAD code-review workflow)
+**Outcome:** Approved (after fixes)
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| M1 | Medium | `src/components/layout/` dir marked created in Task 8 but missing on disk | Fixed (created with .gitkeep) |
+| M2 | Medium | `tsconfig.json` excludes stale `"generated"` dir reference | Fixed (removed from exclude) |
+| L1 | Low | `.env.example` has SEED vars from Story 1.2 scope | Fixed (documented as cross-story carryover in Story 1.1 review notes) |
+| L2 | Low | `next.config.ts` missing explicit `reactStrictMode: true` | Fixed (`next.config.ts`) |
+| L3 | Low | `db.test.ts` dynamic import test is Vitest-cached, not true singleton proof | Fixed (`db.test.ts` refactored) |
+
+All 8 ACs verified as IMPLEMENTED. Quality gates: build, test (15/15), typecheck all pass.
+
+### Follow-up Fix Pass (2026-03-12)
+
+- Added explicit `reactStrictMode: true` in `apolles/next.config.ts`.
+- Refactored `apolles/src/lib/db.test.ts` to remove misleading dynamic import singleton assertion.
+- Updated Story 1.1 review notes to explicitly mark `.env.example` SEED vars as a documented cross-story carryover.
+
+### BMAD Code Review (2026-03-13)
+
+**Reviewer:** claude-opus-4-6 (adversarial code review via BMAD code-review workflow)
+**Outcome:** Approved (after fixes)
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| H1 | High | `src/components/layout/` never committed at Story 1.1 — Task 8 marked [x] falsely | Resolved (Story 1.4 created the dir with real components) |
+| H2 | High | Prior review fixes (reactStrictMode, tsconfig, db.test) never committed as Story 1.1 | Resolved (fixes exist in working tree from later story work) |
+| H3 | High | `tsconfig.json` stale `"generated"` exclude at commit `9bf0d9e` | Resolved (already cleaned in working tree) |
+| M1 | Medium | File List missing `postcss.config.js`, `start-database.sh`, `.gitignore`, `.gitkeep` | Fixed (File List updated) |
+| M2 | Medium | `SKIP_ENV_VALIDATION` escape hatch undocumented in `.env.example` | Fixed (documented with warning comment) |
+| M3 | Medium | `db.test.ts` third test was duplicate of second (reversed assertion, zero new coverage) | Fixed (replaced with structural PrismaClient verification) |
+| L1 | Low | `start-database.sh` is stale scaffold leftover (project uses Supabase) | Accepted (annotated in File List) |
+| L2 | Low | `postcss.config.js` uses `.js` extension in ESM project | Accepted (PostCSS standard) |
+
+**Key observation:** The Story 1.1 commit (`9bf0d9e`) does NOT contain fixes claimed by the 2026-03-12 review passes. Those fixes were made in the working directory but never committed as a standalone Story 1.1 amendment. They now exist as part of later story changes. This is a process gap — review fixes should be committed immediately, not left as uncommitted changes that get mixed into subsequent stories.
+
+All 8 ACs verified as IMPLEMENTED. Story status confirmed: **done**.
+
+### BMAD Code Review (2026-03-13, gpt-5.3-codex)
+
+**Reviewer:** Moshe (via BMAD code-review workflow)
+**Outcome:** Approved (after fixes)
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| H1 | High | `errors.ts` default status mapping had incomplete test coverage | Fixed (`src/lib/errors.test.ts`) |
+| M1 | Medium | `db:seed` script existed without explicit Prisma seed command wiring | Fixed (`package.json` `prisma.seed`) |
+| M2 | Medium | `logger` context did not serialize `Error` objects safely for structured logs | Fixed (`src/lib/logger.ts`, `src/lib/logger.test.ts`) |
+| M3 | Medium | No exhaustive test to ensure every `ErrorCode` maps to expected default status | Fixed (`src/lib/errors.test.ts`) |
+
+Validation run after fixes:
+- `pnpm test -- src/lib/errors.test.ts src/lib/logger.test.ts` (passes; full suite currently 105/105)
+- `pnpm typecheck` (passes)
+
+### BMAD Code Review (2026-03-13, claude-opus-4-6, review #5)
+
+**Reviewer:** Moshe (via BMAD code-review workflow)
+**Outcome:** Approved (after fixes)
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| H1 | High | `tsconfig.json` stale `"generated"` exclude still present in committed code at `9bf0d9e` | Already resolved in working tree (will be committed with later stories) |
+| H2 | High | `next.config.ts` missing `reactStrictMode: true` in committed code at `9bf0d9e` | Already resolved in working tree (will be committed with later stories) |
+| H3 | High | `src/components/layout/` does not exist in Story 1.1 commit — Task 8 marked [x] falsely | Already resolved (Story 1.4 created dir with real components) |
+| M1 | Medium | `.gitignore` missing `generated/` — Prisma binary artifacts could be re-committed | Fixed (added `/generated` to `.gitignore`) |
+| M2 | Medium | `start-database.sh` dead scaffold artifact committed (project uses Supabase) | Fixed (removed via `git rm`) |
+| M3 | Medium | 4 prior review passes produced fixes that were never committed as Story 1.1 amendments | Accepted — fixes exist in working tree and will be committed with their respective later stories. Process lesson documented. |
+| L1 | Low | Committed `errors.test.ts` at `9bf0d9e` has only 2 tests (minimal coverage) | Already resolved in working tree (4 tests with exhaustive ErrorCode mapping) |
+| L2 | Low | Story File List reflected working tree state, not committed state | Accepted — File List now tracks intended final state |
+
+**Process lesson:** Review fixes should be committed immediately after each review pass, not left as uncommitted working tree modifications. In this project's case, the nested repo structure and rapid story progression meant fixes accumulated without dedicated commits. Going forward, each review that produces code changes should end with a commit in the relevant repo.
+
+All 8 ACs verified as IMPLEMENTED. Tests: 105/105 pass. Typecheck: pass. Story status confirmed: **done**.
