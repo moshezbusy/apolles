@@ -95,6 +95,7 @@ openai/gpt-5.3-codex
 - Added middleware route protection with login redirect for unauthenticated users and login-page redirect for already-authenticated users.
 - Added tests covering credential verification success/failure/inactive behavior and logout redirect behavior.
 - Validation passed: `pnpm build`, `pnpm test`, `pnpm typecheck`.
+- Post-review fix pass updated Auth.js to database-backed sessions, preserved login callback redirects, added login action coverage, and improved login error announcement semantics.
 
 ### File List
 
@@ -105,6 +106,7 @@ openai/gpt-5.3-codex
 - apolles/src/lib/auth-credentials.ts
 - apolles/src/lib/auth-credentials.test.ts
 - apolles/src/app/login/actions.ts
+- apolles/src/app/login/actions.test.ts
 - apolles/src/app/login/login-form.tsx
 - apolles/src/app/login/page.tsx
 - apolles/src/app/page.tsx
@@ -183,6 +185,20 @@ All 9 ACs verified IMPLEMENTED. Quality gates: build, test (15/15), typecheck al
 - Removed `performLogout` indirection and deleted `apolles/src/lib/auth-flow.ts` (+ test).
 - Removed redundant authenticated-user redirect check from `apolles/src/app/login/page.tsx`.
 
+### Fourth Review Pass (2026-03-14)
+
+BMAD `code-review` workflow re-executed for Story 1.3 with automatic fix mode selected.
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| H1 | High | Session strategy was `jwt`, contradicting AC #1 / Task 1 database-session requirement | Fixed (`session.strategy = "database"`) |
+| H2 | High | Logout flow could not delete a DB-backed session while JWT sessions were enabled | Fixed (database sessions now flow through Prisma adapter and Auth.js sign-out) |
+| H3 | High | No direct tests covered login server action success/error/logout behavior despite Task 5 claims | Fixed (`apolles/src/app/login/actions.test.ts`) |
+| M1 | Medium | Login discarded middleware `callbackUrl` and always redirected to `/search` | Fixed (safe callback preservation in `loginAction`) |
+| M2 | Medium | Login error feedback lacked screen-reader announcement semantics | Fixed (`role="alert"` + `aria-live="polite"`) |
+
+All 9 Acceptance Criteria re-verified as IMPLEMENTED after fixes. Quality gates re-run: build, test (116/116), typecheck all pass.
+
 ## Change Log
 
 - 2026-03-12: Implemented Story 1.3 auth flow (NextAuth v5 credentials + Prisma adapter), login/logout UX/actions, middleware protection, inactive-account handling, and auth-related tests; set status to review.
@@ -190,3 +206,4 @@ All 9 ACs verified IMPLEMENTED. Quality gates: build, test (15/15), typecheck al
 - 2026-03-12: Re-ran BMAD code-review workflow; fixed callbackUrl query preservation in middleware and added git context reconciliation notes.
 - 2026-03-12: Third review pass (batch all-stories) — fixed M2 (silent role default → logger.warn). 2 MEDIUM + 2 LOW accepted. Status confirmed done.
 - 2026-03-12: Follow-up fix-all pass — fixed all previously accepted Story 1.3 issues (session callback query, login form noValidate, logout indirection, redundant login page auth check).
+- 2026-03-14: Fourth review pass — switched Auth.js to database sessions, preserved login callback redirects, added login action/logout tests, and improved login error accessibility; status remains done.
