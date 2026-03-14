@@ -170,6 +170,9 @@ openai/gpt-5.3-codex
 - `pnpm test`
 - `pnpm typecheck`
 - `pnpm build`
+- `pnpm test` (review remediation)
+- `pnpm typecheck` (review remediation)
+- `pnpm build` (review remediation)
 
 ### Completion Notes List
 
@@ -184,6 +187,9 @@ openai/gpt-5.3-codex
 - Code review remediation: added desktop sidebar header landmark, fixed skip-link keyboard visibility behavior, aligned sidebar width to 240px, and added icon-based navigation.
 - Implemented collapsible desktop sidebar (240px/64px) with `localStorage` persistence and hydration-safe initialization.
 - Added admin route-group layout guard so non-admin users are redirected away from `/admin/*` pages.
+- Review remediation: made `pnpm typecheck` reproducible on a clean checkout by generating Next route types and disabling stale incremental cache reuse.
+- Review remediation: kept user name and role visible in the collapsed desktop sidebar footer and added sidebar regression coverage.
+- Review remediation: bypassed auth routing for public asset paths and extended auth-routing tests for asset handling.
 
 ### File List
 
@@ -199,12 +205,15 @@ openai/gpt-5.3-codex
 - apolles/src/app/(app)/admin/layout.tsx
 - apolles/src/components/layout/app-shell.tsx
 - apolles/src/components/layout/sidebar.tsx
+- apolles/src/components/layout/sidebar.test.tsx
 - apolles/src/components/layout/page-header.tsx
 - apolles/src/components/layout/navigation-config.ts
 - apolles/src/components/layout/navigation-config.test.ts
 - apolles/src/lib/auth-routing.ts
 - apolles/src/lib/auth-routing.test.ts
 - apolles/src/middleware.ts
+- apolles/package.json
+- apolles/vitest.config.ts
 
 ### Senior Developer Review (AI)
 
@@ -213,8 +222,15 @@ openai/gpt-5.3-codex
 - Outcome: Approved after fixes
 - Findings resolved: 2 High, 4 Medium
 - Validation rerun: `pnpm test` (23/23), `pnpm typecheck`, `pnpm build`
+- Reviewer: Moshe
+- Date: 2026-03-14
+- Outcome: Approved after automated remediation
+- Findings resolved: 3 High, 2 Medium
+- Git note: review began against previously committed implementation; remediation is captured in the current worktree updates above
+- Validation rerun: `pnpm test` (120/120), `pnpm typecheck`, `pnpm build`
 
 ## Change Log
 
 - 2026-03-12: Implemented Story 1.4 dashboard shell with role-aware sidebar navigation, responsive mobile menu, skip-link + semantic landmarks, and middleware redirect helper tests. Story moved to review.
 - 2026-03-12: Completed adversarial code review remediation (admin route guard, sidebar accessibility/UX parity improvements, collapsible sidebar persistence) and moved story to done.
+- 2026-03-14: Completed follow-up review remediation for reproducible typechecking, collapsed-sidebar identity visibility, public-asset auth bypass, and added regression coverage for sidebar/auth-routing behavior.
