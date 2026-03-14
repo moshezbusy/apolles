@@ -137,23 +137,32 @@ openai/gpt-5.3-codex
 ### Completion Notes List
 
 - Implemented normalized supplier contracts and schema-backed types under `src/features/suppliers/contracts`.
-- Added forward-compatible adapter contract methods `cancel()` and `getBookingDetail()` as optional interface members.
+- Added forward-compatible adapter contract methods `cancel()` and `getBookingDetail()` as required interface members with explicit unsupported-method stubs in MVP adapters.
 - Added Prisma `Supplier` enum + `SupplierApiLog` model with mapped DB column names, plus migration SQL.
-- Implemented `logSupplierApiCall` and `withSupplierApiLogging` helper to capture success and failure metadata.
-- Added co-located schema and logger tests; all quality gates pass (`pnpm test`, `pnpm typecheck`, `pnpm build`).
+- Implemented `logSupplierApiCall` and `withSupplierApiLogging` helper to capture success metadata and preserve failure response payload/status before rethrowing the original supplier error.
+- Added co-located schema, adapter, logger, and error tests; all quality gates pass (`pnpm test`, `pnpm typecheck`, `pnpm build`).
 - Hardened supplier logger so DB logging failures never break successful supplier responses or mask original supplier errors.
 - Replaced unsafe Prisma logger type casting with typed `Prisma.SupplierApiLogCreateInput` usage.
 - Expanded schema/logger tests for invalid booking statuses, missing room rates, unsupported supplier IDs, and non-Error throw handling.
+- Tightened normalized search result validation so `address` is required across supplier results.
+- Stabilized the `typecheck` script against Next.js route-type generation by building route types before the standalone TypeScript check.
 
 ### File List
 
 - apolles/prisma/schema.prisma
 - apolles/prisma/migrations/20260312150000_add_supplier_api_logs/migration.sql
+- apolles/package.json
+- apolles/tsconfig.json
 - apolles/src/features/suppliers/contracts/supplier-adapter.ts
 - apolles/src/features/suppliers/contracts/supplier-schemas.ts
 - apolles/src/features/suppliers/contracts/supplier-schemas.test.ts
+- apolles/src/features/suppliers/adapters/tbo-adapter.ts
+- apolles/src/features/suppliers/adapters/tbo-adapter.test.ts
+- apolles/src/features/suppliers/adapters/expedia-adapter.ts
+- apolles/src/features/suppliers/adapters/expedia-adapter.test.ts
 - apolles/src/features/suppliers/supplier-logger.ts
 - apolles/src/features/suppliers/supplier-logger.test.ts
+- apolles/src/lib/errors.ts
 - _bmad-output/implementation-artifacts/2-1-supplier-adapter-interface-and-normalized-data-model.md
 
 ### Senior Developer Review (AI)
@@ -169,8 +178,19 @@ openai/gpt-5.3-codex
   - MEDIUM: expanded schema negative-path tests and logger edge-case tests
 - Quality gates rerun after fixes: `pnpm test`, `pnpm typecheck`, `pnpm build`
 
+- Reviewer: OpenCode
+- Date: 2026-03-14
+- Outcome: Changes Requested resolved
+- Findings addressed:
+  - HIGH: fixed false quality-gate claim by stabilizing `pnpm typecheck`
+  - HIGH: supplier failure-path logging now preserves response status and payload metadata
+  - MEDIUM: `SupplierAdapter` forward-compatible methods are now enforced by the shared contract
+  - MEDIUM: normalized supplier search results now require `address`
+- Quality gates rerun after fixes: `pnpm test`, `pnpm typecheck`, `pnpm build`
+
 ## Change Log
 
 - 2026-03-12: Created Story 2.1 and set status to ready-for-dev.
 - 2026-03-12: Implemented Story 2.1 contracts, schemas, logging helper, migration, and tests; moved to review.
 - 2026-03-12: Completed adversarial code review fixes (logger resilience + typing + test coverage) and marked story done.
+- 2026-03-14: Completed follow-up code review fixes for contract enforcement, failure metadata logging, required addresses, and stable typecheck verification.
