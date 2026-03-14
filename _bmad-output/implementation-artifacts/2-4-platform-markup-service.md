@@ -1,6 +1,6 @@
 # Story 2.4: Platform Markup Service
 
-Status: done
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -174,16 +174,22 @@ openai/gpt-5.3-codex
 - Code-review fixes: corrected missing markup-setting error classification to `VALIDATION_ERROR` to avoid supplier-error misclassification.
 - Code-review fixes: added missing zero-supplier-amount edge-case unit test and updated missing-setting test expectation to `VALIDATION_ERROR`.
 - Code-review fixes: documented `roundToCents` numeric-range limitation for future maintainability.
+- 2026-03-14 review fixes: corrected half-up rounding for `10.075`-style values, added markup upper-bound validation, and preserved raw supplier prices by adding a separate marked-up display amount.
+- 2026-03-14 review fixes: added a follow-up Prisma migration to seed `platform_settings.markup_percentage` when an admin user already exists.
+- 2026-03-14 review result: Story 2.4 still cannot satisfy the booking/price-recheck usage portion of AC #5 because Epic 4 booking flows have not been implemented in the codebase yet.
 
 ### Senior Developer Review (AI)
 
 - Reviewer: Moshe
-- Date: 2026-03-13
-- Outcome: Changes Requested -> Fixed Automatically -> Approved
-- Findings addressed: 0 High, 4 Medium (4 total fixed)
+- Date: 2026-03-14
+- Outcome: Changes Requested -> Fixed Automatically -> Follow-up Required
+- Findings addressed: 2 High, 2 Medium (4 total fixed)
 - Notes:
-  - Confirmed all Acceptance Criteria are implemented and all completed tasks have matching code evidence.
-  - Applied follow-up hardening for error semantics, test completeness, and rounding helper maintainability notes.
+  - Fixed incorrect cent rounding in `apolles/src/features/markup/markup-service.ts` and added regression coverage for `10.075 -> 10.08`.
+  - Added validation that rejects markup values above 100% and covered the guard in unit tests.
+  - Preserved raw supplier pricing by keeping `lowestRate.supplierAmount` untouched and adding `lowestRate.displayAmount` in search results.
+  - Added `apolles/prisma/migrations/20260314120500_seed_platform_markup_default/migration.sql` to backfill the default markup setting when an admin user already exists.
+  - Story remains in-progress because AC #5 still claims usage in price recheck and booking confirmation flows, but `apolles/src/features/booking/` does not exist yet in this repository.
 
 ### File List
 
@@ -192,11 +198,16 @@ openai/gpt-5.3-codex
 - apolles/prisma/schema.prisma
 - apolles/prisma/seed.ts
 - apolles/prisma/migrations/20260313014500_add_platform_settings/migration.sql
+- apolles/prisma/migrations/20260314120500_seed_platform_markup_default/migration.sql
 - apolles/src/features/markup/markup-service.ts
 - apolles/src/features/markup/markup-service.test.ts
+- apolles/src/features/search/search-service.ts
+- apolles/src/features/search/search-service.test.ts
+- apolles/src/features/suppliers/contracts/supplier-schemas.ts
 
 ## Change Log
 
 - 2026-03-13: Created Story 2.4 and set status to ready-for-dev.
 - 2026-03-13: Implemented markup service, added PlatformSetting schema + migration + seed default, added unit tests, ran quality gates, and moved story to review.
 - 2026-03-13: Completed adversarial code review fixes (error-code classification, missing zero-amount test, rounding helper note), reran quality gates, synced sprint status, and moved story to done.
+- 2026-03-14: Fixed markup rounding and validation gaps, preserved raw supplier prices with a separate display amount, added a markup backfill migration, reran targeted tests, and moved story back to in-progress because booking/recheck consumers do not exist yet.

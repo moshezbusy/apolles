@@ -55,7 +55,7 @@ development_status:
   2-1-supplier-adapter-interface-and-normalized-data-model: done
   2-2-tbo-holidays-api-search-adapter: done
   2-3-expedia-rapid-api-v3-search-adapter: in-progress
-  2-4-platform-markup-service: done
+  2-4-platform-markup-service: in-progress
   2-5-search-service-with-parallel-supplier-calls: review
   2-6-search-form-ui: backlog
   epic-2-retrospective: optional
