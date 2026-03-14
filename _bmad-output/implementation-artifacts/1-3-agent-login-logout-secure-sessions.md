@@ -199,6 +199,20 @@ BMAD `code-review` workflow re-executed for Story 1.3 with automatic fix mode se
 
 All 9 Acceptance Criteria re-verified as IMPLEMENTED after fixes. Quality gates re-run: build, test (116/116), typecheck all pass.
 
+### Fifth Review Pass (2026-03-14)
+
+BMAD `code-review` workflow re-executed again with automatic fix mode to close the remaining session-routing gaps found in the latest review.
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| H1 | High | Story file list was interpreted as out of sync with git even though the review ran against already-committed story work | Clarified (review executed on committed state; current git diff reflects post-implementation cleanliness, not missing files) |
+| H2 | High | Expired/stale session cookies could pass middleware and lose callback intent on layout redirect | Fixed (middleware now forwards callback context, authenticated layout preserves callback on login redirect) |
+| M1 | Medium | Login route redirected from cookie presence instead of a real session check, causing stale-cookie bounce risk | Fixed (`/login` now stays reachable in middleware; page-level `auth()` handles valid-session redirect) |
+| M2 | Medium | Deep-link callback could be dropped when auth failed after middleware | Fixed (request callback context now survives into layout redirect path) |
+| M3 | Medium | Tests did not directly cover the new redirect/preservation behavior | Fixed (`apolles/src/app/(app)/layout.test.tsx`, `apolles/src/app/login/page.test.tsx`, and auth-routing/middleware test updates) |
+
+All 9 Acceptance Criteria re-verified as IMPLEMENTED after fixes. Quality gates re-run: build, test (131/131), typecheck all pass.
+
 ## Change Log
 
 - 2026-03-12: Implemented Story 1.3 auth flow (NextAuth v5 credentials + Prisma adapter), login/logout UX/actions, middleware protection, inactive-account handling, and auth-related tests; set status to review.
@@ -207,3 +221,4 @@ All 9 Acceptance Criteria re-verified as IMPLEMENTED after fixes. Quality gates 
 - 2026-03-12: Third review pass (batch all-stories) — fixed M2 (silent role default → logger.warn). 2 MEDIUM + 2 LOW accepted. Status confirmed done.
 - 2026-03-12: Follow-up fix-all pass — fixed all previously accepted Story 1.3 issues (session callback query, login form noValidate, logout indirection, redundant login page auth check).
 - 2026-03-14: Fourth review pass — switched Auth.js to database sessions, preserved login callback redirects, added login action/logout tests, and improved login error accessibility; status remains done.
+- 2026-03-14: Fifth review pass — preserved callback context across expired-session redirects, removed stale-cookie login bounce behavior, added redirect-focused auth tests, and clarified that the review ran against already-committed story changes.
