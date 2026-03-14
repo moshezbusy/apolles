@@ -142,6 +142,7 @@ openai/gpt-5.3-codex
 ### Debug Log References
 
 - `pnpm test`
+- `pnpm test -- src/features/admin/agents/actions.test.ts src/features/admin/agents/schemas.test.ts src/features/admin/agents/agent-management-panel.test.ts src/app/login/actions.test.ts src/lib/auth-credentials.test.ts src/lib/authorize.test.ts`
 - `pnpm build`
 - `pnpm typecheck`
 
@@ -154,6 +155,7 @@ openai/gpt-5.3-codex
 - Verified inactive-account login gating remains intact via existing auth credential tests.
 - Validation passed: `pnpm test` (50/50), `pnpm build`, `pnpm typecheck`.
 - Code review follow-up fixes applied: agent listing is now restricted to AGENT role only, list action coverage added, password schema coverage expanded, and accessibility/UX improvements applied to the create-agent form.
+- Review fix pass applied: deactivation now revokes active DB sessions, duplicate-email races now return a typed validation error, and the create-agent form now links field errors for assistive tech and focuses the first invalid field on submit.
 
 ### File List
 
@@ -161,6 +163,8 @@ openai/gpt-5.3-codex
 - apolles/src/features/admin/agents/actions.ts
 - apolles/src/features/admin/agents/actions.test.ts
 - apolles/src/features/admin/agents/agent-management-panel.tsx
+- apolles/src/features/admin/agents/agent-management-form.ts
+- apolles/src/features/admin/agents/agent-management-panel.test.ts
 - apolles/src/features/admin/agents/schemas.ts
 - apolles/src/features/admin/agents/schemas.test.ts
 - _bmad-output/implementation-artifacts/1-6-admin-creates-and-deactivates-agent-accounts.md
@@ -180,9 +184,23 @@ openai/gpt-5.3-codex
   - `pnpm test` passed (50/50)
   - `pnpm typecheck` passed
   - `pnpm build` passed
+- Reviewer: Moshe
+- Date: 2026-03-14
+- Outcome: Approved after fix pass
+- Findings fixed:
+  - HIGH: Deactivating an agent now revokes that user's active database sessions immediately.
+  - HIGH: Duplicate-email races during agent creation now return the expected typed validation error instead of an uncaught Prisma failure.
+  - MEDIUM: Create-agent field errors are now connected to inputs via `aria-describedby`.
+  - MEDIUM: Invalid submit now focuses and scrolls to the first invalid field.
+  - MEDIUM: Story/review completion state is now aligned with this review pass and verification.
+- Verification:
+  - `pnpm test -- src/features/admin/agents/actions.test.ts src/features/admin/agents/schemas.test.ts src/features/admin/agents/agent-management-panel.test.ts src/app/login/actions.test.ts src/lib/auth-credentials.test.ts src/lib/authorize.test.ts` passed
+  - `pnpm typecheck` passed
+  - `pnpm build` passed
 
 ## Change Log
 
 - 2026-03-12: Created Story 1.6 with full implementation context and set status to ready-for-dev.
 - 2026-03-12: Implemented Story 1.6 admin agent management with validation, role-protected actions, UI controls, and tests; moved to review.
 - 2026-03-12: Completed adversarial code review fixes (HIGH/MEDIUM), re-ran quality gates, and moved story to done.
+- 2026-03-14: Completed follow-up review fixes for session revocation, duplicate-email race handling, and create-agent accessibility/invalid-submit behavior; re-ran tests, typecheck, and build.
