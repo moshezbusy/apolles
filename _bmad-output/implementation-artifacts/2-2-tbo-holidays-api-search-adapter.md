@@ -162,6 +162,10 @@ openai/gpt-5.3-codex
 - Code review fixes applied: endpoint configuration now uses a fixed Story 2.2 endpoint constant instead of raw runtime endpoint overrides.
 - Code review fixes applied: credential lookup trims values and falls back to validated env import when available, while preserving typed `SUPPLIER_ERROR` for missing credentials.
 - Expanded tests to cover zero-children mapping, partial malformed supplier payload handling, and `RATE_UNAVAILABLE` translation.
+- Follow-up review fixes: TBO search payload now maps to a supplier-shaped `HotelSearch` request body with `RoomGuests` entries per requested room.
+- Follow-up review fixes: adapter now translates TBO business failures returned inside HTTP 200 payloads into typed platform errors.
+- Follow-up review fixes: adapter now throws a typed malformed-response error when all returned hotel rows are invalid instead of silently treating them as empty results.
+- Follow-up review fixes: tests now cover 200-response business failures, multi-room request mapping, and fully malformed supplier payload handling.
 
 ### File List
 
@@ -193,8 +197,19 @@ openai/gpt-5.3-codex
 - `pnpm build` (pass)
 - `pnpm typecheck` (pass, run after build)
 
+- Reviewer: OpenCode
+- Date: 2026-03-14
+- Outcome: Approved after follow-up fixes
+- Findings addressed:
+  - HIGH: mapped search input into a TBO-shaped `HotelSearch` request payload instead of forwarding the internal contract shape
+  - HIGH: now translates TBO business failures embedded in HTTP 200 responses into typed platform errors
+  - HIGH: now fails closed when all returned hotel rows are malformed instead of silently returning an empty result set
+  - MEDIUM: expanded tests to cover supplier-declared failure payloads and fully malformed hotel collections
+- Validation: `pnpm test -- src/features/suppliers/adapters/tbo-adapter.test.ts` (pass)
+
 ## Change Log
 
 - 2026-03-12: Created Story 2.2 and set status to ready-for-dev.
 - 2026-03-12: Implemented TBO search adapter with timeout/logging/error translation, added adapter tests, and moved story to review.
 - 2026-03-13: Completed adversarial code review fixes, expanded adapter test coverage, reran quality gates, and marked story done.
+- 2026-03-14: Completed follow-up code review fixes for TBO request mapping, 200-response business-error translation, malformed-payload handling, and added targeted regression tests.
