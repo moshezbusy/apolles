@@ -1,6 +1,6 @@
 # Story 1.5: Simple Role-Based Authorization
 
-Status: done
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -155,6 +155,7 @@ openai/gpt-5.3-codex
 - `pnpm test`
 - `pnpm typecheck`
 - `pnpm build`
+- `pnpm test -- --runInBand`
 
 ### Completion Notes List
 
@@ -163,6 +164,8 @@ openai/gpt-5.3-codex
 - Added full unit test coverage for required role/auth cases plus precondition-order validation guard behavior.
 - Code review remediation: aligned `requireRole` semantics with architecture (admin-as-superset), added typed Zod validation failure mapping in `runProtectedAction`, and expanded tests for edge and success paths.
 - Validation passed: `pnpm test` (35/35), `pnpm typecheck`, `pnpm build`.
+- Follow-up remediation: `buildBookingScope()` now returns a Prisma-ready `where` clause, admin layout preserves login callback URLs for unauthenticated access, and review coverage now includes admin layout redirects plus role-failure precondition guards.
+- Story remains in progress until booking/reservation queries exist and consume the scoped authorization helper in runtime code.
 
 ### Senior Developer Review (AI)
 
@@ -172,15 +175,24 @@ openai/gpt-5.3-codex
 - Findings resolved: 1 High, 3 Medium
 - Validation rerun: `pnpm test` (35/35), `pnpm typecheck`, `pnpm build`
 
+- Reviewer: Moshe
+- Date: 2026-03-14
+- Outcome: Changes requested after remediation
+- Findings fixed: 1 High, 2 Medium, 1 Low
+- Remaining issue: booking/reservation runtime queries do not exist yet, so ACs for enforced agent/admin query scoping are still not verifiable in application code
+- Validation rerun: `pnpm test -- --runInBand` (135/135), `pnpm typecheck`, `pnpm build`
+
 ### File List
 
 - _bmad-output/implementation-artifacts/1-5-simple-role-based-authorization.md
 - apolles/src/lib/authorize.ts
 - apolles/src/lib/authorize.test.ts
 - apolles/src/app/(app)/admin/layout.tsx
+- apolles/src/app/(app)/admin/layout.test.tsx
 
 ## Change Log
 
 - 2026-03-12: Created Story 1.5 with full implementation context and set status to ready-for-dev.
 - 2026-03-12: Implemented Story 1.5 authorization module, integrated admin layout role checks, added tests, and moved story to review.
 - 2026-03-12: Completed adversarial code review remediation and moved story to done.
+- 2026-03-14: Re-ran code review, corrected authorization helper shape and admin login redirect handling, added regression tests, and moved story back to in-progress because runtime booking/reservation scoping is still pending.
