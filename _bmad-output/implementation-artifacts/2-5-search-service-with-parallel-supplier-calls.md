@@ -1,6 +1,6 @@
 # Story 2.5: Search Service with Parallel Supplier Calls
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -167,16 +167,44 @@ openai/gpt-5.3-codex
 - Added `app/(app)/search/actions.ts` server action boundary using `auth()` + `runProtectedAction()` + Zod validation for search inputs.
 - Added `features/search/search-service.test.ts` coverage for both-success, one-timeout, one-error, and both-fail scenarios including markup assertions.
 - Passed required quality gates (`pnpm test --run src/features/search/search-service.test.ts`, `pnpm test --run`, `pnpm build`, `pnpm typecheck`).
+- Senior review fixes applied: added search-level 5-second timeout enforcement, enabled Expedia free-text destination lookup, aligned returned prices with marked-up values, and added server action / regression tests.
 
 ### File List
 
 - _bmad-output/implementation-artifacts/2-5-search-service-with-parallel-supplier-calls.md
-- _bmad-output/implementation-artifacts/sprint-status.yaml
-- apolles/src/app/(app)/search/actions.ts
+- apolles/src/app/(app)/search/actions.test.ts
 - apolles/src/features/search/search-service.ts
 - apolles/src/features/search/search-service.test.ts
+- apolles/src/features/suppliers/adapters/expedia-adapter.ts
+- apolles/src/features/suppliers/adapters/expedia-adapter.test.ts
+
+## Senior Developer Review (AI)
+
+### Reviewer
+
+Moshe
+
+### Date
+
+2026-03-14
+
+### Outcome
+
+Approve
+
+### Findings Resolved
+
+- Fixed Expedia destination handling so free-text destinations can resolve through the regions lookup flow instead of requiring pre-mapped `region:` or `property:` input.
+- Added a search-service timeout guard so supplier fan-out settles within the story's 5-second budget even if an adapter internally chains multiple requests.
+- Aligned returned hotel pricing with the story contract by applying markup to the outgoing `lowestRate.supplierAmount` while also preserving `displayAmount` for UI consumers.
+- Added regression coverage for flat supplier-specific aggregation and for the authenticated server action boundary (auth before validation, validation before service call).
+
+### Residual Risks
+
+- Expedia free-text lookup now supports the story contract, but production accuracy still depends on supplier region-search relevance and the eventual destination mapping UX in later stories.
 
 ## Change Log
 
 - 2026-03-13: Created Story 2.5 and set status to ready-for-dev.
 - 2026-03-13: Implemented search service parallel supplier orchestration, markup application, search action validation boundary, and co-located tests; ran quality gates and moved story to review.
+- 2026-03-14: Completed senior review fixes for Expedia free-text destination lookup, 5-second search timeout enforcement, marked-up response pricing, and Story 2.5 regression coverage; approved story and moved status to done.
