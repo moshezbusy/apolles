@@ -1,6 +1,6 @@
 # Story 2.3: Expedia Rapid API v3 Search Adapter
 
-Status: done
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -166,6 +166,8 @@ openai/gpt-5.3-codex
 - Code-review fixes: improved normalization defensiveness coverage with mixed valid/malformed-hotel response test to ensure valid records are preserved.
 - Code-review fixes: added explicit 403 auth failure test coverage and refactored Expedia image URL extraction into a dedicated helper for readability/maintainability.
 - Re-ran quality gates after fixes (`pnpm test --run`, `pnpm build`, `pnpm typecheck`) and all passed.
+- 2026-03-14 review follow-up: replaced non-doc `X-Expedia-*` auth with Rapid `Authorization: EAN ...` signature auth, switched search calls to documented `api.ean.com/v3` geography/content/availability endpoints, and updated adapter tests to validate real Rapid-style query construction.
+- 2026-03-14 review follow-up: current Expedia search path now requires pre-mapped `region:<id>` or `property:<id>` identifiers because the existing story/search contract still lacks the destination-to-Expedia region/property resolution needed for free-text city search.
 
 ### Senior Developer Review (AI)
 
@@ -177,6 +179,17 @@ openai/gpt-5.3-codex
   - Added validated env fallback to Expedia credential resolution to match hardened supplier adapter pattern.
   - Added missing auth-failure edge-case coverage (403) and malformed-entry resilience test.
   - Confirmed all Acceptance Criteria implemented and all completed tasks are reflected in code.
+- Reviewer: Moshe
+- Date: 2026-03-14
+- Outcome: Changes Requested -> Fixed Automatically -> In Progress
+- Findings addressed: 1 High, 2 Medium fixed
+- Remaining issues:
+  - AC #2 is still only partially implemented because the shared search contract provides free-text `destination`, while Rapid shopping requires pre-resolved Expedia region/property IDs.
+  - AC #4 is still partial because the current Rapid shopping/content flow does not yet preserve all required Expedia compliance fields (notably tax disclaimer text sourced from the booking/display-compliance path).
+- Notes:
+  - Updated the adapter to use documented Rapid signature auth and documented `api.ean.com/v3` geography/content/availability endpoints.
+  - Updated unit tests to assert Rapid authorization format, region/property resolution flow, and GET query construction instead of the previous fictional POST contract.
+  - Story status moved back to `in-progress` pending destination-resolution and remaining compliance-metadata work.
 
 ### File List
 
@@ -192,3 +205,4 @@ openai/gpt-5.3-codex
 - 2026-03-13: Created Story 2.3 and set status to ready-for-dev.
 - 2026-03-13: Implemented Expedia search adapter, added metadata-preserving normalization, expanded supplier schema and tests, ran quality gates, and moved story to review.
 - 2026-03-13: Completed adversarial code review follow-up fixes (credential fallback parity, 403 auth test, mixed malformed-entry test, image extraction helper), reran quality gates, synced sprint status, and moved story to done.
+- 2026-03-14: Reworked Expedia adapter to use documented Rapid signature auth and `api.ean.com/v3` geography/content/availability endpoints, updated tests accordingly, reran targeted verification, and moved story back to in-progress because destination-resolution/compliance metadata work remains.

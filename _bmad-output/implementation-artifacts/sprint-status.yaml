@@ -54,7 +54,7 @@ development_status:
   epic-2: in-progress
   2-1-supplier-adapter-interface-and-normalized-data-model: done
   2-2-tbo-holidays-api-search-adapter: done
-  2-3-expedia-rapid-api-v3-search-adapter: done
+  2-3-expedia-rapid-api-v3-search-adapter: in-progress
   2-4-platform-markup-service: done
   2-5-search-service-with-parallel-supplier-calls: review
   2-6-search-form-ui: backlog
