@@ -77,6 +77,8 @@ openai/gpt-5.3-codex
 - `DATABASE_URL=...pooler...'?pgbouncer=true&connection_limit=1' pnpm db:seed` (success)
 - `pnpm prisma generate` (using `prisma.config.ts`)
 - `pnpm db:seed` (re-run after code review fixes; success)
+- `set -a; source .env; set +a; pnpm prisma migrate status` (timed out after connection to Supabase pooler)
+- `set -a; source .env.local; set +a; pnpm prisma migrate status` (timed out after connection to Supabase pooler)
 - `pnpm build`
 - `pnpm test`
 - `pnpm typecheck`
@@ -98,6 +100,10 @@ openai/gpt-5.3-codex
 - Story-scoped review notes now explicitly distinguish Story 1.2 files from unrelated dirty worktree changes belonging to later stories in `apolles/`.
 - AC #3 remains open: Prisma migration engine commands are still blocked in this environment, so this story is tracked as in-progress until native Prisma Migrate execution is validated.
 - Tightened `getSeedDatabaseUrl` behavior so an existing `pgbouncer=true` URL also gets `connection_limit=1` when missing.
+- Seed flow now tolerates Story 1.2 baseline databases that do not yet include `platform_settings`; admin/agent users are still created and markup seed is skipped only on Prisma `P2021` missing-table errors.
+- Expanded schema/migration compatibility coverage to assert migration-chain expectations (`supplier_api_logs` and `platform_settings`) and auth schema fields (`email_verified`, `authenticators`).
+- Corrected malformed `DATABASE_URL` example quoting in `apolles/.env.example`.
+- Updated story file tracking to list only files with concrete implementation evidence for this review pass.
 
 ### Change Log
 
@@ -106,6 +112,7 @@ openai/gpt-5.3-codex
 - 2026-03-12: Follow-up fix-all pass — fixed all 3 MEDIUM findings (`seed.ts` hash reuse, stronger fallback seed passwords, schema/migration enum compatibility guard test).
 - 2026-03-13: BMAD code-review workflow — fixed review findings by removing deprecated `package.json#prisma` config, adding seed execution unit coverage, clarifying migration-chain claims, and documenting story-vs-worktree scope.
 - 2026-03-15: BMAD code-review workflow — corrected status/task claims around AC #3, enforced missing `connection_limit=1` in seed pooler URL handling, and expanded Story 1.2 File List coverage.
+- 2026-03-15: BMAD code-review workflow (fix-all) — fixed seed baseline compatibility for missing `platform_settings`, expanded migration-chain compatibility tests, repaired `.env.example` quote typo, and corrected story file evidence tracking.
 
 ## Senior Developer Review (AI)
 
@@ -155,6 +162,21 @@ Quality gates re-run after fixes: `pnpm test` (17/17), `pnpm build`, `pnpm typec
 
 Quality gates re-run after fixes: `pnpm test` (31 files / 184 tests) pass. `pnpm prisma validate` requires `DATABASE_URL` in environment.
 
+### Supplemental Review (2026-03-15 - Fix Pass)
+
+**Reviewer:** Moshe (via BMAD code-review workflow)
+**Outcome:** Changes Requested (partially fixed)
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| H1 | High | Seed script depended on `platform_settings`, breaking Story 1.2 baseline seed reproducibility | Fixed (`seed.ts` now skips markup seed on Prisma `P2021` missing-table errors) |
+| H2 | High | AC #3 requires native Prisma Migrate execution and remains unverified | Open (both `prisma migrate status` attempts timed out against Supabase pooler) |
+| H3 | High | Story File List claimed changed files without current git evidence | Fixed (File List rewritten to evidence-backed files for this pass) |
+| M1 | Medium | `.env.example` `DATABASE_URL` value had malformed quoting | Fixed |
+| M2 | Medium | Schema compatibility test coverage was too narrow for migration-chain dependencies | Fixed (`prisma-schema-compat.test.ts` expanded) |
+
+Quality gates after fix pass: `pnpm test` (31 files / 186 tests) pass.
+
 ### Follow-up Fix Pass (2026-03-12)
 
 - Updated `apolles/prisma/seed.ts` to avoid unnecessary re-hashing when existing credentials already match.
@@ -177,16 +199,6 @@ Quality gates re-run after fixes: `pnpm test` (31 files / 184 tests) pass. `pnpm
 
 - _bmad-output/implementation-artifacts/1-2-auth-ready-data-model-and-seed.md
 - apolles/.env.example
-- apolles/package.json
-- apolles/pnpm-lock.yaml
-- apolles/prisma.config.ts
-- apolles/prisma/migrations/20260312000000_init_auth_ready_data_model/migration.sql
-- apolles/prisma/migrations/20260312150000_add_supplier_api_logs/migration.sql
-- apolles/prisma/migrations/20260313014500_add_platform_settings/migration.sql
-- apolles/prisma/migrations/20260314120500_seed_platform_markup_default/migration.sql
-- apolles/prisma/migrations/migration_lock.toml
-- apolles/prisma/schema.prisma
 - apolles/prisma/seed.ts
-- apolles/src/lib/db.ts
 - apolles/src/lib/prisma-schema-compat.test.ts
 - apolles/src/lib/seed.test.ts
