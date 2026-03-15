@@ -82,9 +82,13 @@ openai/gpt-5.3-codex
 - `pnpm prisma migrate status` (fails when `DATABASE_URL` is missing)
 - `set -a; source .env; set +a; pnpm prisma migrate status` (fails with Supabase pooler prepared-statement error)
 - `set -a; source .env; set +a; export DATABASE_URL="${DATABASE_URL}?pgbouncer=true&connection_limit=1"; pnpm prisma migrate status` (timed out against Supabase pooler)
+- `if [ -f ".env" ]; then set -a; source ".env"; set +a; if [ -n "$DIRECT_URL" ]; then printf "env:DIRECT_URL\n"; else printf "env:NO_DIRECT_URL\n"; fi; fi` (confirmed `.env` does not currently provide `DIRECT_URL`)
+- `if [ -f ".env.local" ]; then set -a; source ".env.local"; set +a; if [ -n "$DIRECT_URL" ]; then printf "env.local:DIRECT_URL\n"; else printf "env.local:NO_DIRECT_URL\n"; fi; fi` (confirmed `.env.local` does not currently provide `DIRECT_URL`)
 - `pnpm build`
 - `pnpm test`
 - `pnpm typecheck`
+- `pnpm test src/lib/seed.test.ts src/lib/prisma-schema-compat.test.ts`
+- `set -a; source .env; set +a; pnpm prisma validate`
 
 ### Completion Notes List
 
@@ -110,6 +114,10 @@ openai/gpt-5.3-codex
 - Hardened `isMissingTableError` to use Prisma `meta.table` when present (with message fallback), reducing brittle dependence on engine message text.
 - Added seed test coverage for Prisma `P2021` `meta.table` detection path.
 - Re-validated native Prisma migration status attempts in this environment; AC #3 remains blocked by Supabase pooler behavior.
+- Added `DIRECT_URL`-first Prisma CLI config in `apolles/prisma.config.ts`, with `DATABASE_URL` fallback so Prisma commands can switch to a direct connection as soon as one is configured.
+- Updated `.env.example` to document both pooled runtime `DATABASE_URL` and direct CLI `DIRECT_URL` formats for Supabase.
+- Refined `getSeedDatabaseUrl()` so pooled URLs still gain required pooler params, while direct URLs are left untouched.
+- Extended compatibility coverage to assert Prisma config wiring for `DIRECT_URL` / `DATABASE_URL` fallback, and validated the updated seed/config behavior with targeted tests plus `pnpm prisma validate`.
 
 ### Change Log
 
@@ -120,6 +128,7 @@ openai/gpt-5.3-codex
 - 2026-03-15: BMAD code-review workflow — corrected status/task claims around AC #3, enforced missing `connection_limit=1` in seed pooler URL handling, and expanded Story 1.2 File List coverage.
 - 2026-03-15: BMAD code-review workflow (fix-all) — fixed seed baseline compatibility for missing `platform_settings`, expanded migration-chain compatibility tests, repaired `.env.example` quote typo, and corrected story file evidence tracking.
 - 2026-03-15: BMAD code-review workflow (fix-all, pass 2) — hardened Prisma missing-table detection (`meta.table` + fallback), added seed test coverage, refreshed file evidence tracking, and re-verified AC #3 remains blocked by Supabase pooler migration-status failures.
+- 2026-03-15: BMAD code-review workflow (fix-all, pass 3) — added `DIRECT_URL`-aware Prisma CLI config, documented pooled vs direct Supabase env setup, preserved direct seed URLs, refreshed story file evidence tracking, and re-validated schema/tests while confirming `DIRECT_URL` is not yet configured in this environment.
 
 ## Senior Developer Review (AI)
 
@@ -198,6 +207,23 @@ Quality gates after fix pass: `pnpm test` (31 files / 186 tests) pass.
 
 Quality gates after fix pass 2: `pnpm test src/lib/seed.test.ts` pass (8/8).
 
+### Supplemental Review (2026-03-15 - Fix Pass 3)
+
+**Reviewer:** Moshe (via BMAD code-review workflow)
+**Outcome:** Changes Requested (partially fixed)
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| H1 | High | Prisma CLI had no `DIRECT_URL` path for bypassing the Supabase pooler, leaving AC #3 blocked by pooled connections | Partially fixed (`apolles/prisma.config.ts` now prefers `DIRECT_URL`, but this environment still has no `DIRECT_URL` configured so native Prisma Migrate remains unverified) |
+| H2 | High | Story File List claimed current-review evidence for the story file despite no current git diff | Fixed (story file updated in this pass and tracking refreshed) |
+| H3 | High | Story File List incorrectly attributed unrelated `apolles/package.json` UI/test dependency changes to Story 1.2 | Fixed (`package.json` removed from Story 1.2 File List for this pass) |
+| M1 | Medium | Story-scoped tracking did not reflect the breadth of unrelated dirty app files observed during review | Fixed (review scope notes retained; File List now limited to evidence-backed Story 1.2 files only) |
+| M2 | Medium | `.env.example` did not document the direct Prisma CLI connection needed for Supabase migrate workflows | Fixed (`DIRECT_URL` example added alongside corrected pooled `DATABASE_URL`) |
+| M3 | Medium | `getSeedDatabaseUrl()` forced pooler mode onto all URLs, including future direct connections | Fixed (direct URLs now pass through unchanged; pooled URLs still get required params) |
+| L1 | Low | Schema compatibility checks did not cover Prisma CLI direct-connection wiring | Fixed (`src/lib/prisma-schema-compat.test.ts` now asserts `DIRECT_URL`/`DATABASE_URL` config expectations) |
+
+Quality gates after fix pass 3: `pnpm test src/lib/seed.test.ts src/lib/prisma-schema-compat.test.ts` pass (10/10). `set -a; source .env; set +a; pnpm prisma validate` pass. `DIRECT_URL` remains unset in both `.env` and `.env.local`, so AC #3 stays open pending native Prisma Migrate execution through a direct connection.
+
 ### Follow-up Fix Pass (2026-03-12)
 
 - Updated `apolles/prisma/seed.ts` to avoid unnecessary re-hashing when existing credentials already match.
@@ -215,12 +241,13 @@ Quality gates after fix pass 2: `pnpm test src/lib/seed.test.ts` pass (8/8).
 
 - The `apolles/` worktree contains unrelated in-progress changes for later stories (`1.3`-`2.5`). They were observed during review for transparency, but they are not Story 1.2 deliverables and are intentionally excluded from this story-scoped File List.
 - External references consulted during review: Prisma Config API (`https://pris.ly/prisma-config`) and Auth.js Prisma Adapter docs (`https://authjs.dev/getting-started/adapters/prisma`).
+- Current nested `apolles/` git status still includes many unrelated search/booking UI changes; this review pass touches only Story 1.2 seed/config/story artifacts listed below.
 
 ### File List
 
 - _bmad-output/implementation-artifacts/1-2-auth-ready-data-model-and-seed.md
 - apolles/.env.example
-- apolles/package.json
+- apolles/prisma.config.ts
 - apolles/prisma/seed.ts
 - apolles/src/lib/prisma-schema-compat.test.ts
 - apolles/src/lib/seed.test.ts
