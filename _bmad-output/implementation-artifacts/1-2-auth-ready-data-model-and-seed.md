@@ -37,6 +37,14 @@ so that authentication and all future data models build on a stable foundation.
   - [x] Add/update tests for schema-level assumptions and seed execution where practical. (`src/lib/prisma-schema-compat.test.ts` guards schema/migration alignment; `src/lib/seed.test.ts` covers seed helpers and seed execution flow with mocks)
   - [x] Run `pnpm build`, `pnpm test`, `pnpm typecheck` after implementation updates.
 
+### Review Follow-ups (AI)
+
+- [ ] [AI-Review][High] Refresh story File List so it only claims files with current review evidence; current list does not match the active git diff scope. [_bmad-output/implementation-artifacts/1-2-auth-ready-data-model-and-seed.md:246]
+- [ ] [AI-Review][High] Complete native Prisma Migrate execution with a working direct database path so AC #3 is actually satisfied. [_bmad-output/implementation-artifacts/1-2-auth-ready-data-model-and-seed.md:29]
+- [ ] [AI-Review][Medium] Update seed runtime to prefer `DIRECT_URL` when available so `pnpm db:seed` can avoid pooled Supabase connections the same way Prisma CLI config does. [apolles/prisma/seed.ts:39]
+- [ ] [AI-Review][Medium] Remove predictable fallback seed passwords or gate them behind explicit local-dev-only behavior to avoid shipping known credentials. [apolles/prisma/seed.ts:144]
+- [ ] [AI-Review][Medium] Make seed user upserts preserve existing role/activation state, or scope seed writes to truly bootstrap-only accounts, to avoid silently overwriting shared environments. [apolles/prisma/seed.ts:118]
+
 ## Dev Notes
 
 - Story 1.1 already established Supabase Postgres as source of truth through `DATABASE_URL`; keep Prisma datasource provider as `postgresql` and do not introduce local DB assumptions.
@@ -129,6 +137,7 @@ openai/gpt-5.3-codex
 - 2026-03-15: BMAD code-review workflow (fix-all) — fixed seed baseline compatibility for missing `platform_settings`, expanded migration-chain compatibility tests, repaired `.env.example` quote typo, and corrected story file evidence tracking.
 - 2026-03-15: BMAD code-review workflow (fix-all, pass 2) — hardened Prisma missing-table detection (`meta.table` + fallback), added seed test coverage, refreshed file evidence tracking, and re-verified AC #3 remains blocked by Supabase pooler migration-status failures.
 - 2026-03-15: BMAD code-review workflow (fix-all, pass 3) — added `DIRECT_URL`-aware Prisma CLI config, documented pooled vs direct Supabase env setup, preserved direct seed URLs, refreshed story file evidence tracking, and re-validated schema/tests while confirming `DIRECT_URL` is not yet configured in this environment.
+- 2026-03-15: BMAD code-review workflow — recorded follow-up action items for current review findings; story remains in-progress pending AC #3 and seed/runtime hardening.
 
 ## Senior Developer Review (AI)
 
@@ -223,6 +232,21 @@ Quality gates after fix pass 2: `pnpm test src/lib/seed.test.ts` pass (8/8).
 | L1 | Low | Schema compatibility checks did not cover Prisma CLI direct-connection wiring | Fixed (`src/lib/prisma-schema-compat.test.ts` now asserts `DIRECT_URL`/`DATABASE_URL` config expectations) |
 
 Quality gates after fix pass 3: `pnpm test src/lib/seed.test.ts src/lib/prisma-schema-compat.test.ts` pass (10/10). `set -a; source .env; set +a; pnpm prisma validate` pass. `DIRECT_URL` remains unset in both `.env` and `.env.local`, so AC #3 stays open pending native Prisma Migrate execution through a direct connection.
+
+### Supplemental Review (2026-03-15 - Action Items)
+
+**Reviewer:** Moshe (via BMAD code-review workflow)
+**Outcome:** Changes Requested
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| H1 | High | Story File List claims current-review evidence for Story 1.2 files that do not appear in the active git diff; the present dirty worktree is unrelated search/booking work. | Open (captured in Review Follow-ups) |
+| H2 | High | AC #3 still requires successful native Prisma Migrate execution through a working direct connection path. | Open |
+| M1 | Medium | Seed runtime does not yet prefer `DIRECT_URL`, so `pnpm db:seed` can still use pooled connection behavior unlike Prisma CLI config. | Open |
+| M2 | Medium | Seed fallback passwords remain predictable defaults outside production. | Open |
+| M3 | Medium | Seed upserts forcibly reset role and activation state for matching emails, which is risky in shared environments. | Open |
+
+Current review scope note: the nested `apolles/` repo has many unrelated later-story search/booking/UI changes in git, while Story 1.2 implementation files are not part of the active diff in this pass. Story status remains `in-progress` because HIGH and MEDIUM findings remain open and AC #3 is still unresolved.
 
 ### Follow-up Fix Pass (2026-03-12)
 
