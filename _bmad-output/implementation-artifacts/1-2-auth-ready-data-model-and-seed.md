@@ -1,6 +1,6 @@
 # Story 1.2: Auth-Ready Data Model and Seed
 
-Status: done
+Status: in-progress
 
 ## Story
 
@@ -23,10 +23,10 @@ so that authentication and all future data models build on a stable foundation.
   - [x] Add `User` model with UUID id and required auth fields.
   - [x] Add NextAuth-compatible `Account` and `Session` models.
   - [x] Add `VerificationToken` model for NextAuth token flows.
-- [x] Task 2: Create and apply initial migration (AC: #3)
+- [ ] Task 2: Create and apply initial migration (AC: #3)
   - [x] Generate migration SQL artifact from Prisma schema (`prisma/migrations/20260312000000_init_auth_ready_data_model/migration.sql`).
   - [x] Apply migration against Supabase Postgres via `DATABASE_URL` using a pgbouncer-compatible connection string (`?pgbouncer=true&connection_limit=1`).
-  - [x] Verify the auth-ready initial migration is committed, and the current schema is represented by the full migration chain (initial migration plus subsequent additive migrations).
+  - [ ] Run Prisma Migrate successfully (`prisma migrate dev` in development and `prisma migrate deploy` workflow in production-like environments), rather than relying only on manual SQL application.
 - [x] Task 3: Add seed script for baseline users (AC: #4)
   - [x] Create `apolles/prisma/seed.ts` to insert one admin and one agent.
   - [x] Hash seeded passwords with bcrypt before persistence.
@@ -96,6 +96,8 @@ openai/gpt-5.3-codex
 - Seed script now enforces pooler-safe Prisma connection params and explicitly sets UUID on user creation for compatibility with the current Supabase schema defaults.
 - Applied SQL alignment updates against Supabase to ensure `users` includes auth-required columns (`password_hash`, `is_active`, `created_at`, `updated_at`, `email_verified`) and `authenticators` table support.
 - Story-scoped review notes now explicitly distinguish Story 1.2 files from unrelated dirty worktree changes belonging to later stories in `apolles/`.
+- AC #3 remains open: Prisma migration engine commands are still blocked in this environment, so this story is tracked as in-progress until native Prisma Migrate execution is validated.
+- Tightened `getSeedDatabaseUrl` behavior so an existing `pgbouncer=true` URL also gets `connection_limit=1` when missing.
 
 ### Change Log
 
@@ -103,6 +105,7 @@ openai/gpt-5.3-codex
 - 2026-03-12: BMAD code-review workflow — identified 3 MEDIUM findings (seed re-hash on upsert, weak fallback passwords, migration enum coupling).
 - 2026-03-12: Follow-up fix-all pass — fixed all 3 MEDIUM findings (`seed.ts` hash reuse, stronger fallback seed passwords, schema/migration enum compatibility guard test).
 - 2026-03-13: BMAD code-review workflow — fixed review findings by removing deprecated `package.json#prisma` config, adding seed execution unit coverage, clarifying migration-chain claims, and documenting story-vs-worktree scope.
+- 2026-03-15: BMAD code-review workflow — corrected status/task claims around AC #3, enforced missing `connection_limit=1` in seed pooler URL handling, and expanded Story 1.2 File List coverage.
 
 ## Senior Developer Review (AI)
 
@@ -120,7 +123,7 @@ openai/gpt-5.3-codex
 | L1 | Low | Missing Change Log section in story file | Fixed (added above) |
 | L2 | Low | Missing Senior Developer Review section in story file | Fixed (this section) |
 
-All 5 ACs verified as IMPLEMENTED. Quality gates: build, test (15/15), typecheck all pass.
+AC #1, #2, #4, and #5 verified as implemented. AC #3 is partially met via migration artifact + manual SQL apply, but native Prisma Migrate execution is still unresolved in this environment. Quality gates: build, test (15/15), typecheck all pass.
 
 ### Supplemental Review (2026-03-13)
 
@@ -136,6 +139,21 @@ All 5 ACs verified as IMPLEMENTED. Quality gates: build, test (15/15), typecheck
 | M3 | Medium | Review references were not captured for Prisma config/Auth.js adapter guidance | Fixed (references recorded in story) |
 
 Quality gates re-run after fixes: `pnpm test` (17/17), `pnpm build`, `pnpm typecheck` all pass.
+
+### Supplemental Review (2026-03-15)
+
+**Reviewer:** Moshe (via BMAD code-review workflow)
+**Outcome:** Changes Requested
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| H1 | High | AC #3 requires Prisma Migrate execution, but implementation evidence shows migration diff + manual SQL apply only | Open (story remains in-progress) |
+| H2 | High | Story status and review text overstated completion of all ACs | Fixed (status + AC verification text corrected) |
+| H3 | High | Task 2 was marked complete despite unresolved AC #3 migration workflow requirement | Fixed (Task 2 reopened with explicit pending migrate work) |
+| M1 | Medium | Story File List omitted Story 1.2-owned files and additive migration chain artifacts | Fixed (File List expanded) |
+| M2 | Medium | Seed URL helper did not guarantee `connection_limit=1` when `pgbouncer=true` already existed | Fixed (`getSeedDatabaseUrl` now adds missing `connection_limit`) |
+
+Quality gates re-run after fixes: `pnpm test` (31 files / 184 tests) pass. `pnpm prisma validate` requires `DATABASE_URL` in environment.
 
 ### Follow-up Fix Pass (2026-03-12)
 
@@ -163,7 +181,12 @@ Quality gates re-run after fixes: `pnpm test` (17/17), `pnpm build`, `pnpm typec
 - apolles/pnpm-lock.yaml
 - apolles/prisma.config.ts
 - apolles/prisma/migrations/20260312000000_init_auth_ready_data_model/migration.sql
+- apolles/prisma/migrations/20260312150000_add_supplier_api_logs/migration.sql
+- apolles/prisma/migrations/20260313014500_add_platform_settings/migration.sql
+- apolles/prisma/migrations/20260314120500_seed_platform_markup_default/migration.sql
 - apolles/prisma/migrations/migration_lock.toml
 - apolles/prisma/schema.prisma
 - apolles/prisma/seed.ts
+- apolles/src/lib/db.ts
+- apolles/src/lib/prisma-schema-compat.test.ts
 - apolles/src/lib/seed.test.ts

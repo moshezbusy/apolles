@@ -1,6 +1,6 @@
 # Story 1.1: Initialize Project and Deploy Baseline App
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -432,6 +432,7 @@ openai/gpt-5.3-codex
 - Note: external integration keys (TBO/Expedia/Stripe) are currently placeholders for bootstrap only and must be replaced before enabling real supplier/payment flows.
 - 2026-03-15: Re-ran BMAD dev-story completion gates for Story 1.1, including full regression validation (`pnpm test`, `pnpm typecheck`); no code changes required and story returned to review for fresh code-review pass.
 - 2026-03-15: BMAD code-review follow-up fixed config coupling/security hardening for remote image allowlists, mounted the shared Sonner provider in root layout, and removed implicit next-themes coupling from the Sonner wrapper.
+- 2026-03-15: BMAD code-review fix pass corrected `.env.example` DATABASE_URL formatting, hardened structured logging serialization against circular context objects, and re-baselined nested-repo drift documentation for Story 1.1 traceability.
 
 ### File List
 
@@ -481,7 +482,7 @@ This project currently has a nested repo structure during implementation:
 
 Reviewers should run git checks in both contexts when validating File List vs actual changes.
 
-Current nested repo worktree also contains later-story search/booking/supplier changes outside Story 1.1 scope. Those files are intentionally excluded from this Story 1.1 File List and must be reviewed against their own story artifacts. This explicitly includes placeholder routes and search UX files such as `src/app/(app)/search/[supplier]/[hotelId]/page.tsx`, `src/app/(app)/booking/[supplier]/[hotelId]/[rateId]/page.tsx`, `src/features/search/search-form.tsx`, and `src/features/search/hotel-result-card.tsx`.
+Current nested repo worktree also contains later-story search/booking/supplier/admin changes outside Story 1.1 scope. Those files are intentionally excluded from this Story 1.1 File List and must be reviewed against their own story artifacts. As of this review pass, drift spans routes and feature modules including `src/app/(app)/search/**`, `src/app/(app)/booking/**`, `src/features/search/**`, `src/features/suppliers/**`, and admin/auth follow-up files such as `src/app/(app)/search/actions.ts`, `src/features/search/search-service.ts`, `src/features/suppliers/adapters/tbo-adapter.ts`, `src/features/suppliers/adapters/expedia-adapter.ts`, and related co-located tests.
 
 ### Change Log
 
@@ -499,6 +500,7 @@ Current nested repo worktree also contains later-story search/booking/supplier c
 - 2026-03-15: BMAD code-review workflow — fixed logger stdout compliance, restored explicit typography scale tokens, strengthened Prisma singleton hot-reload tests with module reload coverage, and documented current later-story worktree drift in the Git Context note. Status returned to `done`.
 - 2026-03-15: BMAD code-review workflow (follow-up) — fixed wildcard remote image allowlist and removed Story 1.1 config coupling to Epic 3 helpers, mounted global Sonner provider in root layout, simplified Sonner light-theme behavior, and corrected stale logger test wording. Status remains `done`.
 - 2026-03-15: BMAD code-review workflow remediation pass — corrected story reviewability/status and File List traceability, and removed fixed supplier-to-source coupling by moving source-label assignment to per-search seeded mapping passed through search UI routes.
+- 2026-03-15: BMAD code-review workflow remediation follow-up — fixed `.env.example` bootstrap syntax, added circular-safe context serialization in `src/lib/logger.ts` with test coverage, and expanded Git Context drift notes for current nested-repo reality. Story status set to `done`.
 
 ## Senior Developer Review (AI)
 
@@ -671,3 +673,22 @@ Validation after fixes:
 References checked during review/fix pass:
 - Next.js `remotePatterns` guidance (`https://nextjs.org/docs/app/api-reference/components/image#remotepatterns`)
 - `next-themes` app-router usage (`https://github.com/pacocoursey/next-themes#with-app`)
+
+### BMAD Code Review (2026-03-15, gpt-5.3-codex, remediation)
+
+**Reviewer:** Moshe (via BMAD code-review workflow)
+**Outcome:** Approved (after fixes)
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| M1 | Medium | `.env.example` bootstrap `DATABASE_URL` formatting was invalid/misleading for copy-paste setup | Fixed (`apolles/.env.example`) |
+| M2 | Medium | `logger` context serialization did not guard circular references and could recurse indefinitely | Fixed (`apolles/src/lib/logger.ts`, `apolles/src/lib/logger.test.ts`) |
+| M3 | Medium | Story traceability note under-reported current nested-repo drift beyond a small sample set | Fixed (`_bmad-output/implementation-artifacts/1-1-initialize-project-and-deploy-baseline-app.md`) |
+| L1 | Low | Default button hover style uses anchor-scoped selector in base variant | Accepted (deferred; not blocking Story 1.1 ACs) |
+
+Validation after fixes:
+- `pnpm test -- src/lib/logger.test.ts` (passing; suite green)
+
+Outcome:
+- All HIGH/MEDIUM issues from this review pass are fixed.
+- Story status remains **done** and sprint tracking remains aligned.
