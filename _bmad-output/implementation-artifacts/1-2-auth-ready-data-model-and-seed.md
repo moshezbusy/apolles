@@ -79,6 +79,9 @@ openai/gpt-5.3-codex
 - `pnpm db:seed` (re-run after code review fixes; success)
 - `set -a; source .env; set +a; pnpm prisma migrate status` (timed out after connection to Supabase pooler)
 - `set -a; source .env.local; set +a; pnpm prisma migrate status` (timed out after connection to Supabase pooler)
+- `pnpm prisma migrate status` (fails when `DATABASE_URL` is missing)
+- `set -a; source .env; set +a; pnpm prisma migrate status` (fails with Supabase pooler prepared-statement error)
+- `set -a; source .env; set +a; export DATABASE_URL="${DATABASE_URL}?pgbouncer=true&connection_limit=1"; pnpm prisma migrate status` (timed out against Supabase pooler)
 - `pnpm build`
 - `pnpm test`
 - `pnpm typecheck`
@@ -104,6 +107,9 @@ openai/gpt-5.3-codex
 - Expanded schema/migration compatibility coverage to assert migration-chain expectations (`supplier_api_logs` and `platform_settings`) and auth schema fields (`email_verified`, `authenticators`).
 - Corrected malformed `DATABASE_URL` example quoting in `apolles/.env.example`.
 - Updated story file tracking to list only files with concrete implementation evidence for this review pass.
+- Hardened `isMissingTableError` to use Prisma `meta.table` when present (with message fallback), reducing brittle dependence on engine message text.
+- Added seed test coverage for Prisma `P2021` `meta.table` detection path.
+- Re-validated native Prisma migration status attempts in this environment; AC #3 remains blocked by Supabase pooler behavior.
 
 ### Change Log
 
@@ -113,6 +119,7 @@ openai/gpt-5.3-codex
 - 2026-03-13: BMAD code-review workflow — fixed review findings by removing deprecated `package.json#prisma` config, adding seed execution unit coverage, clarifying migration-chain claims, and documenting story-vs-worktree scope.
 - 2026-03-15: BMAD code-review workflow — corrected status/task claims around AC #3, enforced missing `connection_limit=1` in seed pooler URL handling, and expanded Story 1.2 File List coverage.
 - 2026-03-15: BMAD code-review workflow (fix-all) — fixed seed baseline compatibility for missing `platform_settings`, expanded migration-chain compatibility tests, repaired `.env.example` quote typo, and corrected story file evidence tracking.
+- 2026-03-15: BMAD code-review workflow (fix-all, pass 2) — hardened Prisma missing-table detection (`meta.table` + fallback), added seed test coverage, refreshed file evidence tracking, and re-verified AC #3 remains blocked by Supabase pooler migration-status failures.
 
 ## Senior Developer Review (AI)
 
@@ -177,6 +184,20 @@ Quality gates re-run after fixes: `pnpm test` (31 files / 184 tests) pass. `pnpm
 
 Quality gates after fix pass: `pnpm test` (31 files / 186 tests) pass.
 
+### Supplemental Review (2026-03-15 - Fix Pass 2)
+
+**Reviewer:** Moshe (via BMAD code-review workflow)
+**Outcome:** Changes Requested (partially fixed)
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| H1 | High | AC #3 requires native Prisma Migrate execution and remains unverified | Open (`prisma migrate status` fails/times out against Supabase pooler in this environment) |
+| M1 | Medium | Story File List omitted changed `package.json` evidence tracked in git | Fixed (File List updated) |
+| M2 | Medium | Worktree contains unrelated later-story changes while this review is story-scoped | Open (documented in Review Scope Notes; left intentionally out-of-scope) |
+| L1 | Low | Seed missing-table detection relied primarily on error message text matching | Fixed (`isMissingTableError` now prefers Prisma `meta.table`) |
+
+Quality gates after fix pass 2: `pnpm test src/lib/seed.test.ts` pass (8/8).
+
 ### Follow-up Fix Pass (2026-03-12)
 
 - Updated `apolles/prisma/seed.ts` to avoid unnecessary re-hashing when existing credentials already match.
@@ -199,6 +220,7 @@ Quality gates after fix pass: `pnpm test` (31 files / 186 tests) pass.
 
 - _bmad-output/implementation-artifacts/1-2-auth-ready-data-model-and-seed.md
 - apolles/.env.example
+- apolles/package.json
 - apolles/prisma/seed.ts
 - apolles/src/lib/prisma-schema-compat.test.ts
 - apolles/src/lib/seed.test.ts
