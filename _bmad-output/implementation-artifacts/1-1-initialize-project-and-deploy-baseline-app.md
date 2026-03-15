@@ -1,6 +1,6 @@
 # Story 1.1: Initialize Project and Deploy Baseline App
 
-Status: done
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -430,6 +430,8 @@ openai/gpt-5.3-codex
 - Verified Prisma runtime connectivity to Supabase with a successful `SELECT 1` query (`[{"ok":1}]`), removing Docker/local Postgres dependency for this story.
 - Verified Vercel production deployment is `Ready` and accessible at `https://apolles-lean.vercel.app` over HTTPS.
 - Note: external integration keys (TBO/Expedia/Stripe) are currently placeholders for bootstrap only and must be replaced before enabling real supplier/payment flows.
+- 2026-03-15: Re-ran BMAD dev-story completion gates for Story 1.1, including full regression validation (`pnpm test`, `pnpm typecheck`); no code changes required and story returned to review for fresh code-review pass.
+- 2026-03-15: BMAD code-review follow-up fixed config coupling/security hardening for remote image allowlists, mounted the shared Sonner provider in root layout, and removed implicit next-themes coupling from the Sonner wrapper.
 
 ### File List
 
@@ -479,6 +481,8 @@ This project currently has a nested repo structure during implementation:
 
 Reviewers should run git checks in both contexts when validating File List vs actual changes.
 
+Current nested repo worktree also contains later-story search/booking/supplier changes outside Story 1.1 scope. Those files are intentionally excluded from this Story 1.1 File List and must be reviewed against their own story artifacts. This explicitly includes placeholder routes and search UX files such as `src/app/(app)/search/[supplier]/[hotelId]/page.tsx`, `src/app/(app)/booking/[supplier]/[hotelId]/[rateId]/page.tsx`, `src/features/search/search-form.tsx`, and `src/features/search/hotel-result-card.tsx`.
+
 ### Change Log
 
 - 2026-03-11: Implemented Story 1.1 foundation tasks 1-4 and 6-9; partially completed Task 5 (Prisma singleton done, DB connectivity verification blocked by missing Docker/Podman). Task 10 (Vercel deployment) pending.
@@ -491,6 +495,10 @@ Reviewers should run git checks in both contexts when validating File List vs ac
 - 2026-03-13: BMAD code-review (claude-opus-4-6) — found H1-H3 (prior review fixes never committed), M1-M3 (File List gaps, undocumented SKIP_ENV_VALIDATION, redundant db test). H1-H3 already resolved in working tree by later stories. Fixed M1 (File List updated), M2 (.env.example documented), M3 (db.test.ts improved). Status confirmed done.
 - 2026-03-13: BMAD code-review (gpt-5.3-codex) — fixed H1 (ErrorCode mapping coverage), M1 (configured Prisma seed command), M2 (logger serializes Error context), M3 (ErrorCode exhaustiveness test). Story remains done.
 - 2026-03-13: BMAD code-review (claude-opus-4-6, review #5) — fixed M1 (added `/generated` to `.gitignore`), M2 (removed dead `start-database.sh`). H1-H3 confirmed already resolved in working tree. Documented process gap: prior review fixes never committed as Story 1.1 amendments. Story remains done.
+- 2026-03-15: BMAD dev-story workflow completion rerun — validated all tasks remain complete and quality gates pass (`pnpm test`, `pnpm typecheck`); status moved to `review` for code-review workflow.
+- 2026-03-15: BMAD code-review workflow — fixed logger stdout compliance, restored explicit typography scale tokens, strengthened Prisma singleton hot-reload tests with module reload coverage, and documented current later-story worktree drift in the Git Context note. Status returned to `done`.
+- 2026-03-15: BMAD code-review workflow (follow-up) — fixed wildcard remote image allowlist and removed Story 1.1 config coupling to Epic 3 helpers, mounted global Sonner provider in root layout, simplified Sonner light-theme behavior, and corrected stale logger test wording. Status remains `done`.
+- 2026-03-15: BMAD code-review workflow remediation pass — corrected story reviewability/status and File List traceability, and removed fixed supplier-to-source coupling by moving source-label assignment to per-search seeded mapping passed through search UI routes.
 
 ## Senior Developer Review (AI)
 
@@ -622,3 +630,44 @@ Validation run after fixes:
 **Process lesson:** Review fixes should be committed immediately after each review pass, not left as uncommitted working tree modifications. In this project's case, the nested repo structure and rapid story progression meant fixes accumulated without dedicated commits. Going forward, each review that produces code changes should end with a commit in the relevant repo.
 
 All 8 ACs verified as IMPLEMENTED. Tests: 105/105 pass. Typecheck: pass. Story status confirmed: **done**.
+
+### BMAD Code Review (2026-03-15, gpt-5.4)
+
+**Reviewer:** Moshe (via BMAD code-review workflow)
+**Outcome:** Approved (after fixes)
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| H1 | High | `logger.warn()` and `logger.error()` wrote to stderr instead of stdout, violating AC #4 | Fixed (`apolles/src/lib/logger.ts`, `apolles/src/lib/logger.test.ts`) |
+| H2 | High | Typography scale tokens from AC #7 were missing from design-token definitions | Fixed (`apolles/src/app/globals.css`) |
+| M1 | Medium | `db.test.ts` did not actually verify singleton reuse across module reloads | Fixed (`apolles/src/lib/db.test.ts`) |
+| M2 | Medium | Story traceability did not explain later-story worktree drift in the nested repo | Fixed (`_bmad-output/implementation-artifacts/1-1-initialize-project-and-deploy-baseline-app.md`) |
+
+Validation after fixes:
+- `pnpm test` (183/183 passing)
+- `pnpm typecheck` (passing)
+
+References checked during fix pass:
+- Tailwind CSS v4 theme variable namespaces (`https://tailwindcss.com/docs/theme`)
+- Vitest module mocking and `vi.resetModules()` guidance (`https://vitest.dev/api/vi.html`)
+
+### BMAD Code Review (2026-03-15, gpt-5.3-codex, follow-up)
+
+**Reviewer:** Moshe (via BMAD code-review workflow)
+**Outcome:** Approved (after fixes)
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| H1 | High | `next.config.ts` accepted wildcard remote image hosts via feature helper (`hostname: "**"`) | Fixed (`apolles/next.config.ts`, `apolles/.env.example`) |
+| H2 | High | Sonner provider existed but was not mounted application-wide in root layout | Fixed (`apolles/src/app/layout.tsx`) |
+| M1 | Medium | Foundation config imported Epic 3 search helper (`result-card-helpers`) creating cross-epic boot coupling | Fixed (`apolles/next.config.ts`, `apolles/src/features/search/result-card-helpers.ts`) |
+| M2 | Medium | Sonner wrapper depended on `next-themes` without a root `ThemeProvider` in this light-mode baseline | Fixed (`apolles/src/components/ui/sonner.tsx`) |
+| L1 | Low | Logger test title still said stderr while implementation writes stdout | Fixed (`apolles/src/lib/logger.test.ts`) |
+
+Validation after fixes:
+- `pnpm test` (183/183 passing)
+- `pnpm typecheck` (passing)
+
+References checked during review/fix pass:
+- Next.js `remotePatterns` guidance (`https://nextjs.org/docs/app/api-reference/components/image#remotepatterns`)
+- `next-themes` app-router usage (`https://github.com/pacocoursey/next-themes#with-app`)

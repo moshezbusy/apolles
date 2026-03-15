@@ -57,12 +57,12 @@ development_status:
   2-3-expedia-rapid-api-v3-search-adapter: in-progress
   2-4-platform-markup-service: in-progress
   2-5-search-service-with-parallel-supplier-calls: done
-  2-6-search-form-ui: backlog
+  2-6-search-form-ui: done
   epic-2-retrospective: optional
 
   # Epic 3: Results Display, Room Details & Source Indicators
-  epic-3: backlog
-  3-1-hotel-result-cards-with-source-indicators: backlog
+  epic-3: in-progress
+  3-1-hotel-result-cards-with-source-indicators: done
   3-2-client-side-filtering-and-sorting: backlog
   3-3-room-details-page: backlog
   epic-3-retrospective: optional
