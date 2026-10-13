@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "google-merchant": {
+      "type": "http",
+      "url": "https://merchantapi.googleapis.com/mcp",
+      "headersHelper": "bash scripts/merchant-mcp-headers.sh"
+    }
+  }
+}
