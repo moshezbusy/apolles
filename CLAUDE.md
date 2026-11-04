@@ -4,6 +4,21 @@ Apolles is a B2B hotel booking platform for travel agents. Money, personal data 
 bookings are involved: a bug can double-charge, double-book or leak data. Slow and correct
 beats fast and wrong. The owner (Moshe) is not a programmer: explain decisions in plain words.
 
+## 0. Owner decisions (locked — change only if the owner says so in chat)
+
+- **One supplier: Expedia Rapid API.** No TBO, no other supplier, no hotel mapping. Keep the
+  supplier behind one adapter interface, but build and test only the Expedia adapter.
+- **Two user types only: Admin and Agent.** No other roles, no client accounts, no sub-users.
+- **Scope = the approved spec** in `docs/specs/approved/`. Nothing outside it gets built.
+  If something seems missing, ask; do not add it. The old plan in `_bmad-output/` and `_bmad/`
+  is superseded history: never follow it.
+- **Session check first.** Before any change, run `echo guardrail-canary`. It MUST be blocked.
+  If it runs, the guardrails are off in this session: stop and tell the owner.
+- **No live credentials, ever.** Agents work only with Expedia test credentials, payment test
+  mode and non-production databases. Live keys and the production database URL exist only in
+  the hosting provider, set by the owner. If you see a live key, stop and tell the owner.
+- **Merging and deploying to production are the owner's actions.** Agents open PRs only.
+
 ## 1. Workflow — mandatory, in this order
 
 1. **Understand before touching.** Read every file you will change *in full*, plus its callers
@@ -54,14 +69,15 @@ skills as `.claude/skills/project-<name>/`.
   one normalized model).
 - Booking status is an explicit state machine; transitions happen inside a DB transaction and
   write an audit-log row.
-- Follow `_bmad-output/planning-artifacts/architecture.md` for stack, layering and naming.
+- Follow the approved spec and its architecture section for stack, layering and naming.
   Layering: UI → server actions → services → adapters / DB. No DB access from UI code.
 - Match existing patterns and naming. Consistency beats personal preference.
 
 ## 4. Guardrails (do not weaken)
 
 - `.claude/settings.json` + `.claude/hooks/` block dangerous commands, secret access, edits to
-  guardrails, and stop a turn while typecheck/lint/tests fail.
+  guardrails (incl. this file and approved specs), merging, production deploys, and GitHub API
+  writes to main; and stop a turn while typecheck/lint/tests fail.
 - `.github/workflows/guardrails.yml` runs secret scanning (gitleaks), SAST (semgrep), dependency
   audit, typecheck, lint, tests and build on every PR.
 - Changing any guardrail file requires the owner's explicit approval in chat. If a guardrail

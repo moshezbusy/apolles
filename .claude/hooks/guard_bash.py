@@ -38,13 +38,24 @@ RULES = [
      "Access to .env files is blocked (secrets). Use .env.example for documentation."),
     (r"\b(printenv|env)\s*($|\|)",
      "Dumping the environment can leak secrets. Read a specific non-secret variable instead."),
-    (r"\.claude/(settings\.json|hooks/)|\.github/(workflows/|CODEOWNERS)",
-     "Guardrail files (.claude/settings.json, .claude/hooks/, .github/workflows/, CODEOWNERS) "
-     "may only be changed with explicit owner approval in chat. Stop and ask."),
+    (r"guardrail-canary",
+     "Canary OK: guardrail hooks are active in this session."),
+    (r"\.claude/(settings(\.local)?\.json|hooks/)|\.github/|CLAUDE\.md|docs/specs/approved/|"
+     r"\.claude/settings[\w.]*\.json|disableAllHooks|core\.hooksPath",
+     "Guardrail files (.claude/settings*.json, .claude/hooks/, .github/, CLAUDE.md, approved specs, "
+     "~/.claude) may only be changed by the owner. Stop and ask."),
+    (r"\bgh\s+(pr\s+merge|repo\s+(delete|edit)|api\b[^\n]*(protection|rulesets|-X\s*(DELETE|PUT|PATCH)|--method\s+(DELETE|PUT|PATCH)))",
+     "Merging PRs, deleting/editing the repo or changing branch protection is the owner's job only."),
+    (r"\bvercel\b[^\n]*(--prod\b|\bpromote\b|\benv\b)|\bprisma\s+migrate\s+deploy\b",
+     "Production deploys, production env vars and production migrations run only from CI after the owner merges."),
+    (r"\bgit\s+push\b[^\n]*(--mirror|--delete|--all\b)",
+     "Mirror/delete/all pushes are blocked."),
 ]
 
 # Read-only commands may touch guardrail paths (cat/ls/grep/git diff etc.).
 READ_ONLY_PREFIX = re.compile(r"^\s*(cat|less|head|tail|ls|grep|rg|git\s+(diff|log|show|status)|wc|python3\s+-m\s+json\.tool)\b")
+# Read-only git commands that merely mention a guarded path are allowed.
+GUARDED_PATH_RULE = "Guardrail files"
 
 
 def main() -> int:
@@ -57,8 +68,10 @@ def main() -> int:
         return 0
     for pattern, message in RULES:
         if re.search(pattern, cmd, flags=re.IGNORECASE):
-            if "Guardrail files" in message and READ_ONLY_PREFIX.match(cmd) and not re.search(r"[>|;&]", cmd):
+            if GUARDED_PATH_RULE in message and READ_ONLY_PREFIX.match(cmd) and not re.search(r"[>|;&]", cmd):
                 continue
+            if GUARDED_PATH_RULE in message and re.match(r"^\s*git\s+(add|commit)\b", cmd) and not re.search(r"[>|;&]", cmd):
+                continue  # committing is fine; the edit itself is what is guarded, and CI/CODEOWNERS see it
             print(f"BLOCKED by project guardrail: {message}\nCommand: {cmd[:300]}", file=sys.stderr)
             return 2
     return 0

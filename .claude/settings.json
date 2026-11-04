@@ -14,6 +14,12 @@
       "Read(~/.config/gh/**)",
       "Read(~/.git-credentials)",
       "Read(~/.npmrc)",
+      "Edit(./.claude/settings.local.json)",
+      "Write(./.claude/settings.local.json)",
+      "Edit(~/.claude/settings*.json)",
+      "Write(~/.claude/settings*.json)",
+      "mcp__github__merge_pull_request",
+      "mcp__github__enable_pr_auto_merge",
       "Bash(sudo *)",
       "Bash(git push --force *)",
       "Bash(git push -f *)",
@@ -30,6 +36,16 @@
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_bash.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__github__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_mcp.py\"",
             "timeout": 10
           }
         ]

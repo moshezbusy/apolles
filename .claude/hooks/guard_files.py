@@ -12,10 +12,14 @@ import sys
 BLOCKED = [
     (r"(^|/)\.env(\.(?!example$)[^/]+)?$",
      "Writing .env files is blocked (secrets). Document variables in .env.example only."),
-    (r"(^|/)\.claude/settings\.json$|(^|/)\.claude/hooks/",
-     "Guardrail config may only be changed with explicit owner approval in chat. Stop and ask."),
-    (r"(^|/)\.github/workflows/|(^|/)\.github/CODEOWNERS$",
-     "CI / CODEOWNERS may only be changed with explicit owner approval in chat. Stop and ask."),
+    (r"(^|/)\.claude/settings(\.local)?\.json$|(^|/)\.claude/hooks/|^/root/\.claude/|/home/[^/]+/\.claude/|^~/\.claude/",
+     "Guardrail config may only be changed by the owner. Stop and ask."),
+    (r"(^|/)\.github/",
+     "CI / CODEOWNERS / Dependabot may only be changed by the owner. Stop and ask."),
+    (r"(^|/)CLAUDE\.md$",
+     "The project rules (CLAUDE.md) may only be changed by the owner. Propose the change in chat."),
+    (r"(^|/)docs/specs/approved/",
+     "Approved specs are locked. Propose a change in chat; the owner approves a new version."),
     (r"(^|/)\.claude/skills/(?!project-)[^/]+/",
      "Vendored third-party skills are pinned (see .claude/skills/THIRD_PARTY.md). "
      "Do not edit them; add a project-* skill instead."),
