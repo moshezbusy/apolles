@@ -1,0 +1,5 @@
+# Changes to guardrails need the owner's review (enable "Require review from Code Owners" on main).
+/.claude/settings.json   @moshezbusy
+/.claude/hooks/          @moshezbusy
+/.github/                @moshezbusy
+/CLAUDE.md               @moshezbusy

@@ -1,0 +1,94 @@
+# Hard gates. Every PR must pass these before merge (enable branch protection on main).
+# Actions are pinned to full commit SHAs (supply-chain safety). Dependabot keeps them updated.
+name: guardrails
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guardrails-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: gitleaks (full history)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            git /repo --redact --verbose --exit-code 1
+
+  sast:
+    name: Static analysis (semgrep)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.183.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fetch pinned rules (semgrep/semgrep-rules)
+        env:
+          RULES_SHA: 16b9e6d45f10649f6a531ec4838ed9924372c3bc
+        run: |
+          git init -q /tmp/rules && cd /tmp/rules
+          git fetch -q --depth 1 https://github.com/semgrep/semgrep-rules "$RULES_SHA"
+          git checkout -q FETCH_HEAD
+      - name: semgrep
+        run: |
+          semgrep scan --error --metrics=off --disable-version-check \
+            --exclude=.claude/skills --exclude=_bmad --exclude=api-docs \
+            --config /tmp/rules/javascript --config /tmp/rules/typescript \
+            --config /tmp/rules/generic/secrets --config /tmp/rules/yaml/github-actions
+
+  app:
+    name: Typecheck / lint / test / build / audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Detect app
+        id: detect
+        run: |
+          if [ -f package.json ]; then echo "dir=." >> "$GITHUB_OUTPUT"
+          elif [ -f apolles/package.json ]; then echo "dir=apolles" >> "$GITHUB_OUTPUT"
+          else echo "dir=" >> "$GITHUB_OUTPUT"; echo "No app yet - skipping."; fi
+      # Reads the pnpm version from the "packageManager" field of package.json (required).
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        if: steps.detect.outputs.dir != ''
+        with:
+          package_json_file: ${{ steps.detect.outputs.dir }}/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.detect.outputs.dir != ''
+        with:
+          node-version: 22
+      - name: Install (frozen lockfile, no install scripts)
+        if: steps.detect.outputs.dir != ''
+        working-directory: ${{ steps.detect.outputs.dir }}
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Dependency audit
+        if: steps.detect.outputs.dir != ''
+        working-directory: ${{ steps.detect.outputs.dir }}
+        run: pnpm audit --audit-level=high
+      - name: Typecheck / lint / test / build
+        if: steps.detect.outputs.dir != ''
+        working-directory: ${{ steps.detect.outputs.dir }}
+        run: |
+          for s in typecheck lint test build; do
+            if node -e "process.exit(require('./package.json').scripts?.['$s'] ? 0 : 1)"; then
+              echo "::group::pnpm $s"; pnpm run "$s"; echo "::endgroup::"
+            else
+              echo "::warning::script '$s' missing in package.json"
+            fi
+          done
