@@ -32,3 +32,6 @@ npm-debug.log*
 
 # Documented template is committed
 !.env.example
+
+# generated Prisma client
+/src/generated

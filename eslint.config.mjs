@@ -23,6 +23,7 @@ const eslintConfig = defineConfig([
     "api-docs/**",
     "docs/**",
     "apolles/**",
+    "src/generated/**",
     ".superpowers/**",
   ]),
 ]);
