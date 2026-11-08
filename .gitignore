@@ -35,3 +35,6 @@ npm-debug.log*
 
 # generated Prisma client
 /src/generated
+
+# written by `next dev` (generic Next.js notice; the project rules live in CLAUDE.md)
+/AGENTS.md
