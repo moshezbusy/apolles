@@ -132,6 +132,36 @@ async function readBalance(client: Tx, agencyId: string): Promise<Balance> {
   return { balanceCents: toSafeNumber(row.balance), heldCents: toSafeNumber(row.held) };
 }
 
+// Balances of many agencies in ONE grouped query (no N+1). Same meaning as getBalance;
+// an agency without entries gets zeros.
+export async function getBalances(agencyIds: string[]): Promise<Map<string, Balance>> {
+  const result = new Map<string, Balance>();
+  if (agencyIds.length === 0) return result;
+  for (const id of agencyIds) result.set(id, { balanceCents: 0, heldCents: 0 });
+  const rows = await db.$queryRaw<{ agencyId: string; balance: bigint; held: bigint }[]>`
+    SELECT
+      e."agencyId" AS "agencyId",
+      COALESCE(SUM(e."amountCents"), 0)::bigint AS balance,
+      COALESCE(SUM(-e."amountCents") FILTER (
+        WHERE e."type" = 'HOLD' AND NOT EXISTS (
+          SELECT 1 FROM "LedgerEntry" r
+          WHERE r."holdId" = e."holdId"
+            AND r."agencyId" = e."agencyId"
+            AND r."type" = 'HOLD_RELEASE'
+        )
+      ), 0)::bigint AS held
+    FROM "LedgerEntry" e
+    WHERE e."agencyId" = ANY(${agencyIds})
+    GROUP BY e."agencyId"`;
+  for (const row of rows) {
+    result.set(row.agencyId, {
+      balanceCents: toSafeNumber(row.balance),
+      heldCents: toSafeNumber(row.held),
+    });
+  }
+  return result;
+}
+
 async function findByKey(tx: Tx, idempotencyKey: string): Promise<LedgerEntry | null> {
   return tx.ledgerEntry.findUnique({ where: { idempotencyKey } });
 }
