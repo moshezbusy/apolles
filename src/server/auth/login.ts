@@ -3,10 +3,10 @@ import { normalizeEmail } from "@/server/users";
 import { DUMMY_PASSWORD_HASH, verifyPassword } from "@/server/auth/password";
 import { LOCK_DURATION_MS, MAX_FAILED_LOGINS } from "@/server/auth/lockout-policy";
 import {
-  clearFailedAttempts,
   isLocked,
-  isUnlockedNow,
   recordFailedAttempt,
+  releaseAttempt,
+  reserveAttempt,
 } from "@/server/auth/lockout";
 
 export { LOCK_DURATION_MS, MAX_FAILED_LOGINS };
@@ -52,18 +52,24 @@ export async function login(email: string, password: string): Promise<LoginResul
   // While locked, the password is not checked at all and the attempt is not counted.
   if (isLocked(user.lockedUntil)) return LOCKED;
 
+  // Take an attempt slot BEFORE the (slow) password check (H1, lockout.ts). No slot left
+  // (locked, or the last slots are taken by attempts still in flight) → refused unchecked,
+  // so parallel guesses cannot check more than MAX_FAILED_LOGINS passwords per lock window.
+  const slot = await reserveAttempt(user.id);
+  if (slot === null) return LOCKED;
+
   if (!(await verifyPassword(user.passwordHash, password))) {
-    return (await recordFailedAttempt(user)) === "LOCKED" ? LOCKED : INVALID;
+    return (await recordFailedAttempt(user, slot)) === "LOCKED" ? LOCKED : INVALID;
   }
 
-  // The password is right. If parallel wrong guesses locked the account during the (slow)
-  // password check, this correct guess must not lift the lock or get a session.
-  // Agent: the sign-in is complete, so the run of failures is over.
+  // The password is right: give the slot back. If parallel wrong guesses locked the account
+  // during the password check, this correct guess must not lift the lock or get a session.
+  // Agent: the sign-in is complete, so the run of failures is over (counter reset to 0).
   // Admin: the sign-in is only complete after the TOTP code, which shares this counter; a
   // correct password must not reset it, or re-entering the password between wrong codes
-  // would allow unlimited code guessing. A correct TOTP code resets it (totp.ts).
-  const stillUnlocked =
-    user.role === "ADMIN" ? await isUnlockedNow(user.id) : await clearFailedAttempts(user.id);
+  // would allow unlimited code guessing (R36). It only hands its own slot back (counter − 1),
+  // so it neither costs nor clears a strike. A correct TOTP code resets it (totp.ts).
+  const stillUnlocked = await releaseAttempt(user.id, user.role === "ADMIN" ? "RETURN" : "RESET");
   if (!stillUnlocked) return LOCKED;
 
   // Suspension is only revealed to someone who knows the password.

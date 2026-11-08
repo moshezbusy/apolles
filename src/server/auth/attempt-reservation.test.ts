@@ -1,0 +1,357 @@
+import { generate, verify } from "otplib";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { db } from "@/server/db";
+import { createUser } from "@/server/users";
+import { resetTestDb } from "@/test/db";
+import { notifyAdminLockout } from "@/server/auth/notifications";
+import * as password from "@/server/auth/password";
+import { createSession, getSession } from "@/server/auth/session";
+import { login, type LoginResult } from "@/server/auth/login";
+import { checkTotpForSession, startTotpEnrollment, type TotpCheckResult } from "@/server/auth/totp";
+
+// H1 (differential review): a sign-in attempt must take one of the MAX_FAILED_LOGINS slots
+// BEFORE the password or code is checked. Requests that find no slot left are refused
+// without any check, so a burst of parallel guesses can never check more than 3 secrets per
+// lock window.
+//
+// These tests are deterministic, not timing-based: the checker (argon2 / TOTP verify) is
+// replaced by a gate that holds every call until each request in the burst has either
+// reached the checker or finished. Requests that got a slot wait in the checker; requests
+// that got none finish at once. So the gate always opens, with or without the fix, and the
+// number of checks made is exact.
+
+vi.mock("@/server/auth/notifications", () => ({ notifyAdminLockout: vi.fn() }));
+vi.mock("otplib", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("otplib")>();
+  return { ...actual, verify: vi.fn(actual.verify) };
+});
+
+const GOOD = "abcdefg1";
+const BAD = "wrong-pass1";
+
+let realVerify: typeof verify;
+let passwordHash: string;
+
+beforeAll(async () => {
+  realVerify = (await vi.importActual<typeof import("otplib")>("otplib")).verify;
+  passwordHash = await password.hashPassword(GOOD);
+});
+
+// Opens once `total` requests are each inside the checker or finished.
+function createGate(total: number) {
+  let inside = 0;
+  let finished = 0;
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  const check = () => {
+    if (inside + finished >= total) open();
+  };
+  return {
+    async enter(): Promise<void> {
+      inside++;
+      check();
+      await opened;
+    },
+    track<T>(request: Promise<T>): Promise<T> {
+      return request.finally(() => {
+        finished++;
+        check();
+      });
+    },
+  };
+}
+
+// Holds only the first call of the checker until release(); later calls pass straight through.
+function createHold() {
+  let entered!: () => void;
+  let release!: () => void;
+  const enteredP = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const releaseP = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let first = true;
+  return {
+    entered: enteredP,
+    release,
+    async enter(): Promise<void> {
+      if (!first) return;
+      first = false;
+      entered();
+      await releaseP;
+    },
+  };
+}
+
+async function userRow(id: string) {
+  return db.user.findUniqueOrThrow({ where: { id } });
+}
+
+function isLockedNow(lockedUntil: Date | null): boolean {
+  return lockedUntil !== null && lockedUntil.getTime() > Date.now();
+}
+
+describe("attempt slot reserved before the secret is checked", () => {
+  beforeEach(async () => {
+    await resetTestDb();
+    vi.mocked(notifyAdminLockout).mockClear();
+    vi.mocked(verify).mockClear();
+    vi.mocked(verify).mockImplementation((options) => realVerify(options));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe("admin TOTP step", () => {
+    const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+    async function wrongCodeFor(secret: string): Promise<string> {
+      const now = nowSeconds();
+      const window = new Set(
+        await Promise.all([-60, -30, 0, 30, 60].map((offset) => generate({ secret, epoch: now + offset }))),
+      );
+      for (let n = 0; ; n++) {
+        const candidate = String(n).padStart(6, "0");
+        if (!window.has(candidate)) return candidate;
+      }
+    }
+
+    async function confirmedAdmin(failedLogins = 0) {
+      const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN" });
+      const url = new URL((await startTotpEnrollment(admin.id)).otpauthUrl);
+      const secret = url.searchParams.get("secret") ?? "";
+      await db.user.update({ where: { id: admin.id }, data: { totpConfirmedAt: new Date(), failedLogins } });
+      const session = await getSession(await createSession(admin.id));
+      if (!session) throw new Error("no session");
+      return { admin, secret, sessionId: session.sessionId };
+    }
+
+    // Every TOTP check records the code it was given, then waits at the gate.
+    function gateVerify(gate: { enter(): Promise<void> }): string[] {
+      const checked: string[] = [];
+      vi.mocked(verify).mockImplementation(async (options) => {
+        checked.push(options.token);
+        await gate.enter();
+        return realVerify(options);
+      });
+      return checked;
+    }
+
+    it("19 wrong codes and 1 correct code in parallel: exactly 3 codes are checked; the correct one is accepted only if it was one of them", async () => {
+      const { admin, secret, sessionId } = await confirmedAdmin();
+      const bad = await wrongCodeFor(secret);
+      const good = await generate({ secret, epoch: nowSeconds() });
+      const gate = createGate(20);
+      const checked = gateVerify(gate);
+
+      const codes = [...Array.from({ length: 19 }, () => bad), good];
+      const results = await Promise.all(codes.map((code) => gate.track(checkTotpForSession(sessionId, code))));
+
+      expect(checked).toHaveLength(3);
+      const goodResult = results[19];
+      if (goodResult === "OK") {
+        expect(checked).toContain(good);
+        expect(results.filter((r) => r === "OK")).toHaveLength(1);
+        expect(await db.session.count({ where: { id: sessionId, totpVerifiedAt: { not: null } } })).toBe(1);
+      } else {
+        // The 3 slots went to wrong codes (or a wrong one locked the account first).
+        expect(goodResult).toBe("LOCKED");
+        expect(results.every((r) => r !== "OK")).toBe(true);
+        const row = await userRow(admin.id);
+        expect(isLockedNow(row.lockedUntil)).toBe(true);
+        expect(row.failedLogins).toBe(0);
+        expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+        expect(await db.session.count({ where: { userId: admin.id } })).toBe(0);
+      }
+    });
+
+    it("20 parallel wrong codes: exactly 3 are checked, one lock, one alert, every session ended", async () => {
+      const { admin, secret, sessionId } = await confirmedAdmin();
+      const bad = await wrongCodeFor(secret);
+      const gate = createGate(20);
+      const checked = gateVerify(gate);
+
+      const results = await Promise.all(
+        Array.from({ length: 20 }, () => gate.track(checkTotpForSession(sessionId, bad))),
+      );
+
+      expect(checked).toHaveLength(3);
+      expect(results.filter((r) => r === "LOCKED").length).toBeGreaterThanOrEqual(18);
+      expect(results.every((r: TotpCheckResult) => r === "WRONG" || r === "LOCKED")).toBe(true);
+      const row = await userRow(admin.id);
+      expect(isLockedNow(row.lockedUntil)).toBe(true);
+      expect(row.failedLogins).toBe(0);
+      expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+      expect(await db.session.count({ where: { userId: admin.id } })).toBe(0);
+    });
+
+    it("2 strikes already: 10 parallel requests with the correct code → exactly one is checked and accepted, the rest are refused unchecked", async () => {
+      const { admin, secret, sessionId } = await confirmedAdmin(2);
+      const good = await generate({ secret, epoch: nowSeconds() });
+      const gate = createGate(10);
+      const checked = gateVerify(gate);
+
+      const results = await Promise.all(
+        Array.from({ length: 10 }, () => gate.track(checkTotpForSession(sessionId, good))),
+      );
+
+      expect(checked).toHaveLength(1);
+      expect(results.filter((r) => r === "OK")).toHaveLength(1);
+      expect(results.filter((r) => r === "LOCKED")).toHaveLength(9);
+      const row = await userRow(admin.id);
+      expect(row.failedLogins).toBe(0);
+      expect(row.lockedUntil).toBeNull();
+      expect(notifyAdminLockout).not.toHaveBeenCalled();
+    });
+
+    it("2 strikes already, a wrong code holds the last slot: a correct code sent meanwhile is refused unchecked, then the account locks", async () => {
+      const { admin, secret, sessionId } = await confirmedAdmin(2);
+      const bad = await wrongCodeFor(secret);
+      const good = await generate({ secret, epoch: nowSeconds() });
+      const hold = createHold();
+      const checked = gateVerify(hold);
+
+      const wrong = checkTotpForSession(sessionId, bad);
+      await hold.entered;
+      expect(await checkTotpForSession(sessionId, good)).toBe("LOCKED");
+      expect(checked).toEqual([bad]);
+      expect(await db.session.count({ where: { id: sessionId, totpVerifiedAt: { not: null } } })).toBe(0);
+
+      hold.release();
+      expect(await wrong).toBe("LOCKED");
+      const row = await userRow(admin.id);
+      expect(isLockedNow(row.lockedUntil)).toBe(true);
+      expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+      expect(await db.session.count({ where: { userId: admin.id } })).toBe(0);
+    });
+  });
+
+  describe("password step (login)", () => {
+    async function agent(failedLogins = 0) {
+      const agency = await db.agency.create({ data: { name: "Agency", country: "IL", bankReference: "APL-0001" } });
+      const user = await createUser({ email: "agent@example.com", name: "Agent", role: "AGENT", agencyId: agency.id, passwordHash });
+      await db.user.update({ where: { id: user.id }, data: { failedLogins } });
+      return user;
+    }
+
+    async function admin(failedLogins = 0) {
+      const user = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN", passwordHash });
+      await db.user.update({ where: { id: user.id }, data: { failedLogins } });
+      return user;
+    }
+
+    // Every password check records the password it was given, then waits at the gate.
+    function gatePassword(gate: { enter(): Promise<void> }, onCheck?: () => Promise<void>): string[] {
+      const checked: string[] = [];
+      vi.spyOn(password, "verifyPassword").mockImplementation(async (_hash, candidate) => {
+        checked.push(candidate);
+        await onCheck?.();
+        await gate.enter();
+        return candidate === GOOD;
+      });
+      return checked;
+    }
+
+    it("20 parallel wrong passwords: exactly 3 are checked, one lock, one alert", async () => {
+      const user = await agent();
+      const gate = createGate(20);
+      const checked = gatePassword(gate);
+
+      const results = await Promise.all(Array.from({ length: 20 }, () => gate.track(login(user.email, BAD))));
+
+      expect(checked).toHaveLength(3);
+      expect(results.every((r: LoginResult) => !r.ok)).toBe(true);
+      expect(results.filter((r) => !r.ok && r.reason === "LOCKED").length).toBeGreaterThanOrEqual(18);
+      const row = await userRow(user.id);
+      expect(isLockedNow(row.lockedUntil)).toBe(true);
+      expect(row.failedLogins).toBe(0);
+      expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+    });
+
+    it("19 wrong passwords and the correct one in parallel: exactly 3 are checked; the correct one signs in only if it was one of them", async () => {
+      const user = await agent();
+      const gate = createGate(20);
+      const checked = gatePassword(gate);
+
+      const candidates = [...Array.from({ length: 19 }, () => BAD), GOOD];
+      const results = await Promise.all(candidates.map((p) => gate.track(login(user.email, p))));
+
+      expect(checked).toHaveLength(3);
+      const goodResult = results[19];
+      if (goodResult?.ok) {
+        expect(checked).toContain(GOOD);
+      } else {
+        expect(goodResult).toEqual({ ok: false, reason: "LOCKED" });
+        expect(results.every((r) => !r.ok)).toBe(true);
+        const row = await userRow(user.id);
+        expect(isLockedNow(row.lockedUntil)).toBe(true);
+        expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it("agent with 2 strikes, a wrong password holds the last slot: the correct password sent meanwhile is refused unchecked, then the account locks", async () => {
+      const user = await agent(2);
+      const hold = createHold();
+      const checked = gatePassword(hold);
+
+      const wrong = login(user.email, BAD);
+      await hold.entered;
+      expect(await login(user.email, GOOD)).toEqual({ ok: false, reason: "LOCKED" });
+      expect(checked).toEqual([BAD]);
+
+      hold.release();
+      expect(await wrong).toEqual({ ok: false, reason: "LOCKED" });
+      const row = await userRow(user.id);
+      expect(isLockedNow(row.lockedUntil)).toBe(true);
+      expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+    });
+
+    it("admin with 2 strikes: 10 parallel correct passwords → exactly one is checked and signs in; the strikes stay at 2", async () => {
+      const user = await admin(2);
+      const gate = createGate(10);
+      const checked = gatePassword(gate);
+
+      const results = await Promise.all(Array.from({ length: 10 }, () => gate.track(login(user.email, GOOD))));
+
+      expect(checked).toHaveLength(1);
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      expect(results.filter((r) => !r.ok && r.reason === "LOCKED")).toHaveLength(9);
+      const row = await userRow(user.id);
+      expect(row.failedLogins).toBe(2);
+      expect(row.lockedUntil).toBeNull();
+      expect(notifyAdminLockout).not.toHaveBeenCalled();
+    });
+
+    for (const strikes of [0, 2]) {
+      it(`admin with ${strikes} strike(s), correct password: one slot is taken while it is checked, then given back (counter ends at ${strikes})`, async () => {
+        const user = await admin(strikes);
+        let duringCheck: number | undefined;
+        gatePassword({ enter: async () => {} }, async () => {
+          duringCheck = (await userRow(user.id)).failedLogins;
+        });
+
+        expect(await login(user.email, GOOD)).toMatchObject({ ok: true, needsTotp: true });
+        expect(duringCheck).toBe(strikes + 1);
+        expect((await userRow(user.id)).failedLogins).toBe(strikes);
+      });
+    }
+
+    it("agent with 2 strikes, correct password: one slot is taken while it is checked, then the counter is reset to 0", async () => {
+      const user = await agent(2);
+      let duringCheck: number | undefined;
+      gatePassword({ enter: async () => {} }, async () => {
+        duringCheck = (await userRow(user.id)).failedLogins;
+      });
+
+      expect(await login(user.email, GOOD)).toMatchObject({ ok: true, needsTotp: false });
+      expect(duringCheck).toBe(3);
+      const row = await userRow(user.id);
+      expect(row.failedLogins).toBe(0);
+      expect(row.lockedUntil).toBeNull();
+    });
+  });
+});

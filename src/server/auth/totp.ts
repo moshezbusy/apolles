@@ -1,7 +1,13 @@
 import { generateSecret, generateURI, verify } from "otplib";
 import { db } from "@/server/db";
 import { audit } from "@/server/audit";
-import { isLocked, notLockedAt, recordFailedAttempt } from "@/server/auth/lockout";
+import {
+  isLocked,
+  notLockedAt,
+  recordFailedAttempt,
+  releaseAttempt,
+  reserveAttempt,
+} from "@/server/auth/lockout";
 
 // Admin two-step sign-in with an authenticator app: standard TOTP (RFC 6238) with
 // SHA-1, 6 digits and a 30-second step, which every authenticator app supports.
@@ -61,9 +67,10 @@ async function matchStep(secret: string, code: string): Promise<number | null> {
   return result.timeStep;
 }
 
-async function wrongCode(user: TotpUser): Promise<TotpCheckResult> {
-  // Same counter as wrong passwords. A lock also ends every session of the admin.
-  const outcome = await recordFailedAttempt(user, { endSessionsOnLock: true });
+async function wrongCode(user: TotpUser, slot: number): Promise<TotpCheckResult> {
+  // Same counter as wrong passwords: the reserved slot stays used. A lock also ends every
+  // session of the admin.
+  const outcome = await recordFailedAttempt(user, slot, { endSessionsOnLock: true });
   return outcome === "LOCKED" ? "LOCKED" : "WRONG";
 }
 
@@ -79,7 +86,8 @@ type Claim = {
 // secret is unchanged, TOTP is in the expected state, the account is not locked and no
 // code of this step or a later one was used before. Two parallel uses of one code: the
 // second UPDATE waits for the first and then no longer matches, so only one succeeds.
-// The same transaction resets the failed-attempt counter and marks the session verified.
+// The same transaction resets the failed-attempt counter (which also gives back the slot
+// this attempt reserved) and marks the session verified.
 async function claimStep({ user, secret, step, confirm, sessionId }: Claim): Promise<TotpCheckResult> {
   try {
     return await db.$transaction(async (tx) => {
@@ -129,7 +137,8 @@ async function claimStep({ user, secret, step, confirm, sessionId }: Claim): Pro
   }
 }
 
-// Shared by confirm and verify: state checks, lock check, code check, then the claim.
+// Shared by confirm and verify: state checks, lock check, attempt slot, code check, then the
+// claim.
 async function checkCode(
   user: TotpUser | null,
   code: string,
@@ -144,10 +153,22 @@ async function checkCode(
   // Not 6 digits cannot be a guess of the code: refused without counting.
   if (!CODE_PATTERN.test(code)) return "WRONG";
 
+  // Take an attempt slot BEFORE the code is checked (H1, lockout.ts). No slot left (locked,
+  // or the last slots are taken by attempts still in flight) → refused unchecked, so parallel
+  // guesses cannot check more than MAX_FAILED_LOGINS codes per lock window.
+  const slot = await reserveAttempt(user.id);
+  if (slot === null) return "LOCKED";
+
   const secret = user.totpSecret;
   const step = await matchStep(secret, code);
-  if (step === null) return wrongCode(user);
-  return claimStep({ user, secret, step, confirm, ...(sessionId !== undefined ? { sessionId } : {}) });
+  if (step === null) return wrongCode(user, slot);
+  const result = await claimStep({ user, secret, step, confirm, ...(sessionId !== undefined ? { sessionId } : {}) });
+  // The code matched but could not be used: its step was already used (replay), or the TOTP
+  // state or the session changed meanwhile. That is not a wrong guess, so the slot is handed
+  // back (as before H1, such a refusal does not count). OK already reset the counter in the
+  // claim; LOCKED keeps the lock.
+  if (result === "WRONG" || result === "UNAVAILABLE") await releaseAttempt(user.id, "RETURN");
+  return result;
 }
 
 async function findSession(sessionId: string) {
