@@ -26,6 +26,33 @@ const eslintConfig = defineConfig([
     "src/generated/**",
     ".superpowers/**",
   ]),
+  // Agency isolation: UI and agent-facing code never touch the database directly. They call a
+  // service in src/server, which scopes every query by agencyId. Test files are exempt (they
+  // seed and inspect data).
+  {
+    files: ["src/**/*.{ts,tsx,js,jsx,mjs}"],
+    ignores: ["src/server/**", "src/test/**", "src/**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/server/db", "**/server/db", "**/server/db.ts"],
+              message:
+                "Agent/UI code must not use the database directly. Call a service in src/server instead.",
+            },
+            {
+              group: ["@/generated/prisma", "@/generated/prisma/**", "**/generated/prisma", "**/generated/prisma/**"],
+              allowTypeImports: true,
+              message:
+                "Agent/UI code must not use the database directly. Call a service in src/server instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;
