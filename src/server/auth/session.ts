@@ -1,18 +1,10 @@
-import { createHash, randomBytes } from "node:crypto";
+import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
+import { MAX_RAW_TOKEN_LENGTH as MAX_TOKEN_LENGTH, generateRawToken, hashToken } from "@/server/auth/token";
 
 export const SESSION_COOKIE = "apl_session";
 // Sessions end 12 hours after sign-in, with no "remember me" and no sliding renewal.
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-
-// Raw tokens are 32 random bytes as base64url = 43 characters. Anything far longer is junk.
-const MAX_TOKEN_LENGTH = 128;
-
-// Only the SHA-256 of a token is stored. The token itself is high-entropy random data, so a
-// plain fast hash is enough: a database leak does not give working cookies.
-function hashToken(rawToken: string): string {
-  return createHash("sha256").update(rawToken).digest("hex");
-}
 
 // What callers get about the signed-in user. Never includes passwordHash or totpSecret.
 const userSelect = {
@@ -45,7 +37,7 @@ export type SessionContext = {
 
 // Returns the raw token for the cookie. The raw token is never stored or logged.
 export async function createSession(userId: string): Promise<string> {
-  const rawToken = randomBytes(32).toString("base64url");
+  const rawToken = generateRawToken();
   const createdAt = new Date();
   await db.session.create({
     data: {
@@ -93,7 +85,11 @@ export async function destroySession(rawToken: string): Promise<void> {
   await db.session.deleteMany({ where: { tokenHash: hashToken(rawToken) } });
 }
 
-// Password change or suspension: ends every session of the user.
-export async function destroyUserSessions(userId: string): Promise<void> {
-  await db.session.deleteMany({ where: { userId } });
+// Password change or suspension: ends every session of the user. Pass the transaction
+// client to make it part of a larger change (e.g. setting a new password).
+export async function destroyUserSessions(
+  userId: string,
+  client: Prisma.TransactionClient = db,
+): Promise<void> {
+  await client.session.deleteMany({ where: { userId } });
 }

@@ -29,15 +29,5 @@ export async function verifyPassword(passwordHash: string, password: string): Pr
   }
 }
 
-// Upper bound on any password we accept, so nobody can make the server hash megabytes.
-export const PASSWORD_MAX_LENGTH = 256;
-
-// Phase-1 rule: at least 8 characters, at least one letter and one digit.
-export function isValidPassword(password: string): boolean {
-  return (
-    password.length >= 8 &&
-    password.length <= PASSWORD_MAX_LENGTH &&
-    /\p{L}/u.test(password) &&
-    /\p{Nd}/u.test(password)
-  );
-}
+// The rule itself lives in a browser-safe module so the forms can use the same check.
+export { PASSWORD_MAX_LENGTH, PASSWORD_RULE_COPY, isValidPassword } from "@/lib/password-rule";
