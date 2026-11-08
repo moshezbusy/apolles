@@ -3,6 +3,7 @@ import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import {
+  AgencyNotFound,
   HoldNotOpen,
   IdempotencyKeyConflict,
   InsufficientFunds,
@@ -11,11 +12,14 @@ import {
 import {
   captureHold,
   credit,
+  creditInTx,
   debit,
+  debitInTx,
   getBalance,
   listEntries,
   placeHold,
   releaseHold,
+  withLedgerTransaction,
 } from "@/server/wallet/ledger";
 
 async function createAgency(bankReference: string): Promise<string> {
@@ -443,6 +447,64 @@ describe("wallet ledger", () => {
     it("accepts the maximum amount 2147483647", async () => {
       const entry = await fund(2147483647, "max");
       expect(entry.amountCents).toBe(2147483647);
+    });
+  });
+
+  describe("inside a caller's transaction", () => {
+    let actorId: string;
+    beforeEach(async () => {
+      actorId = (await createUser({ email: "admin@test.local", name: "Admin", role: "ADMIN" })).id;
+    });
+
+    it("creditInTx / debitInTx report created: true, then false for a repeat", async () => {
+      const first = await withLedgerTransaction((tx) =>
+        creditInTx(tx, { agencyId, type: "TOPUP_BANK", amountCents: 500, reason: "x", idempotencyKey: "tx-c" }),
+      );
+      const again = await withLedgerTransaction((tx) =>
+        creditInTx(tx, { agencyId, type: "TOPUP_BANK", amountCents: 500, reason: "x", idempotencyKey: "tx-c" }),
+      );
+      expect(first.created).toBe(true);
+      expect(again).toEqual({ entry: first.entry, created: false });
+
+      const d1 = await withLedgerTransaction((tx) =>
+        debitInTx(tx, { agencyId, type: "PAYOUT", amountCents: 200, reason: "x", actorUserId: actorId, idempotencyKey: "tx-d" }),
+      );
+      const d2 = await withLedgerTransaction((tx) =>
+        debitInTx(tx, { agencyId, type: "PAYOUT", amountCents: 200, reason: "x", actorUserId: actorId, idempotencyKey: "tx-d" }),
+      );
+      expect([d1.created, d2.created]).toEqual([true, false]);
+      expect(d1.entry.amountCents).toBe(-200);
+      expect(await entryCount()).toBe(2);
+    });
+
+    it("credit / debit with a tx are rolled back with the caller's transaction", async () => {
+      await fund(1000);
+      await expect(
+        withLedgerTransaction(async (tx) => {
+          await credit({ agencyId, type: "REFUND", amountCents: 50, reason: "x", idempotencyKey: "tx-r" }, tx);
+          await debit(
+            { agencyId, type: "PAYOUT", amountCents: 70, reason: "x", actorUserId: actorId, idempotencyKey: "tx-p" },
+            tx,
+          );
+          throw new Error("caller failed");
+        }),
+      ).rejects.toThrow("caller failed");
+      expect(await entryCount()).toBe(1);
+      expect(await getBalance(agencyId)).toEqual({ balanceCents: 1000, heldCents: 0 });
+    });
+
+    it("debitInTx still checks the balance and the agency", async () => {
+      await expect(
+        withLedgerTransaction((tx) =>
+          debitInTx(tx, { agencyId, type: "PAYOUT", amountCents: 1, reason: "x", actorUserId: actorId, idempotencyKey: "tx-x" }),
+        ),
+      ).rejects.toBeInstanceOf(InsufficientFunds);
+      await expect(
+        withLedgerTransaction((tx) =>
+          creditInTx(tx, { agencyId: "nope", type: "REFUND", amountCents: 1, reason: "x", idempotencyKey: "tx-y" }),
+        ),
+      ).rejects.toBeInstanceOf(AgencyNotFound);
+      expect(await entryCount()).toBe(0);
     });
   });
 

@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { Prisma, type LedgerEntry } from "@/generated/prisma/client";
+import { MAX_AMOUNT_CENTS } from "@/lib/money"; // LedgerEntry.amountCents is a Postgres int4.
 import { db } from "@/server/db";
 import {
+  AgencyNotFound,
   HoldNotOpen,
   IdempotencyKeyConflict,
   InsufficientFunds,
@@ -22,11 +24,15 @@ import {
 //           exists for the same agency and the same operation returns the original result and
 //           writes nothing (even if amount / reason differ: the first call wins). A key that
 //           belongs to another agency or another operation throws IdempotencyKeyConflict.
+// In a caller's transaction: creditInTx / debitInTx (or credit / debit with `tx`) do the same
+//           work inside a transaction the caller opened with withLedgerTransaction, so the
+//           caller can write more rows (e.g. an audit row) that commit or roll back together
+//           with the entry. They still lock the agency row first. `created` tells the caller
+//           whether this call wrote the entry (false = a repeat that returned the original).
 
 type Tx = Prisma.TransactionClient;
 
 const CURRENCY = "USD"; // Phase 1 is USD only.
-const MAX_AMOUNT_CENTS = 2_147_483_647; // LedgerEntry.amountCents is a Postgres int4.
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
 
@@ -86,19 +92,22 @@ function toSafeNumber(value: bigint | number | string): number {
   return n;
 }
 
-// Runs `fn` in one transaction that first locks the agency row. If the unique index on
-// idempotencyKey still fires (a race the lock cannot cover, e.g. the same key used for another
-// agency at the same moment), the transaction is rolled back and run once more: the repeat
-// check inside the lock then sees the committed entry and returns it or reports the conflict.
-// The caller never gets a raw duplicate-key error and nothing is written twice.
-async function withAgencyLock<T>(agencyId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
-  const run = () =>
-    db.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM "Agency" WHERE id = ${agencyId} FOR UPDATE`;
-      if (locked.length === 0) throw new Error("Agency not found");
-      return fn(tx);
-    });
+// Locks the agency row for the rest of the transaction. Writes for one agency happen one at a
+// time, and every read after the lock sees what earlier writers committed.
+async function lockAgency(tx: Tx, agencyId: string): Promise<void> {
+  const locked = await tx.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Agency" WHERE id = ${agencyId} FOR UPDATE`;
+  if (locked.length === 0) throw new AgencyNotFound();
+}
+
+// Runs `fn` in one transaction. If the unique index on idempotencyKey still fires (a race the
+// agency lock cannot cover, e.g. the same key used for another agency at the same moment), the
+// transaction is rolled back and `fn` runs once more: the repeat check inside the lock then
+// sees the committed entry and returns it or reports the conflict. The caller never gets a raw
+// duplicate-key error and nothing is written twice. `fn` must only change the database through
+// `tx` (it may run twice) and must lock the agency before writing (creditInTx / debitInTx do).
+export async function withLedgerTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  const run = () => db.$transaction(fn);
   try {
     return await run();
   } catch (error) {
@@ -110,6 +119,13 @@ async function withAgencyLock<T>(agencyId: string, fn: (tx: Tx) => Promise<T>): 
     if (isUniqueViolation(error)) throw new IdempotencyKeyConflict();
     throw error;
   }
+}
+
+async function withAgencyLock<T>(agencyId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return withLedgerTransaction(async (tx) => {
+    await lockAgency(tx, agencyId);
+    return fn(tx);
+  });
 }
 
 // Both numbers come from one aggregate query; rows are never loaded into memory.
@@ -170,71 +186,104 @@ export async function getBalance(agencyId: string): Promise<Balance> {
   return readBalance(db, agencyId);
 }
 
-// Adds money to the wallet. Never fails on balance.
-export async function credit(input: CreditInput): Promise<LedgerEntry> {
+export type WriteResult = { entry: LedgerEntry; created: boolean };
+
+function assertCreditInput(input: CreditInput): void {
   assertValidAmount(input.amountCents);
   assertKey(input.idempotencyKey);
   if (!CREDIT_TYPES.includes(input.type)) throw new Error("Invalid credit type");
-
-  return withAgencyLock(input.agencyId, async (tx) => {
-    const existing = await findByKey(tx, input.idempotencyKey);
-    if (existing) {
-      if (
-        existing.agencyId === input.agencyId &&
-        existing.type === input.type &&
-        existing.amountCents > 0
-      ) {
-        return existing;
-      }
-      throw new IdempotencyKeyConflict();
-    }
-    return tx.ledgerEntry.create({
-      data: {
-        agencyId: input.agencyId,
-        type: input.type,
-        amountCents: input.amountCents,
-        currency: CURRENCY,
-        reason: input.reason,
-        idempotencyKey: input.idempotencyKey,
-        ...(input.actorUserId !== undefined ? { actorUserId: input.actorUserId } : {}),
-        ...(input.bookingRef !== undefined ? { bookingRef: input.bookingRef } : {}),
-      },
-    });
-  });
 }
 
-// Takes money out of the wallet. The available balance may never go below zero.
-export async function debit(input: DebitInput): Promise<LedgerEntry> {
+function assertDebitInput(input: DebitInput): void {
   assertValidAmount(input.amountCents);
   assertKey(input.idempotencyKey);
   if (!DEBIT_TYPES.includes(input.type)) throw new Error("Invalid debit type");
+}
 
-  return withAgencyLock(input.agencyId, async (tx) => {
-    const existing = await findByKey(tx, input.idempotencyKey);
-    if (existing) {
-      if (
-        existing.agencyId === input.agencyId &&
-        existing.type === input.type &&
-        existing.amountCents < 0
-      ) {
-        return existing;
-      }
-      throw new IdempotencyKeyConflict();
+// The agency is already locked in `tx`.
+async function writeCredit(tx: Tx, input: CreditInput): Promise<WriteResult> {
+  const existing = await findByKey(tx, input.idempotencyKey);
+  if (existing) {
+    if (
+      existing.agencyId === input.agencyId &&
+      existing.type === input.type &&
+      existing.amountCents > 0
+    ) {
+      return { entry: existing, created: false };
     }
-    const { balanceCents } = await readBalance(tx, input.agencyId);
-    if (balanceCents < input.amountCents) throw new InsufficientFunds();
-    return tx.ledgerEntry.create({
-      data: {
-        agencyId: input.agencyId,
-        type: input.type,
-        amountCents: -input.amountCents,
-        currency: CURRENCY,
-        reason: input.reason,
-        actorUserId: input.actorUserId,
-        idempotencyKey: input.idempotencyKey,
-      },
-    });
+    throw new IdempotencyKeyConflict();
+  }
+  const entry = await tx.ledgerEntry.create({
+    data: {
+      agencyId: input.agencyId,
+      type: input.type,
+      amountCents: input.amountCents,
+      currency: CURRENCY,
+      reason: input.reason,
+      idempotencyKey: input.idempotencyKey,
+      ...(input.actorUserId !== undefined ? { actorUserId: input.actorUserId } : {}),
+      ...(input.bookingRef !== undefined ? { bookingRef: input.bookingRef } : {}),
+    },
   });
+  return { entry, created: true };
+}
+
+// The agency is already locked in `tx`.
+async function writeDebit(tx: Tx, input: DebitInput): Promise<WriteResult> {
+  const existing = await findByKey(tx, input.idempotencyKey);
+  if (existing) {
+    if (
+      existing.agencyId === input.agencyId &&
+      existing.type === input.type &&
+      existing.amountCents < 0
+    ) {
+      return { entry: existing, created: false };
+    }
+    throw new IdempotencyKeyConflict();
+  }
+  const { balanceCents } = await readBalance(tx, input.agencyId);
+  if (balanceCents < input.amountCents) throw new InsufficientFunds();
+  const entry = await tx.ledgerEntry.create({
+    data: {
+      agencyId: input.agencyId,
+      type: input.type,
+      amountCents: -input.amountCents,
+      currency: CURRENCY,
+      reason: input.reason,
+      actorUserId: input.actorUserId,
+      idempotencyKey: input.idempotencyKey,
+    },
+  });
+  return { entry, created: true };
+}
+
+// credit() inside the caller's transaction (see withLedgerTransaction). Locks the agency first.
+export async function creditInTx(tx: Tx, input: CreditInput): Promise<WriteResult> {
+  assertCreditInput(input);
+  await lockAgency(tx, input.agencyId);
+  return writeCredit(tx, input);
+}
+
+// debit() inside the caller's transaction (see withLedgerTransaction). Locks the agency first.
+export async function debitInTx(tx: Tx, input: DebitInput): Promise<WriteResult> {
+  assertDebitInput(input);
+  await lockAgency(tx, input.agencyId);
+  return writeDebit(tx, input);
+}
+
+// Adds money to the wallet. Never fails on balance. With `tx`, runs inside that transaction.
+export async function credit(input: CreditInput, tx?: Tx): Promise<LedgerEntry> {
+  if (tx) return (await creditInTx(tx, input)).entry;
+  assertCreditInput(input);
+  return (await withAgencyLock(input.agencyId, (t) => writeCredit(t, input))).entry;
+}
+
+// Takes money out of the wallet. The available balance may never go below zero.
+// With `tx`, runs inside that transaction.
+export async function debit(input: DebitInput, tx?: Tx): Promise<LedgerEntry> {
+  if (tx) return (await debitInTx(tx, input)).entry;
+  assertDebitInput(input);
+  return (await withAgencyLock(input.agencyId, (t) => writeDebit(t, input))).entry;
 }
 
 // Reserves money for a booking. The available balance may never go below zero.

@@ -76,7 +76,13 @@ export default async function AgenciesPage({ searchParams }: { searchParams: Sea
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatUsd(agency.balanceCents)}</td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        <Link
+                          href={`/admin/agencies/${agency.id}/wallet`}
+                          className="mr-4 text-blue-700 hover:underline"
+                        >
+                          Wallet
+                        </Link>
                         <Link
                           href={`/admin/agencies/${agency.id}/confirm?status=${next}`}
                           className="text-blue-700 hover:underline"

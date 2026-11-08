@@ -1,3 +1,5 @@
+import { formatUsd } from "@/lib/money";
+
 // Wallet errors. Each has a stable `name` so callers can use `instanceof` or check `name`.
 
 // The agency's available balance (all entries, open holds included) cannot cover the amount.
@@ -30,5 +32,24 @@ export class IdempotencyKeyConflict extends Error {
   override readonly name = "IdempotencyKeyConflict";
   constructor(message = "Idempotency key already used for a different operation") {
     super(message);
+  }
+}
+
+// The agency to write to does not exist.
+export class AgencyNotFound extends Error {
+  override readonly name = "AgencyNotFound";
+  constructor(message = "Agency not found") {
+    super(message);
+  }
+}
+
+// A bank top-up whose (normalized) transfer reference was already recorded with a different
+// amount or for another agency. The message names only the original amount, never the agency.
+export class TopupRefConflict extends Error {
+  override readonly name = "TopupRefConflict";
+  readonly originalAmountCents: number;
+  constructor(originalAmountCents: number) {
+    super(`This bank transfer reference was already recorded for ${formatUsd(originalAmountCents)}.`);
+    this.originalAmountCents = originalAmountCents;
   }
 }
