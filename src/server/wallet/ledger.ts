@@ -422,3 +422,52 @@ export async function listEntries(
   const last = entries[entries.length - 1];
   return { entries, nextCursor: hasMore && last ? last.id : null };
 }
+
+export type LedgerEntryWithBalance = LedgerEntry & { balanceAfterCents: number };
+
+type RunningRow = LedgerEntry & { balanceAfter: bigint };
+
+// listEntries plus, for each row, the agency's available balance right after that entry.
+// Same order (createdAt desc, id desc), page size and cursor rules as listEntries.
+// The running balance comes from ONE query: a window SUM over all of the agency's entries,
+// oldest first in exactly the reverse of the page order, so the newest row's balance equals
+// getBalance().balanceCents. Rows are never summed in memory.
+export async function listEntriesWithBalance(
+  agencyId: string,
+  cursor?: string,
+  take = DEFAULT_PAGE_SIZE,
+): Promise<{ entries: LedgerEntryWithBalance[]; nextCursor: string | null }> {
+  const size = clampTake(take);
+  let after: { id: string } | null = null;
+  if (cursor !== undefined) {
+    after = await db.ledgerEntry.findFirst({ where: { id: cursor, agencyId }, select: { id: true } });
+    if (!after) throw new Error("Invalid cursor");
+  }
+  // Compared with the cursor row's own stored values (not a Date sent from here), so the
+  // comparison is exactly the one listEntries makes.
+  const afterFilter = after
+    ? Prisma.sql`WHERE ("createdAt", id) < (
+        SELECT c."createdAt", c.id FROM "LedgerEntry" c
+        WHERE c.id = ${after.id} AND c."agencyId" = ${agencyId})`
+    : Prisma.empty;
+  const rows = await db.$queryRaw<RunningRow[]>`
+    SELECT id, "agencyId", "type"::text AS "type", "amountCents", currency, "holdId",
+           "bookingRef", reason, "actorUserId", "idempotencyKey", "createdAt", "balanceAfter"
+    FROM (
+      SELECT e.*,
+             SUM(e."amountCents") OVER (ORDER BY e."createdAt", e.id)::bigint AS "balanceAfter"
+      FROM "LedgerEntry" e
+      WHERE e."agencyId" = ${agencyId}
+    ) running
+    ${afterFilter}
+    ORDER BY "createdAt" DESC, id DESC
+    LIMIT ${size + 1}`;
+  const hasMore = rows.length > size;
+  const page = hasMore ? rows.slice(0, size) : rows;
+  const entries = page.map(({ balanceAfter, ...entry }) => ({
+    ...entry,
+    balanceAfterCents: toSafeNumber(balanceAfter),
+  }));
+  const last = entries[entries.length - 1];
+  return { entries, nextCursor: hasMore && last ? last.id : null };
+}

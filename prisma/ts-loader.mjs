@@ -1,6 +1,7 @@
 // Lets plain Node (22.18+, which strips TypeScript types itself) run prisma/seed.ts with
 // the app's import style: "@/..." means src/..., and imports may omit the .ts extension.
-// Used only by `pnpm db:seed` / `prisma db seed`; no extra package needed.
+// Used by `pnpm db:seed` / `prisma db seed` and by the e2e global setup
+// (e2e/support/reset-and-seed.ts); no extra package needed.
 import { statSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";

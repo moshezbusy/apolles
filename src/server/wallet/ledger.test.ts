@@ -17,6 +17,7 @@ import {
   debitInTx,
   getBalance,
   listEntries,
+  listEntriesWithBalance,
   placeHold,
   releaseHold,
   withLedgerTransaction,
@@ -637,6 +638,122 @@ describe("wallet ledger", () => {
         idempotencyKey: "o-1",
       });
       await expect(listEntries(agencyId, foreign.id)).rejects.toThrow("Invalid cursor");
+    });
+  });
+
+  describe("listEntriesWithBalance", () => {
+    // Gives the agency's entries distinct createdAt values in the order they were written, so
+    // "newest first" and the running balance are deterministic.
+    async function spreadTimestamps(): Promise<void> {
+      const rows = await db.ledgerEntry.findMany({
+        where: { agencyId },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true },
+      });
+      const base = Date.UTC(2026, 0, 1);
+      for (const [i, row] of rows.entries()) {
+        await db.ledgerEntry.update({
+          where: { id: row.id },
+          data: { createdAt: new Date(base + i * 60_000) },
+        });
+      }
+    }
+
+    it("shows the balance after each row across 2 pages, including a hold and its release", async () => {
+      await fund(100000); // 100000
+      const first = await placeHold({ agencyId, amountCents: 30000, bookingRef: "BK-1", idempotencyKey: "h-1" });
+      await spreadTimestamps();
+      await releaseHold(first.holdId, "rel-1");
+      await spreadTimestamps();
+      await placeHold({ agencyId, amountCents: 20000, bookingRef: "BK-2", idempotencyKey: "h-2" });
+      await spreadTimestamps();
+      await credit({ agencyId, type: "REFUND", amountCents: 2500, reason: "Refund", idempotencyKey: "r-1" });
+      await spreadTimestamps();
+      // Another agency's money never shows up in this agency's running balance.
+      const otherId = await createAgency("APL-0002");
+      await credit({ agencyId: otherId, type: "TOPUP_BANK", amountCents: 999, reason: "o", idempotencyKey: "o-1" });
+
+      const page1 = await listEntriesWithBalance(agencyId, undefined, 3);
+      expect(page1.entries.map((e) => [e.type, e.amountCents, e.balanceAfterCents])).toEqual([
+        ["REFUND", 2500, 82500],
+        ["HOLD", -20000, 80000],
+        ["HOLD_RELEASE", 30000, 100000],
+      ]);
+      expect(page1.nextCursor).toBe(page1.entries[2]?.id);
+
+      const page2 = await listEntriesWithBalance(agencyId, page1.nextCursor ?? undefined, 3);
+      expect(page2.entries.map((e) => [e.type, e.amountCents, e.balanceAfterCents])).toEqual([
+        ["HOLD", -30000, 70000],
+        ["TOPUP_BANK", 100000, 100000],
+      ]);
+      expect(page2.nextCursor).toBeNull();
+      for (const e of [...page1.entries, ...page2.entries]) expect(e.agencyId).toBe(agencyId);
+
+      // The newest row's balance is the available balance.
+      expect((await getBalance(agencyId)).balanceCents).toBe(82500);
+    });
+
+    it("returns the same rows in the same order as listEntries, also with shared timestamps", async () => {
+      await fund();
+      for (let i = 1; i <= 3; i++) {
+        const { holdId } = await placeHold({
+          agencyId,
+          amountCents: 1000,
+          bookingRef: `BK-${i}`,
+          idempotencyKey: `h-${i}`,
+        });
+        await captureHold(holdId, `cap-${i}`); // HOLD_RELEASE and CHARGE share a createdAt
+      }
+      const plain: string[] = [];
+      const withBalance: { id: string; amountCents: number; balanceAfterCents: number }[] = [];
+      let a: string | undefined;
+      let b: string | undefined;
+      for (let pages = 0; pages < 20; pages++) {
+        const p = await listEntries(agencyId, a, 2);
+        const q = await listEntriesWithBalance(agencyId, b, 2);
+        plain.push(...p.entries.map((e) => e.id));
+        withBalance.push(...q.entries);
+        expect(q.nextCursor).toBe(p.nextCursor);
+        if (p.nextCursor === null) break;
+        a = p.nextCursor;
+        b = q.nextCursor ?? undefined;
+      }
+      expect(withBalance.map((e) => e.id)).toEqual(plain);
+      expect(plain).toHaveLength(10);
+      // Oldest to newest, each balance is the previous one plus the row's amount.
+      const ascending = [...withBalance].reverse();
+      let running = 0;
+      for (const row of ascending) {
+        running += row.amountCents;
+        expect(row.balanceAfterCents).toBe(running);
+      }
+      expect(running).toBe((await getBalance(agencyId)).balanceCents);
+    });
+
+    it("no entries → empty page", async () => {
+      expect(await listEntriesWithBalance(agencyId)).toEqual({ entries: [], nextCursor: null });
+    });
+
+    it("clamps take to 1..100", async () => {
+      await fund();
+      await fund(5, "topup-2");
+      const one = await listEntriesWithBalance(agencyId, undefined, 0);
+      expect(one.entries).toHaveLength(1);
+      expect(one.nextCursor).not.toBeNull();
+      expect((await listEntriesWithBalance(agencyId, undefined, 1000)).entries).toHaveLength(2);
+    });
+
+    it("rejects an unknown cursor or one that belongs to another agency", async () => {
+      const otherId = await createAgency("APL-0002");
+      const foreign = await credit({
+        agencyId: otherId,
+        type: "TOPUP_BANK",
+        amountCents: 100,
+        reason: "x",
+        idempotencyKey: "o-1",
+      });
+      await expect(listEntriesWithBalance(agencyId, foreign.id)).rejects.toThrow("Invalid cursor");
+      await expect(listEntriesWithBalance(agencyId, "nope")).rejects.toThrow("Invalid cursor");
     });
   });
 });

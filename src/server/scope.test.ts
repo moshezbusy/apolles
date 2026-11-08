@@ -56,6 +56,24 @@ describe("forAgency", () => {
     await expect(forAgency(agencyA).ledger.list(entryB.id)).rejects.toThrow("Invalid cursor");
   });
 
+  it("ledger.listWithBalance returns only the caller's entries, with the balance after each", async () => {
+    const { entries, nextCursor } = await forAgency(agencyA).ledger.listWithBalance();
+    expect(entries.map((e) => [e.id, e.balanceAfterCents])).toEqual([[entryA.id, 1000]]);
+    expect(nextCursor).toBeNull();
+  });
+
+  it("ledger.listWithBalance rejects a cursor that belongs to another agency", async () => {
+    await expect(forAgency(agencyA).ledger.listWithBalance(entryB.id)).rejects.toThrow("Invalid cursor");
+  });
+
+  it("agency.profile returns only the caller's own agency name and bank reference", async () => {
+    expect(await forAgency(agencyA).agency.profile()).toEqual({
+      name: "Agency APL-SCOPE-A",
+      bankReference: "APL-SCOPE-A",
+    });
+    expect(await forAgency("no-such-agency").agency.profile()).toBeNull();
+  });
+
   it("throws when agencyId is empty", () => {
     expect(() => forAgency("")).toThrow();
   });
