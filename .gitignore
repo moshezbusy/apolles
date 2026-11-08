@@ -7,3 +7,28 @@
 
 # Claude Code personal settings
 .claude/settings.local.json
+
+# dependencies
+node_modules
+.pnp
+.pnp.*
+
+# next.js
+.next
+out
+
+# testing
+coverage
+playwright-report
+test-results
+
+# misc
+*.pem
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+.pnpm-debug.log*
+.vercel
+
+# Documented template is committed
+!.env.example
