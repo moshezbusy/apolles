@@ -76,4 +76,38 @@ describe("lint guard: no direct db access outside src/server", () => {
   it("a .mts file in src/app/** is covered", async () => {
     expect(restricted(await messagesFor(code, "src/app/fixture.mts"))).toHaveLength(1);
   });
+
+  // The database driver packages themselves: UI code could otherwise open its own connection.
+  describe("database driver packages", () => {
+    const sources = ["pg", "pg/lib/client", "@prisma/adapter-pg", "@prisma/client", "@prisma/client/runtime/client"];
+
+    it.each(sources)("static import of %s from src/app/** fails lint", async (source) => {
+      const found = restricted(await messagesFor(`import * as m from "${source}";\nexport const x = m;\n`, "src/app/fixture.ts"));
+      expect(found).toHaveLength(1);
+      expect(found[0]?.message).toContain(MESSAGE);
+    });
+
+    it.each(sources)("dynamic import of %s from src/components/** fails lint", async (source) => {
+      const found = restricted(await messagesFor(`export const f = () => import("${source}");\n`, "src/components/fixture.tsx"));
+      expect(found).toHaveLength(1);
+      expect(found[0]?.message).toContain(MESSAGE);
+    });
+
+    it.each(sources)("require of %s from src/lib/** fails lint", async (source) => {
+      const found = restricted(await messagesFor(`export const d = require("${source}");\n`, "src/lib/fixture.ts"));
+      expect(found).toHaveLength(1);
+      expect(found[0]?.message).toContain(MESSAGE);
+    });
+
+    it("look-alike package names are not blocked", async () => {
+      const src = 'import a from "pg-format";\nimport b from "@prisma/client-extra";\nexport const x = [a, b];\n';
+      expect(restricted(await messagesFor(src, "src/app/fixture.ts"))).toHaveLength(0);
+    });
+
+    it("does not fire in src/server/**", async () => {
+      const src =
+        'import { PrismaPg } from "@prisma/adapter-pg";\nimport pg from "pg";\nexport const f = () => import("@prisma/client");\nexport const x = [PrismaPg, pg];\n';
+      expect(restricted(await messagesFor(src, "src/server/fixture.ts"))).toHaveLength(0);
+    });
+  });
 });

@@ -2,6 +2,13 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
+const DB_MESSAGE =
+  "Agent/UI code must not use the database directly. Call a service in src/server instead.";
+
+// The database driver packages (and their subpaths): UI code could otherwise open its own
+// connection. Exact names only, so look-alikes such as "pg-format" are not caught.
+const DB_PACKAGE_REGEX = "^(pg|@prisma/client|@prisma/adapter-pg)(/.*)?$";
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -39,14 +46,17 @@ const eslintConfig = defineConfig([
           patterns: [
             {
               group: ["@/server/db", "**/server/db", "**/server/db.ts"],
-              message:
-                "Agent/UI code must not use the database directly. Call a service in src/server instead.",
+              message: DB_MESSAGE,
             },
             {
               group: ["@/generated/prisma", "@/generated/prisma/**", "**/generated/prisma", "**/generated/prisma/**"],
               allowTypeImports: true,
-              message:
-                "Agent/UI code must not use the database directly. Call a service in src/server instead.",
+              message: DB_MESSAGE,
+            },
+            {
+              regex: DB_PACKAGE_REGEX,
+              allowTypeImports: true,
+              message: DB_MESSAGE,
             },
           ],
         },
@@ -55,9 +65,8 @@ const eslintConfig = defineConfig([
       "no-restricted-syntax": [
         "error",
         ...["ImportExpression", 'CallExpression[callee.name="require"]'].map((node) => ({
-          selector: `${node}[${node === "ImportExpression" ? "source" : "arguments.0"}.value=/(^|\\/)server\\/db(\\.ts)?$|(^|\\/)generated\\/prisma(\\/|$)/]`,
-          message:
-            "Agent/UI code must not use the database directly. Call a service in src/server instead.",
+          selector: `${node}[${node === "ImportExpression" ? "source" : "arguments.0"}.value=/(^|\\/)server\\/db(\\.ts)?$|(^|\\/)generated\\/prisma(\\/|$)|^(pg|@prisma\\/client|@prisma\\/adapter-pg)(\\/|$)/]`,
+          message: DB_MESSAGE,
         })),
       ],
     },
