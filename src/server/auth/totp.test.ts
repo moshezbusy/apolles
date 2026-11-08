@@ -356,4 +356,79 @@ describe("admin TOTP", () => {
       expect((await db.user.findUniqueOrThrow({ where: { id: admin.id } })).failedLogins).toBe(0);
     });
   });
+
+  describe("audit log", () => {
+    async function auditRows() {
+      return db.auditLog.findMany({ orderBy: { createdAt: "asc" } });
+    }
+
+    it("confirming TOTP writes admin.totp.confirm (no secret, no code in the row)", async () => {
+      const admin = await createAdmin();
+      const secret = secretOf((await startTotpEnrollment(admin.id)).otpauthUrl);
+      const sessionId = await sessionIdFor(admin.id);
+      const code = await validCode(secret);
+      expect(await confirmTotpForSession(sessionId, code)).toBe("OK");
+
+      const rows = await auditRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        actorUserId: admin.id,
+        action: "admin.totp.confirm",
+        targetType: "User",
+        targetId: admin.id,
+        before: { totpConfirmed: false },
+        after: { totpConfirmed: true },
+      });
+      const json = JSON.stringify(rows);
+      expect(json).not.toContain(secret);
+      expect(json).not.toContain(code);
+    });
+
+    it("confirmTotp (no session) is audited too", async () => {
+      const admin = await createAdmin();
+      const secret = secretOf((await startTotpEnrollment(admin.id)).otpauthUrl);
+      expect(await confirmTotp(admin.id, await validCode(secret))).toBe(true);
+      expect((await auditRows()).map((r) => r.action)).toEqual(["admin.totp.confirm"]);
+    });
+
+    it("a wrong code or a normal sign-in code writes no audit row", async () => {
+      const admin = await createAdmin();
+      const secret = secretOf((await startTotpEnrollment(admin.id)).otpauthUrl);
+      expect(await confirmTotp(admin.id, await wrongCode(secret))).toBe(false);
+      expect(await auditRows()).toHaveLength(0);
+
+      const other = await createAdmin("admin2@example.com");
+      const otherSecret = secretOf((await startTotpEnrollment(other.id)).otpauthUrl);
+      await db.user.update({ where: { id: other.id }, data: { totpConfirmedAt: new Date() } });
+      expect(await verifyTotpForSession(await sessionIdFor(other.id), await validCode(otherSecret))).toBe(true);
+      expect(await auditRows()).toHaveLength(0);
+    });
+
+    it("'Generate a new key' writes admin.totp.regenerate (neither key in the row)", async () => {
+      const admin = await createAdmin();
+      const first = secretOf((await startTotpEnrollment(admin.id)).otpauthUrl);
+      expect(await auditRows()).toHaveLength(0); // the first key of a first visit is not an event
+      const second = secretOf((await startTotpEnrollment(admin.id, { regenerate: true })).otpauthUrl);
+
+      const rows = await auditRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        actorUserId: admin.id,
+        action: "admin.totp.regenerate",
+        targetType: "User",
+        targetId: admin.id,
+        before: { totpConfirmed: false },
+        after: { totpConfirmed: false, newKey: true },
+      });
+      const json = JSON.stringify(rows);
+      expect(json).not.toContain(first);
+      expect(json).not.toContain(second);
+    });
+
+    it("a refused regenerate (TOTP already confirmed) writes no audit row", async () => {
+      const { admin } = await confirmedAdmin();
+      await expect(startTotpEnrollment(admin.id, { regenerate: true })).rejects.toThrow();
+      expect(await auditRows()).toHaveLength(0);
+    });
+  });
 });

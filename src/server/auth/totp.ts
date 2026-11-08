@@ -1,5 +1,6 @@
 import { generateSecret, generateURI, verify } from "otplib";
 import { db } from "@/server/db";
+import { audit } from "@/server/audit";
 import { isLocked, notLockedAt, recordFailedAttempt } from "@/server/auth/lockout";
 
 // Admin two-step sign-in with an authenticator app: standard TOTP (RFC 6238) with
@@ -7,6 +8,9 @@ import { isLocked, notLockedAt, recordFailedAttempt } from "@/server/auth/lockou
 // A code from the previous or next step is accepted too (clock drift), and each step's
 // code is accepted once only (User.totpLastUsedStep).
 // Secrets and codes are never logged.
+// Audit: confirming TOTP (admin.totp.confirm) and "Generate a new key" (admin.totp.regenerate)
+// each write an audit row in the same transaction as the change. The rows hold only whether
+// TOTP is confirmed, never a secret or a code.
 
 const ISSUER = "Apolles";
 const PERIOD_SECONDS = 30;
@@ -114,6 +118,9 @@ async function claimStep({ user, secret, step, confirm, sessionId }: Claim): Pro
         });
         if (marked.count !== 1) throw new SessionGone();
       }
+      if (confirm) {
+        await audit(user.id, "admin.totp.confirm", "User", user.id, { totpConfirmed: false }, { totpConfirmed: true }, tx);
+      }
       return "OK";
     });
   } catch (error) {
@@ -176,11 +183,18 @@ export async function startTotpEnrollment(
   if (!regenerate && user.totpSecret) return { otpauthUrl: otpauthUrlFor(user.email, user.totpSecret) };
 
   const secret = generateSecret({ length: SECRET_BYTES });
-  const stored = await db.user.updateMany({
-    // Without `regenerate`, only fill an empty secret: of two parallel first visits, one
-    // stores its secret and the other shows that same secret (below).
-    where: { id: userId, role: "ADMIN", totpConfirmedAt: null, ...(regenerate ? {} : { totpSecret: null }) },
-    data: { totpSecret: secret, totpLastUsedStep: null },
+  const stored = await db.$transaction(async (tx) => {
+    const updated = await tx.user.updateMany({
+      // Without `regenerate`, only fill an empty secret: of two parallel first visits, one
+      // stores its secret and the other shows that same secret (below).
+      where: { id: userId, role: "ADMIN", totpConfirmedAt: null, ...(regenerate ? {} : { totpSecret: null }) },
+      data: { totpSecret: secret, totpLastUsedStep: null },
+    });
+    // Only the "Generate a new key" button is an event; the first key of a first visit is not.
+    if (updated.count === 1 && regenerate) {
+      await audit(userId, "admin.totp.regenerate", "User", userId, { totpConfirmed: false }, { totpConfirmed: false, newKey: true }, tx);
+    }
+    return updated;
   });
   if (stored.count === 1) return { otpauthUrl: otpauthUrlFor(user.email, secret) };
 
