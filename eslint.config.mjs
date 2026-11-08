@@ -30,7 +30,7 @@ const eslintConfig = defineConfig([
   // service in src/server, which scopes every query by agencyId. Test files are exempt (they
   // seed and inspect data).
   {
-    files: ["src/**/*.{ts,tsx,js,jsx,mjs}"],
+    files: ["src/**/*.{ts,tsx,js,jsx,mjs,mts,cjs,cts}"],
     ignores: ["src/server/**", "src/test/**", "src/**/*.test.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
@@ -50,6 +50,15 @@ const eslintConfig = defineConfig([
             },
           ],
         },
+      ],
+      // Dynamic import() and require() would bypass no-restricted-imports.
+      "no-restricted-syntax": [
+        "error",
+        ...["ImportExpression", 'CallExpression[callee.name="require"]'].map((node) => ({
+          selector: `${node}[${node === "ImportExpression" ? "source" : "arguments.0"}.value=/(^|\\/)server\\/db(\\.ts)?$|(^|\\/)generated\\/prisma(\\/|$)/]`,
+          message:
+            "Agent/UI code must not use the database directly. Call a service in src/server instead.",
+        })),
       ],
     },
   },
