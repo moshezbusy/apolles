@@ -2,9 +2,9 @@ import { db } from "@/server/db";
 import { normalizeEmail } from "@/server/users";
 import { notifyAdminLockout } from "@/server/auth/notifications";
 import { DUMMY_PASSWORD_HASH, verifyPassword } from "@/server/auth/password";
+import { LOCK_DURATION_MS, MAX_FAILED_LOGINS } from "@/server/auth/lockout-policy";
 
-export const MAX_FAILED_LOGINS = 3;
-export const LOCK_DURATION_MS = 15 * 60 * 1000;
+export { LOCK_DURATION_MS, MAX_FAILED_LOGINS };
 
 export type LoginFailureReason = "INVALID" | "LOCKED" | "SUSPENDED";
 
@@ -94,11 +94,15 @@ export async function login(email: string, password: string): Promise<LoginResul
 
   if (!(await verifyPassword(user.passwordHash, password))) return recordFailure(user);
 
-  // The password is right: the run of failures is over.
-  await db.user.update({
-    where: { id: user.id },
+  // The password is right: the run of failures is over. The reset only matches while the
+  // account is not locked: if parallel wrong guesses locked it during the (slow) password
+  // check, this correct guess must not lift the lock or get a session.
+  const now = new Date();
+  const reset = await db.user.updateMany({
+    where: { id: user.id, OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }] },
     data: { failedLogins: 0, lockedUntil: null },
   });
+  if (reset.count === 0) return LOCKED;
 
   // Suspension is only revealed to someone who knows the password.
   const agencyBlocked =

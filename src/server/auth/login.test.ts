@@ -196,6 +196,19 @@ describe("login", () => {
     expect(notifyAdminLockout).not.toHaveBeenCalled();
   });
 
+  it("a correct password that finishes after a parallel attempt locked the account → LOCKED, lock kept", async () => {
+    const agent = await createAgent();
+    const lockedUntil = new Date(Date.now() + FIFTEEN_MIN);
+    vi.spyOn(password, "verifyPassword").mockImplementationOnce(async () => {
+      // Parallel wrong guesses lock the account while this (correct) guess is being checked.
+      await db.user.update({ where: { id: agent.id }, data: { lockedUntil, failedLogins: 0 } });
+      return true;
+    });
+    expect(await login(agent.email, GOOD)).toEqual({ ok: false, reason: "LOCKED" });
+    const row = await db.user.findUniqueOrThrow({ where: { id: agent.id } });
+    expect(row.lockedUntil?.getTime()).toBe(lockedUntil.getTime());
+  });
+
   it("a failing lockout alert still locks the account", async () => {
     vi.mocked(notifyAdminLockout).mockRejectedValueOnce(new Error("mail down"));
     vi.spyOn(console, "error").mockImplementation(() => {});

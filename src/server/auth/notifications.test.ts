@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sendEmail } from "@/server/email/port";
 import { notifyAdminLockout } from "@/server/auth/notifications";
+import { MAX_FAILED_LOGINS } from "@/server/auth/lockout-policy";
 
 vi.mock("@/server/email/port", () => ({ sendEmail: vi.fn() }));
 
@@ -21,6 +22,7 @@ describe("notifyAdminLockout", () => {
     expect(msg.subject).toContain("agent@example.com");
     expect(msg.text).toContain("agent@example.com");
     expect(msg.text).toContain("2026-11-08 10:15 UTC");
+    expect(msg.text).toContain(`after ${MAX_FAILED_LOGINS} failed sign-in attempts`);
   });
 
   it("refuses to send when ADMIN_ALERT_EMAIL is missing or not an email", async () => {
