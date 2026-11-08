@@ -14,8 +14,8 @@ export type CreateUserInput = {
   passwordHash?: string;
 };
 
-// Minimal creation helper. Pass a transaction client to make it part of a larger change. Always stores the normalized email; the unique index on
-// User.email is the backstop. Validation and richer rules arrive with later tasks.
+// Minimal creation helper. Pass a transaction client to make it part of a larger change.
+// Always stores the normalized email; the unique index on User.email is the backstop. Validation and richer rules arrive with later tasks.
 export async function createUser(
   input: CreateUserInput,
   client: Prisma.TransactionClient = db,

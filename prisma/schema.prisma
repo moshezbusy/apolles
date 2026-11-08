@@ -46,6 +46,8 @@ model Agency {
 
   users         User[]
   ledgerEntries LedgerEntry[]
+
+  @@index([createdAt, id])
 }
 
 model User {

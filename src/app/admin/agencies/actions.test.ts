@@ -84,11 +84,19 @@ describe("agency server actions", () => {
 
   it("rejects a bad country and creates nothing", async () => {
     await signInAdmin();
-    for (const country of ["il", "ISR", "I", "1L", ""]) {
+    for (const country of ["ISR", "I", "1L", ""]) {
       const state = await createAgencyAction(null, form({ ...good, country }));
       expect(state?.error).toBeTruthy();
     }
     expect(await db.agency.count()).toBe(0);
+  });
+
+  it("accepts a lowercase country and stores it uppercase", async () => {
+    await signInAdmin();
+    await expect(createAgencyAction(null, form({ ...good, country: " il " }))).rejects.toThrow(
+      "NEXT_REDIRECT:/admin/agencies",
+    );
+    expect((await db.agency.findFirstOrThrow()).country).toBe("IL");
   });
 
   it("rejects bad name / agent name / email", async () => {

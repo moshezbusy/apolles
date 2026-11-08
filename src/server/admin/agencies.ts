@@ -3,7 +3,6 @@ import { Prisma } from "@/generated/prisma/client";
 import type { AccountStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
 import { audit } from "@/server/audit";
-import { destroyUserSessions } from "@/server/auth/session";
 import { sendSetPasswordEmail } from "@/server/auth/password-tokens";
 import { createUser, normalizeEmail } from "@/server/users";
 import { getBalances } from "@/server/wallet/ledger";
@@ -17,7 +16,7 @@ export const DUPLICATE_EMAIL_MESSAGE = "A user with this email already exists";
 export const createAgencyInput = z
   .object({
     name: z.string().trim().min(2).max(100),
-    country: z.string().regex(/^[A-Z]{2}$/), // ISO 3166-1 alpha-2, uppercase
+    country: z.string().trim().toUpperCase().pipe(z.string().regex(/^[A-Z]{2}$/)), // ISO 3166-1 alpha-2, normalized to uppercase
     agentName: z.string().trim().min(1).max(100),
     agentEmail: z.string().trim().max(254).pipe(z.email()),
   })
@@ -35,8 +34,26 @@ export class AgencyNotFoundError extends Error {
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
 
-function isUniqueViolation(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+// Only a clash on User.email counts as "email already exists". With the driver adapter the
+// constraint name is in meta.driverAdapterError.cause.constraint.index ("User_email_key");
+// meta.target (array of fields) is checked as well for other client setups.
+function isDuplicateUserEmail(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+    return false;
+  }
+  const meta = error.meta as
+    | {
+        modelName?: unknown;
+        target?: unknown;
+        driverAdapterError?: { cause?: { constraint?: { index?: unknown; fields?: unknown } } };
+      }
+    | undefined;
+  const constraint = meta?.driverAdapterError?.cause?.constraint;
+  if (typeof constraint?.index === "string") return constraint.index === "User_email_key";
+  if (Array.isArray(constraint?.fields)) return constraint.fields.includes("email");
+  if (Array.isArray(meta?.target)) return meta.target.includes("email");
+  if (typeof meta?.target === "string") return meta.target.includes("email");
+  return false;
 }
 
 // One transaction: agency (with a temporary reference), its final bank reference built from
@@ -88,7 +105,7 @@ export async function createAgency(
       return { agencyId: agency.id, userId: user.id };
     });
   } catch (error) {
-    if (isUniqueViolation(error)) throw new Error(DUPLICATE_EMAIL_MESSAGE);
+    if (isDuplicateUserEmail(error)) throw new Error(DUPLICATE_EMAIL_MESSAGE);
     throw error;
   }
 
@@ -124,8 +141,7 @@ export async function setAgencyStatus(
 
     await tx.agency.update({ where: { id: agencyId }, data: { status } });
     if (status === "SUSPENDED") {
-      const users = await tx.user.findMany({ where: { agencyId }, select: { id: true } });
-      for (const user of users) await destroyUserSessions(user.id, tx);
+      await tx.session.deleteMany({ where: { user: { agencyId } } });
     }
     await audit(
       actor,
