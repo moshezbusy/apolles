@@ -132,6 +132,22 @@ describe("wallet server actions", () => {
     expect(await db.ledgerEntry.count()).toBe(0);
   });
 
+  it("top-up: the agency reference (APL-…) as bank transfer reference → its own message, nothing written", async () => {
+    await signInAdmin();
+    for (const bankTransferRef of ["APL-0001", " apl-0001 "]) {
+      expect(await confirmTopupAction(null, topupForm({ bankTransferRef }))).toEqual({
+        status: "error",
+        message: "Enter the bank's own transfer reference, not the agency reference (APL-…).",
+      });
+    }
+    expect(await db.ledgerEntry.count()).toBe(0);
+    expect(await db.auditLog.count()).toBe(0);
+    expect(await confirmTopupAction(null, topupForm({ bankTransferRef: "BT-778812" }))).toEqual({
+      status: "success",
+      message: "Top-up of USD 1,000.00 recorded.",
+    });
+  });
+
   it("payout: InsufficientFunds → 'Not enough available balance.'", async () => {
     await signInAdmin();
     expect(await recordPayoutAction(null, payoutForm())).toEqual({

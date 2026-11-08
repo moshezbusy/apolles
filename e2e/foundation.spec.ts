@@ -81,7 +81,7 @@ test("foundation: admin creates an agency, tops it up, the agent sees the balanc
       has: adminPage.getByRole("heading", { name: "Bank top-up" }),
     });
     await topup.getByLabel("Amount (USD)").fill("1,000.00");
-    await topup.getByLabel("Bank transfer reference").fill("BT-E2E-0001");
+    await topup.getByLabel("Bank's transfer reference (from the bank statement)").fill("BT-E2E-0001");
     await topup.getByLabel("Received on").fill(yesterday());
     await topup.getByRole("button", { name: "Review" }).click();
     await expect(topup).toContainText("Confirm top-up of USD 1,000.00 to Test Travel?");

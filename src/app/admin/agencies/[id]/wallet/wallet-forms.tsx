@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useId, useState } from "react";
 import { formatUsd, parseUsdToCents } from "@/lib/money";
 import type { WalletFormState } from "./form-state";
 
@@ -9,6 +9,7 @@ type Action = (previous: WalletFormState, formData: FormData) => Promise<WalletF
 type Field = {
   name: string;
   label: string;
+  hint?: string; // shown under the input and read with it (aria-describedby)
   type?: "text" | "date";
   maxLength: number;
   placeholder?: string;
@@ -53,6 +54,7 @@ function TwoStepForm({
   confirmLabel: string;
   action: Action;
 }) {
+  const formId = useId();
   const empty = Object.fromEntries(fields.map((f) => [f.name, ""]));
   const [values, setValues] = useState<Record<string, string>>(empty);
   const [reviewCents, setReviewCents] = useState<number | null>(null);
@@ -102,23 +104,34 @@ function TwoStepForm({
 
       {reviewCents === null ? (
         <form onSubmit={review} className="flex flex-col gap-4" noValidate>
-          {fields.map((field) => (
-            <label key={field.name} className="flex flex-col gap-1 text-sm font-medium text-gray-700">
-              {field.label}
-              <input
-                type={field.type ?? "text"}
-                name={field.name}
-                value={values[field.name] ?? ""}
-                onChange={(e) => setValues({ ...values, [field.name]: e.target.value })}
-                maxLength={field.maxLength}
-                placeholder={field.placeholder}
-                inputMode={field.inputMode}
-                autoComplete="off"
-                required
-                className={inputClass}
-              />
-            </label>
-          ))}
+          {fields.map((field) => {
+            const hintId = field.hint ? `${formId}-${field.name}-hint` : undefined;
+            return (
+              <div key={field.name} className="flex flex-col gap-1">
+                <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+                  {field.label}
+                  <input
+                    type={field.type ?? "text"}
+                    name={field.name}
+                    value={values[field.name] ?? ""}
+                    onChange={(e) => setValues({ ...values, [field.name]: e.target.value })}
+                    maxLength={field.maxLength}
+                    placeholder={field.placeholder}
+                    inputMode={field.inputMode}
+                    autoComplete="off"
+                    aria-describedby={hintId}
+                    required
+                    className={inputClass}
+                  />
+                </label>
+                {field.hint ? (
+                  <p id={hintId} className="text-sm text-gray-600">
+                    {field.hint}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
           <button
             type="submit"
             className="self-start rounded-md bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800"
@@ -166,7 +179,12 @@ export function TopupForm({ agencyId, agencyName, action }: FormProps) {
       title="Bank top-up"
       fields={[
         { name: "amount", label: "Amount (USD)", maxLength: 20, placeholder: "1,000.00", inputMode: "decimal" },
-        { name: "bankTransferRef", label: "Bank transfer reference", maxLength: 100 },
+        {
+          name: "bankTransferRef",
+          label: "Bank's transfer reference (from the bank statement)",
+          hint: "Not the agency reference (APL-…).",
+          maxLength: 100,
+        },
         { name: "receivedOn", label: "Received on", type: "date", maxLength: 10 },
       ]}
       hidden={{ agencyId }}

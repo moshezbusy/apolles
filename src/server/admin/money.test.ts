@@ -153,6 +153,24 @@ describe("admin money actions", () => {
       expect(await db.auditLog.count()).toBe(0);
     });
 
+    it("rejects the agency's own reference (APL-…) as a bank transfer ref, with a clear message; nothing written", async () => {
+      // M2: agents pay with "Reference: APL-0001". Recording that as the bank's transfer
+      // reference would make the agency's next same-amount transfer look "already recorded".
+      for (const bankTransferRef of ["APL-0001", " apl-0001 ", "APL-12"]) {
+        const error = await topup({ bankTransferRef }).catch((e: unknown) => e);
+        expect(error, bankTransferRef).toBeInstanceOf(ZodError);
+        expect((error as ZodError).issues.map((i) => i.message)).toEqual([
+          "Enter the bank's own transfer reference, not the agency reference (APL-…).",
+        ]);
+      }
+      expect(await db.ledgerEntry.count()).toBe(0);
+      expect(await db.auditLog.count()).toBe(0);
+      // A real bank reference, even one that mentions APL, still works.
+      await expect(topup({ bankTransferRef: "TRX-APL-0001" })).resolves.toMatchObject({ alreadyRecorded: false });
+      await expect(topup({ bankTransferRef: "FT2611080001" })).resolves.toMatchObject({ alreadyRecorded: false });
+      expect(await db.ledgerEntry.count()).toBe(2);
+    });
+
     it("accepts receivedOn of today, 2020-01-01, and a ref of exactly 100 characters", async () => {
       await expect(topup({ receivedOn: isoDay(0), bankTransferRef: "R-1" })).resolves.toBeTruthy();
       await expect(topup({ receivedOn: "2020-01-01", bankTransferRef: "R-2" })).resolves.toBeTruthy();

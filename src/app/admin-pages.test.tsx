@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AdminHeader } from "@/components/AdminHeader";
+import { TopupForm } from "@/app/admin/agencies/[id]/wallet/wallet-forms";
 
 const SIGN_OUT_FORM = /<form(?=[^>]*method="post")(?=[^>]*action="\/logout")[^>]*>\s*<button[^>]*type="submit"[^>]*>Sign out<\/button>\s*<\/form>/;
 
@@ -46,5 +47,20 @@ describe("admin pages", () => {
     const outside = adminPages().filter((page) => !page.startsWith("agencies/"));
     expect(outside.sort()).toEqual(["2fa/page.tsx", "2fa/setup/page.tsx", "page.tsx"]);
     expect(adminPages().filter((page) => page.startsWith("agencies/")).length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe("wallet top-up form", () => {
+  it("asks for the bank's own transfer reference and warns against the agency reference", () => {
+    const html = renderToStaticMarkup(
+      <TopupForm agencyId="a1" agencyName="Sunrise" action={async () => null} />,
+    );
+    expect(html).toContain("Bank&#x27;s transfer reference (from the bank statement)");
+    expect(html).not.toContain(">Bank transfer reference<");
+    // The hint is tied to the input, so screen readers read it with the field.
+    const hint = html.match(/<p id="([^"]+)"[^>]*>Not the agency reference \(APL-…\)\.<\/p>/);
+    expect(hint).not.toBeNull();
+    const input = html.match(/<input[^>]*name="bankTransferRef"[^>]*>/)?.[0] ?? "";
+    expect(input).toContain(`aria-describedby="${hint?.[1]}"`);
   });
 });

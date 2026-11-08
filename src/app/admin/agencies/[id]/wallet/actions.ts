@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { z, ZodError } from "zod";
 import { formatUsd, parseUsdToCents } from "@/lib/money";
 import { requireAdmin } from "@/server/auth/guards";
-import { confirmBankTopup, recordAdjustment, recordPayout } from "@/server/admin/money";
+import {
+  AGENCY_REF_AS_TRANSFER_REF,
+  confirmBankTopup,
+  recordAdjustment,
+  recordPayout,
+} from "@/server/admin/money";
 import {
   AgencyNotFound,
   IdempotencyKeyConflict,
@@ -83,6 +88,10 @@ export async function confirmTopupAction(
     }
     return { status: "success", message: `Top-up of ${formatUsd(amountCents)} recorded.` };
   } catch (caught) {
+    // The agency's own APL- reference typed as the bank's: say exactly that (M2).
+    if (caught instanceof ZodError && caught.issues.some((i) => i.message === AGENCY_REF_AS_TRANSFER_REF)) {
+      return error(AGENCY_REF_AS_TRANSFER_REF);
+    }
     return toState(caught, TOPUP_INVALID);
   } finally {
     revalidatePath(WALLET_PAGE, "page");

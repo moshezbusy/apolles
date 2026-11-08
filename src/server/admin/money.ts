@@ -56,11 +56,30 @@ const receivedOn = z
   .refine((day) => day >= EARLIEST_RECEIVED_ON, "Must not be before 2020-01-01")
   .refine((day) => day <= latestAllowedDay(), "Must not be in the future");
 
+// Shown when the admin types the agency's own reference (APL-0001, what agents put on their
+// transfer) instead of the bank's reference for that transfer (M2). Recorded as the transfer
+// ref, it would make the agency's next transfer of the same amount look "already recorded".
+export const AGENCY_REF_AS_TRANSFER_REF =
+  "Enter the bank's own transfer reference, not the agency reference (APL-…).";
+const AGENCY_REFERENCE = /^APL-\d+$/;
+
+const bankTransferRef = z
+  .string()
+  .max(500)
+  .transform(normalizeBankTransferRef)
+  .pipe(
+    z
+      .string()
+      .min(1)
+      .max(100)
+      .refine((ref) => !AGENCY_REFERENCE.test(ref), AGENCY_REF_AS_TRANSFER_REF),
+  );
+
 export const bankTopupInput = z
   .object({
     agencyId,
     amountCents: positiveCents,
-    bankTransferRef: z.string().max(500).transform(normalizeBankTransferRef).pipe(z.string().min(1).max(100)),
+    bankTransferRef,
     receivedOn,
   })
   .strict();
