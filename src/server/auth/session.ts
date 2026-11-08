@@ -14,6 +14,7 @@ const userSelect = {
   name: true,
   agencyId: true,
   status: true,
+  totpConfirmedAt: true,
 } as const;
 
 const agencySelect = { id: true, name: true, status: true } as const;
@@ -25,6 +26,7 @@ export type SessionUser = {
   name: string;
   agencyId: string | null;
   status: "ACTIVE" | "SUSPENDED";
+  totpConfirmedAt: Date | null; // admins: when TOTP was set up; null = not yet (agents: null)
 };
 
 export type SessionAgency = { id: string; name: string; status: "ACTIVE" | "SUSPENDED" };
@@ -33,6 +35,7 @@ export type SessionContext = {
   sessionId: string;
   user: SessionUser;
   agency?: SessionAgency; // present for AGENT sessions only
+  totpVerifiedAt: Date | null; // admin sessions: when the TOTP code was entered; null = not yet
 };
 
 // Returns the raw token for the cookie. The raw token is never stored or logged.
@@ -59,6 +62,7 @@ export async function getSession(rawToken: string): Promise<SessionContext | nul
     select: {
       id: true,
       expiresAt: true,
+      totpVerifiedAt: true,
       user: { select: { ...userSelect, agency: { select: agencySelect } } },
     },
   });
@@ -74,9 +78,9 @@ export async function getSession(rawToken: string): Promise<SessionContext | nul
 
   if (user.role === "AGENT") {
     if (!agency || agency.status !== "ACTIVE") return null;
-    return { sessionId: row.id, user, agency };
+    return { sessionId: row.id, user, agency, totpVerifiedAt: row.totpVerifiedAt };
   }
-  return { sessionId: row.id, user };
+  return { sessionId: row.id, user, totpVerifiedAt: row.totpVerifiedAt };
 }
 
 // Sign-out: ends only the session that belongs to this token.

@@ -4,6 +4,7 @@ import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import { hashPassword } from "@/server/auth/password";
 import { SESSION_COOKIE, getSession } from "@/server/auth/session";
+import { requireAdmin } from "@/server/auth/guards";
 import { loginAction } from "@/app/login/actions";
 
 type SetCall = { name: string; value: string; options: Record<string, unknown> };
@@ -80,6 +81,26 @@ describe("loginAction", () => {
     await expect(
       loginAction(null, form({ email: "admin@example.com", password: GOOD })),
     ).rejects.toThrow("NEXT_REDIRECT:/admin");
+  });
+
+  it("admin who just signed in (TOTP not set up) → requireAdmin sends them to /admin/2fa/setup", async () => {
+    await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN", passwordHash });
+    await expect(
+      loginAction(null, form({ email: "admin@example.com", password: GOOD })),
+    ).rejects.toThrow("NEXT_REDIRECT:/admin");
+    await expect(requireAdmin()).rejects.toThrow("NEXT_REDIRECT:/admin/2fa/setup");
+  });
+
+  it("admin who just signed in (TOTP set up) → requireAdmin sends them to /admin/2fa", async () => {
+    const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN", passwordHash });
+    await db.user.update({
+      where: { id: admin.id },
+      data: { totpSecret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP", totpConfirmedAt: new Date() },
+    });
+    await expect(
+      loginAction(null, form({ email: "admin@example.com", password: GOOD })),
+    ).rejects.toThrow("NEXT_REDIRECT:/admin");
+    await expect(requireAdmin()).rejects.toThrow(/^NEXT_REDIRECT:\/admin\/2fa$/);
   });
 
   it("signing in again replaces the previous session from the cookie", async () => {

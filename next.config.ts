@@ -16,6 +16,10 @@ const nextConfig: NextConfig = {
         source: "/forgot-password",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
+      {
+        source: "/admin/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
     ];
   },
   turbopack: {

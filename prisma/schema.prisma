@@ -49,17 +49,21 @@ model Agency {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  agencyId     String?
-  role         Role
-  email        String        @unique // always stored lowercase (see normalizeEmail)
-  name         String
-  passwordHash String?
-  failedLogins Int           @default(0)
-  lockedUntil  DateTime?
-  totpSecret   String?
-  status       AccountStatus @default(ACTIVE)
-  createdAt    DateTime      @default(now())
+  id               String        @id @default(cuid())
+  agencyId         String?
+  role             Role
+  email            String        @unique // always stored lowercase (see normalizeEmail)
+  name             String
+  passwordHash     String?
+  failedLogins     Int           @default(0)
+  lockedUntil      DateTime?
+  totpSecret       String? // base32; set by startTotpEnrollment (admins only)
+  // Set once the admin proved the authenticator works; until then the secret can be replaced.
+  totpConfirmedAt  DateTime?
+  // Last accepted TOTP time step: a code is accepted only for a later step (no reuse).
+  totpLastUsedStep Int?
+  status           AccountStatus @default(ACTIVE)
+  createdAt        DateTime      @default(now())
 
   agency         Agency?         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   sessions       Session[]
@@ -71,11 +75,13 @@ model User {
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  tokenHash String   @unique
-  userId    String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id             String    @id @default(cuid())
+  tokenHash      String    @unique
+  userId         String
+  expiresAt      DateTime
+  // Admin sessions only: when the TOTP code was entered for this session. Null = not yet.
+  totpVerifiedAt DateTime?
+  createdAt      DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

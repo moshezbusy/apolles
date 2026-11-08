@@ -3,7 +3,7 @@ import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import { SESSION_COOKIE, createSession } from "@/server/auth/session";
-import { requireAdmin, requireAgent } from "@/server/auth/guards";
+import { requireAdmin, requireAdminPendingTotp, requireAgent } from "@/server/auth/guards";
 
 const cookieJar = new Map<string, string>();
 
@@ -32,10 +32,24 @@ async function agentSession() {
   return { agent, agency };
 }
 
-async function adminSession() {
+type AdminState = { confirmed?: boolean; verified?: boolean };
+
+// An admin session: TOTP set up (confirmed) or not, and this session verified or not.
+async function adminSession({ confirmed = false, verified = false }: AdminState = {}) {
   const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN" });
-  cookieJar.set(SESSION_COOKIE, await createSession(admin.id));
-  return admin;
+  if (confirmed) {
+    await db.user.update({
+      where: { id: admin.id },
+      data: { totpSecret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP", totpConfirmedAt: new Date() },
+    });
+  }
+  const token = await createSession(admin.id);
+  if (verified) {
+    await db.session.updateMany({ where: { userId: admin.id }, data: { totpVerifiedAt: new Date() } });
+  }
+  cookieJar.set(SESSION_COOKIE, token);
+  const { id: sessionId } = await db.session.findFirstOrThrow({ where: { userId: admin.id } });
+  return { admin, sessionId };
 }
 
 describe("auth guards", () => {
@@ -69,9 +83,52 @@ describe("auth guards", () => {
     await expect(requireAgent()).rejects.toThrow("NEXT_REDIRECT:/login");
   });
 
-  it("requireAdmin with a valid admin session → userId", async () => {
-    const admin = await adminSession();
+  it("requireAdmin with a TOTP-verified admin session → userId", async () => {
+    const { admin } = await adminSession({ confirmed: true, verified: true });
     expect(await requireAdmin()).toEqual({ userId: admin.id });
+  });
+
+  it("admin session without totpVerifiedAt → requireAdmin redirects to /admin/2fa", async () => {
+    await adminSession({ confirmed: true, verified: false });
+    await expect(requireAdmin()).rejects.toThrow(/^NEXT_REDIRECT:\/admin\/2fa$/);
+  });
+
+  it("admin who has not set up TOTP → requireAdmin redirects to /admin/2fa/setup", async () => {
+    await adminSession({ confirmed: false });
+    await expect(requireAdmin()).rejects.toThrow("NEXT_REDIRECT:/admin/2fa/setup");
+  });
+
+  it("verification belongs to one session: a new session of the same admin is not verified", async () => {
+    const { admin } = await adminSession({ confirmed: true, verified: true });
+    cookieJar.set(SESSION_COOKIE, await createSession(admin.id));
+    await expect(requireAdmin()).rejects.toThrow(/^NEXT_REDIRECT:\/admin\/2fa$/);
+  });
+
+  it("an unconfirmed admin is sent to setup even if the session was marked verified", async () => {
+    await adminSession({ confirmed: false, verified: true });
+    await expect(requireAdmin()).rejects.toThrow("NEXT_REDIRECT:/admin/2fa/setup");
+  });
+
+  it("requireAdminPendingTotp with an unverified admin session → ids and setup state", async () => {
+    const pending = await adminSession({ confirmed: true });
+    expect(await requireAdminPendingTotp()).toEqual({
+      userId: pending.admin.id,
+      sessionId: pending.sessionId,
+      totpConfirmed: true,
+    });
+    await db.user.update({ where: { id: pending.admin.id }, data: { totpConfirmedAt: null } });
+    expect(await requireAdminPendingTotp()).toMatchObject({ totpConfirmed: false });
+  });
+
+  it("requireAdminPendingTotp with an already verified session → redirects to /admin", async () => {
+    await adminSession({ confirmed: true, verified: true });
+    await expect(requireAdminPendingTotp()).rejects.toThrow(/^NEXT_REDIRECT:\/admin$/);
+  });
+
+  it("requireAdminPendingTotp with an AGENT session or no cookie → /login", async () => {
+    await expect(requireAdminPendingTotp()).rejects.toThrow("NEXT_REDIRECT:/login");
+    await agentSession();
+    await expect(requireAdminPendingTotp()).rejects.toThrow("NEXT_REDIRECT:/login");
   });
 
   it("requireAdmin with an AGENT session redirects to /login", async () => {
