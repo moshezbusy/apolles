@@ -88,3 +88,10 @@ export async function clearFailedAttempts(userId: string): Promise<boolean> {
   });
   return reset.count === 1;
 }
+
+// Is the account unlocked right now (a fresh read, for checks after a slow step)?
+// Does not change the counter.
+export async function isUnlockedNow(userId: string): Promise<boolean> {
+  const now = new Date();
+  return (await db.user.count({ where: { id: userId, ...notLockedAt(now) } })) === 1;
+}

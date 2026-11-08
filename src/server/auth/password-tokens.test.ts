@@ -136,6 +136,27 @@ describe("password tokens", () => {
     expect(token.usedAt).not.toBeNull();
   });
 
+  it("admin: consume OK sets the password and ends sessions, but keeps the lockout (R36)", async () => {
+    const admin = await createUser({
+      email: "admin@example.com",
+      name: "Admin",
+      role: "ADMIN",
+      passwordHash: await hashPassword(OLD),
+    });
+    await createSession(admin.id);
+    const lockedUntil = new Date(Date.now() + 10 * 60 * 1000);
+    await db.user.update({ where: { id: admin.id }, data: { failedLogins: 2, lockedUntil } });
+    const raw = await issuePasswordToken(admin.id, "RESET");
+
+    expect(await consumePasswordToken(raw, NEW)).toBe("OK");
+
+    const row = await db.user.findUniqueOrThrow({ where: { id: admin.id } });
+    expect(await verifyPassword(row.passwordHash!, NEW)).toBe(true);
+    expect(row.lockedUntil?.getTime()).toBe(lockedUntil.getTime());
+    expect(row.failedLogins).toBe(2);
+    expect(await db.session.count({ where: { userId: admin.id } })).toBe(0);
+  });
+
   it("INVALID_PASSWORD leaves the token usable", async () => {
     const agent = await createAgent();
     const raw = await issuePasswordToken(agent.id, "RESET");

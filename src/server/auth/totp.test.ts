@@ -5,6 +5,8 @@ import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import { notifyAdminLockout } from "@/server/auth/notifications";
 import { createSession, getSession } from "@/server/auth/session";
+import { hashPassword } from "@/server/auth/password";
+import { login } from "@/server/auth/login";
 import {
   checkTotpForSession,
   confirmTotp,
@@ -96,12 +98,35 @@ describe("admin TOTP", () => {
       expect(row.totpConfirmedAt).toBeNull();
     });
 
-    it("calling it again before confirmation replaces the secret", async () => {
+    it("calling it again before confirmation reuses the same unconfirmed secret", async () => {
+      const admin = await createAdmin();
+      const first = await startTotpEnrollment(admin.id);
+      const second = await startTotpEnrollment(admin.id);
+      expect(second.otpauthUrl).toBe(first.otpauthUrl);
+    });
+
+    it("regenerate: true replaces the unconfirmed secret and forgets the used step", async () => {
       const admin = await createAdmin();
       const first = secretOf((await startTotpEnrollment(admin.id)).otpauthUrl);
-      const second = secretOf((await startTotpEnrollment(admin.id)).otpauthUrl);
+      await db.user.update({ where: { id: admin.id }, data: { totpLastUsedStep: 1 } });
+      const second = secretOf((await startTotpEnrollment(admin.id, { regenerate: true })).otpauthUrl);
       expect(second).not.toBe(first);
-      expect((await db.user.findUniqueOrThrow({ where: { id: admin.id } })).totpSecret).toBe(second);
+      const row = await db.user.findUniqueOrThrow({ where: { id: admin.id } });
+      expect(row.totpSecret).toBe(second);
+      expect(row.totpLastUsedStep).toBeNull();
+    });
+
+    it("two parallel first visits end up with one secret", async () => {
+      const admin = await createAdmin();
+      const [a, b] = await Promise.all([startTotpEnrollment(admin.id), startTotpEnrollment(admin.id)]);
+      expect(a.otpauthUrl).toBe(b.otpauthUrl);
+      expect((await db.user.findUniqueOrThrow({ where: { id: admin.id } })).totpSecret).toBe(secretOf(a.otpauthUrl));
+    });
+
+    it("regenerate throws for a confirmed admin (secret unchanged)", async () => {
+      const { admin, secret } = await confirmedAdmin();
+      await expect(startTotpEnrollment(admin.id, { regenerate: true })).rejects.toThrow();
+      expect((await db.user.findUniqueOrThrow({ where: { id: admin.id } })).totpSecret).toBe(secret);
     });
 
     it("throws for an admin whose TOTP is already confirmed (secret unchanged)", async () => {
@@ -124,10 +149,12 @@ describe("admin TOTP", () => {
     it("valid code → true, sets totpConfirmedAt and the used step", async () => {
       const admin = await createAdmin();
       const secret = secretOf((await startTotpEnrollment(admin.id)).otpauthUrl);
-      expect(await confirmTotp(admin.id, await validCode(secret))).toBe(true);
+      // The expected step comes from the same timestamp as the code (no step-boundary flake).
+      const epoch = nowSeconds();
+      expect(await confirmTotp(admin.id, await codeAt(secret, epoch))).toBe(true);
       const row = await db.user.findUniqueOrThrow({ where: { id: admin.id } });
       expect(row.totpConfirmedAt).not.toBeNull();
-      expect(row.totpLastUsedStep).toBe(Math.floor(nowSeconds() / 30));
+      expect(row.totpLastUsedStep).toBe(Math.floor(epoch / 30));
     });
 
     it("wrong code → false, not confirmed, counted as a failed sign-in", async () => {
@@ -251,6 +278,24 @@ describe("admin TOTP", () => {
         id: admin.id,
         email: admin.email,
       });
+      expect(await db.session.count({ where: { userId: admin.id } })).toBe(0);
+    });
+
+    it("signing in again with the right password does not reset the TOTP strikes", async () => {
+      const GOOD = "abcdefg1";
+      const { admin, secret, sessionId } = await confirmedAdmin();
+      await db.user.update({ where: { id: admin.id }, data: { passwordHash: await hashPassword(GOOD) } });
+      const bad = await wrongCode(secret);
+
+      expect(await checkTotpForSession(sessionId, bad)).toBe("WRONG");
+      expect(await checkTotpForSession(sessionId, bad)).toBe("WRONG");
+      // Correct password again: a new, unverified session, and the run of failures goes on.
+      expect(await login(admin.email, GOOD)).toMatchObject({ ok: true, needsTotp: true });
+      expect((await db.user.findUniqueOrThrow({ where: { id: admin.id } })).failedLogins).toBe(2);
+      const next = await sessionIdFor(admin.id);
+      expect(await checkTotpForSession(next, bad)).toBe("LOCKED");
+
+      expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
       expect(await db.session.count({ where: { userId: admin.id } })).toBe(0);
     });
 

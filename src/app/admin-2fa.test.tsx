@@ -7,7 +7,7 @@ import { resetTestDb } from "@/test/db";
 import { SESSION_COOKIE, createSession, getSession } from "@/server/auth/session";
 import { requireAdmin } from "@/server/auth/guards";
 import { verifyTotpAction } from "@/app/admin/2fa/actions";
-import { confirmTotpAction } from "@/app/admin/2fa/setup/actions";
+import { confirmTotpAction, regenerateTotpKeyAction } from "@/app/admin/2fa/setup/actions";
 
 type SetCall = { name: string; value: string; options: Record<string, unknown> };
 const setCalls: SetCall[] = [];
@@ -195,6 +195,28 @@ describe("admin 2FA", () => {
       expect(html).toContain('name="code"');
       expect(html).toContain('inputMode="numeric"');
       expect(metadata.robots).toEqual({ index: false, follow: false });
+    });
+
+    it("/admin/2fa/setup: a reload shows the same key; 'Generate a new key' replaces it", async () => {
+      const admin = await signedInAdmin({ confirmed: false });
+      const { default: Page } = await import("./admin/2fa/setup/page");
+      const first = renderToStaticMarkup(await Page());
+      const firstSecret = (await db.user.findUniqueOrThrow({ where: { id: admin.id } })).totpSecret!;
+      expect(renderToStaticMarkup(await Page())).toBe(first);
+      expect(first).toContain("Generate a new key");
+
+      await expect(regenerateTotpKeyAction()).rejects.toThrow("NEXT_REDIRECT:/admin/2fa/setup");
+      const secondSecret = (await db.user.findUniqueOrThrow({ where: { id: admin.id } })).totpSecret!;
+      expect(secondSecret).not.toBe(firstSecret);
+      expect(renderToStaticMarkup(await Page())).toContain(secondSecret.match(/.{1,4}/g)!.join(" "));
+    });
+
+    it("'Generate a new key' for a confirmed admin → /admin/2fa, secret kept; no session → /login", async () => {
+      await signedInAdmin({ confirmed: true });
+      await expect(regenerateTotpKeyAction()).rejects.toThrow(/^NEXT_REDIRECT:\/admin\/2fa$/);
+      expect((await db.user.findFirstOrThrow()).totpSecret).toBe(SECRET);
+      jar.clear();
+      await expect(regenerateTotpKeyAction()).rejects.toThrow("NEXT_REDIRECT:/login");
     });
 
     it("/admin/2fa/setup for an admin who already set up TOTP → /admin/2fa (secret kept)", async () => {

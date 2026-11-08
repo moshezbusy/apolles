@@ -152,28 +152,43 @@ async function findSession(sessionId: string) {
   return row;
 }
 
-// Enrollment, step 1: creates a new secret for an admin who has not confirmed TOTP yet
-// (a previous unconfirmed secret is replaced) and returns the otpauth:// URL for the
-// authenticator app. Throws for anyone else, so a confirmed secret can never be replaced
-// here.
-export async function startTotpEnrollment(userId: string): Promise<{ otpauthUrl: string }> {
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { email: true, role: true, totpConfirmedAt: true },
-  });
+function otpauthUrlFor(email: string, secret: string): string {
+  return generateURI({ issuer: ISSUER, label: email, secret, period: PERIOD_SECONDS });
+}
+
+// Enrollment, step 1, for an admin who has not confirmed TOTP yet: returns the otpauth://
+// URL for the authenticator app. Reuses the stored unconfirmed secret, so reloading the
+// setup page keeps the key the admin may already have added; a secret is created only
+// when there is none, or when `regenerate` asks for a new one (the old one stops working).
+// Throws for anyone else, so a confirmed secret can never be replaced here.
+export async function startTotpEnrollment(
+  userId: string,
+  { regenerate = false }: { regenerate?: boolean } = {},
+): Promise<{ otpauthUrl: string }> {
+  const read = () =>
+    db.user.findUnique({
+      where: { id: userId },
+      select: { email: true, role: true, totpSecret: true, totpConfirmedAt: true },
+    });
+  const user = await read();
   if (!user || user.role !== "ADMIN") throw new Error("startTotpEnrollment: not an admin");
   if (user.totpConfirmedAt) throw new Error("startTotpEnrollment: TOTP is already set up");
+  if (!regenerate && user.totpSecret) return { otpauthUrl: otpauthUrlFor(user.email, user.totpSecret) };
 
   const secret = generateSecret({ length: SECRET_BYTES });
   const stored = await db.user.updateMany({
-    where: { id: userId, role: "ADMIN", totpConfirmedAt: null },
+    // Without `regenerate`, only fill an empty secret: of two parallel first visits, one
+    // stores its secret and the other shows that same secret (below).
+    where: { id: userId, role: "ADMIN", totpConfirmedAt: null, ...(regenerate ? {} : { totpSecret: null }) },
     data: { totpSecret: secret, totpLastUsedStep: null },
   });
-  if (stored.count !== 1) throw new Error("startTotpEnrollment: TOTP is already set up");
+  if (stored.count === 1) return { otpauthUrl: otpauthUrlFor(user.email, secret) };
 
-  return {
-    otpauthUrl: generateURI({ issuer: ISSUER, label: user.email, secret, period: PERIOD_SECONDS }),
-  };
+  const current = await read();
+  if (!regenerate && current && !current.totpConfirmedAt && current.totpSecret) {
+    return { otpauthUrl: otpauthUrlFor(current.email, current.totpSecret) };
+  }
+  throw new Error("startTotpEnrollment: TOTP is already set up");
 }
 
 // Enrollment, step 2: the admin proves the app works by entering a code. On success TOTP

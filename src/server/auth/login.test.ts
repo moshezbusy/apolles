@@ -153,6 +153,28 @@ describe("login", () => {
     expect(await login(agent.email, BAD)).toEqual({ ok: false, reason: "INVALID" });
   });
 
+  it("admin: a correct password does not reset the counter (only a correct TOTP code does)", async () => {
+    const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN", passwordHash });
+    expect(await login(admin.email, BAD)).toEqual({ ok: false, reason: "INVALID" });
+    expect(await login(admin.email, BAD)).toEqual({ ok: false, reason: "INVALID" });
+    expect(await login(admin.email, GOOD)).toMatchObject({ ok: true, needsTotp: true });
+    expect((await db.user.findUniqueOrThrow({ where: { id: admin.id } })).failedLogins).toBe(2);
+    expect(await login(admin.email, BAD)).toEqual({ ok: false, reason: "LOCKED" });
+    expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+  });
+
+  it("admin: a correct password that finishes after a parallel lock → LOCKED, lock kept", async () => {
+    const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN", passwordHash });
+    const lockedUntil = new Date(Date.now() + FIFTEEN_MIN);
+    vi.spyOn(password, "verifyPassword").mockImplementationOnce(async () => {
+      await db.user.update({ where: { id: admin.id }, data: { lockedUntil, failedLogins: 0 } });
+      return true;
+    });
+    expect(await login(admin.email, GOOD)).toEqual({ ok: false, reason: "LOCKED" });
+    const row = await db.user.findUniqueOrThrow({ where: { id: admin.id } });
+    expect(row.lockedUntil?.getTime()).toBe(lockedUntil.getTime());
+  });
+
   it("suspended user with right password → SUSPENDED", async () => {
     const agent = await createAgent();
     await db.user.update({ where: { id: agent.id }, data: { status: "SUSPENDED" } });

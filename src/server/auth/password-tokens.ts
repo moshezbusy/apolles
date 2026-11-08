@@ -82,8 +82,8 @@ export async function findUsablePasswordToken(raw: string): Promise<PasswordToke
 // Sets a new password through a link. The password rule is checked first, so a weak
 // password does not use up the link. The link is then claimed with one conditional UPDATE
 // (unused and unexpired) inside the same transaction that saves the password, clears any
-// lockout and ends every session of the user: two parallel submits of one link cannot both
-// succeed, and a failure leaves nothing half-done.
+// lockout (agents only) and ends every session of the user: two parallel submits of one
+// link cannot both succeed, and a failure leaves nothing half-done.
 export async function consumePasswordToken(
   raw: string,
   newPassword: string,
@@ -119,9 +119,15 @@ export async function consumePasswordToken(
     // Suspended since the read above: the link is spent, the password is not changed.
     if (!isAccountActive(user)) return "EXPIRED";
 
+    // Agents: a new password also clears the lockout. Admins (R36): it does not, because
+    // the lockout also counts wrong TOTP codes, and a reset link must not let anyone with
+    // the admin's mailbox skip the wait between code guesses.
     await tx.user.update({
       where: { id: userId },
-      data: { passwordHash, failedLogins: 0, lockedUntil: null },
+      data:
+        user.role === "ADMIN"
+          ? { passwordHash }
+          : { passwordHash, failedLogins: 0, lockedUntil: null },
     });
     await tx.passwordToken.updateMany({
       where: { userId, usedAt: null },

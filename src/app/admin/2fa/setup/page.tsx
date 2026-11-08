@@ -3,15 +3,15 @@ import { redirect } from "next/navigation";
 import { requireAdminPendingTotp } from "@/server/auth/guards";
 import { groupSecret, secretFromOtpauthUrl, startTotpEnrollment } from "@/server/auth/totp";
 import { TotpCodeForm } from "../code-form";
-import { confirmTotpAction } from "./actions";
+import { confirmTotpAction, regenerateTotpKeyAction } from "./actions";
 
 export const metadata: Metadata = {
   title: "Set up two-step verification · Apolles",
   robots: { index: false, follow: false },
 };
 
-// Shown until the admin confirms a code. Every visit creates a new key (the previous,
-// unconfirmed one stops working), so the key on screen is always the one to add.
+// Shown until the admin confirms a code. A reload shows the same key; only the
+// "Generate a new key" button replaces it (the previous, unconfirmed one then stops working).
 export default async function TwoFactorSetupPage() {
   const { userId, totpConfirmed } = await requireAdminPendingTotp();
   if (totpConfirmed) redirect("/admin/2fa");
@@ -38,6 +38,12 @@ export default async function TwoFactorSetupPage() {
         </p>
 
         <TotpCodeForm action={confirmTotpAction} />
+
+        <form action={regenerateTotpKeyAction} className="mt-6 border-t border-gray-200 pt-4">
+          <button type="submit" className="text-sm text-blue-700 hover:underline">
+            Generate a new key
+          </button>
+        </form>
       </div>
     </main>
   );
