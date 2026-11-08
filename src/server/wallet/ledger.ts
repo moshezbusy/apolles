@@ -20,6 +20,11 @@ import {
 // Writes:   every write runs in one transaction that first locks the agency row
 //           (SELECT ... FOR UPDATE), so writes for one agency happen one at a time and the
 //           balance / hold state read inside the lock is current.
+// Order:    each entry's createdAt is taken inside the lock from the database clock and is
+//           always later than the agency's newest entry (see nextEntryTime). So the history
+//           order (createdAt, id) is exactly the order the writes happened in, and a "balance
+//           after" row can never show a balance the wallet never had. A capture's
+//           HOLD_RELEASE comes before its CHARGE.
 // Idempotency: each entry has a globally unique idempotencyKey. A call whose key already
 //           exists for the same agency and the same operation returns the original result and
 //           writes nothing (even if amount / reason differ: the first call wins). A key that
@@ -106,8 +111,17 @@ async function lockAgency(tx: Tx, agencyId: string): Promise<void> {
 // sees the committed entry and returns it or reports the conflict. The caller never gets a raw
 // duplicate-key error and nothing is written twice. `fn` must only change the database through
 // `tx` (it may run twice) and must lock the agency before writing (creditInTx / debitInTx do).
+//
+// Transaction options are set here on purpose rather than left to Prisma's defaults: wait up
+// to 5 s for a free connection and let the transaction run up to 10 s (a writer may queue
+// behind another writer's agency lock). The isolation level stays the database default, Read
+// Committed: the agency row lock is what serialises writers, and under Read Committed every
+// statement after the lock sees what earlier lock holders committed. A stricter level would
+// make waiting writers fail with serialization errors instead of simply going next.
+const LEDGER_TX_OPTIONS = { maxWait: 5000, timeout: 10000 } as const;
+
 export async function withLedgerTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
-  const run = () => db.$transaction(fn);
+  const run = () => db.$transaction(fn, LEDGER_TX_OPTIONS);
   try {
     return await run();
   } catch (error) {
@@ -119,6 +133,24 @@ export async function withLedgerTransaction<T>(fn: (tx: Tx) => Promise<T>): Prom
     if (isUniqueViolation(error)) throw new IdempotencyKeyConflict();
     throw error;
   }
+}
+
+// The createdAt for the agency's next entry. Call only inside the transaction, after
+// lockAgency. It comes from the database clock (clock_timestamp(): the time now, not when the
+// transaction began; one clock for every app server), to the millisecond like the
+// timestamp(3) column, and it is at least 1 ms after the agency's newest entry, so a later
+// write never sorts before an earlier one (even if a clock was ahead, or two writes fall in
+// the same millisecond). MAX uses the (agencyId, createdAt) index.
+async function nextEntryTime(tx: Tx, agencyId: string): Promise<Date> {
+  const rows = await tx.$queryRaw<{ ms: bigint }[]>`
+    SELECT (EXTRACT(EPOCH FROM GREATEST(
+      date_trunc('milliseconds', clock_timestamp() AT TIME ZONE 'UTC'),
+      (SELECT MAX(e."createdAt") FROM "LedgerEntry" e WHERE e."agencyId" = ${agencyId})
+        + interval '1 millisecond'
+    )) * 1000)::bigint AS ms`;
+  const ms = rows[0]?.ms;
+  if (ms === undefined) throw new Error("Could not read the database clock");
+  return new Date(toSafeNumber(ms));
 }
 
 async function withAgencyLock<T>(agencyId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
@@ -221,6 +253,7 @@ async function writeCredit(tx: Tx, input: CreditInput): Promise<WriteResult> {
       currency: CURRENCY,
       reason: input.reason,
       idempotencyKey: input.idempotencyKey,
+      createdAt: await nextEntryTime(tx, input.agencyId),
       ...(input.actorUserId !== undefined ? { actorUserId: input.actorUserId } : {}),
       ...(input.bookingRef !== undefined ? { bookingRef: input.bookingRef } : {}),
     },
@@ -252,6 +285,7 @@ async function writeDebit(tx: Tx, input: DebitInput): Promise<WriteResult> {
       reason: input.reason,
       actorUserId: input.actorUserId,
       idempotencyKey: input.idempotencyKey,
+      createdAt: await nextEntryTime(tx, input.agencyId),
     },
   });
   return { entry, created: true };
@@ -312,6 +346,7 @@ export async function placeHold(input: PlaceHoldInput): Promise<{ holdId: string
         bookingRef: input.bookingRef,
         reason: `Hold for booking ${input.bookingRef}`,
         idempotencyKey: input.idempotencyKey,
+        createdAt: await nextEntryTime(tx, input.agencyId),
       },
     });
     return { holdId };
@@ -357,6 +392,7 @@ async function closeHold(holdId: string, key: string, capture: boolean): Promise
         bookingRef: hold.bookingRef,
         reason: capture ? "Hold captured" : "Hold released",
         idempotencyKey: key,
+        createdAt: await nextEntryTime(tx, hold.agencyId),
       },
     });
     if (capture) {
@@ -370,6 +406,8 @@ async function closeHold(holdId: string, key: string, capture: boolean): Promise
           bookingRef: hold.bookingRef,
           reason: hold.bookingRef ? `Charge for booking ${hold.bookingRef}` : "Charge",
           idempotencyKey: chargeKey,
+          // Read after the HOLD_RELEASE was written, so the CHARGE is at least 1 ms later.
+          createdAt: await nextEntryTime(tx, hold.agencyId),
         },
       });
     }

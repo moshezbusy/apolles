@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
@@ -524,6 +524,108 @@ describe("wallet ledger", () => {
     });
   });
 
+  describe("entry timestamps follow the lock order", () => {
+    it("a write that gets the agency lock later has a createdAt ≥ every existing entry's", async () => {
+      await fund();
+      await warmPool();
+      let releaseBlocker!: () => void;
+      const blockerCanFinish = new Promise<void>((resolve) => {
+        releaseBlocker = resolve;
+      });
+      let markLocked!: () => void;
+      const blockerHasLock = new Promise<void>((resolve) => {
+        markLocked = resolve;
+      });
+      // Another writer takes the lock first and commits later.
+      const blocker = db.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT id FROM "Agency" WHERE id = ${agencyId} FOR UPDATE`;
+          markLocked();
+          await blockerCanFinish;
+          await tx.ledgerEntry.create({
+            data: {
+              agencyId,
+              type: "PAYOUT",
+              amountCents: -1000,
+              reason: "Payout",
+              idempotencyKey: "payout-blocker",
+              createdAt: new Date(),
+            },
+          });
+        },
+        { timeout: 10_000 },
+      );
+      await blockerHasLock;
+
+      // This credit's transaction starts now, while the blocker still holds the lock.
+      const late = credit({ agencyId, type: "REFUND", amountCents: 500, reason: "x", idempotencyKey: "late" });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      releaseBlocker();
+      await blocker;
+      const entry = await late;
+
+      const others = await db.ledgerEntry.findMany({ where: { agencyId, id: { not: entry.id } } });
+      expect(others).toHaveLength(2);
+      for (const other of others) {
+        expect(entry.createdAt.getTime()).toBeGreaterThanOrEqual(other.createdAt.getTime());
+      }
+      // So the running balance is never shown below zero, and the newest row is the last write.
+      const { entries } = await listEntriesWithBalance(agencyId);
+      expect(entries[0]?.id).toBe(entry.id);
+      for (const e of entries) expect(e.balanceAfterCents).toBeGreaterThanOrEqual(0);
+    });
+
+    it("an entry dated ahead of the clock still sorts before the next write", async () => {
+      await fund();
+      await db.ledgerEntry.updateMany({ where: { agencyId }, data: { createdAt: new Date(Date.now() + 60_000) } });
+      const [ahead] = await db.ledgerEntry.findMany({ where: { agencyId } });
+      const next = await credit({ agencyId, type: "REFUND", amountCents: 1, reason: "x", idempotencyKey: "next" });
+      expect(next.createdAt.getTime()).toBeGreaterThan(ahead!.createdAt.getTime());
+    });
+
+    it("every write of a burst gets a strictly later createdAt, in write order", async () => {
+      await fund();
+      const ids: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        ids.push((await credit({ agencyId, type: "REFUND", amountCents: 1, reason: "x", idempotencyKey: `b-${i}` })).id);
+      }
+      const rows = await db.ledgerEntry.findMany({ where: { id: { in: ids } } });
+      const at = new Map(rows.map((r) => [r.id, r.createdAt.getTime()]));
+      for (let i = 1; i < ids.length; i++) {
+        expect(at.get(ids[i]!)!).toBeGreaterThan(at.get(ids[i - 1]!)!);
+      }
+    });
+
+    it("a capture writes HOLD_RELEASE before CHARGE (CHARGE strictly later)", async () => {
+      await fund(30000);
+      const { holdId } = await placeHold({ agencyId, amountCents: 30000, bookingRef: "BK-1", idempotencyKey: "h-1" });
+      await captureHold(holdId, "cap-1");
+      const release = await db.ledgerEntry.findUniqueOrThrow({ where: { idempotencyKey: "cap-1" } });
+      const charge = await db.ledgerEntry.findUniqueOrThrow({ where: { idempotencyKey: "cap-1:charge" } });
+      expect(charge.createdAt.getTime()).toBeGreaterThan(release.createdAt.getTime());
+      const { entries } = await listEntriesWithBalance(agencyId);
+      expect(entries.map((e) => [e.type, e.balanceAfterCents])).toEqual([
+        ["CHARGE", 0],
+        ["HOLD_RELEASE", 30000],
+        ["HOLD", 0],
+        ["TOPUP_BANK", 30000],
+      ]);
+    });
+
+    it("ledger transactions wait at most 5 s for a connection and run at most 10 s", async () => {
+      await db.agency.count(); // `db` is a lazy proxy: make sure the real client exists
+      const client = (globalThis as unknown as { __apollesDb?: typeof db }).__apollesDb;
+      if (!client) throw new Error("no cached Prisma client");
+      const spy = vi.spyOn(client, "$transaction");
+      try {
+        await fund();
+        expect(spy).toHaveBeenCalledWith(expect.any(Function), { maxWait: 5000, timeout: 10000 });
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
   describe("listEntries", () => {
     it("pages through all entries newest first without duplicates", async () => {
       // Explicit, distinct timestamps inserted out of order, so "newest first" is deterministic.
@@ -702,8 +804,11 @@ describe("wallet ledger", () => {
           bookingRef: `BK-${i}`,
           idempotencyKey: `h-${i}`,
         });
-        await captureHold(holdId, `cap-${i}`); // HOLD_RELEASE and CHARGE share a createdAt
+        await captureHold(holdId, `cap-${i}`);
       }
+      // Writes get distinct timestamps; give every row the same one so the id tiebreak is what
+      // orders them (both functions must apply it the same way).
+      await db.ledgerEntry.updateMany({ where: { agencyId }, data: { createdAt: new Date(Date.UTC(2026, 0, 1)) } });
       const plain: string[] = [];
       const withBalance: { id: string; amountCents: number; balanceAfterCents: number }[] = [];
       let a: string | undefined;
