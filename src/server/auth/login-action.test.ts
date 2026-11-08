@@ -1,0 +1,131 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { db } from "@/server/db";
+import { createUser } from "@/server/users";
+import { resetTestDb } from "@/test/db";
+import { hashPassword } from "@/server/auth/password";
+import { SESSION_COOKIE, getSession } from "@/server/auth/session";
+import { loginAction } from "@/app/login/actions";
+
+type SetCall = { name: string; value: string; options: Record<string, unknown> };
+const setCalls: SetCall[] = [];
+const jar = new Map<string, string>();
+
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) => {
+      const value = jar.get(name);
+      return value === undefined ? undefined : { name, value };
+    },
+    set: (name: string, value: string, options: Record<string, unknown>) => {
+      setCalls.push({ name, value, options });
+      jar.set(name, value);
+    },
+  }),
+}));
+
+vi.mock("next/navigation", () => ({
+  redirect: vi.fn((url: string) => {
+    throw new Error(`NEXT_REDIRECT:${url}`);
+  }),
+}));
+
+vi.mock("@/server/auth/notifications", () => ({ notifyAdminLockout: vi.fn() }));
+
+const GOOD = "abcdefg1";
+let passwordHash: string;
+
+function form(fields: Record<string, string>): FormData {
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+  return fd;
+}
+
+async function createAgent() {
+  const agency = await db.agency.create({
+    data: { name: "Agency", country: "IL", bankReference: "APL-0001" },
+  });
+  return createUser({ email: "agent@example.com", name: "A", role: "AGENT", agencyId: agency.id, passwordHash });
+}
+
+describe("loginAction", () => {
+  beforeEach(async () => {
+    passwordHash ??= await hashPassword(GOOD);
+    await resetTestDb();
+    setCalls.length = 0;
+    jar.clear();
+  });
+
+  it("agent success → sets a secure session cookie and redirects to /balance", async () => {
+    const agent = await createAgent();
+    await expect(
+      loginAction(null, form({ email: "agent@example.com", password: GOOD })),
+    ).rejects.toThrow("NEXT_REDIRECT:/balance");
+
+    expect(setCalls).toHaveLength(1);
+    const call = setCalls[0]!;
+    expect(call.name).toBe(SESSION_COOKIE);
+    expect(call.options).toEqual({
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 12 * 60 * 60,
+    });
+    const session = await getSession(call.value);
+    expect(session?.user.id).toBe(agent.id);
+  });
+
+  it("admin success → redirects to /admin", async () => {
+    await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN", passwordHash });
+    await expect(
+      loginAction(null, form({ email: "admin@example.com", password: GOOD })),
+    ).rejects.toThrow("NEXT_REDIRECT:/admin");
+  });
+
+  it("signing in again replaces the previous session from the cookie", async () => {
+    await createAgent();
+    const fd = () => form({ email: "agent@example.com", password: GOOD });
+    await expect(loginAction(null, fd())).rejects.toThrow("NEXT_REDIRECT");
+    await expect(loginAction(null, fd())).rejects.toThrow("NEXT_REDIRECT");
+    expect(await db.session.count()).toBe(1);
+  });
+
+  it("wrong password → exact copy, no cookie", async () => {
+    await createAgent();
+    expect(await loginAction(null, form({ email: "agent@example.com", password: "nope12345" }))).toEqual({
+      error: "Wrong email or password.",
+    });
+    expect(setCalls).toHaveLength(0);
+  });
+
+  it("third wrong password → lockout copy", async () => {
+    await createAgent();
+    const fd = () => form({ email: "agent@example.com", password: "nope12345" });
+    await loginAction(null, fd());
+    await loginAction(null, fd());
+    expect(await loginAction(null, fd())).toEqual({
+      error: "Too many attempts. Try again in 15 minutes, or reset your password.",
+    });
+  });
+
+  it("suspended → suspended copy", async () => {
+    const agent = await createAgent();
+    await db.user.update({ where: { id: agent.id }, data: { status: "SUSPENDED" } });
+    expect(await loginAction(null, form({ email: "agent@example.com", password: GOOD }))).toEqual({
+      error: "This account is suspended. Contact support.",
+    });
+  });
+
+  it("missing or oversized fields → generic copy, no lookup", async () => {
+    await createAgent();
+    expect(await loginAction(null, form({ email: "agent@example.com" }))).toEqual({
+      error: "Wrong email or password.",
+    });
+    expect(
+      await loginAction(null, form({ email: "agent@example.com", password: "a1".repeat(129) })),
+    ).toEqual({ error: "Wrong email or password." });
+    // Oversized input was rejected before it reached the lockout counter.
+    const row = await db.user.findUniqueOrThrow({ where: { email: "agent@example.com" } });
+    expect(row.failedLogins).toBe(0);
+  });
+});

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { createUser, normalizeEmail } from "@/server/users";
 import { resetTestDb } from "@/test/db";
@@ -21,5 +21,23 @@ describe("user email uniqueness", () => {
     const users = await db.user.findMany();
     expect(users).toHaveLength(1);
     expect(users[0]?.email).toBe("agent@example.com");
+  });
+});
+
+describe("db client creation", () => {
+  it("importing db without DATABASE_URL does not throw; the first query does", async () => {
+    const cache = globalThis as unknown as { __apollesDb?: unknown };
+    const saved = cache.__apollesDb;
+    delete cache.__apollesDb;
+    vi.stubEnv("DATABASE_URL", "");
+    vi.resetModules();
+    try {
+      const fresh = await import("@/server/db");
+      expect(() => fresh.db.user).toThrow("DATABASE_URL is not set");
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+      cache.__apollesDb = saved;
+    }
   });
 });
