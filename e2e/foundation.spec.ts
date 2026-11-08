@@ -8,7 +8,8 @@ import { ADMIN_FILE, type E2eAdmin } from "./support/paths";
 //   1. admin signs in with TOTP          4. admin confirms a USD 1,000.00 top-up
 //   2. admin creates agency + agent      5. agent reloads: USD 1,000.00 and one top-up row
 //   3. agent sets password, signs in,    6. agent opening /admin ends at /login or a 404
-//      sees USD 0.00
+//      sees USD 0.00                     7. admin signs out: /admin then goes to /login
+//                                        8. agent signs out: /balance then goes to /login
 // The admin signs in once only: a TOTP code is accepted once per 30-second step.
 
 const AGENT_EMAIL = "agent@test.local";
@@ -102,6 +103,28 @@ test("foundation: admin creates an agency, tops it up, the agent sees the balanc
     const response = await agentPage.goto("/admin");
     const atLogin = new URL(agentPage.url()).pathname === "/login";
     expect(atLogin || response?.status() === 404).toBe(true);
+  });
+
+  await test.step("7. the admin signs out with the header button; /admin then goes to /login", async () => {
+    await adminPage.getByRole("banner").getByRole("button", { name: "Sign out" }).click();
+    await expect(adminPage).toHaveURL(/\/login$/);
+    await adminPage.goto("/admin");
+    await expect(adminPage).toHaveURL(/\/login$/);
+  });
+
+  await test.step("8. the agent signs out from the agency menu; /balance then goes to /login", async () => {
+    // Step 6 did not end the agent's session: the agent is still signed in here.
+    await agentPage.goto("/balance");
+    await expect(agentPage).toHaveURL(/\/balance$/);
+    const banner = agentPage.getByRole("banner");
+    await banner.getByText("Test Travel", { exact: true }).click(); // opens the agency menu
+    await banner.getByRole("button", { name: "Sign out" }).click();
+    await expect(agentPage).toHaveURL(/\/login$/);
+    const response = await agentPage.goto("/balance");
+    await expect(agentPage).toHaveURL(/\/login$/);
+    // Every page refuses to be framed by another site.
+    expect(response?.headers()["x-frame-options"]).toBe("DENY");
+    expect(response?.headers()["content-security-policy"]).toBe("frame-ancestors 'none'");
   });
 
   await adminContext.close();

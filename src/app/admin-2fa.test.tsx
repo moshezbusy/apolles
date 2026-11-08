@@ -241,6 +241,22 @@ describe("admin 2FA", () => {
       await expect(Page()).rejects.toThrow("NEXT_REDIRECT:/admin/2fa/setup");
     });
 
+    // A half-signed-in admin (password done, code not yet) can end the session from both pages.
+    it("/admin/2fa and /admin/2fa/setup have a Sign out POST form to /logout, no plain link back to /login", async () => {
+      const SIGN_OUT_FORM = /<form(?=[^>]*method="post")(?=[^>]*action="\/logout")[^>]*>\s*<button[^>]*type="submit"[^>]*>Sign out<\/button>\s*<\/form>/;
+      await signedInAdmin({ confirmed: false });
+      const { default: SetupPage } = await import("./admin/2fa/setup/page");
+      const setup = renderToStaticMarkup(await SetupPage());
+      expect(setup).toMatch(SIGN_OUT_FORM);
+      expect(setup).not.toContain('href="/login"');
+
+      await db.user.updateMany({ data: { totpConfirmedAt: new Date() } });
+      const { default: CodePage } = await import("./admin/2fa/page");
+      const code = renderToStaticMarkup(await CodePage());
+      expect(code).toMatch(SIGN_OUT_FORM);
+      expect(code).not.toContain('href="/login"');
+    });
+
     it("/admin: verified admin → /admin/agencies; unverified → /admin/2fa", async () => {
       const { default: Page } = await import("./admin/page");
       await signedInAdmin({ confirmed: true });

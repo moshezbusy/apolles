@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { SignOutButton } from "@/components/SignOutButton";
 import { requireAdminPendingTotp } from "@/server/auth/guards";
 import { verifyTotpAction } from "./actions";
 import { TotpCodeForm } from "./code-form";
@@ -19,6 +20,11 @@ export default async function TwoFactorPage() {
         <h1 className="mb-2 text-2xl font-semibold text-gray-900">Two-step verification</h1>
         <p className="mb-6 text-sm text-gray-600">Enter the 6-digit code from your authenticator app.</p>
         <TotpCodeForm action={verifyTotpAction} />
+
+        {/* Half signed in (password done, code not yet): Sign out ends this session. */}
+        <div className="mt-6 border-t border-gray-200 pt-4">
+          <SignOutButton />
+        </div>
       </div>
     </main>
   );

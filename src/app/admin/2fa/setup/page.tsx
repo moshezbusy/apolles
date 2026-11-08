@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { SignOutButton } from "@/components/SignOutButton";
 import { requireAdminPendingTotp } from "@/server/auth/guards";
 import { groupSecret, secretFromOtpauthUrl, startTotpEnrollment } from "@/server/auth/totp";
 import { TotpCodeForm } from "../code-form";
@@ -39,11 +40,15 @@ export default async function TwoFactorSetupPage() {
 
         <TotpCodeForm action={confirmTotpAction} />
 
-        <form action={regenerateTotpKeyAction} className="mt-6 border-t border-gray-200 pt-4">
-          <button type="submit" className="text-sm text-blue-700 hover:underline">
-            Generate a new key
-          </button>
-        </form>
+        {/* Two separate forms (a form cannot hold another). Sign out ends this half-signed-in session. */}
+        <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-4">
+          <form action={regenerateTotpKeyAction}>
+            <button type="submit" className="text-sm text-blue-700 hover:underline">
+              Generate a new key
+            </button>
+          </form>
+          <SignOutButton />
+        </div>
       </div>
     </main>
   );

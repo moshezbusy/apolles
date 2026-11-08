@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState } from "react";
 import type { TotpFormState } from "./form-state";
 
@@ -9,16 +8,13 @@ type TotpAction = (previous: TotpFormState, formData: FormData) => Promise<TotpF
 export function TotpCodeForm({ action }: { action: TotpAction }) {
   const [state, formAction, pending] = useActionState<TotpFormState, FormData>(action, null);
 
+  // Locked: the sessions are already ended. The page's own Sign out button (below this form)
+  // clears the cookie and goes to /login; a plain link there would leave the cookie behind.
   if (state?.locked) {
     return (
-      <div className="flex flex-col gap-4">
-        <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {state.error}
-        </p>
-        <Link href="/login" className="self-start text-sm text-blue-700 hover:underline">
-          Back to sign in
-        </Link>
-      </div>
+      <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        {state.error}
+      </p>
     );
   }
 
