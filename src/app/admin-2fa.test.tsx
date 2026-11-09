@@ -8,12 +8,16 @@ import { SESSION_COOKIE, createSession, getSession } from "@/server/auth/session
 import { requireAdmin } from "@/server/auth/guards";
 import { verifyTotpAction } from "@/app/admin/2fa/actions";
 import { confirmTotpAction, regenerateTotpKeyAction } from "@/app/admin/2fa/setup/actions";
+import { RATE_LIMITS } from "@/server/rate-limit";
+import { seedRateLimit } from "@/test/rate-limit";
 
 type SetCall = { name: string; value: string; options: Record<string, unknown> };
 const setCalls: SetCall[] = [];
 const jar = new Map<string, string>();
+const requestHeaders = new Map<string, string>([["x-forwarded-for", "203.0.113.7"]]);
 
 vi.mock("next/headers", () => ({
+  headers: async () => new Headers(Object.fromEntries(requestHeaders)),
   cookies: async () => ({
     get: (name: string) => {
       const value = jar.get(name);
@@ -178,6 +182,56 @@ describe("admin 2FA", () => {
       await expect(confirmTotpAction(null, form({ code: "123456" }))).rejects.toThrow(
         /^NEXT_REDIRECT:\/admin\/2fa$/,
       );
+    });
+  });
+
+  describe("per-IP rate limit on TOTP verify / confirm (10 per 15 minutes)", () => {
+    const TOO_MANY = "Too many sign-in attempts from your network. Try again in 15 minutes.";
+    const { limit, windowMs } = RATE_LIMITS.totp;
+
+    it("verify: the 10th code from one IP is still checked", async () => {
+      await signedInAdmin({ confirmed: true });
+      await seedRateLimit("totp:ip:203.0.113.7", limit - 1, windowMs);
+      const code = await generate({ secret: SECRET });
+      await expect(verifyTotpAction(null, form({ code }))).rejects.toThrow(/^NEXT_REDIRECT:\/admin$/);
+    });
+
+    it("verify: the 11th is refused before the code is checked; not counted, session kept, not verified", async () => {
+      const admin = await signedInAdmin({ confirmed: true });
+      await seedRateLimit("totp:ip:203.0.113.7", limit, windowMs);
+      const code = await generate({ secret: SECRET });
+      expect(await verifyTotpAction(null, form({ code }))).toEqual({ error: TOO_MANY });
+      expect(await verifyTotpAction(null, form({ code: await wrongCode(SECRET) }))).toEqual({ error: TOO_MANY });
+      const row = await db.user.findUniqueOrThrow({ where: { id: admin.id } });
+      expect(row.failedLogins).toBe(0);
+      expect(row.lockedUntil).toBeNull();
+      expect(row.totpLastUsedStep).toBeNull();
+      expect(await sessionVerified()).toBe(false);
+      // Not the lockout: this browser stays signed in (password step) and may try later.
+      expect(await getSession(jar.get(SESSION_COOKIE)!)).not.toBeNull();
+    });
+
+    it("confirm: the 11th is refused before the code is checked; TOTP not confirmed", async () => {
+      const admin = await signedInAdmin({ confirmed: false });
+      const { startTotpEnrollment } = await import("@/server/auth/totp");
+      const { otpauthUrl } = await startTotpEnrollment(admin.id);
+      const secret = new URL(otpauthUrl).searchParams.get("secret")!;
+      await seedRateLimit("totp:ip:203.0.113.7", limit, windowMs);
+      expect(await confirmTotpAction(null, form({ code: await generate({ secret }) }))).toEqual({
+        error: TOO_MANY,
+      });
+      const row = await db.user.findUniqueOrThrow({ where: { id: admin.id } });
+      expect(row.totpConfirmedAt).toBeNull();
+      expect(row.failedLogins).toBe(0);
+      expect(await getSession(jar.get(SESSION_COOKIE)!)).not.toBeNull();
+    });
+
+    it("each code attempt is counted under totp:ip:<client IP>", async () => {
+      await signedInAdmin({ confirmed: true });
+      await verifyTotpAction(null, form({ code: await wrongCode(SECRET) }));
+      expect((await db.rateLimitBucket.findMany()).map((r) => [r.key, r.count])).toEqual([
+        ["totp:ip:203.0.113.7", 1],
+      ]);
     });
   });
 

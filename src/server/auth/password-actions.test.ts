@@ -7,6 +7,13 @@ import { hashPassword, verifyPassword } from "@/server/auth/password";
 import { issuePasswordToken } from "@/server/auth/password-tokens";
 import { requestResetAction } from "@/app/forgot-password/actions";
 import { setPasswordAction } from "@/app/set-password/[token]/actions";
+import { RATE_LIMITS, emailKey } from "@/server/rate-limit";
+import { seedRateLimit } from "@/test/rate-limit";
+
+const requestHeaders = new Map<string, string>([["x-forwarded-for", "203.0.113.7"]]);
+vi.mock("next/headers", () => ({
+  headers: async () => new Headers(Object.fromEntries(requestHeaders)),
+}));
 
 vi.mock("next/navigation", () => ({
   redirect: vi.fn((url: string) => {
@@ -15,11 +22,15 @@ vi.mock("next/navigation", () => ({
 }));
 
 // `after()` runs its callback once the response is sent. Here it runs it at once and keeps
-// the promise so the test can wait for it.
+// the promise so the test can wait for it. With `deferAfter`, it only stores the callback, to
+// show what happens before the response.
 const pendingAfter: Promise<unknown>[] = [];
+const deferredAfter: (() => Promise<unknown>)[] = [];
+let deferAfter = false;
 vi.mock("next/server", () => ({
   after: vi.fn((task: () => Promise<unknown>) => {
-    pendingAfter.push(task());
+    if (deferAfter) deferredAfter.push(task);
+    else pendingAfter.push(task());
   }),
 }));
 
@@ -47,6 +58,9 @@ describe("requestResetAction (forgot password)", () => {
     vi.stubEnv("APP_URL", "http://localhost:3000");
     vi.mocked(sendEmail).mockReset();
     pendingAfter.length = 0;
+    deferredAfter.length = 0;
+    deferAfter = false;
+    requestHeaders.set("x-forwarded-for", "203.0.113.7");
     await resetTestDb();
   });
 
@@ -75,10 +89,74 @@ describe("requestResetAction (forgot password)", () => {
     expect(pendingAfter).toHaveLength(0);
     expect(sendEmail).not.toHaveBeenCalled();
   });
+  describe("rate limits (5 per IP and 3 per email per hour): silently send nothing", () => {
+    it("per-email cap: the 4th request for one email sends nothing; same answer", async () => {
+      await createAdmin();
+      const { limit, windowMs } = RATE_LIMITS.forgotEmail;
+      await seedRateLimit(emailKey("admin@example.com"), limit, windowMs);
+      expect(await requestResetAction(null, form({ email: "Admin@Example.com " }))).toEqual(SENT);
+      await Promise.all(pendingAfter);
+      expect(sendEmail).not.toHaveBeenCalled();
+      expect(await db.passwordToken.count()).toBe(0);
+    });
+
+    it("per-email cap is per email: another email from the same IP is still sent", async () => {
+      await createAdmin();
+      const { limit, windowMs } = RATE_LIMITS.forgotEmail;
+      await seedRateLimit(emailKey("someone-else@example.com"), limit, windowMs);
+      expect(await requestResetAction(null, form({ email: "admin@example.com" }))).toEqual(SENT);
+      await Promise.all(pendingAfter);
+      expect(sendEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it("3 requests for one email are sent, the 4th is not (real counting, one IP each)", async () => {
+      await createAdmin();
+      const answers = [];
+      for (const ip of ["198.51.100.1", "198.51.100.2", "198.51.100.3", "198.51.100.4"]) {
+        requestHeaders.set("x-forwarded-for", ip);
+        answers.push(await requestResetAction(null, form({ email: "admin@example.com" })));
+        await Promise.all(pendingAfter);
+      }
+      expect(answers).toEqual([SENT, SENT, SENT, SENT]);
+      expect(sendEmail).toHaveBeenCalledTimes(3);
+    });
+
+    it("per-IP cap: the 6th request from one IP sends nothing; same answer", async () => {
+      await createAdmin();
+      const { limit, windowMs } = RATE_LIMITS.forgot;
+      await seedRateLimit("forgot:ip:203.0.113.7", limit, windowMs);
+      expect(await requestResetAction(null, form({ email: "admin@example.com" }))).toEqual(SENT);
+      await Promise.all(pendingAfter);
+      expect(sendEmail).not.toHaveBeenCalled();
+    });
+
+    it("the limit is checked after the response: nothing is counted before the answer is returned", async () => {
+      await createAdmin();
+      const { limit, windowMs } = RATE_LIMITS.forgotEmail;
+      await seedRateLimit(emailKey("admin@example.com"), limit, windowMs);
+      deferAfter = true;
+      const before = await db.rateLimitBucket.count();
+      expect(await requestResetAction(null, form({ email: "admin@example.com" }))).toEqual(SENT);
+      expect(await db.rateLimitBucket.count()).toBe(before);
+      expect(deferredAfter).toHaveLength(1);
+      await deferredAfter[0]!();
+      expect(sendEmail).not.toHaveBeenCalled();
+    });
+
+    it("keys hold the IP and a hash of the email, never the raw email", async () => {
+      await createAdmin();
+      await requestResetAction(null, form({ email: "admin@example.com" }));
+      await Promise.all(pendingAfter);
+      const keys = (await db.rateLimitBucket.findMany()).map((r) => r.key).sort();
+      expect(keys).toEqual([emailKey("admin@example.com"), "forgot:ip:203.0.113.7"].sort());
+      expect(keys.join(" ")).not.toContain("admin@");
+    });
+  });
 });
 
 describe("setPasswordAction", () => {
   beforeEach(async () => {
+    requestHeaders.set("x-forwarded-for", "203.0.113.7");
     await resetTestDb();
   });
 
@@ -147,5 +225,37 @@ describe("setPasswordAction", () => {
     ).rejects.toThrow("NEXT_REDIRECT:/login?reset=1");
     const otherRow = await db.user.findUniqueOrThrow({ where: { id: other.id } });
     expect(otherRow.passwordHash).toBeNull();
+  });
+
+  describe("per-IP rate limit (10 per 15 minutes)", () => {
+    const TOO_MANY = "Too many attempts. Try again later.";
+    const { limit, windowMs } = RATE_LIMITS["set-password"];
+
+    it("the 10th submit from one IP still works", async () => {
+      const admin = await createAdmin();
+      const token = await issuePasswordToken(admin.id, "RESET");
+      await seedRateLimit("set-password:ip:203.0.113.7", limit - 1, windowMs);
+      await expect(
+        setPasswordAction(null, form({ token, password: "newpass34", confirm: "newpass34" })),
+      ).rejects.toThrow("NEXT_REDIRECT:/login?reset=1");
+    });
+
+    it("the 11th is refused with the copy; the token is not consumed and the password not changed", async () => {
+      const admin = await createAdmin();
+      const token = await issuePasswordToken(admin.id, "RESET");
+      await seedRateLimit("set-password:ip:203.0.113.7", limit, windowMs);
+      expect(
+        await setPasswordAction(null, form({ token, password: "newpass34", confirm: "newpass34" })),
+      ).toEqual({ error: TOO_MANY });
+      expect((await db.passwordToken.findFirstOrThrow()).usedAt).toBeNull();
+      const row = await db.user.findUniqueOrThrow({ where: { id: admin.id } });
+      expect(await verifyPassword(row.passwordHash!, "oldpass12")).toBe(true);
+
+      // From another IP the same link still works.
+      requestHeaders.set("x-forwarded-for", "198.51.100.20");
+      await expect(
+        setPasswordAction(null, form({ token, password: "newpass34", confirm: "newpass34" })),
+      ).rejects.toThrow("NEXT_REDIRECT:/login?reset=1");
+    });
   });
 });

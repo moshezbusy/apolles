@@ -7,12 +7,16 @@ import { hashPassword } from "@/server/auth/password";
 import { SESSION_COOKIE, getSession } from "@/server/auth/session";
 import { requireAdmin } from "@/server/auth/guards";
 import { loginAction } from "@/app/login/actions";
+import { RATE_LIMITS } from "@/server/rate-limit";
+import { seedRateLimit } from "@/test/rate-limit";
 
 type SetCall = { name: string; value: string; options: Record<string, unknown> };
 const setCalls: SetCall[] = [];
 const jar = new Map<string, string>();
+const requestHeaders = new Map<string, string>();
 
 vi.mock("next/headers", () => ({
+  headers: async () => new Headers(Object.fromEntries(requestHeaders)),
   cookies: async () => ({
     get: (name: string) => {
       const value = jar.get(name);
@@ -55,6 +59,8 @@ describe("loginAction", () => {
     await resetTestDb();
     setCalls.length = 0;
     jar.clear();
+    requestHeaders.clear();
+    requestHeaders.set("x-forwarded-for", "203.0.113.7");
   });
 
   it("agent success → sets a secure session cookie and redirects to /balance", async () => {
@@ -149,5 +155,58 @@ describe("loginAction", () => {
     // Oversized input was rejected before it reached the lockout counter.
     const row = await db.user.findUniqueOrThrow({ where: { email: "agent@example.com" } });
     expect(row.failedLogins).toBe(0);
+  });
+
+  describe("per-IP rate limit (10 per 15 minutes)", () => {
+    const TOO_MANY = "Too many sign-in attempts from your network. Try again in 15 minutes.";
+    const { limit, windowMs } = RATE_LIMITS.signin;
+
+    it("the 10th sign-in from one IP in the window still goes through", async () => {
+      await createAgent();
+      await seedRateLimit("signin:ip:203.0.113.7", limit - 1, windowMs);
+      await expect(
+        loginAction(null, form({ email: "agent@example.com", password: GOOD })),
+      ).rejects.toThrow("NEXT_REDIRECT:/balance");
+    });
+
+    it("the 11th is refused before the password is checked: failedLogins unchanged, no session", async () => {
+      const agent = await createAgent();
+      await seedRateLimit("signin:ip:203.0.113.7", limit, windowMs);
+
+      expect(await loginAction(null, form({ email: "agent@example.com", password: "nope12345" }))).toEqual({
+        error: TOO_MANY,
+      });
+      expect(await loginAction(null, form({ email: "agent@example.com", password: GOOD }))).toEqual({
+        error: TOO_MANY,
+      });
+      const row = await db.user.findUniqueOrThrow({ where: { id: agent.id } });
+      expect(row.failedLogins).toBe(0);
+      expect(row.lockedUntil).toBeNull();
+      expect(row.attemptReservedAt).toBeNull();
+      expect(setCalls).toHaveLength(0);
+      expect(await db.session.count()).toBe(0);
+    });
+
+    it("counts every sign-in attempt, right or wrong, by the client IP the proxy appended", async () => {
+      await createAgent();
+      // The left entry is chosen by the client; only the right-most one (the proxy's) counts.
+      requestHeaders.set("x-forwarded-for", "1.1.1.1, 203.0.113.7");
+      await loginAction(null, form({ email: "agent@example.com", password: "nope12345" }));
+      requestHeaders.set("x-forwarded-for", "9.9.9.9, 203.0.113.7");
+      await expect(
+        loginAction(null, form({ email: "agent@example.com", password: GOOD })),
+      ).rejects.toThrow("NEXT_REDIRECT");
+      const rows = await db.rateLimitBucket.findMany();
+      expect(rows.map((r) => [r.key, r.count])).toEqual([["signin:ip:203.0.113.7", 2]]);
+    });
+
+    it("another IP is not affected", async () => {
+      await createAgent();
+      await seedRateLimit("signin:ip:203.0.113.7", limit, windowMs);
+      requestHeaders.set("x-forwarded-for", "198.51.100.20");
+      await expect(
+        loginAction(null, form({ email: "agent@example.com", password: GOOD })),
+      ).rejects.toThrow("NEXT_REDIRECT:/balance");
+    });
   });
 });

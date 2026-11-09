@@ -140,3 +140,15 @@ model AuditLog {
 
   @@index([targetType, targetId])
 }
+
+// Fixed-window request counters for rate limits (src/server/rate-limit.ts). One row per key
+// and window; windowStart comes from the database clock. Keys hold an action and an IP, or a
+// sha256 hash of an email, never a raw email. Rows older than 24 hours are pruned.
+model RateLimitBucket {
+  key         String
+  windowStart DateTime
+  count       Int
+
+  @@id([key, windowStart])
+  @@index([windowStart])
+}

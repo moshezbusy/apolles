@@ -1,9 +1,12 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { PASSWORDS_DIFFER_COPY, PASSWORD_RULE_COPY } from "@/lib/password-rule";
 import { consumePasswordToken } from "@/server/auth/password-tokens";
+import { getClientIp } from "@/server/client-ip";
+import { SET_PASSWORD_RATE_LIMIT_COPY, hitIpRateLimit } from "@/server/rate-limit";
 
 export type SetPasswordState = { status: "expired" } | { error: string } | null;
 
@@ -23,6 +26,11 @@ export async function setPasswordAction(
   _previous: SetPasswordState,
   formData: FormData,
 ): Promise<SetPasswordState> {
+  // Per-IP limit first (link guessing): a refused submit does not look at the token, so the
+  // link is not used up.
+  const { allowed } = await hitIpRateLimit("set-password", getClientIp(await headers()));
+  if (!allowed) return { error: SET_PASSWORD_RATE_LIMIT_COPY };
+
   const parsed = setPasswordInput.safeParse({
     token: formData.get("token"),
     password: formData.get("password"),

@@ -1,10 +1,12 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { LOGIN_ERROR_COPY, login } from "@/server/auth/login";
 import { PASSWORD_MAX_LENGTH } from "@/server/auth/password";
+import { getClientIp } from "@/server/client-ip";
+import { SIGN_IN_RATE_LIMIT_COPY, hitIpRateLimit } from "@/server/rate-limit";
 import {
   SESSION_COOKIE,
   SESSION_TTL_MS,
@@ -26,6 +28,11 @@ export async function loginAction(
   _previous: LoginFormState,
   formData: FormData,
 ): Promise<LoginFormState> {
+  // Per-IP limit first: a refused request never reaches the account (no attempt slot, no
+  // change to failedLogins, no password check).
+  const { allowed } = await hitIpRateLimit("signin", getClientIp(await headers()));
+  if (!allowed) return { error: SIGN_IN_RATE_LIMIT_COPY };
+
   const parsed = loginInput.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),

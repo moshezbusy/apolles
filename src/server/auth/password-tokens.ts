@@ -6,6 +6,7 @@ import { normalizeEmail } from "@/server/users";
 import { hashPassword, isValidPassword } from "@/server/auth/password";
 import { destroyUserSessions } from "@/server/auth/session";
 import { MAX_RAW_TOKEN_LENGTH, generateRawToken, hashToken } from "@/server/auth/token";
+import { RATE_LIMITS, emailKey, hitIpRateLimit, hitRateLimit } from "@/server/rate-limit";
 
 // Set-password and reset links work for 60 minutes, once.
 export const PASSWORD_TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -211,4 +212,23 @@ export async function requestReset(email: string): Promise<void> {
       error: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+// "Forgot password" with its rate limits: at most RATE_LIMITS.forgot requests per client IP
+// and RATE_LIMITS.forgotEmail per email address per window. Over either limit nothing is sent,
+// silently: the caller runs this after the response (Next `after()`), so the answer and its
+// timing are the same whether or not a limit was hit. The email is counted under a hash,
+// never in clear. Errors are logged without the email or the IP.
+export async function requestResetWithinLimits(email: string, ip: string): Promise<void> {
+  try {
+    if (!(await hitIpRateLimit("forgot", ip)).allowed) return;
+    const { limit, windowMs } = RATE_LIMITS.forgotEmail;
+    if (!(await hitRateLimit(emailKey(email), limit, windowMs)).allowed) return;
+  } catch (error) {
+    console.error("password reset rate limit check failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+  await requestReset(email);
 }
