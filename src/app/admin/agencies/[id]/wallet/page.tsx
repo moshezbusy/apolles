@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { LedgerEntryType } from "@/generated/prisma/enums";
+import { card, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { getAgencyWallet } from "@/server/admin/money";
 import { requireAdmin } from "@/server/auth/guards";
@@ -53,26 +54,26 @@ export default async function AgencyWalletPage({ params, searchParams }: Props) 
   const adjustmentKey = randomUUID();
 
   return (
-    <main className="flex-1 bg-gray-50 px-4 py-10">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6">
+    <main className="flex-1">
+      <div className="mx-auto flex w-[min(1260px,calc(100%-40px))] flex-col gap-6 pb-16 pt-8">
         <div>
-          <Link href="/admin/agencies" className="text-sm text-blue-700 hover:underline">
+          <Link href="/admin/agencies" className={link}>
             ← Agencies
           </Link>
-          <h1 className="mt-2 text-2xl font-semibold text-gray-900">{agency.name}</h1>
-          <p className="text-sm text-gray-600">
-            Bank reference <span className="font-mono">{agency.bankReference}</span>
+          <h1 className={`mt-3 ${pageTitle}`}>{agency.name}</h1>
+          <p className="mt-1 text-[13px] text-muted">
+            Bank reference <span className="font-mono font-semibold text-ink">{agency.bankReference}</span>
           </p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <p className="text-sm text-gray-600">Available balance</p>
-            <p className="text-2xl font-semibold tabular-nums text-gray-900">{formatUsd(balance.balanceCents)}</p>
+          <div className={`${card} p-6`}>
+            <p className="text-xs font-semibold text-[#7d8581]">Available balance</p>
+            <p className="mt-1 text-[28px] font-bold tabular-nums text-brand">{formatUsd(balance.balanceCents)}</p>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <p className="text-sm text-gray-600">Held for bookings</p>
-            <p className="text-2xl font-semibold tabular-nums text-gray-900">{formatUsd(balance.heldCents)}</p>
+          <div className={`${card} p-6`}>
+            <p className="text-xs font-semibold text-[#7d8581]">Held for bookings</p>
+            <p className="mt-1 text-[28px] font-bold tabular-nums text-ink">{formatUsd(balance.heldCents)}</p>
           </div>
         </div>
 
@@ -93,29 +94,31 @@ export default async function AgencyWalletPage({ params, searchParams }: Props) 
         </div>
 
         <section>
-          <h2 className="mb-3 text-lg font-semibold text-gray-900">Ledger history</h2>
+          <h2 className="mb-3 text-lg font-bold text-ink">Ledger history</h2>
           {wallet.entries.length === 0 ? (
-            <p className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600">No entries yet.</p>
+            <p className={emptyState}>No entries yet.</p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-gray-200 bg-gray-50 text-gray-600">
+            <div className={tableWrap}>
+              <table className={table}>
+                <thead className={thead}>
                   <tr>
-                    <th className="px-4 py-3 font-medium">Date</th>
-                    <th className="px-4 py-3 font-medium">Type</th>
-                    <th className="px-4 py-3 text-right font-medium">Amount</th>
-                    <th className="px-4 py-3 font-medium">Reason</th>
-                    <th className="px-4 py-3 font-medium">Booking</th>
+                    <th className={th}>Date</th>
+                    <th className={th}>Type</th>
+                    <th className={`${th} text-right`}>Amount</th>
+                    <th className={th}>Reason</th>
+                    <th className={th}>Booking</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className={tbody}>
                   {wallet.entries.map((entry) => (
                     <tr key={entry.id}>
-                      <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatWhen(entry.createdAt)}</td>
-                      <td className="px-4 py-3">{TYPE_LABEL[entry.type]}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{formatUsd(entry.amountCents)}</td>
-                      <td className="px-4 py-3 text-gray-900">{entry.reason}</td>
-                      <td className="px-4 py-3 font-mono text-gray-600">{entry.bookingRef ?? ""}</td>
+                      <td className={`${td} whitespace-nowrap text-[13px] text-muted`}>{formatWhen(entry.createdAt)}</td>
+                      <td className={`${td} font-semibold`}>{TYPE_LABEL[entry.type]}</td>
+                      <td className={`${td} whitespace-nowrap text-right font-bold tabular-nums`}>
+                        {formatUsd(entry.amountCents)}
+                      </td>
+                      <td className={td}>{entry.reason}</td>
+                      <td className={`${td} font-mono text-[13px] text-muted`}>{entry.bookingRef ?? ""}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -125,7 +128,7 @@ export default async function AgencyWalletPage({ params, searchParams }: Props) 
           {wallet.nextCursor ? (
             <Link
               href={`${walletPath}?cursor=${encodeURIComponent(wallet.nextCursor)}`}
-              className="mt-4 inline-block text-sm text-blue-700 hover:underline"
+              className={`mt-4 inline-block ${link}`}
             >
               Load more
             </Link>

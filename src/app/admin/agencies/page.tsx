@@ -1,6 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import {
+  btnPrimary,
+  emptyState,
+  link,
+  pageTitle,
+  pillDot,
+  pillGreen,
+  pillRed,
+  table,
+  tableWrap,
+  tbody,
+  td,
+  th,
+  thead,
+} from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { listAgencies } from "@/server/admin/agencies";
 import { requireAdmin } from "@/server/auth/guards";
@@ -22,70 +37,60 @@ export default async function AgenciesPage({ searchParams }: { searchParams: Sea
   }
 
   return (
-    <main className="flex-1 bg-gray-50 px-4 py-10">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-gray-900">Agencies</h1>
-          <Link
-            href="/admin/agencies/new"
-            className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800"
-          >
+    <main className="flex-1">
+      <div className="mx-auto w-[min(1260px,calc(100%-40px))] pb-16 pt-8">
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <div>
+            <h1 className={pageTitle}>Agencies</h1>
+            <p className="mt-1 text-[13px] text-muted">Open, suspend and fund travel agencies.</p>
+          </div>
+          <Link href="/admin/agencies/new" className={btnPrimary}>
             New agency
           </Link>
         </div>
 
         {page.agencies.length === 0 ? (
-          <p className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600">
-            No agencies yet.
-          </p>
+          <p className={emptyState}>No agencies yet.</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-gray-200 bg-gray-50 text-gray-600">
+          <div className={tableWrap}>
+            <table className={table}>
+              <thead className={thead}>
                 <tr>
-                  <th className="px-4 py-3 font-medium">Name</th>
-                  <th className="px-4 py-3 font-medium">Country</th>
-                  <th className="px-4 py-3 font-medium">Bank reference</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 text-right font-medium">Balance</th>
-                  <th className="px-4 py-3" />
+                  <th className={th}>Name</th>
+                  <th className={th}>Country</th>
+                  <th className={th}>Bank reference</th>
+                  <th className={th}>Status</th>
+                  <th className={`${th} text-right`}>Balance</th>
+                  <th className={th} />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className={tbody}>
                 {page.agencies.map((agency) => {
                   const next = agency.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
                   return (
                     <tr key={agency.id}>
-                      <td className="px-4 py-3 text-gray-900">
-                        {agency.name}
+                      <td className={td}>
+                        <span className="font-bold">{agency.name}</span>
                         {agency.agentEmail ? (
-                          <span className="block text-xs text-gray-500">{agency.agentEmail}</span>
+                          <span className="block text-xs text-[#7d8581]">{agency.agentEmail}</span>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3">{agency.country}</td>
-                      <td className="px-4 py-3 font-mono">{agency.bankReference}</td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={
-                            agency.status === "ACTIVE"
-                              ? "rounded bg-green-100 px-2 py-0.5 text-green-800"
-                              : "rounded bg-red-100 px-2 py-0.5 text-red-800"
-                          }
-                        >
+                      <td className={td}>{agency.country}</td>
+                      <td className={`${td} font-mono text-[13px]`}>{agency.bankReference}</td>
+                      <td className={td}>
+                        <span className={agency.status === "ACTIVE" ? pillGreen : pillRed}>
+                          <span aria-hidden="true" className={pillDot} />
                           {agency.status === "ACTIVE" ? "Active" : "Suspended"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums">{formatUsd(agency.balanceCents)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right">
-                        <Link
-                          href={`/admin/agencies/${agency.id}/wallet`}
-                          className="mr-4 text-blue-700 hover:underline"
-                        >
+                      <td className={`${td} text-right font-bold tabular-nums`}>{formatUsd(agency.balanceCents)}</td>
+                      <td className={`${td} whitespace-nowrap text-right`}>
+                        <Link href={`/admin/agencies/${agency.id}/wallet`} className={`mr-4 ${link}`}>
                           Wallet
                         </Link>
                         <Link
                           href={`/admin/agencies/${agency.id}/confirm?status=${next}`}
-                          className="text-blue-700 hover:underline"
+                          className={agency.status === "ACTIVE" ? "text-sm font-semibold text-[#9b3b2e] hover:underline" : link}
                         >
                           {agency.status === "ACTIVE" ? "Suspend" : "Reactivate"}
                         </Link>
@@ -101,7 +106,7 @@ export default async function AgenciesPage({ searchParams }: { searchParams: Sea
         {page.nextCursor ? (
           <Link
             href={`/admin/agencies?cursor=${encodeURIComponent(page.nextCursor)}`}
-            className="mt-4 inline-block text-sm text-blue-700 hover:underline"
+            className={`mt-4 inline-block ${link}`}
           >
             Load more
           </Link>

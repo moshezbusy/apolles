@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { btnDanger, btnPrimary, card, link } from "@/components/ui";
 import { getAgencySummary } from "@/server/admin/agencies";
 import { requireAdmin } from "@/server/auth/guards";
 import { setAgencyStatusAction } from "../../actions";
@@ -23,12 +24,12 @@ export default async function ConfirmStatusPage({ params, searchParams }: Props)
 
   const suspend = status === "SUSPENDED";
   return (
-    <main className="flex flex-1 items-center justify-center bg-gray-50 px-4 py-12">
-      <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
-        <h1 className="mb-2 text-2xl font-semibold text-gray-900">
+    <main className="flex flex-1 items-center justify-center px-4 py-16">
+      <div className={`w-full max-w-[460px] p-6 ${card}`}>
+        <h1 className="mb-2 font-serif text-[28px] font-medium leading-tight text-ink">
           {suspend ? "Suspend agency?" : "Reactivate agency?"}
         </h1>
-        <p className="mb-6 text-sm text-gray-600">
+        <p className="mb-6 text-sm text-muted">
           {suspend
             ? `${agency.name} will be signed out at once and will not be able to sign in until you reactivate it.`
             : `${agency.name} will be able to sign in again.`}
@@ -36,15 +37,10 @@ export default async function ConfirmStatusPage({ params, searchParams }: Props)
         <form action={setAgencyStatusAction} className="flex items-center gap-4">
           <input type="hidden" name="agencyId" value={agency.id} />
           <input type="hidden" name="status" value={status} />
-          <button
-            type="submit"
-            className={`rounded-md px-4 py-2 font-medium text-white ${
-              suspend ? "bg-red-700 hover:bg-red-800" : "bg-blue-700 hover:bg-blue-800"
-            }`}
-          >
+          <button type="submit" className={suspend ? btnDanger : btnPrimary}>
             {suspend ? "Suspend" : "Reactivate"}
           </button>
-          <Link href="/admin/agencies" className="text-sm text-blue-700 hover:underline">
+          <Link href="/admin/agencies" className={link}>
             Cancel
           </Link>
         </form>

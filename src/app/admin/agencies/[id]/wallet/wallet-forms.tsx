@@ -1,6 +1,17 @@
 "use client";
 
 import { useActionState, useId, useState } from "react";
+import {
+  alertError,
+  alertInfo,
+  alertSuccess,
+  btnPrimary,
+  card,
+  hint,
+  input,
+  label,
+  link,
+} from "@/components/ui";
 import { formatUsd, parseUsdToCents } from "@/lib/money";
 import type { WalletFormState } from "./form-state";
 
@@ -16,19 +27,12 @@ type Field = {
   inputMode?: "decimal";
 };
 
-const inputClass =
-  "rounded-md border border-gray-300 px-3 py-2 text-base text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600";
 
 function Message({ state }: { state: WalletFormState }) {
   if (!state) return null;
-  const style =
-    state.status === "success"
-      ? "border-green-200 bg-green-50 text-green-800"
-      : state.status === "info"
-        ? "border-amber-200 bg-amber-50 text-amber-800"
-        : "border-red-200 bg-red-50 text-red-700";
+  const style = state.status === "success" ? alertSuccess : state.status === "info" ? alertInfo : alertError;
   return (
-    <p role={state.status === "error" ? "alert" : "status"} className={`rounded-md border px-3 py-2 text-sm ${style}`}>
+    <p role={state.status === "error" ? "alert" : "status"} className={style}>
       {state.message}
     </p>
   );
@@ -90,11 +94,11 @@ function TwoStepForm({
   }
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-      <h2 className="mb-4 text-lg font-semibold text-gray-900">{title}</h2>
+    <section className={`${card} p-6`}>
+      <h2 className="mb-4 text-base font-bold text-ink">{title}</h2>
       <div className="mb-4 flex flex-col gap-2">
         {localError ? (
-          <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p role="alert" className={alertError}>
             {localError}
           </p>
         ) : (
@@ -103,12 +107,12 @@ function TwoStepForm({
       </div>
 
       {reviewCents === null ? (
-        <form onSubmit={review} className="flex flex-col gap-4" noValidate>
+        <form onSubmit={review} className="flex flex-col gap-3.5" noValidate>
           {fields.map((field) => {
             const hintId = field.hint ? `${formId}-${field.name}-hint` : undefined;
             return (
               <div key={field.name} className="flex flex-col gap-1">
-                <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+                <label className={label}>
                   {field.label}
                   <input
                     type={field.type ?? "text"}
@@ -121,11 +125,11 @@ function TwoStepForm({
                     autoComplete="off"
                     aria-describedby={hintId}
                     required
-                    className={inputClass}
+                    className={input}
                   />
                 </label>
                 {field.hint ? (
-                  <p id={hintId} className="text-sm text-gray-600">
+                  <p id={hintId} className={hint}>
                     {field.hint}
                   </p>
                 ) : null}
@@ -134,7 +138,7 @@ function TwoStepForm({
           })}
           <button
             type="submit"
-            className="self-start rounded-md bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800"
+            className={`self-start ${btnPrimary}`}
           >
             Review
           </button>
@@ -147,12 +151,12 @@ function TwoStepForm({
           {fields.map((field) => (
             <input key={field.name} type="hidden" name={field.name} value={values[field.name] ?? ""} />
           ))}
-          <p className="text-sm font-medium text-gray-900">{confirmText(reviewCents, values)}</p>
+          <p className="text-sm font-semibold text-ink">{confirmText(reviewCents, values)}</p>
           <div className="flex items-center gap-4">
             <button
               type="submit"
               disabled={pending}
-              className="rounded-md bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className={btnPrimary}
             >
               {pending ? "Saving…" : confirmLabel}
             </button>
@@ -160,7 +164,7 @@ function TwoStepForm({
               type="button"
               disabled={pending}
               onClick={() => setReviewCents(null)}
-              className="text-sm text-blue-700 hover:underline disabled:opacity-60"
+              className={link}
             >
               Back
             </button>
