@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { card, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { requireAgent } from "@/server/auth/guards";
 import { getBankDetails } from "@/server/bank-details";
@@ -42,81 +43,78 @@ export default async function BalancePage({ searchParams }: { searchParams: Sear
   const bankDetails = getBankDetails();
 
   return (
-    <main className="flex-1 bg-gray-50 px-4 py-10">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Balance</h1>
+    <main className="flex-1">
+      <div className="mx-auto flex w-[min(1260px,calc(100%-40px))] flex-col gap-6 pb-16 pt-8">
+        <div>
+          <h1 className={pageTitle}>Balance</h1>
+          <p className="mt-1 text-[13px] text-muted">Your prepaid USD balance, top-ups and charges.</p>
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <section
-            id="available-balance"
-            aria-labelledby="available-balance-label"
-            className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
-          >
-            <h2 id="available-balance-label" className="text-sm font-normal text-gray-600">
+          <section id="available-balance" aria-labelledby="available-balance-label" className={`${card} p-6`}>
+            <h2 id="available-balance-label" className="text-xs font-semibold text-[#7d8581]">
               Available balance
             </h2>
-            <p className="text-2xl font-semibold tabular-nums text-gray-900">{formatUsd(balance.balanceCents)}</p>
+            <p className="mt-1 text-[28px] font-bold tabular-nums text-brand">{formatUsd(balance.balanceCents)}</p>
           </section>
-          <section
-            id="held-balance"
-            aria-labelledby="held-balance-label"
-            className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
-          >
-            <h2 id="held-balance-label" className="text-sm font-normal text-gray-600">
+          <section id="held-balance" aria-labelledby="held-balance-label" className={`${card} p-6`}>
+            <h2 id="held-balance-label" className="text-xs font-semibold text-[#7d8581]">
               Held for bookings
             </h2>
-            <p className="text-2xl font-semibold tabular-nums text-gray-900">{formatUsd(balance.heldCents)}</p>
+            <p className="mt-1 text-[28px] font-bold tabular-nums text-ink">{formatUsd(balance.heldCents)}</p>
           </section>
         </div>
 
-        <section
-          id="bank-transfer"
-          aria-labelledby="bank-transfer-label"
-          className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
-        >
-          <h2 id="bank-transfer-label" className="mb-3 text-lg font-semibold text-gray-900">
+        <section id="bank-transfer" aria-labelledby="bank-transfer-label" className={`${card} p-6`}>
+          <h2 id="bank-transfer-label" className="mb-4 text-base font-bold text-ink">
             Top up by bank transfer
           </h2>
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+          <dl className="grid grid-cols-[max-content_1fr] gap-x-8 gap-y-2 text-sm">
             {bankDetails.map((detail) => (
               <div key={detail.label} className="contents">
-                <dt className="text-gray-600">{detail.label}</dt>
-                <dd className="font-mono text-gray-900">{detail.value}</dd>
+                <dt className="text-[#7d8581]">{detail.label}</dt>
+                <dd className="font-mono text-ink">{detail.value}</dd>
               </div>
             ))}
           </dl>
           {agency ? (
-            <p className="mt-3 text-sm font-medium text-gray-900">
+            <p className="mt-4 rounded-[9px] border border-[#d3e3da] bg-brand-soft px-3 py-2.5 text-sm font-semibold text-brand">
               Reference: <span className="font-mono">{agency.bankReference}</span>
             </p>
           ) : null}
-          <p className="mt-3 text-sm text-gray-600">{NOTE}</p>
+          <p className="mt-3 text-[13px] text-muted">{NOTE}</p>
         </section>
 
         <section id="history" aria-labelledby="history-label">
-          <h2 id="history-label" className="mb-3 text-lg font-semibold text-gray-900">
+          <h2 id="history-label" className="mb-3 text-lg font-bold text-ink">
             History
           </h2>
           {history.entries.length === 0 ? (
-            <p className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600">No transactions yet.</p>
+            <p className={emptyState}>No transactions yet.</p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-gray-200 bg-gray-50 text-gray-600">
+            <div className={tableWrap}>
+              <table className={table}>
+                <thead className={thead}>
                   <tr>
-                    <th className="px-4 py-3 font-medium">Date</th>
-                    <th className="px-4 py-3 font-medium">Description</th>
-                    <th className="px-4 py-3 text-right font-medium">Amount</th>
-                    <th className="px-4 py-3 text-right font-medium">Balance after</th>
+                    <th className={th}>Date</th>
+                    <th className={th}>Description</th>
+                    <th className={`${th} text-right`}>Amount</th>
+                    <th className={`${th} text-right`}>Balance after</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className={tbody}>
                   {history.entries.map((entry) => (
                     <tr key={entry.id}>
-                      <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatWhen(entry.createdAt)}</td>
-                      <td className="px-4 py-3 text-gray-900">{TYPE_LABEL[entry.type]}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{signedUsd(entry.amountCents)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                      <td className={`${td} whitespace-nowrap text-[13px] text-muted`}>{formatWhen(entry.createdAt)}</td>
+                      <td className={`${td} font-semibold`}>{TYPE_LABEL[entry.type]}</td>
+                      <td
+                        className={`${td} whitespace-nowrap text-right font-bold tabular-nums ${
+                          entry.amountCents > 0 ? "text-brand" : ""
+                        }`}
+                      >
+                        {signedUsd(entry.amountCents)}
+                      </td>
+                      <td className={`${td} whitespace-nowrap text-right tabular-nums`}>
                         {formatUsd(entry.balanceAfterCents)}
                       </td>
                     </tr>
@@ -128,7 +126,7 @@ export default async function BalancePage({ searchParams }: { searchParams: Sear
           {history.nextCursor ? (
             <Link
               href={`/balance?cursor=${encodeURIComponent(history.nextCursor)}`}
-              className="mt-4 inline-block text-sm text-blue-700 hover:underline"
+              className={`mt-4 inline-block ${link}`}
             >
               Load more
             </Link>

@@ -77,6 +77,16 @@ describe("Header", () => {
     expect(html.match(/>Coming soon</g)?.length).toBe(3);
   });
 
+  it("shows the balance chip of the mockup: the amount with a small 'Balance' label", () => {
+    const chip = html.match(/<a[^>]*href="\/balance"[^>]*>[\s\S]*?<\/a>/)?.[0] ?? "";
+    expect(chip).toContain("USD 1,000.00");
+    expect(chip).toMatch(/>Balance</);
+  });
+
+  it("shows the agency's initials in an avatar next to its name", () => {
+    expect(html).toMatch(/aria-hidden="true"[^>]*>TT</);
+  });
+
   it("has no Bookings item", () => {
     expect(html).not.toContain("Bookings");
   });
