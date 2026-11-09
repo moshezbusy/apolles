@@ -8,8 +8,10 @@ import { normalizeEmail } from "@/server/users";
 export type UnlockResult = "UNLOCKED" | "NOT_LOCKED" | "NOT_FOUND";
 
 // Owner command (`pnpm admin:unlock <email>`): clears the sign-in lockout of one account.
-// "Locked" means any of: a lock that has not expired, failed attempts counted, or an attempt
-// slot still reserved. Only failedLogins, lockedUntil and attemptReservedAt change: the
+// "Locked" means either: a lock that has not expired, or failed attempts counted (an attempt
+// still in flight or stuck always holds a slot, so failedLogins > 0). attemptReservedAt alone
+// is NOT a lock: every sign-in attempt writes it and nothing clears it after a success.
+// Only failedLogins, lockedUntil and attemptReservedAt change: the
 // password, TOTP and sessions are left alone. The update is conditional and happens in one
 // transaction with its audit row (actor = the unlocked user: the owner has no account here).
 export async function unlockUser(email: string): Promise<UnlockResult> {
@@ -25,7 +27,7 @@ export async function unlockUser(email: string): Promise<UnlockResult> {
     const result = await tx.user.updateMany({
       where: {
         id: user.id,
-        OR: [{ lockedUntil: { gt: now } }, { failedLogins: { gt: 0 } }, { attemptReservedAt: { not: null } }],
+        OR: [{ lockedUntil: { gt: now } }, { failedLogins: { gt: 0 } }],
       },
       data: { failedLogins: 0, lockedUntil: null, attemptReservedAt: null },
     });

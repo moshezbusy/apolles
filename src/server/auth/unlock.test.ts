@@ -104,6 +104,18 @@ describe("unlockUser", () => {
     expect(await db.auditLog.count()).toBe(0);
   });
 
+  it("a user who signed in successfully once (reservation timestamp left behind) → NOT_LOCKED, no write, no audit row", async () => {
+    const user = await createUser({ email: "a@example.com", name: "A", role: "ADMIN", passwordHash });
+    expect(await login(user.email, GOOD)).toMatchObject({ ok: true });
+    const before = await db.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(before.attemptReservedAt).not.toBeNull();
+    expect(before.failedLogins).toBe(0);
+
+    expect(await unlockUser("a@example.com")).toBe("NOT_LOCKED");
+    expect(await db.user.findUniqueOrThrow({ where: { id: user.id } })).toEqual(before);
+    expect(await db.auditLog.count({ where: { action: "user.unlock" } })).toBe(0);
+  });
+
   it("an expired lock with no failures and no reservation counts as not locked", async () => {
     const user = await createUser({ email: "a@example.com", name: "A", role: "ADMIN", passwordHash });
     await db.user.update({ where: { id: user.id }, data: { lockedUntil: new Date(Date.now() - 1000) } });

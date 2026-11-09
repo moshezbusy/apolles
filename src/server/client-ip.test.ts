@@ -22,18 +22,18 @@ describe("getClientIp", () => {
     expect(getClientIp(chain, "3")).toBe("203.0.113.7");
   });
 
-  it("fewer entries than hops → X-Forwarded-For is not used (falls back to x-real-ip, else unknown)", () => {
+  it("fewer entries than hops → X-Forwarded-For is not used; x-real-ip is never a fallback → unknown", () => {
     expect(getClientIp(h({ "x-forwarded-for": "203.0.113.7" }), "2")).toBe("unknown");
     expect(
       getClientIp(h({ "x-forwarded-for": "203.0.113.7", "x-real-ip": "198.51.100.1" }), "2"),
-    ).toBe("198.51.100.1");
+    ).toBe("unknown");
   });
 
   it("0 hops: X-Forwarded-For is ignored completely", () => {
     expect(getClientIp(h({ "x-forwarded-for": "203.0.113.7" }), "0")).toBe("unknown");
     expect(
       getClientIp(h({ "x-forwarded-for": "203.0.113.7", "x-real-ip": "198.51.100.1" }), "0"),
-    ).toBe("198.51.100.1");
+    ).toBe("unknown");
   });
 
   it("invalid TRUSTED_PROXY_HOPS → 1", () => {
@@ -43,8 +43,8 @@ describe("getClientIp", () => {
     }
   });
 
-  it("missing header → x-real-ip, then unknown", () => {
-    expect(getClientIp(h({ "x-real-ip": "198.51.100.1" }), undefined)).toBe("198.51.100.1");
+  it("missing header → unknown (x-real-ip is client-settable and never used)", () => {
+    expect(getClientIp(h({ "x-real-ip": "198.51.100.1" }), undefined)).toBe("unknown");
     expect(getClientIp(h({}), undefined)).toBe("unknown");
   });
 

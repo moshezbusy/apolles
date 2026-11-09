@@ -9,7 +9,8 @@ import { isIP } from "node:net";
 // hops the client IP is the N-th entry from the right. 0 means no proxy we trust: the
 // header is ignored. If the list is shorter than N, the request did not come through our
 // proxies the expected way and the header is not used.
-// Then x-real-ip, then "unknown". The result is always a valid IPv4/IPv6 literal or
+// In those cases the result is "unknown": x-real-ip is NOT used, because a client can set it
+// itself (R51). The result is always a valid IPv4/IPv6 literal or
 // "unknown", so a client cannot put arbitrary text into a rate-limit key.
 // Never logged.
 
@@ -52,8 +53,7 @@ export function getClientIp(
   trustedProxyHops: string | undefined = process.env.TRUSTED_PROXY_HOPS,
 ): string {
   const hops = parseTrustedProxyHops(trustedProxyHops);
-  const candidate =
-    fromForwardedFor(headers.get("x-forwarded-for"), hops) ?? headers.get("x-real-ip");
+  const candidate = fromForwardedFor(headers.get("x-forwarded-for"), hops);
   if (candidate === null) return UNKNOWN_IP;
   return normalizeIp(candidate) ?? UNKNOWN_IP;
 }
