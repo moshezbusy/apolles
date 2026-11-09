@@ -34,4 +34,10 @@ describe("next.config headers", () => {
   it("/admin/2fa/setup is never cached (the QR code holds the secret)", async () => {
     expect(headersFor(await rules(), "/admin/2fa/setup")).toEqual({ "Cache-Control": "no-store" });
   });
+
+  // The staging container runs the self-contained server that `next build` writes to
+  // .next/standalone (deploy/staging, Dockerfile).
+  it("builds the standalone server used by the container image", () => {
+    expect(nextConfig.output).toBe("standalone");
+  });
 });

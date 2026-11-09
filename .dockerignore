@@ -1,0 +1,26 @@
+# Docker build context (repository root). Keep secrets, local state, docs and tooling out.
+**/node_modules
+**/.env*
+.git
+.next
+src/generated
+*.tsbuildinfo
+next-env.d.ts
+coverage
+test-results
+playwright-report
+# End-to-end tests are not part of the image; playwright.config.ts imports them, so it goes too
+# (otherwise the type check in `next build` fails).
+e2e
+playwright.config.ts
+docs
+_bmad
+_bmad-output
+api-docs
+apolles
+.superpowers
+.claude
+.agents
+.gemini
+.opencode
+.github

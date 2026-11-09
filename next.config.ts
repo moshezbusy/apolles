@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // `next build` also writes a self-contained server (.next/standalone) with only the files
+  // it needs; the staging container image runs that (Dockerfile, deploy/staging).
+  output: "standalone",
   async headers() {
     return [
       // No page may be shown inside a frame on another site (clickjacking: a hidden admin

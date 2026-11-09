@@ -1,0 +1,59 @@
+# Apolles staging on the owner's VPS. Run from this folder (deploy/staging):
+#   docker compose -p apolles-staging up -d --build
+# All settings and secrets come from ./.env on the server (never committed; see README.md).
+name: apolles-staging
+
+services:
+  apolles-staging-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: apolles_staging
+      POSTGRES_USER: apolles
+      # Read from ./.env; compose stops with this message if it is missing.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/staging/.env}
+    volumes:
+      - apolles_staging_db:/var/lib/postgresql/data
+    networks:
+      - apolles_staging_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apolles -d apolles_staging"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # No published ports: only the app can reach the database.
+
+  apolles-staging:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: apolles-staging-app
+    restart: unless-stopped
+    # Forwards stop signals to the server and reaps child processes.
+    init: true
+    env_file: .env
+    depends_on:
+      apolles-staging-db:
+        condition: service_healthy
+    networks:
+      - apolles_staging_net
+      # The shared Caddy proxy is on this network and reaches the app as apolles-staging:3000.
+      - n8n_default
+    # No published ports: traffic comes only through Caddy.
+    # Staging writes set-password / reset links to this log: keep it small and short-lived.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  apolles_staging_db:
+
+networks:
+  apolles_staging_net:
+    name: apolles_staging_net
+    # No route out: the database needs none (the app gets out through n8n_default).
+    internal: true
+  n8n_default:
+    external: true
