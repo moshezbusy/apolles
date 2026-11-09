@@ -42,6 +42,13 @@ describe("console email adapter", () => {
     expect(info).not.toHaveBeenCalled();
   });
 
+  it("refuses to run in production even when APP_ENV=staging", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_ENV", "staging");
+    await expect(sendConsoleEmail(msg)).rejects.toThrow(/production/);
+    expect(info).not.toHaveBeenCalled();
+  });
+
   it("refuses to run in production even with a sink file set", async () => {
     const file = join(dir, "sink.jsonl");
     vi.stubEnv("NODE_ENV", "production");
