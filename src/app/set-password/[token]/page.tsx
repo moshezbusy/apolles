@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AuthShell } from "@/components/AuthShell";
 import { findUsablePasswordToken } from "@/server/auth/password-tokens";
 import { ExpiredLink } from "./expired-link";
 import { SetPasswordForm } from "./set-password-form";
@@ -23,10 +24,8 @@ export default async function SetPasswordPage({
   const purpose = await findUsablePasswordToken(token);
 
   return (
-    <main className="flex flex-1 items-center justify-center bg-gray-50 px-4 py-12">
-      <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
-        {purpose ? <SetPasswordForm token={token} title={TITLES[purpose]} /> : <ExpiredLink />}
-      </div>
-    </main>
+    <AuthShell>
+      {purpose ? <SetPasswordForm token={token} title={TITLES[purpose]} /> : <ExpiredLink />}
+    </AuthShell>
   );
 }

@@ -2,10 +2,13 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
+import { alertSuccess, btnPrimary, input, label } from "@/components/ui";
 import { requestResetAction, type ForgotPasswordState } from "./actions";
 
 export const FORGOT_PASSWORD_SENT_COPY =
   "If an account exists for this email, we sent a reset link.";
+
+const backLink = "self-center text-[12.5px] font-semibold text-brand hover:underline";
 
 export function ForgotPasswordForm() {
   const [state, formAction, pending] = useActionState<ForgotPasswordState, FormData>(
@@ -16,10 +19,10 @@ export function ForgotPasswordForm() {
   if (state?.sent) {
     return (
       <div className="flex flex-col gap-4">
-        <p role="status" className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+        <p role="status" className={alertSuccess}>
           {FORGOT_PASSWORD_SENT_COPY}
         </p>
-        <Link href="/login" className="self-start text-sm text-blue-700 hover:underline">
+        <Link href="/login" className={backLink}>
           Back to sign in
         </Link>
       </div>
@@ -27,12 +30,8 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <form action={formAction} className="flex flex-col gap-4" noValidate>
-      <p className="text-sm text-gray-600">
-        Enter your email and we will send you a link to create a new password.
-      </p>
-
-      <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+    <form action={formAction} className="flex flex-col gap-3.5" noValidate>
+      <label className={label}>
         Email
         <input
           type="email"
@@ -40,21 +39,20 @@ export function ForgotPasswordForm() {
           autoComplete="email"
           required
           maxLength={254}
-          className="rounded-md border border-gray-300 px-3 py-2 text-base text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+          placeholder="name@agency.com"
+          className={input}
         />
       </label>
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-md bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
-      >
+      <button type="submit" disabled={pending} className={`w-full ${btnPrimary}`}>
         {pending ? "Sending…" : "Send reset link"}
       </button>
 
-      <Link href="/login" className="self-start text-sm text-blue-700 hover:underline">
-        Back to sign in
-      </Link>
+      <div className="border-t border-[#f2ede6] pt-3.5 text-center">
+        <Link href="/login" className={backLink}>
+          Back to sign in
+        </Link>
+      </div>
     </form>
   );
 }

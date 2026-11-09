@@ -7,11 +7,10 @@ import {
   PASSWORD_RULE_COPY,
   isValidPassword,
 } from "@/lib/password-rule";
+import { alertError, btnPrimary, hint, input, label } from "@/components/ui";
 import { setPasswordAction, type SetPasswordState } from "./actions";
 import { ExpiredLink } from "./expired-link";
 
-const inputClass =
-  "rounded-md border border-gray-300 px-3 py-2 text-base text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600";
 
 export function SetPasswordForm({ token, title }: { token: string; title: string }) {
   const [state, formAction, pending] = useActionState<SetPasswordState, FormData>(
@@ -28,18 +27,18 @@ export function SetPasswordForm({ token, title }: { token: string; title: string
   const showMismatch = confirm.length > 0 && password !== confirm;
 
   return (
-    <form action={formAction} className="flex flex-col gap-4" noValidate>
-      <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
+    <form action={formAction} className="flex flex-col gap-3.5" noValidate>
+      <h1 className="text-center font-serif text-[30px] font-medium leading-tight tracking-[-0.02em] text-ink">{title}</h1>
 
       {state && "error" in state ? (
-        <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className={alertError}>
           {state.error}
         </p>
       ) : null}
 
       <input type="hidden" name="token" value={token} />
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+      <label className={label}>
         New password
         <input
           type="password"
@@ -50,14 +49,14 @@ export function SetPasswordForm({ token, title }: { token: string; title: string
           aria-describedby="password-rule"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className={inputClass}
+          className={input}
         />
       </label>
-      <p id="password-rule" className="-mt-2 text-xs text-gray-500">
+      <p id="password-rule" className={`-mt-2 ${hint}`}>
         {PASSWORD_RULE_COPY}
       </p>
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+      <label className={label}>
         Confirm password
         <input
           type="password"
@@ -67,15 +66,15 @@ export function SetPasswordForm({ token, title }: { token: string; title: string
           maxLength={PASSWORD_MAX_LENGTH}
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          className={inputClass}
+          className={input}
         />
       </label>
-      {showMismatch ? <p className="-mt-2 text-xs text-red-700">{PASSWORDS_DIFFER_COPY}</p> : null}
+      {showMismatch ? <p className="-mt-2 text-xs text-[#8a3f32]">{PASSWORDS_DIFFER_COPY}</p> : null}
 
       <button
         type="submit"
         disabled={!ready || pending}
-        className="rounded-md bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+        className={`w-full ${btnPrimary}`}
       >
         {pending ? "Saving…" : "Save password"}
       </button>

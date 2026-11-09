@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
+import { alertError, btnPrimary, input, label } from "@/components/ui";
 import { loginAction, type LoginFormState } from "./actions";
 
 export function LoginForm() {
@@ -11,14 +12,14 @@ export function LoginForm() {
   );
 
   return (
-    <form action={formAction} className="flex flex-col gap-4" noValidate>
+    <form action={formAction} className="flex flex-col gap-3.5" noValidate>
       {state?.error ? (
-        <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className={alertError}>
           {state.error}
         </p>
       ) : null}
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+      <label className={label}>
         Email
         <input
           type="email"
@@ -26,33 +27,35 @@ export function LoginForm() {
           autoComplete="email"
           required
           maxLength={254}
-          className="rounded-md border border-gray-300 px-3 py-2 text-base text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+          placeholder="name@agency.com"
+          className={input}
         />
       </label>
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
-        Password
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-3">
+          <label htmlFor="login-password" className="text-xs font-semibold text-[#37413d]">
+            Password
+          </label>
+          <Link href="/forgot-password" className="text-xs font-semibold text-brand hover:underline">
+            Forgot password?
+          </Link>
+        </div>
         <input
+          id="login-password"
           type="password"
           name="password"
           autoComplete="current-password"
           required
           maxLength={256}
-          className="rounded-md border border-gray-300 px-3 py-2 text-base text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+          placeholder="Enter your password"
+          className={input}
         />
-      </label>
+      </div>
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-md bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
-      >
+      <button type="submit" disabled={pending} className={`w-full ${btnPrimary}`}>
         {pending ? "Signing in…" : "Sign in"}
       </button>
-
-      <Link href="/forgot-password" className="self-start text-sm text-blue-700 hover:underline">
-        Forgot password?
-      </Link>
     </form>
   );
 }

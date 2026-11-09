@@ -1,17 +1,15 @@
 import Link from "next/link";
+import { btnPrimary } from "@/components/ui";
 
 // Shown for any link that cannot be used (unknown, used, expired). Same text for every case.
 export function ExpiredLink() {
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold text-gray-900">This link has expired</h1>
-      <p className="text-sm text-gray-600">
-        Links work for 60 minutes and can be used once.
-      </p>
-      <Link
-        href="/forgot-password"
-        className="self-start rounded-md bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800"
-      >
+    <div className="flex flex-col items-center gap-4 text-center">
+      <h1 className="font-serif text-[30px] font-medium leading-tight tracking-[-0.02em] text-ink">
+        This link has expired
+      </h1>
+      <p className="text-sm text-muted">Links work for 60 minutes and can be used once.</p>
+      <Link href="/forgot-password" className={`w-full ${btnPrimary}`}>
         Send a new link
       </Link>
     </div>

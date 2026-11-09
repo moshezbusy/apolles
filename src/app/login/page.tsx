@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { AuthShell } from "@/components/AuthShell";
+import { alertSuccess } from "@/components/ui";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in · Apolles" };
@@ -11,16 +13,16 @@ export default async function LoginPage({
   const { reset } = await searchParams;
 
   return (
-    <main className="flex flex-1 items-center justify-center bg-gray-50 px-4 py-12">
-      <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
-        <h1 className="mb-6 text-2xl font-semibold text-gray-900">Sign in to Apolles</h1>
-        {reset === "1" ? (
-          <p role="status" className="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-            Your password is set. Sign in.
-          </p>
-        ) : null}
-        <LoginForm />
-      </div>
-    </main>
+    <AuthShell eyebrow="Sign in" title="Welcome back" subtitle="Sign in to your Apolles account.">
+      {reset === "1" ? (
+        <p role="status" className={`mb-4 ${alertSuccess}`}>
+          Your password is set. Sign in.
+        </p>
+      ) : null}
+      <LoginForm />
+      <p className="mt-3 text-center text-xs text-[#8b928e]">
+        For your security, you are signed out automatically after 12 hours.
+      </p>
+    </AuthShell>
   );
 }

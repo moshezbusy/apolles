@@ -78,3 +78,16 @@ describe("/login success notice", () => {
     expect(html).not.toContain("Your password is set.");
   });
 });
+
+describe("/login in the mockup layout", () => {
+  it("shows the wordmark, 'Welcome back' and the 12-hour sign-out note", async () => {
+    const { default: Page } = await import("./login/page");
+    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("Apolles");
+    expect(html).toContain("Welcome back");
+    expect(html).toContain("For your security, you are signed out automatically after 12 hours.");
+    // Phase 1 has no public join form (spec section 3).
+    expect(html).not.toContain("Apply for access");
+    expect(html).not.toContain("Join Apolles");
+  });
+});
