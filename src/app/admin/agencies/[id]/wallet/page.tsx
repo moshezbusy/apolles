@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { LedgerEntryType } from "@/generated/prisma/enums";
-import { card, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
+import { card, cell, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { getAgencyWallet } from "@/server/admin/money";
 import { requireAdmin } from "@/server/auth/guards";
@@ -112,13 +112,13 @@ export default async function AgencyWalletPage({ params, searchParams }: Props) 
                 <tbody className={tbody}>
                   {wallet.entries.map((entry) => (
                     <tr key={entry.id}>
-                      <td className={`${td} whitespace-nowrap text-[13px] text-muted`}>{formatWhen(entry.createdAt)}</td>
+                      <td className={`${cell} whitespace-nowrap text-[13px] text-muted`}>{formatWhen(entry.createdAt)}</td>
                       <td className={`${td} font-semibold`}>{TYPE_LABEL[entry.type]}</td>
                       <td className={`${td} whitespace-nowrap text-right font-bold tabular-nums`}>
                         {formatUsd(entry.amountCents)}
                       </td>
                       <td className={td}>{entry.reason}</td>
-                      <td className={`${td} font-mono text-[13px] text-muted`}>{entry.bookingRef ?? ""}</td>
+                      <td className={`${cell} font-mono text-[13px] text-muted`}>{entry.bookingRef ?? ""}</td>
                     </tr>
                   ))}
                 </tbody>

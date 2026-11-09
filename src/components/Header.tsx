@@ -17,10 +17,10 @@ export function initials(name: string): string {
 export function Header({ agencyName, balanceCents }: { agencyName: string; balanceCents: number }) {
   return (
     <header className="sticky top-0 z-30 h-[68px] border-b border-line bg-white">
-      <div className="mx-auto flex h-full w-[min(1260px,calc(100%-40px))] items-center gap-7">
-        <span className="font-serif text-[27px] text-ink">Apolles</span>
+      <div className="mx-auto flex h-full w-[min(1260px,calc(100%-40px))] items-center gap-4 sm:gap-7">
+        <span className="font-serif text-[22px] text-ink sm:text-[27px]">Apolles</span>
 
-        <nav aria-label="Main" className="flex h-full items-center gap-6 text-[13px]">
+        <nav aria-label="Main" className="hidden h-full items-center gap-6 text-[13px] lg:flex">
           {COMING_SOON.map((item) => (
             <span
               key={item}
@@ -50,7 +50,7 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
                 aria-hidden="true"
                 className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#e5eee9] text-[11px] font-extrabold text-brand"
               >{initials(agencyName)}</span>
-              {agencyName}
+              <span className="hidden sm:inline">{agencyName}</span>
               <span aria-hidden="true" className="text-[11px] text-[#8a938e]">
                 ▾
               </span>

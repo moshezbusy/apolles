@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { card, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
+import { card, cell, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { requireAgent } from "@/server/auth/guards";
 import { getBankDetails } from "@/server/bank-details";
@@ -105,11 +105,11 @@ export default async function BalancePage({ searchParams }: { searchParams: Sear
                 <tbody className={tbody}>
                   {history.entries.map((entry) => (
                     <tr key={entry.id}>
-                      <td className={`${td} whitespace-nowrap text-[13px] text-muted`}>{formatWhen(entry.createdAt)}</td>
+                      <td className={`${cell} whitespace-nowrap text-[13px] text-muted`}>{formatWhen(entry.createdAt)}</td>
                       <td className={`${td} font-semibold`}>{TYPE_LABEL[entry.type]}</td>
                       <td
-                        className={`${td} whitespace-nowrap text-right font-bold tabular-nums ${
-                          entry.amountCents > 0 ? "text-brand" : ""
+                        className={`${cell} whitespace-nowrap text-right font-bold tabular-nums ${
+                          entry.amountCents > 0 ? "text-brand" : "text-ink"
                         }`}
                       >
                         {signedUsd(entry.amountCents)}

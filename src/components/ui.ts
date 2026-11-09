@@ -38,7 +38,10 @@ export const tableWrap =
 export const table = "w-full text-left text-sm";
 export const thead = "border-b border-line";
 export const th = "px-4 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[#7d8581]";
-export const td = "px-4 py-3.5 align-middle text-ink";
+// `cell` has no colour: use it when a cell sets its own (two colour classes on one element
+// conflict, and the winner depends on CSS order, not class order). `td` is the dark default.
+export const cell = "px-4 py-3.5 align-middle";
+export const td = `${cell} text-ink`;
 export const tbody = "divide-y divide-[#f0ece4]";
 
 // Status pills (mockup 13): a dot and a soft background.
