@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { generateSecret } from "otplib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { createUser } from "@/server/users";
@@ -42,7 +43,7 @@ async function signInAdmin() {
   const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN" });
   await db.user.update({
     where: { id: admin.id },
-    data: { totpSecret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP", totpConfirmedAt: new Date() },
+    data: { totpSecret: generateSecret(), totpConfirmedAt: new Date() },
   });
   const token = await createSession(admin.id);
   await db.session.updateMany({ where: { userId: admin.id }, data: { totpVerifiedAt: new Date() } });
@@ -82,7 +83,7 @@ describe("wallet server actions", () => {
     const admin = await createUser({ email: "a2@example.com", name: "A", role: "ADMIN" });
     await db.user.update({
       where: { id: admin.id },
-      data: { totpSecret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP", totpConfirmedAt: new Date() },
+      data: { totpSecret: generateSecret(), totpConfirmedAt: new Date() },
     });
     jar.set(SESSION_COOKIE, await createSession(admin.id));
     await expect(confirmTopupAction(null, topupForm())).rejects.toThrow("NEXT_REDIRECT:/admin/2fa");

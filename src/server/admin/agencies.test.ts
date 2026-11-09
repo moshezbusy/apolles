@@ -60,9 +60,14 @@ describe("admin agencies", () => {
         targetId: agency.id,
         before: null,
       });
-      const after = JSON.stringify(rows[0]!.after);
-      expect(after).toContain("APL-0001");
-      expect(after).not.toMatch(/passwordHash|totpSecret|token/i);
+      // Exact field set: proves the row holds no password hash, TOTP secret or token.
+      expect(rows[0]!.after).toEqual({
+        name: "Sunrise Travel",
+        country: "IL",
+        bankReference: "APL-0001",
+        status: "ACTIVE",
+        agentUserId: user.id,
+      });
     });
 
     it("duplicate agentEmail → 'A user with this email already exists', nothing created", async () => {

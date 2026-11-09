@@ -1,3 +1,4 @@
+import { generateSecret } from "otplib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { createUser } from "@/server/users";
@@ -95,7 +96,7 @@ describe("loginAction", () => {
     const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN", passwordHash });
     await db.user.update({
       where: { id: admin.id },
-      data: { totpSecret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP", totpConfirmedAt: new Date() },
+      data: { totpSecret: generateSecret(), totpConfirmedAt: new Date() },
     });
     await expect(
       loginAction(null, form({ email: "admin@example.com", password: GOOD })),

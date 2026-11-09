@@ -1,7 +1,9 @@
+import { generateSecret, generateURI } from "otplib";
 import { describe, expect, it } from "vitest";
 import { totpQrSvgDataUri } from "@/server/auth/totp-qr";
 
-const URL_ = "otpauth://totp/Apolles:admin%40example.com?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Apolles";
+// A real otpauth URL as the setup page builds it, with a fresh random key per run.
+const URL_ = generateURI({ issuer: "Apolles", label: "admin@example.com", secret: generateSecret(), period: 30 });
 const PREFIX = "data:image/svg+xml;base64,";
 
 function decode(uri: string): string {

@@ -28,7 +28,7 @@ export function parseUsdToCents(
   if (!USD_TEXT.test(trimmed)) return null;
   const negative = trimmed.startsWith("-");
   if (negative && !allowNegative) return null;
-  const unsigned = (negative ? trimmed.slice(1) : trimmed).replaceAll(",", "");
+  const unsigned = (negative ? trimmed.slice(1) : trimmed).replace(/,/g, "");
   const [whole = "", fraction = ""] = unsigned.split(".");
   const cents = BigInt(whole) * BigInt(100) + BigInt(fraction.padEnd(2, "0"));
   if (cents === BigInt(0) || cents > BigInt(MAX_AMOUNT_CENTS)) return null;

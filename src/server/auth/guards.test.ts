@@ -1,3 +1,4 @@
+import { generateSecret } from "otplib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { createUser } from "@/server/users";
@@ -40,7 +41,7 @@ async function adminSession({ confirmed = false, verified = false }: AdminState 
   if (confirmed) {
     await db.user.update({
       where: { id: admin.id },
-      data: { totpSecret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP", totpConfirmedAt: new Date() },
+      data: { totpSecret: generateSecret(), totpConfirmedAt: new Date() },
     });
   }
   const token = await createSession(admin.id);

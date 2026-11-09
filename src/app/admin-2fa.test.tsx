@@ -1,4 +1,4 @@
-import { generate } from "otplib";
+import { generate, generateSecret } from "otplib";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
@@ -35,7 +35,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/server/auth/notifications", () => ({ notifyAdminLockout: vi.fn() }));
 
-const SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+const SECRET = generateSecret(); // fresh random key per run
 const WRONG_COPY = "Wrong code. Try again.";
 const LOCKED_COPY = "Too many attempts. Try again in 15 minutes, or reset your password.";
 

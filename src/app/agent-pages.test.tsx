@@ -43,10 +43,13 @@ async function renderLayout(): Promise<string> {
   return renderToStaticMarkup(await AgentLayout({ children: <p>page body</p> }));
 }
 
-// The visible text of the element with this id (tags stripped).
+// The visible text of the element with this id, up to its </section> (tags stripped).
 function textOf(html: string, id: string): string {
-  const match = new RegExp(`id="${id}"[^>]*>([\\s\\S]*?)</section>`).exec(html);
-  return (match?.[1] ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const start = html.indexOf(`id="${id}"`);
+  const open = start === -1 ? -1 : html.indexOf(">", start);
+  const end = open === -1 ? -1 : html.indexOf("</section>", open);
+  if (end === -1) return "";
+  return html.slice(open + 1, end).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 // Table body rows as "|cell|cell|...|" (header row left out).
@@ -64,9 +67,12 @@ describe("Header", () => {
   });
 
   it("shows Search, Quotes and Reporting disabled with 'Coming soon', not as links", () => {
+    // The text right after each disabled <span> tag, and right after each <a> tag.
+    const disabledTexts = [...html.matchAll(/<span[^>]*aria-disabled="true"[^>]*>([^<]*)/g)].map((m) => m[1] ?? "");
+    const linkTexts = [...html.matchAll(/<a[^>]*>([^<]*)/g)].map((m) => m[1] ?? "");
     for (const item of ["Search", "Quotes", "Reporting"]) {
-      expect(html).toMatch(new RegExp(`<span[^>]*aria-disabled="true"[^>]*>${item}`));
-      expect(html).not.toMatch(new RegExp(`<a[^>]*>${item}`));
+      expect(disabledTexts.some((text) => text.startsWith(item)), `${item} disabled`).toBe(true);
+      expect(linkTexts.some((text) => text.startsWith(item)), `${item} not a link`).toBe(false);
     }
     expect(html.match(/>Coming soon</g)?.length).toBe(3);
   });
