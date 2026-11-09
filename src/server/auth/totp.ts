@@ -160,15 +160,36 @@ async function checkCode(
   if (slot === null) return "LOCKED";
 
   const secret = user.totpSecret;
-  const step = await matchStep(secret, code);
-  if (step === null) return wrongCode(user, slot);
-  const result = await claimStep({ user, secret, step, confirm, ...(sessionId !== undefined ? { sessionId } : {}) });
-  // The code matched but could not be used: its step was already used (replay), or the TOTP
-  // state or the session changed meanwhile. That is not a wrong guess, so the slot is handed
-  // back (as before H1, such a refusal does not count). OK already reset the counter in the
-  // claim; LOCKED keeps the lock.
-  if (result === "WRONG" || result === "UNAVAILABLE") await releaseAttempt(user.id, "RETURN");
-  return result;
+  try {
+    const step = await matchStep(secret, code);
+    if (step === null) return await wrongCode(user, slot);
+    const result = await claimStep({ user, secret, step, confirm, ...(sessionId !== undefined ? { sessionId } : {}) });
+    // The code matched but could not be used: its step was already used (replay), or the TOTP
+    // state or the session changed meanwhile. That is not a wrong guess, so the slot is handed
+    // back (as before H1, such a refusal does not count). OK already reset the counter in the
+    // claim; LOCKED keeps the lock.
+    if (result === "WRONG" || result === "UNAVAILABLE") await releaseAttempt(user.id, "RETURN");
+    return result;
+  } catch (error) {
+    // Fail closed: an error after the slot was taken (otplib, a DB error in the claim, which
+    // rolls the claim back) counts as a wrong code, so the slot is never left used for good.
+    // At the last slot this is a normal 15-minute lock with an alert, and every session ends.
+    await countWrongCodeAfterError(user, slot);
+    throw error;
+  }
+}
+
+// Best effort, after an error: count the attempt; if that fails too, log it (user id and the
+// error message only, never the code or the secret) and let the caller rethrow the first error.
+async function countWrongCodeAfterError(user: TotpUser, slot: number): Promise<void> {
+  try {
+    await recordFailedAttempt(user, slot, { endSessionsOnLock: true });
+  } catch (error) {
+    console.error("TOTP attempt not recorded after an error", {
+      userId: user.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function findSession(sessionId: string) {

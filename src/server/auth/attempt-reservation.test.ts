@@ -5,9 +5,16 @@ import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import { notifyAdminLockout } from "@/server/auth/notifications";
 import * as password from "@/server/auth/password";
+import * as lockout from "@/server/auth/lockout";
+import { audit } from "@/server/audit";
 import { createSession, getSession } from "@/server/auth/session";
 import { login, type LoginResult } from "@/server/auth/login";
-import { checkTotpForSession, startTotpEnrollment, type TotpCheckResult } from "@/server/auth/totp";
+import {
+  checkTotpForSession,
+  confirmTotpForSession,
+  startTotpEnrollment,
+  type TotpCheckResult,
+} from "@/server/auth/totp";
 
 // H1 (differential review): a sign-in attempt must take one of the MAX_FAILED_LOGINS slots
 // BEFORE the password or code is checked. Requests that find no slot left are refused
@@ -21,6 +28,11 @@ import { checkTotpForSession, startTotpEnrollment, type TotpCheckResult } from "
 // number of checks made is exact.
 
 vi.mock("@/server/auth/notifications", () => ({ notifyAdminLockout: vi.fn() }));
+// The real audit() runs; a test can make one call fail (a DB error inside the TOTP claim).
+vi.mock("@/server/audit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/audit")>();
+  return { audit: vi.fn(actual.audit) };
+});
 vi.mock("otplib", async (importOriginal) => {
   const actual = await importOriginal<typeof import("otplib")>();
   return { ...actual, verify: vi.fn(actual.verify) };
@@ -103,6 +115,7 @@ describe("attempt slot reserved before the secret is checked", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -352,6 +365,113 @@ describe("attempt slot reserved before the secret is checked", () => {
       const row = await userRow(user.id);
       expect(row.failedLogins).toBe(0);
       expect(row.lockedUntil).toBeNull();
+    });
+  });
+
+  // Fix round 2: an error after the slot was reserved must never leave the slot used for
+  // good. It counts as a failed attempt, so a used last slot becomes a normal 15-minute lock
+  // with one alert (fail closed), and the original error still reaches the caller.
+  describe("an error after the slot was reserved", () => {
+    const FIFTEEN_MIN = 15 * 60 * 1000;
+
+    function expectTimedLock(lockedUntil: Date | null, before: number, after: number) {
+      expect(lockedUntil).not.toBeNull();
+      expect(lockedUntil!.getTime()).toBeGreaterThanOrEqual(before + FIFTEEN_MIN);
+      expect(lockedUntil!.getTime()).toBeLessThanOrEqual(after + FIFTEEN_MIN);
+    }
+
+    async function agentWith(failedLogins: number) {
+      const agency = await db.agency.create({ data: { name: "Agency", country: "IL", bankReference: "APL-0001" } });
+      const user = await createUser({ email: "agent@example.com", name: "Agent", role: "AGENT", agencyId: agency.id, passwordHash });
+      await db.user.update({ where: { id: user.id }, data: { failedLogins } });
+      return user;
+    }
+
+    async function totpAdmin({ failedLogins, confirmed }: { failedLogins: number; confirmed: boolean }) {
+      const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN" });
+      const url = new URL((await startTotpEnrollment(admin.id)).otpauthUrl);
+      const secret = url.searchParams.get("secret") ?? "";
+      await db.user.update({
+        where: { id: admin.id },
+        data: { failedLogins, ...(confirmed ? { totpConfirmedAt: new Date() } : {}) },
+      });
+      const session = await getSession(await createSession(admin.id));
+      if (!session) throw new Error("no session");
+      return { admin, secret, sessionId: session.sessionId };
+    }
+
+    it("login, slot 3: the password check throws → the error reaches the caller, a 15-minute lock, one alert", async () => {
+      const user = await agentWith(2);
+      vi.spyOn(password, "verifyPassword").mockRejectedValueOnce(new Error("argon2 pool down"));
+      const before = Date.now();
+      await expect(login(user.email, GOOD)).rejects.toThrow("argon2 pool down");
+      const row = await userRow(user.id);
+      expectTimedLock(row.lockedUntil, before, Date.now());
+      expect(row.failedLogins).toBe(0);
+      expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+    });
+
+    it("login, slot 1: the password check throws → counted as one strike, no lock", async () => {
+      const user = await agentWith(0);
+      vi.spyOn(password, "verifyPassword").mockRejectedValueOnce(new Error("argon2 pool down"));
+      await expect(login(user.email, GOOD)).rejects.toThrow("argon2 pool down");
+      const row = await userRow(user.id);
+      expect(row.failedLogins).toBe(1);
+      expect(row.lockedUntil).toBeNull();
+      expect(notifyAdminLockout).not.toHaveBeenCalled();
+    });
+
+    it("login, slot 3: giving the slot back fails after the correct password → error, no session, a timed (not permanent) lock", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const start = new Date("2026-11-09T10:00:00Z").getTime();
+      vi.setSystemTime(start);
+      const user = await agentWith(2);
+      vi.spyOn(lockout, "releaseAttempt").mockRejectedValueOnce(new Error("pool timeout"));
+
+      await expect(login(user.email, GOOD)).rejects.toThrow("pool timeout");
+      expect(await db.session.count({ where: { userId: user.id } })).toBe(0);
+      const row = await userRow(user.id);
+      expectTimedLock(row.lockedUntil, start, start);
+      expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+
+      // Not stuck: once the 15 minutes are over, the correct password works again.
+      vi.setSystemTime(start + FIFTEEN_MIN);
+      expect(await login(user.email, GOOD)).toMatchObject({ ok: true, userId: user.id });
+    });
+
+    it("a failure while recording the failed attempt is logged without secrets; the original error is rethrown", async () => {
+      const user = await agentWith(2);
+      vi.spyOn(password, "verifyPassword").mockRejectedValueOnce(new Error("argon2 pool down"));
+      vi.spyOn(lockout, "recordFailedAttempt").mockRejectedValue(new Error("db down"));
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      await expect(login(user.email, GOOD)).rejects.toThrow("argon2 pool down");
+      expect(logged).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(logged.mock.calls)).not.toContain(GOOD);
+    });
+
+    it("TOTP, slot 3: the code check throws → error, a 15-minute lock, one alert, every session ended", async () => {
+      const { admin, sessionId } = await totpAdmin({ failedLogins: 2, confirmed: true });
+      vi.mocked(verify).mockRejectedValueOnce(new Error("otp lib failure"));
+      const before = Date.now();
+      await expect(checkTotpForSession(sessionId, "123456")).rejects.toThrow("otp lib failure");
+      const row = await userRow(admin.id);
+      expectTimedLock(row.lockedUntil, before, Date.now());
+      expect(row.failedLogins).toBe(0);
+      expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+      expect(await db.session.count({ where: { userId: admin.id } })).toBe(0);
+    });
+
+    it("TOTP, slot 3: the claim fails with a DB error after a correct code → error, session not verified, timed lock, one alert", async () => {
+      const { admin, secret, sessionId } = await totpAdmin({ failedLogins: 2, confirmed: false });
+      vi.mocked(audit).mockRejectedValueOnce(new Error("audit insert failed"));
+      const before = Date.now();
+      const code = await generate({ secret, epoch: Math.floor(Date.now() / 1000) });
+      await expect(confirmTotpForSession(sessionId, code)).rejects.toThrow("audit insert failed");
+      const row = await userRow(admin.id);
+      expect(row.totpConfirmedAt).toBeNull();
+      expectTimedLock(row.lockedUntil, before, Date.now());
+      expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+      expect(await db.session.count({ where: { userId: admin.id, totpVerifiedAt: { not: null } } })).toBe(0);
     });
   });
 });

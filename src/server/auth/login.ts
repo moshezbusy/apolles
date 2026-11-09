@@ -58,18 +58,28 @@ export async function login(email: string, password: string): Promise<LoginResul
   const slot = await reserveAttempt(user.id);
   if (slot === null) return LOCKED;
 
-  if (!(await verifyPassword(user.passwordHash, password))) {
-    return (await recordFailedAttempt(user, slot)) === "LOCKED" ? LOCKED : INVALID;
+  let stillUnlocked: boolean;
+  try {
+    if (!(await verifyPassword(user.passwordHash, password))) {
+      return (await recordFailedAttempt(user, slot)) === "LOCKED" ? LOCKED : INVALID;
+    }
+    // The password is right: give the slot back (how and why: below).
+    stillUnlocked = await releaseAttempt(user.id, user.role === "ADMIN" ? "RETURN" : "RESET");
+  } catch (error) {
+    // Fail closed: an error after the slot was taken (argon2, a DB timeout) counts as a failed
+    // attempt, so the slot is never left used for good. At the last slot this is a normal
+    // 15-minute lock with an alert. No sign-in either way: the error reaches the caller.
+    await countFailedAttemptAfterError(user, slot);
+    throw error;
   }
 
-  // The password is right: give the slot back. If parallel wrong guesses locked the account
+  // Giving the slot back only works while unlocked. If parallel wrong guesses locked the account
   // during the password check, this correct guess must not lift the lock or get a session.
   // Agent: the sign-in is complete, so the run of failures is over (counter reset to 0).
   // Admin: the sign-in is only complete after the TOTP code, which shares this counter; a
   // correct password must not reset it, or re-entering the password between wrong codes
   // would allow unlimited code guessing (R36). It only hands its own slot back (counter − 1),
   // so it neither costs nor clears a strike. A correct TOTP code resets it (totp.ts).
-  const stillUnlocked = await releaseAttempt(user.id, user.role === "ADMIN" ? "RETURN" : "RESET");
   if (!stillUnlocked) return LOCKED;
 
   // Suspension is only revealed to someone who knows the password.
@@ -78,4 +88,17 @@ export async function login(email: string, password: string): Promise<LoginResul
   if (user.status !== "ACTIVE" || agencyBlocked) return SUSPENDED;
 
   return { ok: true, userId: user.id, needsTotp: user.role === "ADMIN" };
+}
+
+// Best effort, after an error: count the attempt; if that fails too, log it (user id and the
+// error message only, never the password) and let the caller rethrow the first error.
+async function countFailedAttemptAfterError(user: { id: string; email: string }, slot: number): Promise<void> {
+  try {
+    await recordFailedAttempt(user, slot);
+  } catch (error) {
+    console.error("sign-in attempt not recorded after an error", {
+      userId: user.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
