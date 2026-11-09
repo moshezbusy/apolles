@@ -30,6 +30,12 @@ const nextConfig: NextConfig = {
         source: "/admin/:path*",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
+      // The setup page shows a QR code (and text) that contain the TOTP secret: no browser
+      // or proxy cache may keep it.
+      {
+        source: "/admin/2fa/setup",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
     ];
   },
   turbopack: {

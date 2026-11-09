@@ -29,4 +29,9 @@ describe("next.config headers", () => {
     expect(headersFor(list, "/forgot-password")).toEqual({ "X-Robots-Tag": "noindex, nofollow" });
     expect(headersFor(list, "/admin/:path*")).toEqual({ "X-Robots-Tag": "noindex, nofollow" });
   });
+
+  // The setup page shows a QR code that contains the TOTP secret: no cache may keep it.
+  it("/admin/2fa/setup is never cached (the QR code holds the secret)", async () => {
+    expect(headersFor(await rules(), "/admin/2fa/setup")).toEqual({ "Cache-Control": "no-store" });
+  });
 });

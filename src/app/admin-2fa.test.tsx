@@ -197,6 +197,29 @@ describe("admin 2FA", () => {
       expect(metadata.robots).toEqual({ index: false, follow: false });
     });
 
+    it("/admin/2fa/setup shows a QR code image (server-made SVG data URI) above the manual key", async () => {
+      const admin = await signedInAdmin({ confirmed: false });
+      const { default: Page } = await import("./admin/2fa/setup/page");
+      const html = renderToStaticMarkup(await Page());
+
+      const img = html.match(/<img\b[^>]*>/)?.[0] ?? "";
+      expect(img).toContain('alt="QR code for your authenticator app"');
+      const src = img.match(/src="(data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+)"/)?.[1];
+      expect(src).toBeDefined();
+      const svg = Buffer.from(src!.split(",")[1]!, "base64").toString("utf8");
+      expect(svg).toMatch(/^<svg\b[^>]*xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+      expect(svg).toMatch(/<\/svg>$/);
+
+      // Same page still has the manual fallback, after the QR.
+      const secret = (await db.user.findUniqueOrThrow({ where: { id: admin.id } })).totpSecret!;
+      const fallback = html.indexOf("Can&#x27;t scan? Enter this key instead.");
+      expect(fallback).toBeGreaterThan(html.indexOf("<img"));
+      expect(html.indexOf(secret.match(/.{1,4}/g)!.join(" "))).toBeGreaterThan(fallback);
+      expect(html.indexOf("otpauth://totp/")).toBeGreaterThan(fallback);
+      // No client JS, no raw HTML injection: the secret is not in the image's URL as plain text.
+      expect(img).not.toContain(secret);
+    });
+
     it("/admin/2fa/setup: a reload shows the same key; 'Generate a new key' replaces it", async () => {
       const admin = await signedInAdmin({ confirmed: false });
       const { default: Page } = await import("./admin/2fa/setup/page");

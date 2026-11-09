@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { SignOutButton } from "@/components/SignOutButton";
 import { requireAdminPendingTotp } from "@/server/auth/guards";
 import { groupSecret, secretFromOtpauthUrl, startTotpEnrollment } from "@/server/auth/totp";
+import { totpQrSvgDataUri } from "@/server/auth/totp-qr";
 import { TotpCodeForm } from "../code-form";
 import { confirmTotpAction, regenerateTotpKeyAction } from "./actions";
 
@@ -19,6 +20,7 @@ export default async function TwoFactorSetupPage() {
 
   const { otpauthUrl } = await startTotpEnrollment(userId);
   const secret = secretFromOtpauthUrl(otpauthUrl);
+  const qrSrc = totpQrSvgDataUri(otpauthUrl);
 
   return (
     <main className="flex flex-1 items-center justify-center bg-gray-50 px-4 py-12">
@@ -27,6 +29,16 @@ export default async function TwoFactorSetupPage() {
         <p className="mb-6 text-sm text-gray-600">
           Add this key to your authenticator app, then enter the 6-digit code.
         </p>
+
+        {/* eslint-disable-next-line @next/next/no-img-element -- a server-made SVG data URI; next/image adds nothing here */}
+        <img
+          src={qrSrc}
+          alt="QR code for your authenticator app"
+          width={192}
+          height={192}
+          className="mx-auto mb-4 h-48 w-48"
+        />
+        <p className="mb-4 text-center text-sm text-gray-600">Can&apos;t scan? Enter this key instead.</p>
 
         <p className="text-sm font-medium text-gray-700">Key</p>
         <p className="mb-4 rounded-md bg-gray-100 px-3 py-2 font-mono text-lg tracking-wide text-gray-900">
