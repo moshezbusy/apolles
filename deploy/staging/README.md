@@ -13,7 +13,9 @@ Browser → Cloudflare → shared Caddy (HTTPS, network n8n_default) → apolles
 - `apolles-staging-db` is PostgreSQL 16. Its data lives in the Docker volume
   `apolles-staging_apolles_staging_db`. It sits on the private network `apolles_staging_net`,
   which has no route out, and only the app can reach it.
-- Neither container publishes a port. The only way in is through Caddy.
+- Neither container publishes a port. The only way in is through Caddy. Other containers on
+  the `n8n_default` network can still reach `apolles-staging:3000` directly, bypassing
+  Cloudflare and `cf_only`. That is acceptable for demo-only staging; revisit it for production.
 - Staging has no email provider yet (`EMAIL_PROVIDER=staging-log`). Every email the app
   would send, including set-password and reset links, is written as one JSON line to the
   app container's log, and the operator passes the links on by hand. This works only together
@@ -41,7 +43,12 @@ commit it.**
 Replace the two `<owner email>` placeholders, then run this from `deploy/staging`. It generates
 the database password on the server and never shows it:
 
+The block refuses to run if `.env` already exists, because running it again would create a new
+database password while the database volume keeps the old one. It runs in a subshell, so the
+restrictive file permissions (`umask 077`) do not change your terminal.
+
 ```sh
+test ! -e .env || { echo ".env already exists: stop, do not overwrite it"; false; } && (
 umask 077
 DB_PASSWORD="$(openssl rand -hex 32)"
 cat > .env <<EOF
@@ -63,8 +70,8 @@ BANK_DETAILS_SWIFT=DEMOXXXX
 # The first admin, created by the seed step (section 1.4).
 SEED_ADMIN_EMAIL=<owner email>
 EOF
-unset DB_PASSWORD
 chmod 600 .env
+)
 ```
 
 What each setting means:
@@ -83,7 +90,10 @@ What each setting means:
 
 ### 1.3 Build and start
 
-From `deploy/staging`:
+From `deploy/staging`. Note that `--build` runs the Next.js build on the VPS itself. It
+briefly uses a lot of memory (about 1 to 2 GB), on a server shared with the other sites, so
+start it when the server is quiet. The containers are capped (app 1 GB, database 512 MB) so a
+runaway staging cannot take the other sites down.
 
 ```sh
 docker compose -p apolles-staging up -d --build
@@ -128,7 +138,15 @@ These lines contain secret links. Do not copy the whole log anywhere. Docker kee
 The shared Caddy proxy runs in Docker on the `n8n_default` network and already serves the
 other sites with the `cf_only` snippet. To add staging:
 
-1. Back up the Caddyfile first.
+1. Back up the Caddyfile first:
+
+   ```sh
+   cp /home/moshezbusy/n8n/Caddyfile /home/moshezbusy/n8n/Caddyfile.bak-$(date +%Y%m%d%H%M%S)
+   ```
+
+   The Caddyfile is mounted into the container as a single file. Edit it **in place** (for
+   example with `nano`) and do not replace the file with a new one (no `mv`, no tools that
+   write a new file and rename it), or the container keeps seeing the old content.
 2. Add this block. It follows the existing sites' pattern, with two small differences
    explained under the block:
 
@@ -153,11 +171,11 @@ other sites with the `cf_only` snippet. To add staging:
      stricter `Referrer-Policy: no-referrer` there. Without the `?`, Caddy replaces it (tested
      with Caddy 2.11). All other pages get `strict-origin-when-cross-origin` as before.
    - The `header_up X-Forwarded-For ...` line hands the app the visitor's real IP (section 4).
-3. Validate, then reload (use the existing Caddy container's name):
+3. Validate, then reload:
 
    ```sh
-   docker exec <caddy-container> caddy validate --config /etc/caddy/Caddyfile
-   docker exec <caddy-container> caddy reload --config /etc/caddy/Caddyfile
+   docker exec caddy caddy validate --config /etc/caddy/Caddyfile
+   docker exec caddy caddy reload --config /etc/caddy/Caddyfile
    ```
 
 4. Check that `https://staging.apolles.com/login` loads, and that the **existing sites still
@@ -222,8 +240,11 @@ line, it arrived as the proxy's own address.
 
 - **Changing the database password later**: Postgres takes `POSTGRES_PASSWORD` only when it
   first creates the volume. Changing it in `.env` afterwards breaks the app's connection.
-  Change it inside Postgres first (`ALTER USER apolles PASSWORD '...'`), then update both
-  lines in `.env`.
+  Change it inside Postgres first, then update both lines in `.env`:
+
+  ```sh
+  docker compose -p apolles-staging exec apolles-staging-db psql -U apolles -d apolles_staging -c "ALTER USER apolles PASSWORD 'new-password'"
+  ```
 - **No live keys here, ever.** Staging must never get production credentials or real
   agency data.
 - The image has no secrets in it. Everything comes from `.env` when the container starts.

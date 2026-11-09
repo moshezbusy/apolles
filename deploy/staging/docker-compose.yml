@@ -7,6 +7,8 @@ services:
   apolles-staging-db:
     image: postgres:16-alpine
     restart: unless-stopped
+    # Shared live server: cap memory so staging cannot starve the other sites.
+    mem_limit: 512m
     environment:
       POSTGRES_DB: apolles_staging
       POSTGRES_USER: apolles
@@ -31,6 +33,7 @@ services:
     restart: unless-stopped
     # Forwards stop signals to the server and reaps child processes.
     init: true
+    mem_limit: 1g
     env_file: .env
     depends_on:
       apolles-staging-db:
