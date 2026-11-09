@@ -51,21 +51,24 @@ model Agency {
 }
 
 model User {
-  id               String        @id @default(cuid())
-  agencyId         String?
-  role             Role
-  email            String        @unique // always stored lowercase (see normalizeEmail)
-  name             String
-  passwordHash     String?
-  failedLogins     Int           @default(0)
-  lockedUntil      DateTime?
-  totpSecret       String? // base32; set by startTotpEnrollment (admins only)
+  id                String        @id @default(cuid())
+  agencyId          String?
+  role              Role
+  email             String        @unique // always stored lowercase (see normalizeEmail)
+  name              String
+  passwordHash      String?
+  failedLogins      Int           @default(0)
+  lockedUntil       DateTime?
+  // When the last sign-in attempt slot was taken (database clock, set by reserveAttempt). A row
+  // at MAX_FAILED_LOGINS with no lock and an old reservation was left by a crashed request.
+  attemptReservedAt DateTime?
+  totpSecret        String? // base32; set by startTotpEnrollment (admins only)
   // Set once the admin proved the authenticator works; until then the secret can be replaced.
-  totpConfirmedAt  DateTime?
+  totpConfirmedAt   DateTime?
   // Last accepted TOTP time step: a code is accepted only for a later step (no reuse).
-  totpLastUsedStep Int?
-  status           AccountStatus @default(ACTIVE)
-  createdAt        DateTime      @default(now())
+  totpLastUsedStep  Int?
+  status            AccountStatus @default(ACTIVE)
+  createdAt         DateTime      @default(now())
 
   agency         Agency?         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   sessions       Session[]

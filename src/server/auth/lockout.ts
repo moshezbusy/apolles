@@ -1,7 +1,12 @@
+import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import { notifyAdminLockout } from "@/server/auth/notifications";
 import { destroyUserSessions } from "@/server/auth/session";
-import { LOCK_DURATION_MS, MAX_FAILED_LOGINS } from "@/server/auth/lockout-policy";
+import {
+  LOCK_DURATION_MS,
+  MAX_FAILED_LOGINS,
+  STUCK_RESERVATION_MS,
+} from "@/server/auth/lockout-policy";
 
 // One lockout counter per user, shared by every sign-in step: wrong passwords and wrong
 // admin TOTP codes both count toward the same MAX_FAILED_LOGINS.
@@ -15,6 +20,8 @@ import { LOCK_DURATION_MS, MAX_FAILED_LOGINS } from "@/server/auth/lockout-polic
 //   3b. right → releaseAttempt: the slot is given back (see SlotRelease).
 // So a burst of parallel guesses can never check more than MAX_FAILED_LOGINS secrets per
 // lock window: requests beyond the free slots are refused before any check.
+// An error between 1 and 3 counts as a wrong secret (login.ts, totp.ts). A request that dies
+// there (crash, restart) is healed by the next attempt (see healStuckSlots, R48).
 
 export type FailedAttemptOutcome = "COUNTED" | "LOCKED";
 
@@ -40,21 +47,69 @@ export function notLockedAt(now: Date) {
   return { OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }] };
 }
 
+// The database clock as a UTC timestamp(3), like the columns (same as ledger.ts): one clock
+// for every app server, so a skewed server cannot make a fresh reservation look old.
+const DB_NOW = Prisma.sql`date_trunc('milliseconds', clock_timestamp() AT TIME ZONE 'UTC')`;
+
 // Step 1. One conditional UPDATE ... RETURNING: adds 1 to failedLogins only while the account
-// is not locked and fewer than MAX_FAILED_LOGINS slots are taken. Parallel requests queue on
-// the row lock and each one re-checks the condition after the one before it committed, so
-// no more than MAX_FAILED_LOGINS slots are ever handed out.
+// is not locked and fewer than MAX_FAILED_LOGINS slots are taken, and records when (database
+// clock) in attemptReservedAt. Parallel requests queue on the row lock and each one re-checks
+// the condition after the one before it committed, so no more than MAX_FAILED_LOGINS slots
+// are ever handed out.
 // Returns the new count (this attempt's slot number), or null when no slot is free: the
-// account is locked, or every slot is taken by attempts still in flight. The caller then
-// refuses as LOCKED without checking the secret.
+// account is locked, or every slot is taken by attempts still in flight, or the row was
+// stuck and has just been locked (healStuckSlots). The caller then refuses as LOCKED without
+// checking the secret.
 export async function reserveAttempt(userId: string): Promise<number | null> {
   const now = new Date();
-  const rows = await db.user.updateManyAndReturn({
-    where: { id: userId, ...notLockedAt(now), failedLogins: { lt: MAX_FAILED_LOGINS } },
-    data: { failedLogins: { increment: 1 } },
-    select: { failedLogins: true },
+  const rows = await db.$queryRaw<{ failedLogins: number }[]>`
+    UPDATE "User"
+    SET "failedLogins" = "failedLogins" + 1, "attemptReservedAt" = ${DB_NOW}
+    WHERE id = ${userId}
+      AND ("lockedUntil" IS NULL OR "lockedUntil" <= ${now})
+      AND "failedLogins" < ${MAX_FAILED_LOGINS}
+    RETURNING "failedLogins"`;
+  const slot = rows[0]?.failedLogins;
+  if (slot !== undefined) return slot;
+  await healStuckSlots(userId, now);
+  return null;
+}
+
+// R48. All slots taken, no lock, and the last slot was taken more than STUCK_RESERVATION_MS
+// ago (or never recorded): the request holding it died before giving it back, and nothing
+// would ever free it. Turn it into a normal timed lock, as if that attempt had been wrong:
+// lockedUntil = now + LOCK_DURATION_MS, counter 0, every session of the user ended (on either
+// step), one alert. One conditional UPDATE: of parallel requests only one matches. A fresh
+// reservation (slot 3 still being checked) does not match and stays as it is.
+async function healStuckSlots(userId: string, now: Date): Promise<void> {
+  const lockedUntil = new Date(now.getTime() + LOCK_DURATION_MS);
+  const healed = await db.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<{ email: string }[]>`
+      UPDATE "User"
+      SET "lockedUntil" = ${lockedUntil}, "failedLogins" = 0
+      WHERE id = ${userId}
+        AND "failedLogins" >= ${MAX_FAILED_LOGINS}
+        AND ("lockedUntil" IS NULL OR "lockedUntil" <= ${now})
+        AND ("attemptReservedAt" IS NULL
+          OR "attemptReservedAt" < ${DB_NOW} - ${STUCK_RESERVATION_MS}::int * interval '1 millisecond')
+      RETURNING email`;
+    const row = rows[0];
+    if (row) await destroyUserSessions(userId, tx);
+    return row;
   });
-  return rows[0]?.failedLogins ?? null;
+  if (healed) await alertLockout({ id: userId, email: healed.email }, lockedUntil);
+}
+
+// The lock is already saved; a mail problem must not undo or hide it.
+async function alertLockout(user: { id: string; email: string }, lockedUntil: Date): Promise<void> {
+  try {
+    await notifyAdminLockout({ id: user.id, email: user.email, lockedUntil });
+  } catch (error) {
+    console.error("lockout alert failed", {
+      userId: user.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 // Step 3a. The secret was wrong: the slot reserved for it stays used (`slot` is the count
@@ -81,15 +136,7 @@ export async function recordFailedAttempt(
       return result.count === 1;
     });
     if (locked) {
-      try {
-        await notifyAdminLockout({ id: user.id, email: user.email, lockedUntil });
-      } catch (error) {
-        // The lock is already saved; a mail problem must not undo or hide it.
-        console.error("lockout alert failed", {
-          userId: user.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+      await alertLockout(user, lockedUntil);
       return "LOCKED";
     }
   }

@@ -474,4 +474,129 @@ describe("attempt slot reserved before the secret is checked", () => {
       expect(await db.session.count({ where: { userId: admin.id, totpVerifiedAt: { not: null } } })).toBe(0);
     });
   });
+
+  // R48: a request that died between taking a slot and giving it back (process crash, deploy
+  // restart) can leave the row at MAX_FAILED_LOGINS with no lock. Once the last reservation is
+  // older than STUCK_RESERVATION_MS, the next attempt turns it into a normal 15-minute lock:
+  // one alert, every session ended, LOCKED. A fresh reservation (slot 3 still in flight) is
+  // left alone, as before.
+  describe("a slot left used by a crashed request", () => {
+    const FIFTEEN_MIN = 15 * 60 * 1000;
+    const THREE_MIN = 3 * 60 * 1000;
+
+    // Fake only Date, starting at the real time: the reservation time comes from the
+    // database clock, which the fake timers cannot move.
+    function fakeDateFromNow(): number {
+      const start = Date.now();
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(start);
+      return start;
+    }
+
+    async function stuckAgent(attemptReservedAt: Date | null) {
+      const agency = await db.agency.create({ data: { name: "Agency", country: "IL", bankReference: "APL-0001" } });
+      const user = await createUser({ email: "agent@example.com", name: "Agent", role: "AGENT", agencyId: agency.id, passwordHash });
+      await db.user.update({ where: { id: user.id }, data: { failedLogins: 3, lockedUntil: null, attemptReservedAt } });
+      return user;
+    }
+
+    async function stuckAdmin(attemptReservedAt: Date | null) {
+      const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN", passwordHash });
+      const url = new URL((await startTotpEnrollment(admin.id)).otpauthUrl);
+      const secret = url.searchParams.get("secret") ?? "";
+      await db.user.update({
+        where: { id: admin.id },
+        data: { totpConfirmedAt: new Date(), failedLogins: 3, lockedUntil: null, attemptReservedAt },
+      });
+      const session = await getSession(await createSession(admin.id));
+      if (!session) throw new Error("no session");
+      return { admin, secret, sessionId: session.sessionId };
+    }
+
+    it("taking a slot records the database time of the reservation", async () => {
+      const agency = await db.agency.create({ data: { name: "Agency", country: "IL", bankReference: "APL-0001" } });
+      const user = await createUser({ email: "agent@example.com", name: "Agent", role: "AGENT", agencyId: agency.id, passwordHash });
+      const before = Date.now();
+      await login(user.email, BAD);
+      const reservedAt = (await userRow(user.id)).attemptReservedAt;
+      expect(reservedAt).not.toBeNull();
+      // Database clock vs this process's clock: same machine, allow a little skew.
+      expect(Math.abs(reservedAt!.getTime() - before)).toBeLessThan(5_000);
+    });
+
+    for (const [label, age] of [["older than 2 minutes", THREE_MIN], ["never recorded (NULL)", null]] as const) {
+      it(`login, stuck at 3 with a reservation ${label} → LOCKED unchecked, a 15-minute lock, one alert, sessions ended; the correct password works after 15 minutes`, async () => {
+        const start = fakeDateFromNow();
+        const user = await stuckAgent(age === null ? null : new Date(start - age));
+        await createSession(user.id);
+        const verifySpy = vi.spyOn(password, "verifyPassword");
+
+        expect(await login(user.email, GOOD)).toEqual({ ok: false, reason: "LOCKED" });
+        expect(verifySpy).not.toHaveBeenCalled();
+        const row = await userRow(user.id);
+        expect(row.lockedUntil?.getTime()).toBe(start + FIFTEEN_MIN);
+        expect(row.failedLogins).toBe(0);
+        expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(notifyAdminLockout).mock.calls[0]?.[0]).toMatchObject({ id: user.id, email: user.email });
+        expect(await db.session.count({ where: { userId: user.id } })).toBe(0);
+
+        vi.setSystemTime(start + FIFTEEN_MIN);
+        expect(await login(user.email, GOOD)).toMatchObject({ ok: true, userId: user.id });
+        expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+      });
+    }
+
+    it("TOTP, stuck at 3 with an old reservation → LOCKED unchecked, a 15-minute lock, one alert, every session ended; a code works after 15 minutes", async () => {
+      const start = fakeDateFromNow();
+      const { admin, secret, sessionId } = await stuckAdmin(new Date(start - THREE_MIN));
+      const otherDevice = await createSession(admin.id);
+      await db.session.updateMany({ where: { userId: admin.id }, data: { totpVerifiedAt: new Date() } });
+      vi.mocked(verify).mockClear();
+
+      const code = await generate({ secret, epoch: Math.floor(Date.now() / 1000) });
+      expect(await checkTotpForSession(sessionId, code)).toBe("LOCKED");
+      expect(verify).not.toHaveBeenCalled();
+      const row = await userRow(admin.id);
+      expect(row.lockedUntil?.getTime()).toBe(start + FIFTEEN_MIN);
+      expect(row.failedLogins).toBe(0);
+      expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+      expect(await db.session.count({ where: { userId: admin.id } })).toBe(0);
+      expect(await getSession(otherDevice)).toBeNull();
+
+      vi.setSystemTime(start + FIFTEEN_MIN);
+      const fresh = await getSession(await createSession(admin.id));
+      const later = await generate({ secret, epoch: Math.floor(Date.now() / 1000) });
+      expect(await checkTotpForSession(fresh!.sessionId, later)).toBe("OK");
+    });
+
+    it("parallel attempts on a stuck row: all LOCKED, exactly one lock and one alert", async () => {
+      const user = await stuckAgent(new Date(Date.now() - THREE_MIN));
+      const results = await Promise.all(Array.from({ length: 10 }, () => login(user.email, GOOD)));
+      expect(results.every((r) => !r.ok && r.reason === "LOCKED")).toBe(true);
+      expect(isLockedNow((await userRow(user.id)).lockedUntil)).toBe(true);
+      expect(notifyAdminLockout).toHaveBeenCalledTimes(1);
+    });
+
+    it("login, at 3 with a fresh reservation (slot 3 still in flight) → LOCKED, no lock written, no alert, sessions kept", async () => {
+      const user = await stuckAgent(new Date(Date.now() - 10_000));
+      await createSession(user.id);
+      expect(await login(user.email, GOOD)).toEqual({ ok: false, reason: "LOCKED" });
+      const row = await userRow(user.id);
+      expect(row.lockedUntil).toBeNull();
+      expect(row.failedLogins).toBe(3);
+      expect(notifyAdminLockout).not.toHaveBeenCalled();
+      expect(await db.session.count({ where: { userId: user.id } })).toBe(1);
+    });
+
+    it("TOTP, at 3 with a fresh reservation → LOCKED, no lock written, no alert, session kept", async () => {
+      const { admin, secret, sessionId } = await stuckAdmin(new Date(Date.now() - 10_000));
+      const code = await generate({ secret, epoch: Math.floor(Date.now() / 1000) });
+      expect(await checkTotpForSession(sessionId, code)).toBe("LOCKED");
+      const row = await userRow(admin.id);
+      expect(row.lockedUntil).toBeNull();
+      expect(row.failedLogins).toBe(3);
+      expect(notifyAdminLockout).not.toHaveBeenCalled();
+      expect(await db.session.count({ where: { userId: admin.id } })).toBe(1);
+    });
+  });
 });
