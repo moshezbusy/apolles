@@ -15,10 +15,15 @@ export const link = "text-sm font-semibold text-brand hover:underline disabled:o
 
 export const label = "flex flex-col gap-1.5 text-xs font-semibold text-[#37413d]";
 
-export const input =
-  "min-h-10 w-full rounded-lg border border-[#d9e1dc] bg-paper px-3 py-2 text-sm font-normal text-ink placeholder:text-[#9ba29e] outline-none transition focus:border-[#95aba2] focus:ring-[3px] focus:ring-brand/10";
+// Focus: a solid brand-green border and ring, clearly visible for keyboard users (WCAG 2.4.7).
+// Size and weight are not in the base, so the code input can set its own without a conflict.
+const inputBase =
+  "min-h-10 w-full rounded-lg border border-[#d9e1dc] bg-paper px-3 py-2 text-ink placeholder:text-[#9ba29e] outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/40";
+export const input = `${inputBase} text-sm font-normal`;
+// The 6-digit 2FA code field: large, bold, spaced digits.
+export const codeInput = `${inputBase} text-center text-xl font-bold tracking-[0.4em]`;
 
-export const hint = "text-xs text-[#7d8581]";
+export const hint = "text-xs text-muted";
 
 export const card =
   "rounded-[18px] border border-[#ece7de] bg-paper shadow-[0_8px_24px_rgba(23,63,53,0.06)]";
@@ -37,7 +42,7 @@ export const tableWrap =
   "overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_14px_36px_rgba(19,47,39,0.08)]";
 export const table = "w-full text-left text-sm";
 export const thead = "border-b border-line";
-export const th = "px-4 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[#7d8581]";
+export const th = "px-4 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[#5f6863]";
 // `cell` has no colour: use it when a cell sets its own (two colour classes on one element
 // conflict, and the winner depends on CSS order, not class order). `td` is the dark default.
 export const cell = "px-4 py-3.5 align-middle";

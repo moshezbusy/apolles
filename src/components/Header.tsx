@@ -41,7 +41,7 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
             className="flex flex-col-reverse items-end rounded-[10px] border border-[#dce6e0] bg-[#f7faf8] px-[11px] py-1.5 text-[12.5px] font-bold leading-tight tabular-nums text-brand hover:border-[#bcd0c6]"
           >
             {formatUsd(balanceCents)}
-            <small className="text-[11px] font-semibold text-[#7f8984]">Balance</small>
+            <small className="text-[11px] font-semibold text-muted">Balance</small>
           </Link>
 
           <details className="relative">
@@ -50,7 +50,7 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
                 aria-hidden="true"
                 className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#e5eee9] text-[11px] font-extrabold text-brand"
               >{initials(agencyName)}</span>
-              <span className="hidden sm:inline">{agencyName}</span>
+              <span className="sr-only sm:not-sr-only sm:max-w-[220px] sm:truncate">{agencyName}</span>
               <span aria-hidden="true" className="text-[11px] text-[#8a938e]">
                 ▾
               </span>

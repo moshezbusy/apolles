@@ -72,7 +72,7 @@ export default async function AgenciesPage({ searchParams }: { searchParams: Sea
                       <td className={td}>
                         <span className="font-bold">{agency.name}</span>
                         {agency.agentEmail ? (
-                          <span className="block text-xs text-[#7d8581]">{agency.agentEmail}</span>
+                          <span className="block text-xs text-muted">{agency.agentEmail}</span>
                         ) : null}
                       </td>
                       <td className={td}>{agency.country}</td>

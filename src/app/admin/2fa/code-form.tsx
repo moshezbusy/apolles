@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { alertError, btnPrimary, input, label } from "@/components/ui";
+import { alertError, btnPrimary, codeInput, label } from "@/components/ui";
 import type { TotpFormState } from "./form-state";
 
 type TotpAction = (previous: TotpFormState, formData: FormData) => Promise<TotpFormState>;
@@ -38,7 +38,7 @@ export function TotpCodeForm({ action }: { action: TotpAction }) {
           minLength={6}
           maxLength={6}
           required
-          className={`${input} text-center text-xl font-bold tracking-[0.4em]`}
+          className={codeInput}
         />
       </label>
 

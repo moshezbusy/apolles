@@ -68,11 +68,11 @@ export default async function AgencyWalletPage({ params, searchParams }: Props) 
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className={`${card} p-6`}>
-            <p className="text-xs font-semibold text-[#7d8581]">Available balance</p>
+            <p className="text-xs font-semibold text-muted">Available balance</p>
             <p className="mt-1 text-[28px] font-bold tabular-nums text-brand">{formatUsd(balance.balanceCents)}</p>
           </div>
           <div className={`${card} p-6`}>
-            <p className="text-xs font-semibold text-[#7d8581]">Held for bookings</p>
+            <p className="text-xs font-semibold text-muted">Held for bookings</p>
             <p className="mt-1 text-[28px] font-bold tabular-nums text-ink">{formatUsd(balance.heldCents)}</p>
           </div>
         </div>

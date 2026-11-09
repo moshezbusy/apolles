@@ -20,7 +20,7 @@ export default async function LoginPage({
         </p>
       ) : null}
       <LoginForm />
-      <p className="mt-3 text-center text-xs text-[#8b928e]">
+      <p className="mt-3 text-center text-xs text-muted">
         For your security, you are signed out automatically after 12 hours.
       </p>
     </AuthShell>

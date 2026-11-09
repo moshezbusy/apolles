@@ -87,6 +87,12 @@ describe("Header", () => {
     expect(html).toMatch(/aria-hidden="true"[^>]*>TT</);
   });
 
+  it("keeps the agency name readable by screen readers on phones (sr-only, not display:none)", () => {
+    const summary = html.match(/<summary[^>]*>[\s\S]*?<\/summary>/)?.[0] ?? "";
+    expect(summary).toMatch(/<span class="[^"]*sr-only[^"]*">Test Travel<\/span>/);
+    expect(summary).not.toMatch(/class="hidden[^"]*">Test Travel</);
+  });
+
   it("has no Bookings item", () => {
     expect(html).not.toContain("Bookings");
   });

@@ -52,13 +52,13 @@ export default async function BalancePage({ searchParams }: { searchParams: Sear
 
         <div className="grid gap-4 sm:grid-cols-2">
           <section id="available-balance" aria-labelledby="available-balance-label" className={`${card} p-6`}>
-            <h2 id="available-balance-label" className="text-xs font-semibold text-[#7d8581]">
+            <h2 id="available-balance-label" className="text-xs font-semibold text-muted">
               Available balance
             </h2>
             <p className="mt-1 text-[28px] font-bold tabular-nums text-brand">{formatUsd(balance.balanceCents)}</p>
           </section>
           <section id="held-balance" aria-labelledby="held-balance-label" className={`${card} p-6`}>
-            <h2 id="held-balance-label" className="text-xs font-semibold text-[#7d8581]">
+            <h2 id="held-balance-label" className="text-xs font-semibold text-muted">
               Held for bookings
             </h2>
             <p className="mt-1 text-[28px] font-bold tabular-nums text-ink">{formatUsd(balance.heldCents)}</p>
@@ -72,7 +72,7 @@ export default async function BalancePage({ searchParams }: { searchParams: Sear
           <dl className="grid grid-cols-[max-content_1fr] gap-x-8 gap-y-2 text-sm">
             {bankDetails.map((detail) => (
               <div key={detail.label} className="contents">
-                <dt className="text-[#7d8581]">{detail.label}</dt>
+                <dt className="text-muted">{detail.label}</dt>
                 <dd className="font-mono text-ink">{detail.value}</dd>
               </div>
             ))}
