@@ -39,15 +39,30 @@ model Agency {
   status        AccountStatus @default(ACTIVE)
   bankRefNo     Int           @unique @default(autoincrement())
   bankReference String        @unique // e.g. "APL-1042"
-  logoUrl       String?
-  phone         String?
-  email         String?
+  phone         String? // business phone, set by the agent on /settings (shown on vouchers)
+  email         String? // business email, set by the agent on /settings (not a login email)
   createdAt     DateTime      @default(now())
 
   users         User[]
   ledgerEntries LedgerEntry[]
+  logo          AgencyLogo?
 
   @@index([createdAt, id])
+}
+
+// The agency's logo, one per agency (src/server/agency-profile.ts). The bytes are PNG or JPEG,
+// checked from their own header on upload (src/lib/image-info.ts); never SVG.
+model AgencyLogo {
+  agencyId  String   @id
+  mimeType  String // "image/png" | "image/jpeg"
+  data      Bytes
+  sizeBytes Int
+  width     Int
+  height    Int
+  sha256    String
+  updatedAt DateTime @updatedAt
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Restrict)
 }
 
 model User {
