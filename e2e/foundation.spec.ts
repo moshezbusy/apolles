@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { generate } from "otplib";
 import { latestSetPasswordLink } from "./support/mail";
 import { ADMIN_FILE, type E2eAdmin } from "./support/paths";
+import { solidPng } from "./support/png";
 
 // The whole plan-1 flow, in one browser session per role:
 //   1. admin signs in with TOTP          4. admin confirms a USD 1,000.00 top-up
@@ -97,6 +98,32 @@ test("foundation: admin creates an agency, tops it up, the agent sees the balanc
     await expect(history.locator("tbody tr")).toHaveCount(1);
     await expect(history.locator("tbody tr").filter({ hasText: "Top-up · bank transfer" })).toHaveCount(1);
     await expect(history.locator("tbody tr")).toContainText("+USD 1,000.00");
+  });
+
+  await test.step("5b. the agent fills in the agency details and uploads a logo", async () => {
+    await agentPage.getByRole("banner").getByText("Test Travel", { exact: true }).click(); // agency menu
+    await agentPage.getByRole("banner").getByRole("link", { name: "Agency settings" }).click();
+    await expect(agentPage).toHaveURL(/\/settings$/);
+    await agentPage.getByLabel("Business email").fill("office@test-travel.example");
+    await agentPage.getByLabel("Phone").fill("+972 50 123 4567");
+    await agentPage.getByRole("button", { name: "Save changes" }).click();
+    const details = agentPage.getByRole("region", { name: "Agency details" });
+    await expect(details.getByRole("status")).toHaveText("Changes saved.");
+
+    await agentPage.getByLabel("Upload a logo").setInputFiles({
+      name: "logo.png",
+      mimeType: "image/png",
+      buffer: solidPng(320, 100),
+    });
+    await agentPage.getByRole("button", { name: "Upload logo" }).click();
+    const logoSection = agentPage.getByRole("region", { name: "Agency logo" });
+    await expect(logoSection.getByRole("status")).toHaveText("Logo saved.");
+    const logo = agentPage.getByRole("img", { name: "Test Travel logo" });
+    await expect(logo).toBeVisible();
+    await expect.poll(() => logo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(320);
+
+    await agentPage.reload();
+    await expect(agentPage.getByLabel("Phone")).toHaveValue("+972 50 123 4567");
   });
 
   await test.step("6. the agent opening /admin ends at /login or a 404", async () => {
