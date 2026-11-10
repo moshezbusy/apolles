@@ -17,13 +17,13 @@ const LOGO_MAX_SIDE = 4_000;
 
 export const LOGO_RULE_COPY = "PNG or JPEG, at least 300px wide, up to 500 KB.";
 
-// "+972 50-123-4567", "(03) 555 1234": digits with spaces, dashes and brackets, an optional
-// leading +, 7 to 15 digits in total (the E.164 maximum).
+// "+972 50-123-4567", "(03) 555 1234": digits with plain spaces, dashes and brackets, an
+// optional leading +, 7 to 15 digits in total (the E.164 maximum). No tabs or line breaks.
 const phone = z
   .string()
   .trim()
   .max(30)
-  .regex(/^\+?[0-9\s\-()]+$/)
+  .regex(/^\+?[0-9 \-()]+$/)
   .refine((value) => {
     const digits = value.replace(/\D/g, "").length;
     return digits >= 7 && digits <= 15;
@@ -31,7 +31,14 @@ const phone = z
 
 export const agencyProfileInput = z
   .object({
-    name: z.string().trim().min(2).max(100),
+    // No control or invisible formatting characters (NUL, line breaks, right-to-left
+    // overrides): the name is shown in the admin list and printed on vouchers.
+    name: z
+      .string()
+      .trim()
+      .min(2)
+      .max(100)
+      .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value)),
     email: z.string().trim().max(254).pipe(z.email()),
     phone,
     country: z.string().trim().refine(isCountryCode),
@@ -77,6 +84,9 @@ export async function updateAgencyProfile(
   const after = { ...input, email: normalizeEmail(input.email) };
 
   await db.$transaction(async (tx) => {
+    // Lock the row so two saves at the same moment are recorded one after the other, each
+    // with the right "before" in the audit log.
+    await tx.$queryRaw`SELECT id FROM "Agency" WHERE id = ${agencyId} FOR UPDATE`;
     const before = await tx.agency.findUniqueOrThrow({
       where: { id: agencyId },
       select: { name: true, email: true, phone: true, country: true },

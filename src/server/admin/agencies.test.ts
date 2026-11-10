@@ -28,6 +28,12 @@ describe("admin agencies", () => {
   });
 
   describe("createAgency", () => {
+    it("rejects a country code that is not ISO 3166-1 (e.g. UK, EU)", async () => {
+      await expect(createAgency(adminId, { ...input, country: "UK" })).rejects.toThrow();
+      await expect(createAgency(adminId, { ...input, country: "eu" })).rejects.toThrow();
+      expect(await db.agency.count()).toBe(0);
+    });
+
     it("creates agency + AGENT user + SET email + audit row", async () => {
       const result = await createAgency(adminId, input);
       expect(result.emailSent).toBe(true);

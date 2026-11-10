@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isCountryCode } from "@/lib/countries";
 import { Prisma } from "@/generated/prisma/client";
 import type { AccountStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
@@ -16,7 +17,8 @@ export const DUPLICATE_EMAIL_MESSAGE = "A user with this email already exists";
 export const createAgencyInput = z
   .object({
     name: z.string().trim().min(2).max(100),
-    country: z.string().trim().toUpperCase().pipe(z.string().regex(/^[A-Z]{2}$/)), // ISO 3166-1 alpha-2, normalized to uppercase
+    // ISO 3166-1 alpha-2, normalized to uppercase; only officially assigned codes (no UK, EU).
+    country: z.string().trim().toUpperCase().refine(isCountryCode),
     agentName: z.string().trim().min(1).max(100),
     agentEmail: z.string().trim().max(254).pipe(z.email()),
   })

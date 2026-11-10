@@ -1,17 +1,31 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { alertError, alertSuccess, btnSecondary, hint } from "@/components/ui";
 import type { SettingsFormState } from "./form-state";
 
 type Action = (previous: SettingsFormState, formData: FormData) => Promise<SettingsFormState>;
 
-export function LogoForm({ action, rule }: { action: Action; rule: string }) {
+export function LogoForm({ action, rule, maxBytes }: { action: Action; rule: string; maxBytes: number }) {
   const [state, formAction, pending] = useActionState<SettingsFormState, FormData>(action, null);
+  const [tooLarge, setTooLarge] = useState(false);
+
+  // Checked in the browser before sending: the server refuses bodies over 1 MB with a hard
+  // error, and phone photos are often bigger. The server checks again on its side.
+  function checkSize(event: React.FormEvent<HTMLFormElement>) {
+    const file = new FormData(event.currentTarget).get("logo");
+    const big = file instanceof Blob && file.size > maxBytes;
+    setTooLarge(big);
+    if (big) event.preventDefault();
+  }
 
   return (
-    <form action={formAction} className="flex flex-col gap-3">
-      {state ? (
+    <form action={formAction} onSubmit={checkSize} className="flex flex-col gap-3">
+      {tooLarge ? (
+        <p role="alert" className={alertError}>
+          The file is too large. {rule}
+        </p>
+      ) : state ? (
         <p role={state.status === "error" ? "alert" : "status"} className={state.status === "error" ? alertError : alertSuccess}>
           {state.message}
         </p>

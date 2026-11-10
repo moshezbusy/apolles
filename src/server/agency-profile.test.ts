@@ -68,6 +68,10 @@ describe("agency profile", () => {
       ["phone too long", { ...valid, phone: "+1 234 567 890 123 456" }],
       ["unknown country", { ...valid, country: "XX" }],
       ["unknown field", { ...valid, agencyId: agencyB }],
+      ["right-to-left override in name", { ...valid, name: "Sunrise \u202Elevart" }],
+      ["NUL in name", { ...valid, name: "Sunrise\u0000Travel" }],
+      ["newline in phone", { ...valid, phone: "+972 50\n123 4567" }],
+      ["tab in phone", { ...valid, phone: "+972\t501234567" }],
     ])("rejects %s and changes nothing", async (_label, input) => {
       await expect(updateAgencyProfile(agentA, agencyA, input as typeof valid)).rejects.toThrow();
       expect(await getAgencyProfile(agencyA)).toMatchObject({ name: "Sunrise Travel", email: null });

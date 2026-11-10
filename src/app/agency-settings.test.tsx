@@ -61,6 +61,14 @@ describe("agency settings", () => {
       expect(html).not.toContain("Other Agency");
     });
 
+    it("an unknown stored country shows 'Choose a country', never a silent first option", async () => {
+      await db.agency.update({ where: { id: agencyA }, data: { country: "UK" } });
+      const { default: Page } = await import("./(agent)/settings/page");
+      const html = renderToStaticMarkup(await Page());
+      expect(html).toMatch(/<option value="" disabled="" selected="">Choose a country<\/option>/);
+      expect(html).not.toMatch(/<option value="AF" selected="">/);
+    });
+
     it("shows the logo from /settings/logo once there is one", async () => {
       await setAgencyLogo(agentA, agencyA, png(600, 200));
       const { default: Page } = await import("./(agent)/settings/page");
@@ -86,6 +94,8 @@ describe("agency settings", () => {
       const { updateProfileAction } = await import("./(agent)/settings/actions");
       const state = await updateProfileAction(null, form({ name: "S", email: "x", phone: "1", country: "XX" }));
       expect(state?.status).toBe("error");
+      // What the agent typed comes back, so the form can show it again instead of resetting.
+      expect(state && "values" in state ? state.values : null).toEqual({ name: "S", email: "x", phone: "1", country: "XX" });
       expect(await getAgencyProfile(agencyA)).toMatchObject({ name: "Sunrise Travel" });
     });
 
@@ -113,14 +123,14 @@ describe("agency settings", () => {
   describe("GET /settings/logo", () => {
     it("404 when the agency has no logo", async () => {
       const { GET } = await import("./(agent)/settings/logo/route");
-      expect((await GET()).status).toBe(404);
+      expect((await GET(new Request("http://x/settings/logo"))).status).toBe(404);
     });
 
     it("serves the session agency's logo with safe headers", async () => {
       const bytes = png(600, 200);
       await setAgencyLogo(agentA, agencyA, bytes);
       const { GET } = await import("./(agent)/settings/logo/route");
-      const res = await GET();
+      const res = await GET(new Request("http://x/settings/logo"));
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toBe("image/png");
       expect(res.headers.get("x-content-type-options")).toBe("nosniff");
@@ -134,8 +144,26 @@ describe("agency settings", () => {
       await setAgencyLogo(agentA, agencyA, png(600, 200));
       signInAs(agencyB, "someone-else");
       const { GET } = await import("./(agent)/settings/logo/route");
-      expect((await GET()).status).toBe(404);
+      expect((await GET(new Request("http://x/settings/logo"))).status).toBe(404);
     });
+
+    it("lets the browser keep the logo when the URL names its exact version", async () => {
+      await setAgencyLogo(agentA, agencyA, png(600, 200));
+      const sha = (await db.agencyLogo.findUniqueOrThrow({ where: { agencyId: agencyA } })).sha256;
+      const { GET } = await import("./(agent)/settings/logo/route");
+      const current = await GET(new Request(`http://x/settings/logo?v=${sha.slice(0, 12)}`));
+      expect(current.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
+      const stale = await GET(new Request("http://x/settings/logo?v=000000000000"));
+      expect(stale.headers.get("cache-control")).toBe("private, no-cache");
+    });
+  });
+
+  it("the agent area has an error page with a way back (e.g. an upload over the 1 MB limit)", async () => {
+    const { default: AgentError } = await import("./(agent)/error");
+    const html = renderToStaticMarkup(<AgentError error={new Error("x")} reset={() => {}} />);
+    expect(html).toContain("Something went wrong");
+    expect(html).toContain("Try again");
+    expect(html).not.toContain("x</");
   });
 
   it("the header's agency menu links to Agency settings", () => {

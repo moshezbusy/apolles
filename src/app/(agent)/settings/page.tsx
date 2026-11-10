@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { initials } from "@/components/Header";
 import { card, link, pageTitle } from "@/components/ui";
 import { countryOptions } from "@/lib/countries";
-import { LOGO_RULE_COPY, getAgencyProfile } from "@/server/agency-profile";
+import { LOGO_MAX_BYTES, LOGO_RULE_COPY, getAgencyProfile } from "@/server/agency-profile";
 import { requireAgent } from "@/server/auth/guards";
 import { removeLogoAction, updateProfileAction, uploadLogoAction } from "./actions";
 import { LogoForm } from "./logo-form";
@@ -63,7 +63,7 @@ export default async function AgencySettingsPage() {
               )}
             </div>
             <div className="flex flex-col gap-3">
-              <LogoForm action={uploadLogoAction} rule={LOGO_RULE_COPY} />
+              <LogoForm action={uploadLogoAction} rule={LOGO_RULE_COPY} maxBytes={LOGO_MAX_BYTES} />
               {profile.hasLogo ? (
                 <form action={removeLogoAction}>
                   <button type="submit" className={link}>

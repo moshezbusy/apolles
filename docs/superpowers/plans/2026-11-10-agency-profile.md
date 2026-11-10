@@ -87,3 +87,9 @@
 - [ ] Screenshot `/settings` on desktop and phone.
 - [ ] Reviews: `requesting-code-review`, `differential-review` and `/security-review` (PII and file upload).
 - [ ] Open a PR. Auto-merge merges it when CI is green; check that it merged and that staging updated.
+
+## Carried to plan 3 (voucher), from the security review
+- At upload, the logo is checked only by its header. Before the PDF voucher uses it:
+    - decode and re-encode the image in full on upload (this also strips metadata);
+    - cap the pixel count (for example ≤ 4 megapixels);
+    - the voucher falls back to the agency name when the logo will not decode.
