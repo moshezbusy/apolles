@@ -15,6 +15,30 @@
 - **רשימת הבדיקה הרשמית** היא עכשיו [B2B-SA-Requirement-List_2026.docx](https://a.travel-assets.com/documentation-hubs/prod/rapid/latest/en-US/resources/assets/B2B-SA-Requirement-List_2026.docx).
 - **זכאות** (עסק ישראלי, עסק חדש, IATA, זמני אישור, ערבות, חשבונית): לא נמצא מקור רשמי. "case by case".
 
+## שיטות תשלום: ממצאים מהמקור הרשמי (10.11.2026)
+
+נבדק ישירות מהאתר החי ומקובץ ה-OpenAPI הרשמי (`rapid-3-specs.yaml`), לא דרך צד שלישי.
+
+**ארבע דרכים לשלם, לפי מי שגובה** ([SCA compliance](https://developers.expediagroup.com/rapid/lodging/booking/sca-regulation)):
+
+| # | שיטה | מי גובה | מה שולחים ב-`payments[].type` | PCI |
+|---|---|---|---|---|
+| 1 | **Expedia Affiliate Collect (EAC)** | אנחנו. Expedia לא מעבדת תשלום | `affiliate_collect` + `billing_contact`, בלי כרטיס | לא |
+| 2 | כרטיס של החברה (תאגידי / וירטואלי חד-פעמי) | אנחנו משלמים ל-Expedia בכרטיס בכל הזמנה | `corporate_card` / `virtual_card` + מספר כרטיס + CVV | כן |
+| 3 | כרטיס של הנוסע | Expedia (MOR) מחייבת מיד | `customer_card` + כרטיס | כן, + "This payment will be processed in" (BP10) |
+| 4 | Property Collect | המלון, בהגעה או לפי לוח פיקדונות | כרטיס כביטחון | כן (GR5) |
+
+- **ציטוט מה-OpenAPI** (`PaymentRequest.type`): "If affiliate_collect, card information is not required as EPS will not be processing the payment. However, billing contact information is still required."
+- **EAC רק על חדרים ש-Expedia גובה עליהם.** מה-OpenAPI (`filter=expedia_collect`): "These properties can be eligible for payments via Expedia Affiliate Collect (EAC)". כלומר: בחיפוש מסננים `filter=expedia_collect`, ולא מציגים Property Collect.
+- **EAC מופעל לפי חשבון.** `GET /properties/{id}/payment-options` מחזיר `affiliate_collect` רק "if a booking can be made using Expedia Affiliate Collect". הערכים של `billing_terms` ו-`payment_terms`: "will be provided to you separately", כלומר נקבעים בחוזה.
+- **TR3 ל-EAC:** לשלוח את שם המשלם האמיתי (בדיקת סנקציות). אם אי אפשר, שם החברה שמשלמת ל-Expedia.
+- **SCA:** הזמנות EAC "unaffected by SCA regulations".
+- **Hold and Resume:** אפשר להחזיק חדר בלי חיוב ולאשר אחר כך (רק לתעריפים עם `holdable`). [מקור](https://developers.expediagroup.com/rapid/lodging/booking/hold-resume)
+- **תוספת רווח:** תנאי הסוכנים, סעיף 1.8 "Booking Charge": מותר רק באישור Expedia, בשורה נפרדת, עם הטקסט "The total price may include an additional booking charge from [NAME]". זה מאשר את BP5. [מקור](https://developers.expediagroup.com/terms/agent/en_us)
+- **מה הדפים הפומביים לא אומרים:** עמלות, מסגרת אשראי, פיקדון, ערבות, תנאים לשותף חדש. הכול בחוזה. כל שותף מתחיל במפתח פיתוח מוגבל, ועובר לייצור רק אחרי site review. [מקור](https://developers.expediagroup.com/rapid/setup)
+
+**מסקנה:** EAC היא השיטה היחידה שמתאימה לאפיון (ארנק מראש, Apolles לא נוגעת בכרטיס, בלי PCI ובלי SCA). שיטות 2–4 מחייבות PCI ולכן לא בונים אותן.
+
 ## החלטות שמשה אישר (4.11.2026)
 
 - **כשדרישה של Expedia סותרת את ה-Developer Brief, Expedia קובעת.** בפועל:
@@ -84,7 +108,7 @@
 
 ## 4. שאלות ל-Expedia (מנהל השותפות), לפי חשיבות
 
-1. **איך Apolles משלמת ל-Expedia?** חשבונית תקופתית או קו אשראי (Affiliate Collect), או כרטיס בכל הזמנה. זה קובע את כל מודל הכסף. חשבונית היא הכי בטוחה: אף פעם לא נוגעים בכרטיס, וזה מתאים לארנק של הסוכנויות.
+1. **האם מאשרים Expedia Affiliate Collect (EAC) לשותף חדש, ובאילו תנאים?** פיקדון, ערבות, מסגרת אשראי, תדירות חשבונית ומועד תשלום, וערכי `billing_terms` / `payment_terms` לחשבון שלנו. (שהשיטה קיימת ואיך היא עובדת כבר אומת, ראו "שיטות תשלום" למעלה. התנאים המסחריים לא פומביים.)
 2. **ER1:** האם מספיק שרק האדמין של Apolles רואה את מספר ההזמנה של Expedia, או שגם הסוכנים חייבים לראות אותו?
 3. **דף ההצעה ללקוח:** מותר לשלוח ללקוח קצה מחירים (מחיר מכירה של הסוכן) בקישור פרטי? יש מגבלות על הצגת תעריפי B2B?
 4. **כמה חדרים:** מותר לעלות לאוויר עם חדר אחד להזמנה ולהוסיף כמה חדרים אחר כך?
@@ -95,5 +119,5 @@
 
 ## 5. מה עוד חסר כדי להשלים את המחקר
 
-- לאפשר ברשת של הסביבה את `developers.expediagroup.com` ואת `a.travel-assets.com` (רשימת הבדיקה הרשמית). אחר כך אשלים את החלק הייחודי ל-B2B ואאמת כל שורה בטבלה.
+- (10.11.2026) הרשת בסביבת `apolles` כבר מאפשרת את `developers.expediagroup.com` ואת `a.travel-assets.com`. נשאר: לאמת כל שורה בטבלה מול הדף החי ורשימת הבדיקה הרשמית.
 - בפיתוח עצמו יידרש גם `test.ean.com`.
