@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  AGENT
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum PasswordTokenPurpose {
+  SET
+  RESET
+}
+
+enum LedgerEntryType {
+  TOPUP_BANK
+  HOLD
+  HOLD_RELEASE
+  CHARGE
+  REFUND
+  PAYOUT
+  ADJUSTMENT
+}
+
+model Agency {
+  id            String        @id @default(cuid())
+  name          String
+  country       String // ISO 3166-1 alpha-2
+  status        AccountStatus @default(ACTIVE)
+  bankRefNo     Int           @unique @default(autoincrement())
+  bankReference String        @unique // e.g. "APL-1042"
+  logoUrl       String?
+  phone         String?
+  email         String?
+  createdAt     DateTime      @default(now())
+
+  users         User[]
+  ledgerEntries LedgerEntry[]
+
+  @@index([createdAt, id])
+}
+
+model User {
+  id                String        @id @default(cuid())
+  agencyId          String?
+  role              Role
+  email             String        @unique // always stored lowercase (see normalizeEmail)
+  name              String
+  passwordHash      String?
+  failedLogins      Int           @default(0)
+  lockedUntil       DateTime?
+  // When the last sign-in attempt slot was taken (database clock, set by reserveAttempt). A row
+  // at MAX_FAILED_LOGINS with no lock and an old reservation was left by a crashed request.
+  attemptReservedAt DateTime?
+  totpSecret        String? // base32; set by startTotpEnrollment (admins only)
+  // Set once the admin proved the authenticator works; until then the secret can be replaced.
+  totpConfirmedAt   DateTime?
+  // Last accepted TOTP time step: a code is accepted only for a later step (no reuse).
+  totpLastUsedStep  Int?
+  status            AccountStatus @default(ACTIVE)
+  createdAt         DateTime      @default(now())
+
+  agency         Agency?         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  sessions       Session[]
+  passwordTokens PasswordToken[]
+  ledgerEntries  LedgerEntry[]
+  auditLogs      AuditLog[]
+
+  @@index([agencyId])
+}
+
+model Session {
+  id             String    @id @default(cuid())
+  tokenHash      String    @unique
+  userId         String
+  expiresAt      DateTime
+  // Admin sessions only: when the TOTP code was entered for this session. Null = not yet.
+  totpVerifiedAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordToken {
+  id        String               @id @default(cuid())
+  tokenHash String               @unique
+  userId    String
+  purpose   PasswordTokenPurpose
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model LedgerEntry {
+  id             String          @id @default(cuid())
+  agencyId       String
+  type           LedgerEntryType
+  amountCents    Int
+  currency       String          @default("USD")
+  holdId         String?
+  bookingRef     String?
+  reason         String
+  actorUserId    String?
+  idempotencyKey String          @unique
+  createdAt      DateTime        @default(now())
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  actor  User?  @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([agencyId, createdAt])
+  @@index([holdId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String
+  action      String
+  targetType  String
+  targetId    String
+  before      Json?
+  after       Json?
+  createdAt   DateTime @default(now())
+
+  actor User @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([targetType, targetId])
+}
+
+// Fixed-window request counters for rate limits (src/server/rate-limit.ts). One row per key
+// and window; windowStart comes from the database clock. Keys hold an action and an IP, or a
+// sha256 hash of an email, never a raw email. Rows older than 24 hours are pruned.
+model RateLimitBucket {
+  key         String
+  windowStart DateTime
+  count       Int
+
+  @@id([key, windowStart])
+  @@index([windowStart])
+}
