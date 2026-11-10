@@ -22,7 +22,9 @@ import { SupplierError, expediaRequest, recordUnknownFields } from "./client";
 //
 // Validation (owner decision 2026-11-10): every field we use is checked strictly; fields we
 // do not know are dropped and their names recorded in the supplier log, so a new Expedia field
-// never stops search. A field we need that is missing or malformed is SupplierResponseInvalid.
+// never stops search. Each property, room and rate is checked on its own: a bad one is dropped
+// (and named in the log) and the rest of the search still works. A response that is broken as
+// a whole is SupplierResponseInvalid. An offer is never built from a partial price.
 //
 // Phase-1 rules applied here:
 // - Only rates billed in USD (wallets are USD, BP5 forbids conversion). Others are dropped.
@@ -34,6 +36,7 @@ export class SupplierResponseInvalid extends SupplierError {}
 const SHOPPING_TIMEOUT_MS = 15_000;
 const MAX_PROPERTIES_PER_CALL = 250;
 const CURRENCY = "USD";
+const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/; // property, room and rate ids and tokens in a path or query
 
 // ---------- schemas ----------
 // Built twice from one definition: with z.object (unknown keys dropped) for the data, and with
@@ -44,17 +47,9 @@ function schemas(object: ObjectFactory) {
   const unused = z.unknown().optional(); // a field Expedia documents but we do not use
   const amount = object({ value: z.string(), currency: z.string() });
   const charge = object({ billable_currency: amount, request_currency: amount });
-  const chargeType = z.enum([
-    "base_rate",
-    "tax_and_service_fee",
-    "extra_person_fee",
-    "property_fee",
-    "sales_tax",
-    "adjustment",
-    "recovery_charges_and_fees",
-    "traveler_service_fee",
-  ]);
-  const line = object({ type: chargeType, value: z.string(), currency: z.string() });
+  // The charge type stays a string here: a type we do not know drops the rate in mapping,
+  // instead of failing the whole response.
+  const line = object({ type: z.string(), value: z.string(), currency: z.string() });
   const link = object({ method: z.string(), href: z.string(), expires: unused, required_parameters: unused });
   const pricing = object({
     nightly: z.array(z.array(line)).min(1),
@@ -85,14 +80,14 @@ function schemas(object: ObjectFactory) {
     start: z.string(),
     end: z.string(),
     amount: z.string().optional(),
-    nights: z.string().optional(),
+    nights: z.string().regex(/^\d+$/).optional(),
     percent: z.string().optional(),
   });
   const rate = object({
     id: z.string(),
     status: z.string().optional(),
     refundable: z.boolean(),
-    merchant_of_record: z.enum(["expedia", "property"]).optional(),
+    merchant_of_record: z.string().optional(),
     sale_scenario: object({
       package: z.boolean().optional(),
       member: unused,
@@ -116,11 +111,12 @@ function schemas(object: ObjectFactory) {
     refundable_damage_deposit: unused,
     deposits: unused,
   });
-  const room = object({ id: z.string(), room_name: z.string(), rates: z.array(rate) });
+  // Shells: the outer levels are checked without their children, which are checked one by one.
+  const room = object({ id: z.string(), room_name: z.string(), rates: z.array(z.unknown()) });
   const property = object({
     property_id: z.string(),
     status: z.enum(["available", "partially_unavailable"]),
-    rooms: z.array(room).optional(),
+    rooms: z.array(z.unknown()).optional(),
     score: unused,
     links: unused,
     unavailable_reason: unused,
@@ -144,7 +140,7 @@ function schemas(object: ObjectFactory) {
     penalty: unused,
     trader_information: unused,
   });
-  return { availability: z.array(property), priceCheck, pricing, rate };
+  return { property, room, rate, pricing, priceCheck };
 }
 
 const lenient = schemas(z.object);
@@ -153,24 +149,35 @@ const strict = schemas(z.strictObject as unknown as ObjectFactory);
 type Pricing = z.infer<typeof lenient.pricing>;
 type Rate = z.infer<typeof lenient.rate>;
 
-// Parses with unknown keys dropped; returns the dotted paths of the unknown keys.
-function parse<T>(lenientSchema: z.ZodType<T>, strictSchema: z.ZodType<unknown>, data: unknown): { value: T; unknown: string[] } {
-  const result = lenientSchema.safeParse(data);
-  if (!result.success) {
-    const first = result.error.issues[0];
-    throw new SupplierResponseInvalid(`Expedia response is invalid at ${first ? formatPath(first.path) : "?"}`);
+// Notes for the supplier log: names of unknown fields, and "invalid:<path>" for dropped items.
+class ParseNotes {
+  readonly names: string[] = [];
+  invalid(path: string): void {
+    this.names.push(`invalid:${path}`);
   }
-  const probe = strictSchema.safeParse(data);
-  const unknown = probe.success
-    ? []
-    : probe.error.issues
-        .filter((issue) => issue.code === "unrecognized_keys")
-        .flatMap((issue) => ("keys" in issue ? (issue.keys as string[]) : []).map((key) => `${formatPath(issue.path)}.${key}`));
-  return { value: result.data, unknown };
 }
 
 function formatPath(path: readonly PropertyKey[]): string {
   return path.map((part) => (typeof part === "number" ? `[${part}]` : `.${String(part)}`)).join("").replace(/^\./, "");
+}
+
+// Checks one item. Returns null (and notes it) when it does not fit; records unknown keys.
+function check<T>(lenientSchema: z.ZodType<T>, strictSchema: z.ZodType<unknown>, data: unknown, at: string, notes: ParseNotes): T | null {
+  const result = lenientSchema.safeParse(data);
+  if (!result.success) {
+    const first = result.error.issues[0];
+    notes.invalid(`${at}${first ? `.${formatPath(first.path)}` : ""}`.replace(/^\./, ""));
+    return null;
+  }
+  const probe = strictSchema.safeParse(data);
+  if (!probe.success) {
+    for (const issue of probe.error.issues) {
+      if (issue.code !== "unrecognized_keys") continue;
+      const base = [at, formatPath(issue.path)].filter(Boolean).join(".");
+      for (const key of issue.keys) notes.names.push(base ? `${base}.${key}` : key);
+    }
+  }
+  return result.data;
 }
 
 // ---------- mapping ----------
@@ -190,41 +197,47 @@ const LINE_KIND: Record<string, PriceLineKind> = {
 };
 const LINE_ORDER: PriceLineKind[] = ["room_rate", "taxes_and_fees", "taxes", "extra_person_fee", "service_fee", "discount"];
 
-class NotSellable extends Error {} // a rate we drop on purpose (not an invalid response)
+// A rate we drop: not sellable in phase 1 (currency, unknown charge type) or not well formed.
+class DropRate extends Error {}
 
 function money(value: string, currency: string, allowNegative = false): Money {
   try {
     return parseAmount(value, currency, { allowNegative });
   } catch (error) {
-    if (error instanceof InvalidAmount) throw new SupplierResponseInvalid(`Expedia amount is invalid: ${error.message}`);
+    if (error instanceof InvalidAmount) throw new DropRate(error.message);
     throw error;
   }
 }
 
 function usd(amount: { value: string; currency: string }): Money {
-  if (amount.currency !== CURRENCY) throw new NotSellable(`billed in ${amount.currency}`);
+  if (amount.currency !== CURRENCY) throw new DropRate(`billed in ${amount.currency}`);
   return money(amount.value, amount.currency);
+}
+
+function add(sum: number, minor: number): number {
+  const next = sum + minor;
+  if (!Number.isSafeInteger(next)) throw new DropRate("amount overflow");
+  return next;
 }
 
 function tokenOf(href: string): string {
   const token = new URL(href, "https://test.ean.com").searchParams.get("token");
-  if (!token) throw new SupplierResponseInvalid("Expedia link has no token");
+  if (!token) throw new DropRate("link has no token");
   return token;
 }
 
 export function toBreakdown(pricing: Pricing): PriceBreakdown {
   const { inclusive } = pricing.totals;
-  if (inclusive.billable_currency.currency !== CURRENCY || inclusive.request_currency.currency !== CURRENCY) {
-    throw new NotSellable(`billed in ${inclusive.billable_currency.currency}`);
-  }
+  if (inclusive.request_currency.currency !== CURRENCY) throw new DropRate(`requested in ${inclusive.request_currency.currency}`);
   const total = usd(inclusive.billable_currency);
 
   const sums = new Map<PriceLineKind, number>();
   for (const line of [...pricing.nightly.flat(), ...(pricing.stay ?? [])]) {
-    if (line.currency !== CURRENCY) throw new NotSellable(`line in ${line.currency}`);
-    const kind = LINE_KIND[line.type] ?? "taxes_and_fees";
+    const kind = LINE_KIND[line.type];
+    if (!kind) throw new DropRate(`unknown charge type ${line.type}`); // never summed into the wrong line
+    if (line.currency !== CURRENCY) throw new DropRate(`line in ${line.currency}`);
     const amount = money(line.value, line.currency, line.type === "adjustment");
-    sums.set(kind, (sums.get(kind) ?? 0) + amount.minor);
+    sums.set(kind, add(sums.get(kind) ?? 0, amount.minor));
   }
   const lines: PriceLine[] = LINE_ORDER.filter((kind) => sums.has(kind)).map((kind) => ({
     kind,
@@ -235,12 +248,16 @@ export function toBreakdown(pricing: Pricing): PriceBreakdown {
   for (const kind of ["mandatory_fee", "resort_fee", "mandatory_tax"] as const) {
     const fee = pricing.fees?.[kind];
     if (!fee) continue;
-    const amount = money(fee.request_currency.value, fee.request_currency.currency);
-    if (amount.currency !== CURRENCY) throw new NotSellable(`fee in ${amount.currency}`);
-    const local = fee.billable_currency.currency === fee.request_currency.currency
-      ? null
-      : money(fee.billable_currency.value, fee.billable_currency.currency);
-    dueAtProperty.push({ kind, amount, localAmount: local });
+    const amount = usd(fee.request_currency);
+    let localAmount: Money | null = null;
+    if (fee.billable_currency.currency !== fee.request_currency.currency) {
+      try {
+        localAmount = parseAmount(fee.billable_currency.value, fee.billable_currency.currency);
+      } catch {
+        localAmount = null; // the USD amount is still shown; only the local one is missing
+      }
+    }
+    dueAtProperty.push({ kind, amount, localAmount });
   }
   const feesTotal = pricing.totals.property_fees;
   const dueAtPropertyTotal = feesTotal ? usd(feesTotal.request_currency) : null;
@@ -250,7 +267,7 @@ export function toBreakdown(pricing: Pricing): PriceBreakdown {
 
 function toOffer(propertyId: string, room: { id: string; room_name: string }, rate: Rate, occupancy: string): Offer | null {
   if (rate.sale_scenario?.package) return null; // AP4: no package rates
-  if (rate.merchant_of_record && rate.merchant_of_record !== "expedia") return null; // no property collect
+  if (rate.merchant_of_record !== undefined && rate.merchant_of_record !== "expedia") return null; // no property collect
   const pricing = rate.occupancy_pricing[occupancy];
   if (!pricing) return null;
   try {
@@ -259,13 +276,16 @@ function toOffer(propertyId: string, room: { id: string; room_name: string }, ra
       description: group.description,
       priceCheckToken: tokenOf(group.links.price_check.href),
     }));
-    const cancelPenalties: CancelPenalty[] = (rate.cancel_penalties ?? []).map((penalty) => ({
-      start: penalty.start,
-      end: penalty.end,
-      amount: penalty.amount === undefined ? null : money(penalty.amount, penalty.currency),
-      nights: penalty.nights === undefined ? null : Number.parseInt(penalty.nights, 10),
-      percent: penalty.percent ?? null,
-    }));
+    const cancelPenalties: CancelPenalty[] = (rate.cancel_penalties ?? []).map((penalty) => {
+      if (penalty.currency !== CURRENCY) throw new DropRate(`penalty in ${penalty.currency}`);
+      return {
+        start: penalty.start,
+        end: penalty.end,
+        amount: penalty.amount === undefined ? null : money(penalty.amount, penalty.currency),
+        nights: penalty.nights === undefined ? null : Number(penalty.nights),
+        percent: penalty.percent ?? null,
+      };
+    });
     return {
       propertyId,
       roomId: room.id,
@@ -278,7 +298,7 @@ function toOffer(propertyId: string, room: { id: string; room_name: string }, ra
       price: toBreakdown(pricing),
     };
   } catch (error) {
-    if (error instanceof NotSellable) return null;
+    if (error instanceof DropRate) return null;
     throw error;
   }
 }
@@ -308,35 +328,51 @@ export class ExpediaAdapter implements SupplierAdapter {
       context,
       timeoutMs: SHOPPING_TIMEOUT_MS,
     });
-    const { value, unknown } = parse(lenient.availability, strict.availability, data ?? []);
-    await recordUnknownFields(logId, unknown);
+    const list = data ?? [];
+    if (!Array.isArray(list)) throw new SupplierResponseInvalid("Expedia availability response is not a list");
 
-    return value
-      .map((property) => ({
-        propertyId: property.property_id,
-        offers: (property.rooms ?? []).flatMap((room) =>
-          room.rates.map((rate) => toOffer(property.property_id, room, rate, occupancy)).filter((offer): offer is Offer => offer !== null),
-        ),
-      }))
-      .filter((property) => property.offers.length > 0);
+    const notes = new ParseNotes();
+    const result: PropertyOffers[] = [];
+    list.forEach((rawProperty, p) => {
+      const property = check(lenient.property, strict.property, rawProperty, `[${p}]`, notes);
+      if (!property) return;
+      const offers: Offer[] = [];
+      (property.rooms ?? []).forEach((rawRoom, r) => {
+        const room = check(lenient.room, strict.room, rawRoom, `[${p}].rooms[${r}]`, notes);
+        if (!room) return;
+        room.rates.forEach((rawRate, t) => {
+          const rate = check(lenient.rate, strict.rate, rawRate, `[${p}].rooms[${r}].rates[${t}]`, notes);
+          const offer = rate ? toOffer(property.property_id, room, rate, occupancy) : null;
+          if (offer) offers.push(offer);
+        });
+      });
+      if (offers.length > 0) result.push({ propertyId: property.property_id, offers });
+    });
+    await recordUnknownFields(logId, notes.names);
+    return result;
   }
 
   async priceCheck(
     ref: { propertyId: string; roomId: string; rateId: string; token: string },
     context: SupplierContext,
   ): Promise<PriceCheckResult> {
-    const path = `/properties/${encodeURIComponent(ref.propertyId)}/rooms/${encodeURIComponent(ref.roomId)}/rates/${encodeURIComponent(ref.rateId)}`;
+    for (const value of [ref.propertyId, ref.roomId, ref.rateId, ref.token]) {
+      if (!SAFE_ID.test(value)) throw new Error("priceCheck: invalid id or token");
+    }
     const { data, logId } = await expediaRequest({
       method: "GET",
-      path,
+      path: `/properties/${ref.propertyId}/rooms/${ref.roomId}/rates/${ref.rateId}`,
       query: { token: ref.token },
       context,
       timeoutMs: SHOPPING_TIMEOUT_MS,
     });
-    const { value, unknown } = parse(lenient.priceCheck, strict.priceCheck, data);
-    await recordUnknownFields(logId, unknown);
+    const notes = new ParseNotes();
+    const value = check(lenient.priceCheck, strict.priceCheck, data, "", notes);
+    await recordUnknownFields(logId, notes.names);
+    if (!value) throw new SupplierResponseInvalid("Expedia price check response is invalid");
 
     if (value.status === "sold_out") return { status: "sold_out" };
+    // Phase 1 books one room, so the response holds one occupancy.
     const pricing = Object.values(value.occupancy_pricing ?? {})[0];
     const book = value.links?.book;
     if (!pricing || !book) throw new SupplierResponseInvalid("Expedia price check has no pricing or book link");
@@ -345,8 +381,8 @@ export class ExpediaAdapter implements SupplierAdapter {
       const status = value.status === "price_changed" ? "price_changed" : "available";
       return { status, price, bookToken: tokenOf(book.href) };
     } catch (error) {
-      // A rate that became non-USD on price check cannot be sold: treat it as sold out.
-      if (error instanceof NotSellable) return { status: "sold_out" };
+      // A rate that cannot be sold as priced now (e.g. no longer USD) is treated as sold out.
+      if (error instanceof DropRate) return { status: "sold_out" };
       throw error;
     }
   }

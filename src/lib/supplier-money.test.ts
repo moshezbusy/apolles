@@ -7,6 +7,14 @@ describe("currencyExponent", () => {
     expect(currencyExponent("EUR")).toBe(2);
     expect(currencyExponent("JPY")).toBe(0);
     expect(currencyExponent("KWD")).toBe(3);
+    // ISO 4217 says 2 for these, though the runtime's ICU data says 0: the table wins.
+    expect(currencyExponent("IDR")).toBe(2);
+    expect(currencyExponent("HUF")).toBe(2);
+    expect(currencyExponent("COP")).toBe(2);
+  });
+
+  it("rejects unknown currency codes", () => {
+    expect(() => currencyExponent("XYZ")).toThrow(InvalidAmount);
   });
 
   it("rejects codes that are not three uppercase letters", () => {
@@ -24,6 +32,9 @@ describe("parseAmount (Rapid decimal strings → integer minor units)", () => {
     ["1000", "JPY", 1000],
     ["12.345", "KWD", 12345],
     ["123456.78", "EUR", 12345678],
+    ["150000.00", "IDR", 15000000],
+    ["1000.00", "JPY", 1000], // extra decimals are fine when they are zeros
+    ["74.970", "USD", 7497],
   ])("%s %s → %i", (value, currency, minor) => {
     expect(parseAmount(value, currency)).toEqual({ minor, currency });
   });
@@ -40,6 +51,10 @@ describe("parseAmount (Rapid decimal strings → integer minor units)", () => {
     ["99999999999999999", "USD", "beyond a safe integer"],
   ])("rejects %j %s (%s)", (value, currency) => {
     expect(() => parseAmount(value, currency)).toThrow(InvalidAmount);
+  });
+
+  it("never returns -0", () => {
+    expect(Object.is(parseAmount("-0.00", "USD", { allowNegative: true }).minor, 0)).toBe(true);
   });
 
   it("accepts a negative amount only when asked", () => {

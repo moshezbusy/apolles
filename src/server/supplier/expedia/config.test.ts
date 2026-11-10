@@ -20,6 +20,14 @@ describe("readExpediaConfig", () => {
     expect(() => readExpediaConfig()).toThrow(/test\.ean\.com/);
   });
 
+  it("in production requires the base URL to be set explicitly", () => {
+    vi.stubEnv("EXPEDIA_API_KEY", "k");
+    vi.stubEnv("EXPEDIA_SHARED_SECRET", "s");
+    vi.stubEnv("APP_ENV", "production");
+    vi.stubEnv("EXPEDIA_BASE_URL", "");
+    expect(() => readExpediaConfig()).toThrow(/EXPEDIA_BASE_URL/);
+  });
+
   it("in production accepts only Expedia's two endpoints", () => {
     vi.stubEnv("EXPEDIA_API_KEY", "k");
     vi.stubEnv("EXPEDIA_SHARED_SECRET", "s");

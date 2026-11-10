@@ -15,6 +15,8 @@ export function readExpediaConfig(): ExpediaConfig {
   const apiKey = required("EXPEDIA_API_KEY");
   const sharedSecret = required("EXPEDIA_SHARED_SECRET");
   const production = process.env.APP_ENV === "production";
+  // Production must name its endpoint: a forgotten variable must not quietly run on test.
+  if (production && !process.env.EXPEDIA_BASE_URL) throw new Error("EXPEDIA_BASE_URL must be set in production");
   const baseUrl = (process.env.EXPEDIA_BASE_URL || TEST_BASE_URL).replace(/\/+$/, "");
   if (!production && baseUrl !== TEST_BASE_URL) {
     throw new Error(`EXPEDIA_BASE_URL must be ${TEST_BASE_URL} outside production`);

@@ -110,10 +110,42 @@ describe("ExpediaAdapter", () => {
       expect(await adapter.searchAvailability(query, context)).toEqual([]);
     });
 
-    it("a malformed response is a typed error, never a half-priced offer", async () => {
-      const data = fixture("availability.usd.json") as { rooms: { rates: { occupancy_pricing: Record<string, { totals?: unknown }> }[] }[] }[];
-      for (const pricing of Object.values(data[0]!.rooms[0]!.rates[0]!.occupancy_pricing)) delete pricing.totals;
+    it("a malformed rate is dropped (never a half-priced offer) and the rest of the search still works", async () => {
+      const good = (fixture("availability.usd.json") as Record<string, unknown>[])[0]!;
+      const bad = structuredClone(good) as { property_id: string; rooms: { rates: { occupancy_pricing: Record<string, { totals?: unknown }> }[] }[] };
+      bad.property_id = "999";
+      for (const pricing of Object.values(bad.rooms[0]!.rates[0]!.occupancy_pricing)) delete pricing.totals;
+      fetchMock.mockResolvedValue(json(200, [bad, good]));
+      const result = await adapter.searchAvailability({ ...query, propertyIds: ["999", "19248"] }, context);
+      expect(result.map((p) => p.propertyId)).toEqual(["19248"]);
+      const row = await db.supplierCallLog.findFirstOrThrow();
+      expect(row.unknownFields.some((name) => name.startsWith("invalid:"))).toBe(true);
+    });
+
+    it("a rate with a charge type we do not know is dropped, never summed into the wrong line", async () => {
+      const data = fixture("availability.usd.json") as { rooms: { rates: { occupancy_pricing: Record<string, { stay?: { type: string }[] }> }[] }[] }[];
+      for (const pricing of Object.values(data[0]!.rooms[0]!.rates[0]!.occupancy_pricing)) pricing.stay = [{ type: "brand_new_fee", value: "5.00", currency: "USD" } as never];
       fetchMock.mockResolvedValue(json(200, data));
+      expect((await adapter.searchAvailability(query, context)).flatMap((p) => p.offers)).toHaveLength(0);
+    });
+
+    it("a local fee amount that will not parse drops only the local amount", async () => {
+      const data = fixture("availability.usd.json") as { rooms: { rates: { occupancy_pricing: Record<string, { fees: { resort_fee: { billable_currency: { value: string; currency: string } } } }> }[] }[] }[];
+      for (const pricing of Object.values(data[0]!.rooms[0]!.rates[0]!.occupancy_pricing)) pricing.fees.resort_fee.billable_currency = { value: "40.123", currency: "EUR" };
+      fetchMock.mockResolvedValue(json(200, data));
+      const [property] = await adapter.searchAvailability(query, context);
+      expect(property!.offers[0]!.price.dueAtProperty[0]).toMatchObject({ kind: "resort_fee", localAmount: null });
+    });
+
+    it("a cancel penalty in another currency makes the rate unsellable", async () => {
+      const data = fixture("availability.usd.json") as { rooms: { rates: { cancel_penalties: { currency: string }[] }[] }[] }[];
+      data[0]!.rooms[0]!.rates[0]!.cancel_penalties[0]!.currency = "CAD";
+      fetchMock.mockResolvedValue(json(200, data));
+      expect((await adapter.searchAvailability(query, context)).flatMap((p) => p.offers)).toHaveLength(0);
+    });
+
+    it("a response that is not a list is a typed error", async () => {
+      fetchMock.mockResolvedValue(json(200, { not: "a list" }));
       await expect(adapter.searchAvailability(query, context)).rejects.toBeInstanceOf(SupplierResponseInvalid);
     });
 
@@ -124,7 +156,7 @@ describe("ExpediaAdapter", () => {
       const [property] = await adapter.searchAvailability(query, context);
       expect(property!.offers.length).toBeGreaterThan(0);
       const row = await db.supplierCallLog.findFirstOrThrow();
-      expect(row.unknownFields).toContain("[0].brand_new_field");
+      expect(row.unknownFields).toContain("brand_new_field");
     });
 
     it("refuses more than 250 properties in one call", async () => {
@@ -148,6 +180,15 @@ describe("ExpediaAdapter", () => {
         expect(result.price.total).toEqual({ minor: 21500, currency: "USD" });
         expect(result.bookToken).toBe("Ql1WAERHXV1QO");
       }
+    });
+
+    it.each([
+      ["roomId", { roomId: ".." }],
+      ["rateId", { rateId: "a/b" }],
+      ["token", { token: "x y" }],
+    ])("refuses an unsafe %s before calling Expedia", async (_label, patch) => {
+      await expect(adapter.priceCheck({ ...ref, ...patch }, context)).rejects.toThrow();
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it("maps price_changed and sold_out", async () => {

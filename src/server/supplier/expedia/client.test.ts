@@ -3,6 +3,7 @@ import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import {
   SupplierAuthError,
+  SupplierOutcomeUnknown,
   SupplierRateLimited,
   SupplierRequestRejected,
   SupplierTimeout,
@@ -133,22 +134,61 @@ describe("expediaRequest", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("never retries a call that is not a GET", async () => {
+  it("never retries a call that is not a GET, and a 5xx on it means the outcome is unknown", async () => {
     fetchMock.mockImplementation(async () => json(503, {}));
     await expect(
       expediaRequest({ method: "DELETE", path: "/itineraries/1/rooms/2", context: { ...context, test: "standard" }, timeoutMs: 60_000 }),
-    ).rejects.toBeInstanceOf(SupplierUnavailable);
+    ).rejects.toBeInstanceOf(SupplierOutcomeUnknown);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("a timeout becomes SupplierTimeout and is logged with no status", async () => {
+  it("a GET timeout is SupplierTimeout and is logged with no status", async () => {
     fetchMock.mockRejectedValue(Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" }));
     await expect(
-      expediaRequest({ method: "POST", path: "/itineraries", body: {}, context: { ...context, test: "standard" }, timeoutMs: 60_000 }),
+      expediaRequest({ method: "GET", path: "/properties/availability", context, timeoutMs: 15_000 }),
     ).rejects.toBeInstanceOf(SupplierTimeout);
     const row = await db.supplierCallLog.findFirstOrThrow();
     expect(row.status).toBeNull();
     expect(row.error).toBe("timeout");
+  });
+
+  it.each([
+    ["timeout", Object.assign(new Error("aborted"), { name: "TimeoutError" })],
+    ["network", new TypeError("fetch failed")],
+  ])("a POST %s means the booking may exist: SupplierOutcomeUnknown, never retried", async (_label, failure) => {
+    fetchMock.mockRejectedValue(failure);
+    await expect(
+      expediaRequest({ method: "POST", path: "/itineraries", body: {}, context: { ...context, test: "standard" }, timeoutMs: 60_000 }),
+    ).rejects.toBeInstanceOf(SupplierOutcomeUnknown);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a body that fails to arrive after the headers is handled (logged, typed), not a raw error", async () => {
+    const stalled = new Response(
+      new ReadableStream({ start(controller) { controller.error(Object.assign(new Error("aborted"), { name: "TimeoutError" })); } }),
+      { status: 201 },
+    );
+    fetchMock.mockResolvedValue(stalled);
+    await expect(
+      expediaRequest({ method: "POST", path: "/itineraries", body: {}, context: { ...context, test: "standard" }, timeoutMs: 60_000 }),
+    ).rejects.toBeInstanceOf(SupplierOutcomeUnknown);
+    expect(await db.supplierCallLog.count()).toBe(1);
+  });
+
+  it("calls to the test endpoint always need the Test header for non-GET, even with APP_ENV=production", async () => {
+    vi.stubEnv("APP_ENV", "production");
+    vi.stubEnv("EXPEDIA_BASE_URL", "https://test.ean.com/v3");
+    await expect(
+      expediaRequest({ method: "POST", path: "/itineraries", body: {}, context, timeoutMs: 60_000 }),
+    ).rejects.toThrow(/Test header/);
+  });
+
+  it("masks email and token in the logged path", async () => {
+    fetchMock.mockResolvedValue(json(200, []));
+    await expediaRequest({ method: "GET", path: "/itineraries", query: { email: "guest@example.com", affiliate_reference_id: "APL-1" }, context, timeoutMs: 15_000 });
+    const row = await db.supplierCallLog.findFirstOrThrow();
+    expect(row.path).not.toContain("guest");
+    expect(row.path).toContain("APL-1");
   });
 
   it("error messages never contain the secret or the response body", async () => {
