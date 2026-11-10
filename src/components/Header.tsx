@@ -57,6 +57,12 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
             </summary>
             <div className="absolute right-0 z-40 mt-2.5 flex w-[190px] flex-col rounded-[11px] border border-[#e1e6e3] bg-white p-[7px] shadow-[0_15px_38px_rgba(19,47,39,0.14)]">
               <Link
+                href="/settings"
+                className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand"
+              >
+                Agency settings
+              </Link>
+              <Link
                 href="/balance"
                 className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand"
               >
