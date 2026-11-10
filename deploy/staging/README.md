@@ -236,6 +236,42 @@ Tested locally with Caddy 2.11. A request with `X-Forwarded-For: 6.6.6.6` and
 `CF-Connecting-IP: 203.0.113.7` reached the app as `X-Forwarded-For: 203.0.113.7`. Without the
 line, it arrived as the proxy's own address.
 
+## 5. Automatic updates from `main`
+
+`deploy/staging/auto-update.sh` keeps staging on the latest `main` without anyone logging in.
+Cron runs it every 5 minutes. When `main` has not moved, it does nothing. When `main` has
+moved, it moves the checkout to the new commit and rebuilds the app container. New migrations
+apply on start, as in section 3.
+
+Install it once, from `/home/moshezbusy/apolles-staging`:
+
+1. Run it once by hand and read the output. It must end with `staging is now at <commit>`.
+   This also proves that `git fetch` works without a password prompt, which cron needs.
+
+   ```sh
+   deploy/staging/auto-update.sh
+   ```
+
+2. Add the cron line. The command replaces any older line for this script, so running it
+   twice is safe:
+
+   ```sh
+   (crontab -l 2>/dev/null | grep -v 'apolles-staging/deploy/staging/auto-update.sh'; echo '*/5 * * * * /home/moshezbusy/apolles-staging/deploy/staging/auto-update.sh >> /home/moshezbusy/apolles-staging-update.log 2>&1') | crontab -
+   ```
+
+What to expect:
+
+- **The log:** `/home/moshezbusy/apolles-staging-update.log` gets one line per update, and
+  the error when an update fails.
+- **A failed build:** the previous version keeps running. That commit is not tried again;
+  the next commit on `main` is. To retry the same commit, delete
+  `~/.apolles-staging-failed` and wait 5 minutes.
+- **Local edits:** if someone edits a tracked file on the server, git refuses to move and the
+  log shows it. The edit is never discarded.
+- **Memory:** a build can start at any time of day and briefly uses 1 to 2 GB (see 1.3). The
+  container limits still protect the other sites.
+- **To stop:** remove the line with `crontab -e`.
+
 ## Good to know
 
 - **Changing the database password later**: Postgres takes `POSTGRES_PASSWORD` only when it
