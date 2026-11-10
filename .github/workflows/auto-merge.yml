@@ -1,0 +1,29 @@
+# Agent PRs (branches named claude/...) merge by themselves once every required check is
+# green. Owner decision in chat, 2026-11-10. Needs: "Allow auto-merge" in the repo settings,
+# and a rule on main that requires the guardrails checks (without it there is nothing to
+# wait for, and GitHub refuses to turn auto-merge on).
+name: auto-merge
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable:
+    name: Enable auto-merge
+    if: >-
+      startsWith(github.head_ref, 'claude/') &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge when the required checks pass
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --merge "$PR_URL"
