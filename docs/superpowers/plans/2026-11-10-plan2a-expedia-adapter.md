@@ -114,3 +114,14 @@
 - typecheck, lint, tests, build.
 - `requesting-code-review`, `differential-review` and `/security-review` (supplier API and secrets).
 - PR, then auto-merge.
+
+## New environment variables (for `.env.example`)
+Agents are not allowed to open `.env*` files, so the owner (or an approved session) adds these lines:
+
+```
+# Expedia Rapid (test credentials only outside production). Never commit real values.
+EXPEDIA_API_KEY=
+EXPEDIA_SHARED_SECRET=
+# Optional. Defaults to https://test.ean.com/v3; anything else is refused unless APP_ENV=production.
+EXPEDIA_BASE_URL=
+```

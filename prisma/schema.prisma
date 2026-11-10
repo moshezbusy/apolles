@@ -167,3 +167,23 @@ model RateLimitBucket {
   @@id([key, windowStart])
   @@index([windowStart])
 }
+
+// Every request to and response from a supplier (Expedia), for the site review and debugging
+// (spec section 6, "supplier log"). Bodies have personal data masked (src/server/supplier/mask.ts)
+// and are capped in size. Kept 90 days; the cleanup job comes with the background worker.
+model SupplierCallLog {
+  id                   String   @id @default(cuid())
+  supplier             String // "expedia"
+  method               String
+  path                 String // path and query; never credentials
+  status               Int? // null on a timeout or network error
+  durationMs           Int
+  affiliateReferenceId String?
+  requestBody          Json?
+  responseBody         Json?
+  error                String? // "timeout" | "network" | null
+  createdAt            DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([affiliateReferenceId])
+}
