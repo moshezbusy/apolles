@@ -1,0 +1,78 @@
+{
+  "status": "available",
+  "holdable": true,
+  "occupancy_pricing": {
+    "2": {
+      "nightly": [
+        [
+          {
+            "type": "base_rate",
+            "value": "309.00",
+            "currency": "CAD"
+          },
+          {
+            "type": "tax_and_service_fee",
+            "value": "37.00",
+            "currency": "CAD"
+          }
+        ]
+      ],
+      "totals": {
+        "inclusive": {
+          "billable_currency": {
+            "value": "346.00",
+            "currency": "CAD"
+          },
+          "request_currency": {
+            "value": "261.00",
+            "currency": "USD"
+          }
+        },
+        "exclusive": {
+          "billable_currency": {
+            "value": "309.00",
+            "currency": "CAD"
+          },
+          "request_currency": {
+            "value": "230.00",
+            "currency": "USD"
+          }
+        }
+      },
+      "fees": {
+        "mandatory_fee": {
+          "billable_currency": {
+            "value": "5.00",
+            "currency": "CAD"
+          },
+          "request_currency": {
+            "value": "3.00",
+            "currency": "USD"
+          }
+        }
+      }
+    }
+  },
+  "card_on_file_limit": {
+    "value": "500.00",
+    "currency": "USD"
+  },
+  "refundable_damage_deposit": {
+    "value": "500.00",
+    "currency": "USD"
+  },
+  "deposits": [
+    {
+      "value": "70.00",
+      "due": "2025-12-21",
+      "currency": "USD"
+    }
+  ],
+  "links": {
+    "book": {
+      "method": "POST",
+      "href": "/v3/itineraries?token=MY5S3j36cOcL",
+      "expires": "2019-03-05T07:23:14.000Z"
+    }
+  }
+}
