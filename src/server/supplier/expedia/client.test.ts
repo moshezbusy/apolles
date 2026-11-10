@@ -45,7 +45,8 @@ describe("expediaRequest", () => {
       context,
       timeoutMs: 15_000,
     });
-    expect(result).toEqual({ status: 200, data: [{ property_id: "1" }] });
+    expect(result).toMatchObject({ status: 200, data: [{ property_id: "1" }] });
+    expect(result.logId).toEqual(expect.any(String));
 
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toBe(

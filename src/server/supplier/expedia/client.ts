@@ -72,11 +72,11 @@ async function writeLog(entry: {
   requestBody: unknown;
   responseBody?: unknown;
   error?: "timeout" | "network";
-}): Promise<void> {
+}): Promise<string | null> {
   const requestBody = forLog(entry.requestBody) as Prisma.InputJsonValue | undefined;
   const responseBody = forLog(entry.responseBody) as Prisma.InputJsonValue | undefined;
   try {
-    await db.supplierCallLog.create({
+    const row = await db.supplierCallLog.create({
       data: {
         supplier: "expedia",
         method: entry.method,
@@ -88,14 +88,29 @@ async function writeLog(entry: {
         ...(responseBody !== undefined ? { responseBody } : {}),
         error: entry.error ?? null,
       },
+      select: { id: true },
     });
+    return row.id;
   } catch {
     // A failed log write must never fail the supplier call (or hide its result).
     console.error("supplier log write failed");
+    return null;
   }
 }
 
-export async function expediaRequest(request: ExpediaRequest): Promise<{ status: number; data: unknown }> {
+// Records the names of response fields the adapter did not know (and dropped).
+export async function recordUnknownFields(logId: string | null, names: string[]): Promise<void> {
+  if (!logId || names.length === 0) return;
+  try {
+    await db.supplierCallLog.update({ where: { id: logId }, data: { unknownFields: names.slice(0, 200) } });
+  } catch {
+    console.error("supplier log update failed");
+  }
+}
+
+export async function expediaRequest(
+  request: ExpediaRequest,
+): Promise<{ status: number; data: unknown; logId: string | null }> {
   const config = readExpediaConfig();
   const { method, path, context } = request;
   if (!config.production && method !== "GET" && !context.test) {
@@ -145,7 +160,7 @@ export async function expediaRequest(request: ExpediaRequest): Promise<{ status:
     }
 
     const data = await readBody(response);
-    await writeLog({
+    const logId = await writeLog({
       method,
       path: logPath,
       status: response.status,
@@ -156,7 +171,7 @@ export async function expediaRequest(request: ExpediaRequest): Promise<{ status:
     });
 
     const { status } = response;
-    if (status >= 200 && status < 300) return { status, data };
+    if (status >= 200 && status < 300) return { status, data, logId };
     if (status === 401 || status === 403) throw new SupplierAuthError(`Expedia refused the credentials (HTTP ${status})`, status);
     if (status === 429) throw new SupplierRateLimited("Expedia rate limit reached (HTTP 429)", status);
     if (status >= 500) {

@@ -182,6 +182,9 @@ model SupplierCallLog {
   requestBody          Json?
   responseBody         Json?
   error                String? // "timeout" | "network" | null
+  // Names (never values) of response fields the adapter did not know and dropped
+  // (owner decision 2026-11-10, docs/decisions/2026-11-10-supplier-unknown-fields.md).
+  unknownFields        String[] @default([])
   createdAt            DateTime @default(now())
 
   @@index([createdAt])
