@@ -17,7 +17,7 @@ beats fast and wrong. The owner (Moshe) is not a programmer: explain decisions i
 - **No live credentials, ever.** Agents work only with Expedia test credentials, payment test
   mode and non-production databases. Live keys and the production database URL exist only in
   the hosting provider, set by the owner. If you see a live key, stop and tell the owner.
-- **Merging and deploying to production are the owner's actions.** Agents open PRs only.
+- **Agent PRs merge automatically; production deploy is the owner's action.** A PR from a `claude/` branch merges into `main` by itself once every CI check is green (`.github/workflows/auto-merge.yml`, owner decision 2026-11-10), and staging follows `main` within 5 minutes. Agents never merge by hand and never push to `main`.
 
 ## 1. Workflow — mandatory, in this order
 
@@ -32,7 +32,7 @@ beats fast and wrong. The owner (Moshe) is not a programmer: explain decisions i
    the output before saying "done". Report failures honestly, with the output.
 6. **Review.** `requesting-code-review` for every change. For anything touching auth, payments,
    bookings, pricing, PII, or supplier APIs also run `differential-review` and `/security-review`.
-7. **Ship via PR only.** Feature branch → PR → CI green → owner merges. Never push to `main`.
+7. **Ship via PR only.** Feature branch → PR → CI green → auto-merge. Never push to `main`. Nobody reviews after the PR is opened, so steps 5 and 6 (verify, review) must be done before it.
 
 Skill references written as `superpowers:<name>` mean the skill `<name>` in `.claude/skills/`.
 Vendored skills are pinned and read-only (see `.claude/skills/THIRD_PARTY.md`); add project
