@@ -143,11 +143,11 @@
   "links": {
     "additional_rates": {
       "method": "GET",
-      "href": "/v3/properties/1234/availability?token=EXAMPLE_TOKEN"
+      "href": "/v3/properties/1234/availability?token=tok-ex"
     },
     "book": {
       "method": "POST",
-      "href": "/v3/itineraries?token=EXAMPLE_TOKEN",
+      "href": "/v3/itineraries?token=tok-ex",
       "expires": "2019-03-05T07:23:14.000Z"
     }
   }

@@ -90,7 +90,7 @@
   "links": {
     "commit": {
       "method": "PUT",
-      "href": "/v3/itineraries/8999989898988/rooms/d08572fc-82d2-4d5d-ad30-60f5be7fb53e/pricing?token=MY5S3j36cOcL",
+      "href": "/v3/itineraries/8999989898988/rooms/d08572fc-82d2-4d5d-ad30-60f5be7fb53e/pricing?token=tok-a1",
       "expires": "2019-03-05T07:23:14.000Z"
     }
   }

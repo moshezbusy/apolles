@@ -75,7 +75,7 @@
   "links": {
     "book": {
       "method": "POST",
-      "href": "/v3/itineraries?token=MY5S3j36cOcL",
+      "href": "/v3/itineraries?token=tok-a1",
       "expires": "2024-03-05T07:23:14.000Z"
     }
   }

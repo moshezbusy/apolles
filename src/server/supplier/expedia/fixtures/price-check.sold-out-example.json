@@ -3,7 +3,7 @@
   "links": {
     "shop": {
       "method": "GET",
-      "href": "/v3/properties/1234/availability?token=EXAMPLE_TOKEN"
+      "href": "/v3/properties/1234/availability?token=tok-ex"
     }
   }
 }

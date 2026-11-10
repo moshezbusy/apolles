@@ -82,7 +82,7 @@ describe("ExpediaAdapter", () => {
         { kind: "mandatory_tax", amount: { minor: 500, currency: "USD" }, localAmount: null },
       ]);
       expect(offer.price.dueAtPropertyTotal).toEqual({ minor: 4820, currency: "USD" });
-      expect(offer.bedGroups[0]).toEqual({ id: "12345", description: "1 Queen Bed", priceCheckToken: "MY5S3j36cOcL" });
+      expect(offer.bedGroups[0]).toEqual({ id: "12345", description: "1 Queen Bed", priceCheckToken: "tok-a1" });
       expect(offer.cancelPenalties[0]).toMatchObject({ amount: { minor: 1000, currency: "USD" } });
     });
 
@@ -167,18 +167,18 @@ describe("ExpediaAdapter", () => {
   });
 
   describe("priceCheck", () => {
-    const ref = { propertyId: "19248", roomId: "abc123", rateId: "abc123", token: "MY5S3j36cOcL" };
+    const ref = { propertyId: "19248", roomId: "abc123", rateId: "abc123", token: "tok-a1" };
 
     it("calls the price-check link with the token and returns the new breakdown and book token", async () => {
       fetchMock.mockResolvedValue(json(200, fixture("price-check.usd-available.json")));
       const result = await adapter.priceCheck(ref, context);
       const url = new URL(String(fetchMock.mock.calls[0]![0]));
       expect(url.pathname).toBe("/v3/properties/19248/rooms/abc123/rates/abc123");
-      expect(url.searchParams.get("token")).toBe("MY5S3j36cOcL");
+      expect(url.searchParams.get("token")).toBe("tok-a1");
       expect(result.status).toBe("available");
       if (result.status !== "sold_out") {
         expect(result.price.total).toEqual({ minor: 21500, currency: "USD" });
-        expect(result.bookToken).toBe("Ql1WAERHXV1QO");
+        expect(result.bookToken).toBe("tok-b2");
       }
     });
 
