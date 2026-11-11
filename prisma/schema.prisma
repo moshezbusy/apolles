@@ -190,3 +190,29 @@ model SupplierCallLog {
   @@index([createdAt])
   @@index([affiliateReferenceId])
 }
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+// Background work (spec section 7: daily content refresh, reconciliation, emails, PDFs), run by
+// the separate worker process (src/worker.ts). Claimed with FOR UPDATE SKIP LOCKED, so two
+// workers never run the same job (src/server/jobs/queue.ts).
+model Job {
+  id         String    @id @default(cuid())
+  kind       String
+  payload    Json
+  status     JobStatus @default(QUEUED)
+  attempts   Int       @default(0)
+  runAt      DateTime
+  lockedAt   DateTime?
+  lastError  String? // the error class and at most 500 characters, never a response body
+  dedupeKey  String?   @unique
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([status, runAt])
+}

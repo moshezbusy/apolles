@@ -50,6 +50,31 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # The background worker (spec section 7): same image, separate process. It runs the daily
+  # content refresh and other jobs from the Postgres job queue. Migrations are left to the app
+  # container, so the worker skips the entrypoint and starts after the app has started.
+  apolles-staging-worker:
+    image: apolles-staging-app
+    restart: unless-stopped
+    init: true
+    mem_limit: 256m
+    env_file: .env
+    entrypoint: ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--import", "./prisma/ts-loader.mjs", "src/worker.ts"]
+    depends_on:
+      apolles-staging-db:
+        condition: service_healthy
+      apolles-staging:
+        condition: service_started
+    networks:
+      - apolles_staging_net
+      # Outbound access (Expedia) goes through this network, as for the app.
+      - n8n_default
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   apolles_staging_db:
 
