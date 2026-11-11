@@ -39,6 +39,11 @@ describe("cancelChargeAt", () => {
     expect(cancelChargeAt({ ...base, penalties: [penalty("soon", "later", { amount: { minor: 1, currency: "USD" } })] }, at("2027-04-05T00:00:00Z"))).toEqual({ kind: "unknown" });
   });
 
+  it("a refundable rate with non-refundable nights is unknown (support works it out), never free", () => {
+    const ranges = [{ start: "2027-04-10", end: "2027-04-11" }];
+    expect(cancelChargeAt({ ...base, penalties: [], nonrefundableDateRanges: ranges }, at("2027-04-01T00:00:00Z"))).toEqual({ kind: "unknown" });
+  });
+
   it("a charge never exceeds the total", () => {
     const big = [penalty("2027-04-01T00:00:00Z", "2027-04-11T00:00:00Z", { amount: { minor: 99_999, currency: "USD" } })];
     expect(cancelChargeAt({ ...base, penalties: big }, at("2027-04-05T00:00:00Z"))).toEqual({ kind: "charge", minor: 50_000 });

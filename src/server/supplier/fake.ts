@@ -97,8 +97,9 @@ export class FakeSupplierAdapter implements SupplierAdapter, BookingSupplier {
 
   // Bookings are looked up in our own database: the fake has nowhere else to keep them.
   async findByAffiliateReference(ref: { affiliateReferenceId: string }): Promise<RetrievedItinerary | null> {
-    const booking = await db.booking.findUnique({ where: { reference: ref.affiliateReferenceId }, select: { reference: true } });
-    return booking ? fakeItinerary(booking.reference, "booked") : null;
+    const booking = await db.booking.findUnique({ where: { reference: ref.affiliateReferenceId }, select: { reference: true, status: true } });
+    if (!booking) return null;
+    return fakeItinerary(booking.reference, booking.status === "CANCELLED" || booking.status === "CANCEL_PENDING" ? "cancelled" : "booked");
   }
 
   async retrieve(links: SupplierLinks): Promise<RetrievedItinerary> {

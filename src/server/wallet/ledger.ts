@@ -324,33 +324,44 @@ export async function debit(input: DebitInput, tx?: Tx): Promise<LedgerEntry> {
 export async function placeHold(input: PlaceHoldInput): Promise<{ holdId: string }> {
   assertValidAmount(input.amountCents);
   assertKey(input.idempotencyKey);
+  return withAgencyLock(input.agencyId, (tx) => writeHold(tx, input));
+}
 
-  return withAgencyLock(input.agencyId, async (tx) => {
-    const existing = await findByKey(tx, input.idempotencyKey);
-    if (existing) {
-      if (existing.agencyId === input.agencyId && existing.type === "HOLD" && existing.holdId) {
-        return { holdId: existing.holdId };
-      }
-      throw new IdempotencyKeyConflict();
+// The same, inside the caller's transaction, so a hold and a booking's change of state are
+// written together or not at all (src/server/booking/service.ts). Call it from
+// withLedgerTransaction, which retries on a duplicate key; it locks the agency itself.
+export async function placeHoldInTx(tx: Tx, input: PlaceHoldInput): Promise<{ holdId: string }> {
+  assertValidAmount(input.amountCents);
+  assertKey(input.idempotencyKey);
+  await lockAgency(tx, input.agencyId);
+  return writeHold(tx, input);
+}
+
+async function writeHold(tx: Tx, input: PlaceHoldInput): Promise<{ holdId: string }> {
+  const existing = await findByKey(tx, input.idempotencyKey);
+  if (existing) {
+    if (existing.agencyId === input.agencyId && existing.type === "HOLD" && existing.holdId && existing.amountCents === -input.amountCents) {
+      return { holdId: existing.holdId };
     }
-    const { balanceCents } = await readBalance(tx, input.agencyId);
-    if (balanceCents < input.amountCents) throw new InsufficientFunds();
-    const holdId = randomUUID();
-    await tx.ledgerEntry.create({
-      data: {
-        agencyId: input.agencyId,
-        type: "HOLD",
-        amountCents: -input.amountCents,
-        currency: CURRENCY,
-        holdId,
-        bookingRef: input.bookingRef,
-        reason: `Hold for booking ${input.bookingRef}`,
-        idempotencyKey: input.idempotencyKey,
-        createdAt: await nextEntryTime(tx, input.agencyId),
-      },
-    });
-    return { holdId };
+    throw new IdempotencyKeyConflict();
+  }
+  const { balanceCents } = await readBalance(tx, input.agencyId);
+  if (balanceCents < input.amountCents) throw new InsufficientFunds();
+  const holdId = randomUUID();
+  await tx.ledgerEntry.create({
+    data: {
+      agencyId: input.agencyId,
+      type: "HOLD",
+      amountCents: -input.amountCents,
+      currency: CURRENCY,
+      holdId,
+      bookingRef: input.bookingRef,
+      reason: `Hold for booking ${input.bookingRef}`,
+      idempotencyKey: input.idempotencyKey,
+      createdAt: await nextEntryTime(tx, input.agencyId),
+    },
   });
+  return { holdId };
 }
 
 // Closes an open hold. Release: HOLD_RELEASE(+X) under `key`. Capture: HOLD_RELEASE(+X) under

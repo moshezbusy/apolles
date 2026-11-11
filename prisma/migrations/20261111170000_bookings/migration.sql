@@ -37,6 +37,7 @@ CREATE TABLE "Booking" (
     "priceCheckedAt" TIMESTAMP(3),
     "previousTotalMinor" INTEGER,
     "holdId" TEXT,
+    "chargedMinor" INTEGER,
     "supplierItineraryId" TEXT,
     "supplierRoomId" TEXT,
     "supplierLinks" JSONB,
@@ -46,6 +47,8 @@ CREATE TABLE "Booking" (
     "failureReason" TEXT,
     "reconcileAttempts" INTEGER NOT NULL DEFAULT 0,
     "lastNotFoundAt" TIMESTAMP(3),
+    "cancelRequestedAt" TIMESTAMP(3),
+    "needsAttention" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "confirmedAt" TIMESTAMP(3),
@@ -78,6 +81,9 @@ CREATE INDEX "Booking_agencyId_status_checkin_idx" ON "Booking"("agencyId", "sta
 
 -- CreateIndex
 CREATE INDEX "Booking_status_updatedAt_idx" ON "Booking"("status", "updatedAt");
+
+-- CreateIndex
+CREATE INDEX "Booking_needsAttention_idx" ON "Booking"("needsAttention");
 
 -- CreateIndex
 CREATE INDEX "BookingEvent_bookingId_createdAt_idx" ON "BookingEvent"("bookingId", "createdAt");

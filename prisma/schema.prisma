@@ -404,6 +404,7 @@ model Booking {
   priceCheckedAt          DateTime?
   previousTotalMinor      Int? // set when the last price check changed the price
   holdId                  String?
+  chargedMinor            Int? // the amount held (then charged) when the agent booked; refunds come from it
   supplierItineraryId     String?
   supplierRoomId          String?
   supplierLinks           Json? // retrieve and cancel hrefs from the supplier; server-only
@@ -413,6 +414,8 @@ model Booking {
   failureReason           String?
   reconcileAttempts       Int           @default(0)
   lastNotFoundAt          DateTime?
+  cancelRequestedAt       DateTime?
+  needsAttention          Boolean       @default(false) // reconciliation gave up: an admin must look
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt
   confirmedAt             DateTime?
@@ -425,6 +428,7 @@ model Booking {
   @@index([agencyId, createdAt])
   @@index([agencyId, status, checkin])
   @@index([status, updatedAt])
+  @@index([needsAttention])
 }
 
 // The audit trail of a booking: one row per state change (who, from, to, why).

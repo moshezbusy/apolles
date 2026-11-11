@@ -4,7 +4,7 @@ import { resetTestDb } from "@/test/db";
 import { startSearch } from "@/server/search/search";
 import { SupplierOutcomeUnknown, SupplierRequestRejected, SupplierUnavailable } from "@/server/supplier/expedia/client";
 import { FakeSupplierAdapter } from "@/server/supplier/fake";
-import type { BookingSupplier, Offer, SupplierAdapter } from "@/server/supplier/types";
+import type { BookingSupplier, Offer, PriceBreakdown, SupplierAdapter } from "@/server/supplier/types";
 import { credit, getBalance } from "@/server/wallet/ledger";
 import { book, cancel, cancelQuote, createDraft, prepareReview, reconcile } from "./service";
 
@@ -197,9 +197,49 @@ describe("booking: book", () => {
     expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).status).toBe("PENDING_CONFIRMATION");
     // Available balance excludes the hold: the money is reserved, not spent.
     expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: total });
-    expect(await db.job.count({ where: { kind: "booking.reconcile" } })).toBe(1);
+    expect(await db.job.count({ where: { kind: "booking.reconcile" } })).toBe(2); // safety net + a sooner check
     expect((await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: s, now: later(3) })).kind).toBe("already");
     expect(s.calls.book).toBe(1);
+  });
+
+  it("a crash during the supplier call still ends in a reconciled booking: the job is queued before the call", async () => {
+    const { bookingId, total } = await reviewed();
+    let jobsDuringCall = -1;
+    const s = supplier({
+      book: async () => {
+        jobsDuringCall = await db.job.count({ where: { kind: "booking.reconcile" } });
+        throw new Error("process killed"); // stands in for a crash: nothing after this runs in-request
+      },
+    });
+    await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: s, now: later(2) });
+    expect(jobsDuringCall).toBe(1);
+    expect(await reconcile(bookingId, { supplier: supplier(), now: later(8) })).toBe("confirmed");
+    expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: 0 });
+  });
+
+  it("a confirmed booking's safety-net job does nothing", async () => {
+    const { bookingId, total } = await reviewed();
+    await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: supplier(), now: later(2) });
+    expect(await reconcile(bookingId, { supplier: supplier(), now: later(8) })).toBe("nothing");
+    expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: 0 });
+  });
+
+  it("a price check that finishes after the booking never changes the booked price", async () => {
+    const { bookingId, total } = await reviewed();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const slow = supplier({
+      priceCheck: async () => {
+        await gate;
+        const current = (await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).price as unknown as PriceBreakdown;
+        return { status: "price_changed", bookToken: "fakebk-11-1", price: { ...current, total: { minor: total + 5_000, currency: "USD" } } };
+      },
+    });
+    const reviewing = prepareReview(ctx(), bookingId, { supplier: slow, now: later(2) });
+    await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: supplier(), now: later(2) });
+    release();
+    expect((await reviewing).kind).toBe("not_draft");
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ totalMinor: total, chargedMinor: total, status: "CONFIRMED" });
   });
 
   it("two clicks at the same moment: one hold, one supplier call", async () => {
@@ -258,7 +298,17 @@ describe("booking: reconcile", () => {
     const down = supplier({ findByAffiliateReference: async () => { throw new SupplierUnavailable("down", 503); } });
     expect(await reconcile(bookingId, { supplier: down, now: later(5) })).toBe("retry");
     expect((await getBalance("A")).heldCents).toBe(total);
-    expect(await db.job.count({ where: { kind: "booking.reconcile" } })).toBe(2);
+    // The safety net queued with the booking, the sooner check after the unclear answer, and this retry.
+    expect(await db.job.count({ where: { kind: "booking.reconcile" } })).toBe(3);
+  });
+
+  it("gives up after many tries: flagged for an admin, money untouched", async () => {
+    const { bookingId, total } = await pending();
+    await db.booking.update({ where: { id: bookingId }, data: { reconcileAttempts: 47 } });
+    const down = supplier({ findByAffiliateReference: async () => { throw new SupplierUnavailable("down", 503); } });
+    expect(await reconcile(bookingId, { supplier: down, now: later(5) })).toBe("retry");
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ needsAttention: true, status: "PENDING_CONFIRMATION" });
+    expect((await getBalance("A")).heldCents).toBe(total);
   });
 });
 
@@ -308,6 +358,29 @@ describe("booking: cancel", () => {
     // A second reconcile changes nothing (the refund is written once).
     expect(await reconcile(bookingId, { supplier: supplier(), now: later(20) })).toBe("nothing");
     expect((await getBalance("A")).balanceCents).toBe(500_000);
+  });
+
+  it("a booking confirmed by reconciliation (no retrieve link) can still have its cancellation reconciled", async () => {
+    const r = await reviewed(1);
+    await book(ctx(), r.bookingId, { acceptedTerms: true, expectedTotalMinor: r.total }, { supplier: supplier({ book: async () => { throw new SupplierOutcomeUnknown("timeout"); } }), now: later(2) });
+    expect(await reconcile(r.bookingId, { supplier: supplier(), now: later(5) })).toBe("confirmed");
+    const unclear = supplier({ cancelRoom: async () => { throw new SupplierOutcomeUnknown("202"); } });
+    expect((await cancel(ctx(), r.bookingId, { expectedChargeMinor: 0 }, { supplier: unclear, now: later(10) })).kind).toBe("pending");
+    const jobs = await db.job.count({ where: { kind: "booking.reconcile" } });
+    expect(jobs).toBeGreaterThan(2); // the cancellation got its own job (never skipped as a repeat)
+    expect(await reconcile(r.bookingId, { supplier: supplier(), now: later(16) })).toBe("cancelled");
+    expect(await getBalance("A")).toEqual({ balanceCents: 500_000, heldCents: 0 });
+  });
+
+  it("a cancellation still 'booked' at the supplier is put back only after 30 minutes", async () => {
+    const { bookingId, total } = await confirmed(1);
+    const unclear = supplier({ cancelRoom: async () => { throw new SupplierOutcomeUnknown("202"); } });
+    await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: unclear, now: later(10) });
+    const stillBooked = supplier({ retrieve: async () => ({ itineraryId: "x", rooms: [{ id: "room-1", status: "booked", hotelConfirmationId: null, cancelLink: "fake-cancel:x" }] }) });
+    expect(await reconcile(bookingId, { supplier: stillBooked, now: later(15) })).toBe("retry");
+    expect(await reconcile(bookingId, { supplier: stillBooked, now: later(45) })).toBe("restored");
+    expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).status).toBe("CONFIRMED");
+    expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: 0 });
   });
 
   it("a charge different from what the agent saw is refused", async () => {

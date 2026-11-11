@@ -7,7 +7,14 @@ import type { CancelPenalty } from "@/server/supplier/types";
 
 export type ChargeResult = { kind: "charge"; minor: number } | { kind: "unknown" } | { kind: "stay_started" };
 
-type Input = { refundable: boolean; totalMinor: number; currency: string; checkin: string; penalties: CancelPenalty[] };
+type Input = {
+  refundable: boolean;
+  totalMinor: number;
+  currency: string;
+  checkin: string;
+  penalties: CancelPenalty[];
+  nonrefundableDateRanges?: { start: string; end: string }[];
+};
 
 function chargeOf(p: CancelPenalty, total: number, currency: string): number | null {
   if (p.amount) return p.amount.currency === currency ? Math.min(p.amount.minor, total) : null;
@@ -29,6 +36,11 @@ export function cancelChargeAt(input: Input, now: Date): ChargeResult {
     .filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end));
   if (windows.length !== input.penalties.length) return { kind: "unknown" };
 
+  // Some nights of a refundable rate are not refundable: the supplier keeps them, and their
+  // value is not split out here. Support works the refund out instead of a guess.
+  if (input.refundable && (input.nonrefundableDateRanges?.length ?? 0) > 0) {
+    return t >= checkinUtc ? { kind: "stay_started" } : { kind: "unknown" };
+  }
   if (!input.refundable) {
     return t >= checkinUtc ? { kind: "stay_started" } : { kind: "charge", minor: input.totalMinor };
   }

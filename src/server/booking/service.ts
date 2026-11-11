@@ -1,4 +1,4 @@
-import { randomInt } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Booking, Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
@@ -7,8 +7,8 @@ import { findOffer } from "@/server/search/search";
 import { bookingSupplier } from "@/server/supplier";
 import { SupplierAuthError, SupplierError, SupplierRateLimited, SupplierRequestRejected } from "@/server/supplier/expedia/client";
 import { SupplierNotSent } from "@/server/supplier/expedia/booking";
-import type { BookingSupplier, CancelPenalty, SupplierAdapter, SupplierContext, SupplierLinks } from "@/server/supplier/types";
-import { captureHold, credit, getBalance, placeHold, releaseHold } from "@/server/wallet/ledger";
+import type { BookingSupplier, CancelPenalty, RetrievedItinerary, SupplierAdapter, SupplierContext, SupplierLinks } from "@/server/supplier/types";
+import { captureHold, credit, getBalance, placeHoldInTx, releaseHold, withLedgerTransaction } from "@/server/wallet/ledger";
 import { InsufficientFunds } from "@/server/wallet/errors";
 import { cancelChargeAt } from "./cancel-charge";
 import { BookingStateConflict, transition } from "./states";
@@ -35,6 +35,8 @@ export class BookingUnavailable extends Error {}
 
 const PRICE_CHECK_VALID_MS = 10 * 60_000; // the book button needs a price check this recent
 const RECONCILE_DELAY_MS = 2 * 60_000;
+const SAFETY_NET_MS = 5 * 60_000; // queued with every pending change, before the supplier call
+const CANCEL_RESTORE_AFTER_MS = 30 * 60_000; // a cancellation still "booked" this long after the request did not go through
 // "Not found" twice, this far apart, means no booking. Rapid says a new itinerary may take a few
 // minutes before it can be found, so the gap is generous.
 const NOT_FOUND_CONFIRM_MS = 20 * 60_000;
@@ -158,6 +160,8 @@ export type ReviewOutcome =
 
 // Screen 11: checks the price again with the supplier (server-side token), and records the
 // result on the draft. A changed price is kept with the old one, for the "old vs new" view.
+// The write is conditional on the booking still being a DRAFT: a book that ran during the
+// price check is never given another price afterwards.
 export async function prepareReview(ctx: BookingContext, bookingId: string, deps: Deps = {}): Promise<ReviewOutcome> {
   const now = deps.now ?? new Date();
   const booking = await ownBooking(ctx.agencyId, bookingId);
@@ -172,11 +176,10 @@ export async function prepareReview(ctx: BookingContext, bookingId: string, deps
     if (error instanceof SupplierError) throw new BookingUnavailable("The price could not be checked right now. Try again in a few minutes.");
     throw error;
   }
-  if (result.status === "sold_out") return { kind: "sold_out", booking };
-  if (result.price.total.currency !== booking.currency) return { kind: "sold_out", booking };
+  if (result.status === "sold_out" || result.price.total.currency !== booking.currency) return { kind: "sold_out", booking };
   const changed = result.price.total.minor !== booking.totalMinor;
-  const updated = await db.booking.update({
-    where: { id: booking.id },
+  const written = await db.booking.updateMany({
+    where: { id: booking.id, status: "DRAFT" },
     data: {
       totalMinor: result.price.total.minor,
       price: result.price as unknown as Prisma.InputJsonValue,
@@ -185,6 +188,8 @@ export async function prepareReview(ctx: BookingContext, bookingId: string, deps
       previousTotalMinor: changed ? booking.totalMinor : booking.previousTotalMinor,
     },
   });
+  const updated = await db.booking.findUniqueOrThrow({ where: { id: booking.id } });
+  if (written.count === 0) return { kind: "not_draft", booking: updated };
   return { kind: "ready", booking: updated, priceChanged: changed || updated.previousTotalMinor !== null };
 }
 
@@ -197,8 +202,9 @@ function holdKey(id: string, what: "hold" | "capture" | "release" | "refund"): s
   return `booking:${id}:${what}`;
 }
 
-async function scheduleReconcile(bookingId: string, attempt: number, at: Date): Promise<void> {
-  await enqueue("booking.reconcile", { bookingId }, { runAt: at, dedupeKey: `booking.reconcile:${bookingId}:${attempt}` });
+// Every check gets its own job (a unique key), so none is ever skipped as a repeat.
+async function scheduleReconcile(bookingId: string, at: Date, client?: Prisma.TransactionClient): Promise<void> {
+  await enqueue("booking.reconcile", { bookingId }, { runAt: at, dedupeKey: `booking.reconcile:${bookingId}:${randomUUID()}` }, client);
 }
 
 // Screen 11's one button: "Book and issue voucher".
@@ -220,45 +226,59 @@ export async function book(
     return { kind: "review_again", message: "The price changed. Review the new price before booking." };
   }
 
+  // One transaction: the hold, the move to PENDING_CONFIRMATION and a safety-net reconcile job
+  // are written together or not at all. A crash at any point after this (even during the
+  // supplier call) leaves a pending booking that the job will finish. Never an orphan hold.
   let holdId: string;
   try {
-    ({ holdId } = await placeHold({ agencyId: booking.agencyId, amountCents: booking.totalMinor, bookingRef: booking.reference, idempotencyKey: holdKey(booking.id, "hold") }));
+    holdId = await withLedgerTransaction(async (tx) => {
+      const hold = await placeHoldInTx(tx, { agencyId: booking.agencyId, amountCents: booking.totalMinor, bookingRef: booking.reference, idempotencyKey: holdKey(booking.id, "hold") });
+      await transition(tx, {
+        bookingId: booking.id,
+        from: "DRAFT",
+        to: "PENDING_CONFIRMATION",
+        actorUserId: ctx.userId,
+        reason: "Agent booked",
+        data: { holdId: hold.holdId, chargedMinor: booking.totalMinor },
+      });
+      await scheduleReconcile(booking.id, new Date(now.getTime() + SAFETY_NET_MS), tx);
+      return hold.holdId;
+    });
   } catch (error) {
+    // Another click got here first: it books. Nothing of this attempt was written.
+    if (error instanceof BookingStateConflict) return { kind: "already", bookingId: booking.id };
     if (error instanceof InsufficientFunds) {
       const { balanceCents } = await getBalance(booking.agencyId);
       return { kind: "insufficient", shortfallMinor: Math.max(0, booking.totalMinor - balanceCents) };
     }
     throw error;
   }
-  try {
-    await db.$transaction((tx) =>
-      transition(tx, { bookingId: booking.id, from: "DRAFT", to: "PENDING_CONFIRMATION", actorUserId: ctx.userId, reason: "Agent booked", data: { holdId } }),
-    );
-  } catch (error) {
-    // Another click got here first with the same hold (same idempotency key): it books.
-    if (error instanceof BookingStateConflict) return { kind: "already", bookingId: booking.id };
-    await releaseHold(holdId, holdKey(booking.id, "release"));
-    throw error;
-  }
 
-  const [given, family] = [booking.leadGivenName, booking.leadFamilyName];
   const [countryCode = "", number = ""] = booking.leadPhone.replace(/^\+/, "").split(" ");
+  let result;
   try {
-    const result = await supplierOf(deps).book(
-      { bookToken: booking.bookToken, affiliateReferenceId: booking.reference, lead: { givenName: given, familyName: family, email: booking.leadEmail, phone: { countryCode, number } } },
+    result = await supplierOf(deps).book(
+      { bookToken: booking.bookToken, affiliateReferenceId: booking.reference, lead: { givenName: booking.leadGivenName, familyName: booking.leadFamilyName, email: booking.leadEmail, phone: { countryCode, number } } },
       ctx.supplierContext,
     );
-    await confirmBooking(booking.id, holdId, { itineraryId: result.itineraryId, links: result.links }, ctx.userId, "Supplier confirmed the booking");
-    return { kind: "confirmed", bookingId: booking.id };
   } catch (error) {
     if (definiteNo(error)) {
       await failBooking(booking.id, holdId, ctx.userId, `Supplier refused the booking: ${error.message}`.slice(0, 200));
       return { kind: "failed", bookingId: booking.id };
     }
-    // No clear answer (or our own error after the call): the booking may exist. Keep the hold
-    // and find out by affiliate reference. Never book again.
+    // No clear answer: the booking may exist. The hold stays; the reconcile job (already
+    // queued, plus one sooner) finds out by affiliate reference. Never book again.
     console.error(`booking outcome unknown: ${error instanceof Error ? error.name : "Error"}`);
-    await scheduleReconcile(booking.id, 1, new Date(now.getTime() + RECONCILE_DELAY_MS));
+    await scheduleReconcile(booking.id, new Date(now.getTime() + RECONCILE_DELAY_MS));
+    return { kind: "pending", bookingId: booking.id };
+  }
+  try {
+    await confirmBooking(booking.id, holdId, { itineraryId: result.itineraryId, links: result.links }, ctx.userId, "Supplier confirmed the booking");
+    return { kind: "confirmed", bookingId: booking.id };
+  } catch (error) {
+    // The supplier said yes but our own write failed: the queued job confirms it from the
+    // supplier's side (capture is idempotent).
+    console.error(`booking confirm write failed: ${error instanceof Error ? error.name : "Error"}`);
     return { kind: "pending", bookingId: booking.id };
   }
 }
@@ -299,6 +319,14 @@ async function failBooking(bookingId: string, holdId: string, actorUserId: strin
   );
 }
 
+// The supplier's view of the booking: through its retrieve link when we have one, otherwise
+// by our affiliate reference (a booking confirmed by reconciliation has no retrieve link).
+async function supplierView(booking: Booking, supplier: Supplier): Promise<RetrievedItinerary | null> {
+  const links = (booking.supplierLinks ?? {}) as SupplierLinks;
+  if (links.retrieve) return supplier.retrieve(links, {});
+  return supplier.findByAffiliateReference({ affiliateReferenceId: booking.reference, email: booking.leadEmail }, {});
+}
+
 // The background job for bookings without a clear supplier answer (and cancellations).
 export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"confirmed" | "failed" | "cancelled" | "restored" | "retry" | "nothing"> {
   const now = deps.now ?? new Date();
@@ -307,9 +335,14 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
   const supplier = supplierOf(deps);
   const attempt = booking.reconcileAttempts + 1;
   const retry = async (delayMs: number, data: Prisma.BookingUpdateInput = {}) => {
+    if (attempt >= MAX_RECONCILE_ATTEMPTS) {
+      // Gave up: flag it for an admin (the admin bookings list shows it), keep the money as is.
+      await db.booking.update({ where: { id: booking.id }, data: { ...data, reconcileAttempts: attempt, needsAttention: true } });
+      console.error(`booking ${booking.reference}: reconcile gave up, needs an admin`);
+      return "retry" as const;
+    }
     await db.booking.update({ where: { id: booking.id }, data: { ...data, reconcileAttempts: attempt } });
-    if (attempt < MAX_RECONCILE_ATTEMPTS) await scheduleReconcile(booking.id, attempt + 1, new Date(now.getTime() + delayMs));
-    else console.error(`booking ${booking.reference}: reconcile gave up, needs an admin`);
+    await scheduleReconcile(booking.id, new Date(now.getTime() + delayMs));
     return "retry" as const;
   };
 
@@ -346,19 +379,22 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
   if (booking.status === "CANCEL_PENDING") {
     let itinerary;
     try {
-      itinerary = await supplier.retrieve((booking.supplierLinks ?? {}) as SupplierLinks, {});
+      itinerary = await supplierView(booking, supplier);
     } catch (error) {
       if (error instanceof SupplierError) return retry(RECONCILE_DELAY_MS * 2);
       throw error;
     }
-    const room = itinerary.rooms.find((r) => r.id === booking.supplierRoomId) ?? itinerary.rooms[0];
+    const room = itinerary?.rooms.find((r) => r.id === booking.supplierRoomId) ?? itinerary?.rooms[0];
     if (room?.status === "cancelled") {
       await finishCancel(booking, null, "Reconciled: supplier cancelled the booking");
       return "cancelled";
     }
-    if (room?.status === "booked") {
+    // Still booked: a cancellation may take a while at the supplier. Put the booking back only
+    // after it stayed booked for a good while after the request.
+    const waited = booking.cancelRequestedAt ? now.getTime() - booking.cancelRequestedAt.getTime() : Number.POSITIVE_INFINITY;
+    if (room?.status === "booked" && waited >= CANCEL_RESTORE_AFTER_MS) {
       await db.$transaction((tx) =>
-        transition(tx, { bookingId: booking.id, from: "CANCEL_PENDING", to: "CONFIRMED", actorUserId: null, reason: "Reconciled: the cancellation did not go through", data: { cancelChargeMinor: null } }),
+        transition(tx, { bookingId: booking.id, from: "CANCEL_PENDING", to: "CONFIRMED", actorUserId: null, reason: "Reconciled: the cancellation did not go through", data: { cancelChargeMinor: null, cancelRequestedAt: null } }),
       );
       return "restored";
     }
@@ -369,22 +405,36 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
 
 export type CancelQuote = { allowed: true; chargeMinor: number; refundMinor: number } | { allowed: false; reason: string };
 
-// What cancelling now would cost (shown before the agent confirms).
+function paidMinor(booking: Booking): number {
+  return booking.chargedMinor ?? booking.totalMinor;
+}
+
+// What cancelling now would cost (shown before the agent confirms). Refunds are worked out
+// from the amount actually charged.
 export function cancelQuote(booking: Booking, now: Date): CancelQuote {
   if (booking.status !== "CONFIRMED") return { allowed: false, reason: "Only a confirmed booking can be cancelled." };
+  const paid = paidMinor(booking);
   const charge = cancelChargeAt(
-    { refundable: booking.refundable, totalMinor: booking.totalMinor, currency: booking.currency, checkin: booking.checkin, penalties: booking.cancelPenalties as unknown as CancelPenalty[] },
+    {
+      refundable: booking.refundable,
+      totalMinor: paid,
+      currency: booking.currency,
+      checkin: booking.checkin,
+      penalties: booking.cancelPenalties as unknown as CancelPenalty[],
+      nonrefundableDateRanges: booking.nonrefundableDateRanges as unknown as { start: string; end: string }[],
+    },
     now,
   );
   if (charge.kind === "stay_started") return { allowed: false, reason: "The stay has started. Contact Apolles support to change it." };
   if (charge.kind === "unknown") return { allowed: false, reason: "This cancellation needs Apolles support: the charge cannot be worked out automatically." };
-  return { allowed: true, chargeMinor: charge.minor, refundMinor: booking.totalMinor - charge.minor };
+  return { allowed: true, chargeMinor: charge.minor, refundMinor: paid - charge.minor };
 }
 
 async function finishCancel(booking: Booking, actorUserId: string | null, reason: string): Promise<void> {
-  const charge = booking.cancelChargeMinor ?? booking.totalMinor;
-  const refund = booking.totalMinor - charge;
-  // The refund is written only now that the supplier confirmed (idempotent key).
+  const paid = paidMinor(booking);
+  const charge = Math.min(booking.cancelChargeMinor ?? paid, paid);
+  const refund = paid - charge;
+  // The refund is written only now that the supplier confirmed (idempotent key: once).
   if (refund > 0) {
     await credit({ agencyId: booking.agencyId, type: "REFUND", amountCents: refund, reason: `Refund for cancelled booking ${booking.reference}`, idempotencyKey: holdKey(booking.id, "refund"), bookingRef: booking.reference });
   }
@@ -396,7 +446,7 @@ async function finishCancel(booking: Booking, actorUserId: string | null, reason
 export type CancelOutcome = { kind: "cancelled" | "pending" | "refused" | "not_allowed"; message?: string };
 
 // Screen 12: the agent cancels. Today's charge is fixed when the agent asks, and the refund
-// (total − charge) is written only after the supplier confirms.
+// (charged − charge) is written only after the supplier confirms.
 export async function cancel(ctx: BookingContext, bookingId: string, confirm: { expectedChargeMinor: number }, deps: Deps = {}): Promise<CancelOutcome> {
   const now = deps.now ?? new Date();
   const booking = await ownBooking(ctx.agencyId, bookingId);
@@ -408,47 +458,60 @@ export async function cancel(ctx: BookingContext, bookingId: string, confirm: { 
   let cancelLink = (booking.supplierLinks as SupplierLinks | null)?.cancel ?? null;
   let roomId = booking.supplierRoomId;
   if (!cancelLink) {
+    let itinerary;
     try {
-      const itinerary = await supplier.retrieve((booking.supplierLinks ?? {}) as SupplierLinks, ctx.supplierContext);
-      const room = itinerary.rooms[0];
-      cancelLink = room?.cancelLink ?? null;
-      roomId = room?.id ?? null;
+      itinerary = await supplierView(booking, supplier);
     } catch (error) {
       if (error instanceof SupplierError) return { kind: "refused", message: "The booking could not be cancelled right now. Try again in a few minutes." };
       throw error;
     }
+    const room = itinerary?.rooms[0];
+    cancelLink = room?.cancelLink ?? null;
+    roomId = room?.id ?? roomId;
     if (!cancelLink) return { kind: "not_allowed", message: "This booking cannot be cancelled online. Contact Apolles support." };
   }
 
+  // The move to CANCEL_PENDING and a safety-net reconcile job, together: a crash during the
+  // supplier call still ends in a reconciled cancellation (and its refund).
   try {
-    await db.$transaction((tx) =>
-      transition(tx, {
+    await db.$transaction(async (tx) => {
+      await transition(tx, {
         bookingId: booking.id,
         from: "CONFIRMED",
         to: "CANCEL_PENDING",
         actorUserId: ctx.userId,
         reason: "Agent asked to cancel",
-        data: { cancelChargeMinor: quote.chargeMinor, supplierRoomId: roomId, supplierLinks: { ...((booking.supplierLinks ?? {}) as SupplierLinks), cancel: cancelLink } },
-      }),
-    );
+        data: {
+          cancelChargeMinor: quote.chargeMinor,
+          cancelRequestedAt: now,
+          supplierRoomId: roomId,
+          supplierLinks: { ...((booking.supplierLinks ?? {}) as SupplierLinks), cancel: cancelLink },
+        },
+      });
+      await scheduleReconcile(booking.id, new Date(now.getTime() + SAFETY_NET_MS), tx);
+    });
   } catch (error) {
     if (error instanceof BookingStateConflict) return { kind: "not_allowed", message: "This booking is already being cancelled." };
     throw error;
   }
-  const pending = await db.booking.findUniqueOrThrow({ where: { id: booking.id } });
   try {
     await supplier.cancelRoom(cancelLink, ctx.supplierContext);
   } catch (error) {
     if (definiteNo(error)) {
       await db.$transaction((tx) =>
-        transition(tx, { bookingId: booking.id, from: "CANCEL_PENDING", to: "CONFIRMED", actorUserId: ctx.userId, reason: `Supplier refused the cancellation: ${error.message}`.slice(0, 200), data: { cancelChargeMinor: null } }),
+        transition(tx, { bookingId: booking.id, from: "CANCEL_PENDING", to: "CONFIRMED", actorUserId: ctx.userId, reason: `Supplier refused the cancellation: ${error.message}`.slice(0, 200), data: { cancelChargeMinor: null, cancelRequestedAt: null } }),
       );
       return { kind: "refused", message: "The supplier did not accept the cancellation. Contact Apolles support." };
     }
     console.error(`cancellation outcome unknown: ${error instanceof Error ? error.name : "Error"}`);
-    await scheduleReconcile(booking.id, booking.reconcileAttempts + 1, new Date(now.getTime() + RECONCILE_DELAY_MS));
     return { kind: "pending" };
   }
-  await finishCancel(pending, ctx.userId, "Supplier confirmed the cancellation");
+  try {
+    await finishCancel(await db.booking.findUniqueOrThrow({ where: { id: booking.id } }), ctx.userId, "Supplier confirmed the cancellation");
+  } catch (error) {
+    // The supplier cancelled but our write failed: the queued job finishes it (refund once).
+    console.error(`cancel finish write failed: ${error instanceof Error ? error.name : "Error"}`);
+    return { kind: "pending" };
+  }
   return { kind: "cancelled" };
 }
