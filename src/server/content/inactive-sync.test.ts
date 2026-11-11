@@ -32,7 +32,7 @@ describe("syncInactive", () => {
 
   it("starts from the start of the last successful run", async () => {
     await db.contentSyncRun.create({ data: { kind: "content.inactive", status: "DONE", startedAt: new Date("2027-02-20T02:00:00Z") } });
-    const inactiveSince = vi.fn(async (_q: { since: string; next?: string }) => ({ propertyIds: [] as string[], next: null }));
+    const inactiveSince = vi.fn<ContentSource["inactiveSince"]>(async () => ({ propertyIds: [], next: null }));
     await syncInactive(NOW, { source: { inactiveSince } as unknown as ContentSource });
     expect(inactiveSince.mock.calls[0]![0]).toEqual({ since: "2027-02-20" });
   });
