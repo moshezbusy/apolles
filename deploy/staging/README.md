@@ -288,3 +288,19 @@ What to expect:
 - **No live keys here, ever.** Staging must never get production credentials or real
   agency data.
 - The image has no secrets in it. Everything comes from `.env` when the container starts.
+
+## 6. Demo mode (until Expedia's test keys arrive)
+
+`docker-compose.yml` sets `SUPPLIER_MODE: fake` for the app. While it is set:
+
+- search, hotel pages and bookings use made-up hotels and rates (`src/server/supplier/fake.ts`);
+- every page shows a yellow "Demo mode" banner;
+- each start adds the demo destinations and hotels (Paris, Rome, Barcelona, London, Athens,
+  Dubai). Every demo id starts with `demo-`, and real data is never touched;
+- nothing is sent to Expedia or to any hotel.
+
+The app refuses the fake supplier whenever `APP_ENV=production`.
+
+When the Expedia test keys are on the server, delete the `environment:` block with `SUPPLIER_MODE` from
+`docker-compose.yml` and restart. The next catalog sync then marks the demo hotels inactive,
+because they are not in Expedia's file.

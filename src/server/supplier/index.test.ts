@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ExpediaAdapter } from "./expedia/adapter";
 import { ExpediaContentSource } from "./expedia/content";
 import { FakeContentSource, FakeSupplierAdapter } from "./fake";
-import { contentSource, supplierAdapter } from "./index";
+import { contentSource, isDemoSupplier, supplierAdapter } from "./index";
 import type { SupplierAdapter } from "./types";
 
 const fake = (): SupplierAdapter => new FakeSupplierAdapter();
@@ -14,6 +14,7 @@ describe("supplier factory", () => {
     vi.stubEnv("SUPPLIER_MODE", "");
     expect(supplierAdapter()).toBeInstanceOf(ExpediaAdapter);
     expect(contentSource()).toBeInstanceOf(ExpediaContentSource);
+    expect(isDemoSupplier()).toBe(false);
   });
 
   it("the fake supplier works in development and tests", () => {
@@ -24,9 +25,17 @@ describe("supplier factory", () => {
     expect(contentSource()).toBeInstanceOf(FakeContentSource);
   });
 
+  it("the fake supplier also runs on staging (demo data until Expedia test keys arrive)", () => {
+    vi.stubEnv("SUPPLIER_MODE", "fake");
+    vi.stubEnv("APP_ENV", "staging");
+    vi.stubEnv("NODE_ENV", "production");
+    expect(supplierAdapter()).toBeInstanceOf(FakeSupplierAdapter);
+    expect(isDemoSupplier()).toBe(true);
+  });
+
   it.each([
-    ["staging", "production"],
     ["production", "production"],
+    ["production", "development"],
     ["", "production"],
   ])("the fake supplier is refused with APP_ENV=%s, NODE_ENV=%s", (appEnv, nodeEnv) => {
     vi.stubEnv("SUPPLIER_MODE", "fake");
@@ -34,6 +43,7 @@ describe("supplier factory", () => {
     vi.stubEnv("NODE_ENV", nodeEnv);
     expect(() => supplierAdapter()).toThrow(/fake supplier/);
     expect(() => contentSource()).toThrow(/fake supplier/);
+    expect(() => isDemoSupplier()).toThrow(/fake supplier/);
   });
 
   it("an unknown mode is refused", () => {
