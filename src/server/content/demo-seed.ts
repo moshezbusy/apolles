@@ -1,4 +1,7 @@
+import { issuePasswordToken } from "@/server/auth/password-tokens";
 import { db } from "@/server/db";
+import { createUser } from "@/server/users";
+import { credit } from "@/server/wallet/ledger";
 
 // Demo destinations and hotels for staging while there are no Expedia test keys
 // (SUPPLIER_MODE=fake). Every id starts with "demo-", so real data is never touched, and
@@ -38,4 +41,27 @@ export async function seedDemoContent(): Promise<{ destinations: number; hotels:
     });
   }
   return { destinations: DESTINATIONS.length, hotels };
+}
+
+// A ready demo login for the owner (staging demo only): the "Demo Travel Agency" with
+// USD 10,000 of demo balance, and its agent. No password is ever written in code: while the
+// agent has no password, each start issues a fresh one-time set-password link (60 minutes),
+// which the start-up script prints to the server log.
+export const DEMO_AGENT_EMAIL = "demo-agent@apolles.test";
+const DEMO_AGENCY_ID = "demo-agency";
+const DEMO_BALANCE_CENTS = 1_000_000;
+
+export async function seedDemoAgent(appUrl: string): Promise<{ email: string; setPasswordLink: string | null }> {
+  const agency = await db.agency.upsert({
+    where: { id: DEMO_AGENCY_ID },
+    create: { id: DEMO_AGENCY_ID, name: "Demo Travel Agency", country: "IL", bankReference: "APL-DEMO", email: "demo@apolles.test", phone: "+972 3 000 0000" },
+    update: {},
+  });
+  const user =
+    (await db.user.findUnique({ where: { email: DEMO_AGENT_EMAIL } })) ??
+    (await createUser({ email: DEMO_AGENT_EMAIL, name: "Demo Agent", role: "AGENT", agencyId: agency.id }));
+  await credit({ agencyId: agency.id, type: "ADJUSTMENT", amountCents: DEMO_BALANCE_CENTS, reason: "Demo balance (staging demo, not real money)", idempotencyKey: "demo-agency:initial-balance" });
+  if (user.passwordHash) return { email: user.email, setPasswordLink: null };
+  const token = await issuePasswordToken(user.id, "SET");
+  return { email: user.email, setPasswordLink: `${appUrl.replace(/\/+$/, "")}/set-password/${token}` };
 }

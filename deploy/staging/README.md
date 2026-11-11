@@ -304,3 +304,21 @@ The app refuses the fake supplier whenever `APP_ENV=production`.
 When the Expedia test keys are on the server, delete the `environment:` block with `SUPPLIER_MODE` from
 `docker-compose.yml` and restart. The next catalog sync then marks the demo hotels inactive,
 because they are not in Expedia's file.
+
+### 6.1 Demo login (agent)
+
+In demo mode each start also creates **Demo Travel Agency**, with USD 10,000 of demo
+balance, and its agent **demo-agent@apolles.test**. While that agent has no password, the
+start writes a one-time link to choose one (it works once, for 60 minutes). Read the link with:
+
+```sh
+docker compose -p apolles-staging logs apolles-staging | grep "Demo agent"
+```
+
+For a fresh link without restarting, run:
+
+```sh
+docker compose -p apolles-staging exec apolles-staging node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./prisma/ts-loader.mjs prisma/demo-seed.ts
+```
+
+No password is ever written in code.
