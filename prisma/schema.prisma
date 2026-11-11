@@ -216,3 +216,43 @@ model Job {
 
   @@index([status, runAt])
 }
+
+enum ContentSyncStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+// The local copy of Expedia's hotel list (spec section 7, "local hotel database"), refreshed
+// daily from the catalog file (src/server/content/catalog-sync.ts). Only the countries in
+// CONTENT_COUNTRIES are stored. Coordinates and star ratings are decimals, never floats.
+model Property {
+  id               String   @id // Expedia property id
+  name             String
+  city             String
+  countryCode      String
+  stateProvince    String?
+  starRating       Decimal? @db.Decimal(2, 1)
+  latitude         Decimal? @db.Decimal(9, 6)
+  longitude        Decimal? @db.Decimal(9, 6)
+  rank             Int?
+  expediaCollect   Boolean
+  active           Boolean  @default(true)
+  catalogSeenRunId String
+  updatedAt        DateTime @updatedAt
+
+  @@index([active, expediaCollect, rank])
+  @@index([countryCode, catalogSeenRunId])
+}
+
+// One run of a content sync job (catalog, regions, inactive), for auditing and for "since".
+model ContentSyncRun {
+  id         String            @id @default(cuid())
+  kind       String
+  status     ContentSyncStatus @default(RUNNING)
+  startedAt  DateTime          @default(now())
+  finishedAt DateTime?
+  counts     Json?
+
+  @@index([kind, status, startedAt])
+}
