@@ -2,7 +2,8 @@
 # Start-up for the Apolles staging container (see deploy/staging/README.md):
 #   1. refuse to start anywhere but staging;
 #   2. apply the committed database migrations (owner-approved for staging only);
-#   3. start the Next server on port 3000.
+#   3. with SUPPLIER_MODE=fake (the demo until Expedia test keys arrive), add demo hotels;
+#   4. start the Next server on port 3000.
 set -eu
 
 if [ "${APP_ENV:-}" != "staging" ]; then
@@ -19,6 +20,11 @@ cd /app
 
 echo "Applying committed database migrations..."
 node node_modules/prisma/build/index.js migrate deploy
+
+if [ "${SUPPLIER_MODE:-}" = "fake" ]; then
+  echo "Demo mode: adding demo destinations and hotels..."
+  node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./prisma/ts-loader.mjs prisma/demo-seed.ts
+fi
 
 echo "Starting Apolles (staging) on port 3000."
 export PORT=3000
