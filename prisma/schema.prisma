@@ -293,3 +293,41 @@ model PropertyContentCache {
 
   @@index([fetchedAt])
 }
+
+// A search an agent ran (plan 2b, task 6): the candidate hotels in rank order and how far the
+// supplier calls got. Results are stored as a snapshot for 30 minutes, so filtering, sorting and
+// paging never call Expedia again; the price is checked again before booking anyway. Every
+// query is scoped by agencyId (no IDOR).
+model SearchSnapshot {
+  id           String        @id @default(cuid())
+  agencyId     String
+  userId       String
+  query        Json
+  candidateIds String[]
+  nextIndex    Int           @default(0)
+  createdAt    DateTime
+  expiresAt    DateTime
+  hotels       SearchHotel[]
+
+  @@index([agencyId, createdAt])
+  @@index([expiresAt])
+}
+
+// One priced hotel in a search snapshot: its cheapest total and all its offers (Offer[]).
+model SearchHotel {
+  snapshotId          String
+  propertyId          String
+  position            Int // rank order within the search ("recommended")
+  name                String
+  city                String
+  starRating          Decimal?       @db.Decimal(2, 1)
+  minTotalMinor       Int
+  currency            String
+  refundableAvailable Boolean
+  offers              Json
+  snapshot            SearchSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@id([snapshotId, propertyId])
+  @@index([snapshotId, position])
+  @@index([snapshotId, minTotalMinor])
+}
