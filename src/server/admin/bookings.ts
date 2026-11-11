@@ -16,8 +16,9 @@ async function cursorRow<T extends { id: string }>(find: () => Promise<T | null>
   return row ? { id: row.id } : undefined;
 }
 
-export async function listAllBookings(opts: { status?: BookingStatus; q?: string; cursor?: string }) {
+export async function listAllBookings(opts: { status?: BookingStatus; q?: string; cursor?: string; needsAttention?: boolean }) {
   const where: Prisma.BookingWhereInput = { status: opts.status ?? { notIn: ["DRAFT", "EXPIRED"] } };
+  if (opts.needsAttention) where.needsAttention = true;
   const q = opts.q?.trim().slice(0, 100);
   if (q) {
     const term = escapeLike(q);
@@ -44,6 +45,7 @@ export async function listAllBookings(opts: { status?: BookingStatus; q?: string
       checkout: true,
       totalMinor: true,
       supplierItineraryId: true,
+      needsAttention: true,
       createdAt: true,
       agency: { select: { name: true } },
     },

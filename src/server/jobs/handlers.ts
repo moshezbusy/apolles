@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cleanupSupplierLog } from "@/server/admin/bookings";
 import { reconcile } from "@/server/booking/service";
 import { syncCatalog } from "@/server/content/catalog-sync";
 import { syncInactive } from "@/server/content/inactive-sync";
@@ -20,6 +21,10 @@ export const HANDLERS: Handlers = {
   },
   "search.cleanup": async () => {
     await cleanupSnapshots();
+  },
+  // Supplier calls are kept 90 days (spec section 6).
+  "supplier-log.cleanup": async () => {
+    await cleanupSupplierLog();
   },
   // A booking or cancellation without a clear supplier answer (plan 3). It never books again.
   "booking.reconcile": async (payload) => {

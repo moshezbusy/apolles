@@ -8,7 +8,7 @@ import { AdminHeader } from "@/components/AdminHeader";
 export default function AdminAgenciesLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <AdminHeader />
+      <AdminHeader active="agencies" />
       {children}
     </>
   );
