@@ -11,6 +11,7 @@ import type { BookingSupplier, CancelPenalty, RetrievedItinerary, SupplierAdapte
 import { captureHold, credit, getBalance, placeHoldInTx, releaseHold, withLedgerTransaction } from "@/server/wallet/ledger";
 import { InsufficientFunds } from "@/server/wallet/errors";
 import { cancelChargeAt } from "./cancel-charge";
+import type { BookingEmailEvent } from "./emails";
 import { BookingStateConflict, transition } from "./states";
 
 // Booking (plan 3). The money rules, in order:
@@ -202,6 +203,11 @@ function holdKey(id: string, what: "hold" | "capture" | "release" | "refund"): s
   return `booking:${id}:${what}`;
 }
 
+// One email per booking change, sent by the job queue; queued with the change itself.
+async function queueEmail(tx: Prisma.TransactionClient, bookingId: string, event: BookingEmailEvent): Promise<void> {
+  await enqueue("email.booking", { bookingId, event }, { dedupeKey: `email.booking:${bookingId}:${event}` }, tx);
+}
+
 // Every check gets its own job (a unique key), so none is ever skipped as a repeat.
 async function scheduleReconcile(bookingId: string, at: Date, client?: Prisma.TransactionClient): Promise<void> {
   await enqueue("booking.reconcile", { bookingId }, { runAt: at, dedupeKey: `booking.reconcile:${bookingId}:${randomUUID()}` }, client);
@@ -293,8 +299,8 @@ async function confirmBooking(
   // Capture first (idempotent): if anything fails after it, reconcile captures again (a no-op)
   // and finishes the move.
   await captureHold(holdId, holdKey(bookingId, "capture"));
-  await db.$transaction((tx) =>
-    transition(tx, {
+  await db.$transaction(async (tx) => {
+    await transition(tx, {
       bookingId,
       from: "PENDING_CONFIRMATION",
       to: "CONFIRMED",
@@ -308,15 +314,17 @@ async function confirmBooking(
         confirmedAt: new Date(),
         bookToken: null,
       },
-    }),
-  );
+    });
+    await queueEmail(tx, bookingId, "confirmed");
+  });
 }
 
 async function failBooking(bookingId: string, holdId: string, actorUserId: string | null, reason: string): Promise<void> {
   await releaseHold(holdId, holdKey(bookingId, "release"));
-  await db.$transaction((tx) =>
-    transition(tx, { bookingId, from: "PENDING_CONFIRMATION", to: "FAILED", actorUserId, reason, data: { failureReason: reason, bookToken: null } }),
-  );
+  await db.$transaction(async (tx) => {
+    await transition(tx, { bookingId, from: "PENDING_CONFIRMATION", to: "FAILED", actorUserId, reason, data: { failureReason: reason, bookToken: null } });
+    await queueEmail(tx, bookingId, "failed");
+  });
 }
 
 // The supplier's view of the booking: through its retrieve link when we have one, otherwise
@@ -337,7 +345,10 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
   const retry = async (delayMs: number, data: Prisma.BookingUpdateInput = {}) => {
     if (attempt >= MAX_RECONCILE_ATTEMPTS) {
       // Gave up: flag it for an admin (the admin bookings list shows it), keep the money as is.
-      await db.booking.update({ where: { id: booking.id }, data: { ...data, reconcileAttempts: attempt, needsAttention: true } });
+      await db.$transaction(async (tx) => {
+        await tx.booking.update({ where: { id: booking.id }, data: { ...data, reconcileAttempts: attempt, needsAttention: true } });
+        await queueEmail(tx, booking.id, "needs_attention");
+      });
       console.error(`booking ${booking.reference}: reconcile gave up, needs an admin`);
       return "retry" as const;
     }
@@ -438,9 +449,10 @@ async function finishCancel(booking: Booking, actorUserId: string | null, reason
   if (refund > 0) {
     await credit({ agencyId: booking.agencyId, type: "REFUND", amountCents: refund, reason: `Refund for cancelled booking ${booking.reference}`, idempotencyKey: holdKey(booking.id, "refund"), bookingRef: booking.reference });
   }
-  await db.$transaction((tx) =>
-    transition(tx, { bookingId: booking.id, from: "CANCEL_PENDING", to: "CANCELLED", actorUserId, reason, data: { refundMinor: refund, cancelledAt: new Date() } }),
-  );
+  await db.$transaction(async (tx) => {
+    await transition(tx, { bookingId: booking.id, from: "CANCEL_PENDING", to: "CANCELLED", actorUserId, reason, data: { refundMinor: refund, cancelledAt: new Date() } });
+    await queueEmail(tx, booking.id, "cancelled");
+  });
 }
 
 export type CancelOutcome = { kind: "cancelled" | "pending" | "refused" | "not_allowed"; message?: string };
