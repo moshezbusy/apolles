@@ -111,7 +111,7 @@ export class FakeContentSource implements ContentSource {
       checkout: { time: "11:00 AM" },
       fees: { mandatory: "<p>Resort fee: EUR 18.50 per night.</p>", optional: "<p>Breakfast: EUR 15 per person.</p>" },
       knowBeforeYouGo: "<ul><li>No pets allowed.</li><li>Quiet hours from 10 PM.</li></ul>",
-      description: `<p>${p.name} is a sample hotel used for testing.</p>`,
+      description: `${p.name} is a sample hotel used for testing.`, // plain text: the page never renders supplier HTML
       onsiteCurrency: "EUR",
       rooms: [],
     }));
