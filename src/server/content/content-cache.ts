@@ -2,7 +2,7 @@ import { z } from "zod";
 import { stripNul } from "@/lib/strip-nul";
 import { db } from "@/server/db";
 import { SupplierError } from "@/server/supplier/expedia/client";
-import { ExpediaContentSource } from "@/server/supplier/expedia/content";
+import { contentSource } from "@/server/supplier";
 import type { ContentSource, PropertyContent } from "@/server/supplier/types";
 
 // Hotel content for search results and the hotel page (plan 2b, task 5). Content younger than
@@ -59,7 +59,7 @@ export async function getContent(
   now: Date = new Date(),
   deps: { source?: ContentSource } = {},
 ): Promise<Map<string, PropertyContent>> {
-  const source = deps.source ?? new ExpediaContentSource();
+  const source = deps.source ?? contentSource();
   const unique = [...new Set(ids)];
   const result = new Map<string, PropertyContent>();
   const stale = new Map<string, { data: PropertyContent; fetchedAt: Date }>();

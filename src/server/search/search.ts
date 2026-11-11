@@ -4,7 +4,7 @@ import { getContent } from "@/server/content/content-cache";
 import { db } from "@/server/db";
 import { hitRateLimit } from "@/server/rate-limit";
 import { SupplierError } from "@/server/supplier/expedia/client";
-import { ExpediaAdapter } from "@/server/supplier/expedia/adapter";
+import { supplierAdapter } from "@/server/supplier";
 import type { Image, Offer, PropertyContent, SupplierAdapter, SupplierContext } from "@/server/supplier/types";
 import type { Money } from "@/lib/supplier-money";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
@@ -47,6 +47,8 @@ export type ListOptions = {
   maxPriceMinor?: number;
   stars?: number[];
   name?: string;
+  roomName?: string;
+  freeCancellation?: boolean;
   cursor?: string;
   take?: number;
 };
@@ -163,6 +165,7 @@ async function fetchBatch(
         minTotalMinor: cheapest.price.total.minor,
         currency: cheapest.price.total.currency,
         refundableAvailable: offers.some((offer) => offer.refundable),
+        roomNames: [...new Set(offers.map((offer) => offer.roomName.toLowerCase()))].join("\n"),
         offers: offers as unknown as Prisma.InputJsonValue,
       },
     ];
@@ -223,7 +226,7 @@ export async function startSearch(ctx: SearchContext, rawInput: unknown, deps: D
   });
   if (older.length > 0) await db.searchSnapshot.deleteMany({ where: { agencyId: ctx.agencyId, id: { in: older.map((o) => o.id) } } });
   if (candidates.length > 0) {
-    await fetchBatch({ ...snapshot, query }, ctx.supplierContext, deps.adapter ?? new ExpediaAdapter());
+    await fetchBatch({ ...snapshot, query }, ctx.supplierContext, deps.adapter ?? supplierAdapter());
     await prefetchContent(snapshot.id, deps.content ?? getContent, now);
   }
   return { snapshotId: snapshot.id };
@@ -241,7 +244,7 @@ export async function loadMore(ctx: SearchContext, snapshotId: string, deps: Dep
   const query = storedQuery.parse(snapshot.query);
   if (snapshot.nextIndex >= snapshot.candidateIds.length) return { added: 0, hasMore: false };
   await rateLimit(ctx.agencyId);
-  const added = await fetchBatch({ ...snapshot, query }, ctx.supplierContext, deps.adapter ?? new ExpediaAdapter());
+  const added = await fetchBatch({ ...snapshot, query }, ctx.supplierContext, deps.adapter ?? supplierAdapter());
   await prefetchContent(snapshot.id, deps.content ?? getContent, now);
   return { added, hasMore: snapshot.nextIndex + added < snapshot.candidateIds.length };
 }
@@ -264,10 +267,10 @@ export async function listResults(
   snapshotId: string,
   opts: ListOptions,
   now: Date = new Date(),
-): Promise<{ hotels: HotelCard[]; nextCursor: string | null; hasMoreFromSupplier: boolean; expired: boolean } | null> {
+): Promise<{ hotels: HotelCard[]; total: number; nextCursor: string | null; hasMoreFromSupplier: boolean; expired: boolean } | null> {
   const snapshot = await ownSnapshot(agencyId, snapshotId);
   if (!snapshot) return null;
-  if (snapshot.expiresAt <= now) return { hotels: [], nextCursor: null, hasMoreFromSupplier: false, expired: true };
+  if (snapshot.expiresAt <= now) return { hotels: [], total: 0, nextCursor: null, hasMoreFromSupplier: false, expired: true };
 
   const take = Math.min(Math.max(1, Math.trunc(opts.take ?? DEFAULT_TAKE)), MAX_TAKE);
   const skip = opts.cursor && /^\d{1,6}$/.test(opts.cursor) ? Number(opts.cursor) : 0;
@@ -284,8 +287,14 @@ export async function listResults(
   }
   const name = opts.name?.trim();
   if (name) where.name = { contains: name.slice(0, 100), mode: "insensitive" };
+  const roomName = opts.roomName?.trim();
+  if (roomName) where.roomNames = { contains: roomName.slice(0, 100).toLowerCase() };
+  if (opts.freeCancellation) where.refundableAvailable = true;
 
-  const rows = await db.searchHotel.findMany({ where, orderBy: orderBy(opts.sort), skip, take: take + 1 });
+  const [rows, total] = await Promise.all([
+    db.searchHotel.findMany({ where, orderBy: orderBy(opts.sort), skip, take: take + 1 }),
+    db.searchHotel.count({ where }),
+  ]);
   const page = rows.slice(0, take);
 
   // Images from the content cache only: listing results never calls Expedia.
@@ -311,9 +320,41 @@ export async function listResults(
       refundableAvailable: row.refundableAvailable,
       heroImage: heroById.get(row.propertyId) ?? null,
     })),
+    total,
     nextCursor: rows.length > take ? String(skip + take) : null,
     hasMoreFromSupplier: snapshot.nextIndex < snapshot.candidateIds.length,
     expired: false,
+  };
+}
+
+// What the results and hotel pages show above the list: the search as the agent entered it.
+export type SearchSummary = {
+  destinationId: string;
+  destinationLabel: string;
+  checkin: string;
+  checkout: string;
+  nights: number;
+  adults: number;
+  childAges: number[];
+  expired: boolean;
+};
+
+export async function searchSummary(agencyId: string, snapshotId: string, now: Date = new Date()): Promise<SearchSummary | null> {
+  const snapshot = await ownSnapshot(agencyId, snapshotId);
+  if (!snapshot) return null;
+  const parsed = storedQuery.safeParse(snapshot.query);
+  if (!parsed.success) return null;
+  const q = parsed.data;
+  const destination = await db.destination.findUnique({ where: { id: q.destinationId }, select: { nameFull: true } });
+  return {
+    destinationId: q.destinationId,
+    destinationLabel: destination?.nameFull ?? "",
+    checkin: q.checkin,
+    checkout: q.checkout,
+    nights: Math.round((Date.parse(`${q.checkout}T00:00:00Z`) - Date.parse(`${q.checkin}T00:00:00Z`)) / 86_400_000),
+    adults: q.adults,
+    childAges: q.childAges,
+    expired: snapshot.expiresAt <= now,
   };
 }
 

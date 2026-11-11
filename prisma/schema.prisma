@@ -324,6 +324,7 @@ model SearchHotel {
   minTotalMinor       Int
   currency            String
   refundableAvailable Boolean
+  roomNames           String         @default("") // lowercased room names, one per line (room-name filter)
   offers              Json
   snapshot            SearchSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
 

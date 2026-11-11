@@ -5,7 +5,7 @@ import { SupplierRateLimited } from "@/server/supplier/expedia/client";
 import type { AvailabilityQuery, Offer, PropertyOffers, SupplierAdapter } from "@/server/supplier/types";
 import { suggestDestinations } from "./destinations";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
-import { cleanupSnapshots, getHotelOffers, listResults, loadMore, startSearch } from "./search";
+import { cleanupSnapshots, getHotelOffers, listResults, loadMore, searchSummary, startSearch } from "./search";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 const input = { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [] as number[] };
@@ -181,6 +181,41 @@ describe("search service", () => {
     const priced = await listResults("A", snapshotId, { sort: "price_desc", minPriceMinor: 47_000, maxPriceMinor: 48_000 }, NOW);
     expect(priced?.hotels.map((h) => h.propertyId)).toEqual(["2", "3"]);
     expect(searchAvailability).toHaveBeenCalledTimes(1);
+  });
+
+  it("filters by room name and by free cancellation", async () => {
+    await hotels(3);
+    const { adapter } = fakeAdapter((q) =>
+      q.propertyIds.map((id) => ({
+        propertyId: id,
+        offers: [{ ...offer(id, 20_000, id === "2"), roomName: id === "1" ? "Ocean View King" : "Garden Double" }],
+      })),
+    );
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const ocean = await listResults("A", snapshotId, { sort: "recommended", roomName: "ocean view" }, NOW);
+    expect(ocean?.hotels.map((h) => h.propertyId)).toEqual(["1"]);
+    const free = await listResults("A", snapshotId, { sort: "recommended", freeCancellation: true }, NOW);
+    expect(free?.hotels.map((h) => h.propertyId)).toEqual(["2"]);
+  });
+
+  it("counts the matching hotels and summarises the search for the page header", async () => {
+    await hotels(3);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const page = await listResults("A", snapshotId, { sort: "recommended", take: 2 }, NOW);
+    expect(page?.total).toBe(3);
+    expect(await searchSummary("A", snapshotId, NOW)).toEqual({
+      destinationId: "paris",
+      destinationLabel: "Paris, France",
+      checkin: "2027-04-10",
+      checkout: "2027-04-12",
+      nights: 2,
+      adults: 2,
+      childAges: [],
+      expired: false,
+    });
+    expect(await searchSummary("B", snapshotId, NOW)).toBeNull();
+    expect((await searchSummary("A", snapshotId, new Date(NOW.getTime() + 31 * 60_000)))?.expired).toBe(true);
   });
 
   it("pages the results with a cursor", async () => {
