@@ -53,6 +53,18 @@ describe("admin booking and supplier log pages", () => {
     expect(call).toContain("[masked]");
   });
 
+  it("demo access: shows a login once, only in the demo", async () => {
+    await db.user.create({ data: { id: "admin", email: "owner@t.local", name: "Owner", role: "ADMIN" } });
+    vi.stubEnv("APP_URL", "https://staging.example");
+    vi.stubEnv("SUPPLIER_MODE", "fake");
+    const { demoAccessAction } = await import("./admin/demo/actions");
+    const state = await demoAccessAction();
+    expect(state).toMatchObject({ status: "ok", email: "demo-agent@apolles.test", password: expect.any(String) });
+    vi.stubEnv("SUPPLIER_MODE", "");
+    expect(await demoAccessAction()).toMatchObject({ status: "error" });
+    vi.unstubAllEnvs();
+  });
+
   it("every admin page checks the admin session", async () => {
     vi.mocked(requireAdmin).mockRejectedValue(new Error("NEXT_REDIRECT:/login"));
     const { default: ListPage } = await import("./admin/bookings/page");

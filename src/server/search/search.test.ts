@@ -8,6 +8,13 @@ import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./erro
 import { cleanupSnapshots, findOffer, getHotelOffers, listResults, loadMore, searchSummary, startSearch } from "./search";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
+
+// Rate limits count per calendar minute (database clock). A test that counts hits starts well
+// inside a minute, so its hits never straddle two windows (which would reset the count).
+async function startInsideMinute(): Promise<void> {
+  const second = new Date().getUTCSeconds();
+  if (second >= 40) await new Promise((resolve) => setTimeout(resolve, (61 - second) * 1000));
+}
 const input = { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [] as number[] };
 
 function offer(propertyId: string, totalMinor: number, refundable = true): Offer {
@@ -276,6 +283,7 @@ describe("search service", () => {
   });
 
   it("Expedia unavailable or rate limited → SearchUnavailable; the 31st search in a minute → SearchRateLimited", async () => {
+    await startInsideMinute();
     await hotels(1);
     const failing = fakeAdapter(() => {
       throw new SupplierRateLimited("429", 429);
@@ -284,7 +292,7 @@ describe("search service", () => {
     const { adapter } = fakeAdapter(everyone);
     for (let i = 0; i < 29; i++) await startSearch(ctx(), input, { adapter, now: NOW });
     await expect(startSearch(ctx(), input, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchRateLimited);
-  });
+  }, 30_000);
 
   it("a search older than 30 minutes is expired and shows nothing", async () => {
     await hotels(1);
@@ -317,13 +325,14 @@ describe("search service", () => {
   });
 
   it("opening hotel pages is rate limited per agency (120 a minute)", async () => {
+    await startInsideMinute();
     await hotels(1);
     const { adapter } = fakeAdapter(everyone);
     const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
     const none = async () => new Map();
     for (let i = 0; i < 120; i++) await getHotelOffers("A", snapshotId, "1", NOW, { content: none });
     await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none })).rejects.toBeInstanceOf(SearchRateLimited);
-  });
+  }, 30_000);
 
   it("findOffer returns one rate of the agency's own search, never another agency's or an expired one", async () => {
     await hotels(1);
