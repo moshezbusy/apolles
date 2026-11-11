@@ -1,4 +1,8 @@
+import { randomInt } from "node:crypto";
+import { audit } from "@/server/audit";
+import { hashPassword } from "@/server/auth/password";
 import { issuePasswordToken } from "@/server/auth/password-tokens";
+import { destroyUserSessions } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { credit } from "@/server/wallet/ledger";
@@ -64,4 +68,28 @@ export async function seedDemoAgent(appUrl: string): Promise<{ email: string; se
   if (user.passwordHash) return { email: user.email, setPasswordLink: null };
   const token = await issuePasswordToken(user.id, "SET");
   return { email: user.email, setPasswordLink: `${appUrl.replace(/\/+$/, "")}/set-password/${token}` };
+}
+
+// The admin's "Demo access" button (staging demo only; the caller checks requireAdmin and
+// isDemoSupplier). Makes sure the demo agent exists, gives it a new random password, ends
+// its old sessions, and returns the password once to show on screen. The password is never
+// stored or logged in clear (the audit row records only that it was reset).
+const PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"; // no 0/O, 1/l/I
+
+export async function resetDemoAgentPassword(adminUserId: string, appUrl: string): Promise<{ email: string; password: string }> {
+  await seedDemoAgent(appUrl);
+  let password = "";
+  do {
+    const groups = [0, 1, 2].map(() => Array.from({ length: 4 }, () => PASSWORD_ALPHABET[randomInt(PASSWORD_ALPHABET.length)]).join(""));
+    password = groups.join("-");
+  } while (!/\d/.test(password) || !/[A-Za-z]/.test(password));
+  const passwordHash = await hashPassword(password);
+  const user = await db.$transaction(async (tx) => {
+    const updated = await tx.user.update({ where: { email: DEMO_AGENT_EMAIL }, data: { passwordHash } });
+    await destroyUserSessions(updated.id, tx);
+    await tx.passwordToken.updateMany({ where: { userId: updated.id, usedAt: null }, data: { usedAt: new Date() } });
+    await audit(adminUserId, "demo.agent_password_reset", "User", updated.id, undefined, undefined, tx);
+    return updated;
+  });
+  return { email: user.email, password };
 }
