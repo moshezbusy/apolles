@@ -1,0 +1,231 @@
+{
+  "itinerary_id": "8999989898988",
+  "property_id": "8150374",
+  "links": {
+    "cancel": {
+      "method": "DELETE",
+      "href": "/v3/itineraries/8999989898988?token=tok-rn1"
+    }
+  },
+  "email": "smith@example.com",
+  "phone": {
+    "country_code": "1",
+    "area_code": "487",
+    "number": "5550077"
+  },
+  "rooms": [
+    {
+      "id": "926784314",
+      "confirmation_id": {
+        "expedia": "1234567890",
+        "property": "BEF23123AA"
+      },
+      "bed_group_id": "d395b56d-d31d-4a84-ad2b-66820b1d48e2",
+      "checkin": "2018-09-21",
+      "checkout": "2018-09-23",
+      "number_of_adults": 2,
+      "child_ages": [
+        2,
+        3
+      ],
+      "given_name": "Givenne",
+      "family_name": "Nameo",
+      "status": "booked",
+      "special_request": "Please give me extra towels.",
+      "smoking": false,
+      "loyalty_id": "ABC123",
+      "rate": {
+        "id": "035943984",
+        "merchant_of_record": "expedia",
+        "refundable": true,
+        "cancel_refund": {
+          "amount": -65.98,
+          "currency": "USD"
+        },
+        "amenities": [
+          "12345",
+          "678",
+          "9999"
+        ],
+        "promotions": {
+          "value_adds": {
+            "123abc": {
+              "id": "123abc",
+              "description": "10 USD credit on activities and sports for your stay."
+            },
+            "3x4mp13": {
+              "id": "3x4mp13",
+              "description": "20% discount on theme park tickets purchased through the concierge desk."
+            }
+          }
+        },
+        "cancel_penalties": [
+          {
+            "start": "2018-01-01T01:01:01.000-08:00",
+            "end": "2018-12-12T01:01:01.000-08:00",
+            "amount": "250.75",
+            "currency": "USD"
+          }
+        ],
+        "nonrefundable_date_ranges": [
+          {
+            "start": "2022-02-02",
+            "end": "2022-02-02"
+          }
+        ],
+        "deposits": [
+          {
+            "currency": "USD",
+            "value": "220.75",
+            "due": "2018-12-12T01:01:01.000-08:00"
+          }
+        ],
+        "pricing": {
+          "nightly": [
+            [
+              {
+                "type": "base_rate",
+                "value": "111.23",
+                "currency": "USD"
+              },
+              {
+                "type": "sales_tax",
+                "value": "11.12",
+                "currency": "USD"
+              }
+            ],
+            [
+              {
+                "type": "base_rate",
+                "value": "111.23",
+                "currency": "USD"
+              },
+              {
+                "type": "sales_tax",
+                "value": "11.12",
+                "currency": "USD"
+              }
+            ]
+          ],
+          "stay": [
+            {
+              "type": "base_rate",
+              "value": "123.45",
+              "currency": "USD"
+            }
+          ],
+          "totals": {
+            "inclusive": {
+              "billable_currency": {
+                "value": "368.15",
+                "currency": "USD"
+              }
+            },
+            "exclusive": {
+              "billable_currency": {
+                "value": "345.91",
+                "currency": "USD"
+              }
+            },
+            "marketing_fee": {
+              "billable_currency": {
+                "value": "7.75",
+                "currency": "USD"
+              }
+            },
+            "property_fees": {
+              "billable_currency": {
+                "value": "36.95",
+                "currency": "USD"
+              }
+            }
+          },
+          "fees": {
+            "mandatory_fee": {
+              "billable_currency": {
+                "value": "5.00",
+                "currency": "USD"
+              }
+            },
+            "resort_fee": {
+              "billable_currency": {
+                "value": "20.00",
+                "currency": "USD"
+              }
+            },
+            "mandatory_tax": {
+              "billable_currency": {
+                "value": "11.95",
+                "currency": "USD"
+              }
+            }
+          }
+        }
+      },
+      "links": {
+        "cancel": {
+          "method": "DELETE",
+          "href": "/v3/itineraries/8999989898988/rooms/d08572fc-82d2-4d5d-ad30-60f5be7fb53e?token=tok-rn2"
+        },
+        "change": {
+          "method": "PUT",
+          "href": "/v3/itineraries/8999989898988/rooms/d08572fc-82d2-4d5d-ad30-60f5be7fb53e?token=tok-rn3"
+        },
+        "shop_for_change": {
+          "method": "GET",
+          "href": "/v3/properties/8150374/availability?token=tok-rn4"
+        }
+      }
+    }
+  ],
+  "billing_contact": {
+    "given_name": "John",
+    "family_name": "Smith",
+    "address": {
+      "line_1": "555 1st St",
+      "line_2": "10th Floor",
+      "line_3": "Unit 12",
+      "city": "Seattle",
+      "state_province_code": "WA",
+      "postal_code": "98121",
+      "country_code": "US"
+    }
+  },
+  "adjustment": {
+    "value": -100.0,
+    "type": "base_rate",
+    "currency": "USD"
+  },
+  "creation_date_time": "2017-08-17T13:31:15.523Z",
+  "affiliate_reference_id": "4480ABC",
+  "affiliate_metadata": "This booking was made with EPS.",
+  "conversations": {
+    "links": {
+      "property": {
+        "method": "GET",
+        "href": "https://www.example.com?key=123abd456"
+      }
+    }
+  },
+  "travel_purpose": "business",
+  "supplier_transparency": {
+    "point_of_sale_display_to_share": "Global Travel Site",
+    "company_name_to_share": "Traveler's Company",
+    "consent_to_share": true
+  },
+  "invoicing": {
+    "company_name": "alphaDemandPartner",
+    "company_address": {
+      "line_1": "555 1st St",
+      "line_2": "10th Floor",
+      "line_3": "Unit 12",
+      "city": "Seattle",
+      "state_province_code": "WA",
+      "postal_code": "98121",
+      "country_code": "US"
+    },
+    "point_of_sale_display": "Global Travel Site",
+    "email": "chucktesta@mydomain.com",
+    "vat_number": "1234567890"
+  }
+}

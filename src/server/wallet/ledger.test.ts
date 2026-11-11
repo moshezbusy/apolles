@@ -19,6 +19,7 @@ import {
   listEntries,
   listEntriesWithBalance,
   placeHold,
+  placeHoldInTx,
   releaseHold,
   withLedgerTransaction,
 } from "@/server/wallet/ledger";
@@ -455,6 +456,26 @@ describe("wallet ledger", () => {
     let actorId: string;
     beforeEach(async () => {
       actorId = (await createUser({ email: "admin@test.local", name: "Admin", role: "ADMIN" })).id;
+    });
+
+    it("placeHoldInTx: the hold exists only if the caller's transaction commits", async () => {
+      await fund(100_000);
+      await expect(
+        withLedgerTransaction(async (tx) => {
+          await placeHoldInTx(tx, { agencyId, amountCents: 30_000, bookingRef: "APL-X", idempotencyKey: "tx-h1" });
+          throw new Error("the booking change failed");
+        }),
+      ).rejects.toThrow("the booking change failed");
+      expect(await getBalance(agencyId)).toEqual({ balanceCents: 100_000, heldCents: 0 });
+      const { holdId } = await withLedgerTransaction((tx) => placeHoldInTx(tx, { agencyId, amountCents: 30_000, bookingRef: "APL-X", idempotencyKey: "tx-h1" }));
+      expect(holdId).toEqual(expect.any(String));
+      expect(await getBalance(agencyId)).toEqual({ balanceCents: 70_000, heldCents: 30_000 });
+    });
+
+    it("a hold key reused for another amount is a conflict, never the old hold", async () => {
+      await fund(100_000);
+      await placeHold({ agencyId, amountCents: 30_000, bookingRef: "APL-X", idempotencyKey: "h-amt" });
+      await expect(placeHold({ agencyId, amountCents: 40_000, bookingRef: "APL-X", idempotencyKey: "h-amt" })).rejects.toBeInstanceOf(IdempotencyKeyConflict);
     });
 
     it("creditInTx / debitInTx report created: true, then false for a repeat", async () => {

@@ -1,0 +1,26 @@
+{
+  "type": "request_unauthenticated",
+  "message": "Data required to authenticate your request is missing or inaccurate. Ensure that your request follows the guidelines in our documentation.",
+  "fields": [
+    {
+      "name": "apikey",
+      "type": "header",
+      "value": "key-ex1"
+    },
+    {
+      "name": "signature",
+      "type": "header",
+      "value": "sig-ex1"
+    },
+    {
+      "name": "timestamp",
+      "type": "header",
+      "value": 198284729
+    },
+    {
+      "name": "servertimestamp",
+      "type": "server",
+      "value": 198284729
+    }
+  ]
+}

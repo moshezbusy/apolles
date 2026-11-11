@@ -1,0 +1,4 @@
+{
+  "type": "too_many_requests",
+  "message": "You have reached your capacity for this type of request."
+}

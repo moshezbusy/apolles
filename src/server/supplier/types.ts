@@ -121,3 +121,36 @@ export interface ContentSource {
   propertyContent(ids: string[]): Promise<PropertyContent[]>;
   inactiveSince(q: { since: string; next?: string }): Promise<{ propertyIds: string[]; next: string | null }>;
 }
+
+// ---------- booking (plan 3) ----------
+// One room per booking in phase 1. Links are the supplier's own hrefs (with their tokens),
+// kept server-side and followed exactly as given.
+
+export type Phone = { countryCode: string; number: string }; // digits only, e.g. "972", "501234567"
+
+export type BookInput = {
+  bookToken: string; // from the latest price check
+  affiliateReferenceId: string; // the Apolles reference (TR1), unique per booking
+  lead: { givenName: string; familyName: string; email: string; phone: Phone };
+};
+
+export type SupplierLinks = { retrieve?: string; cancel?: string };
+
+export type BookResult = { itineraryId: string; links: SupplierLinks };
+
+export type SupplierRoomStatus = "booked" | "pending" | "cancelled" | "other";
+
+export type RetrievedItinerary = {
+  itineraryId: string;
+  rooms: { id: string; status: SupplierRoomStatus; hotelConfirmationId: string | null; cancelLink: string | null }[];
+};
+
+export interface BookingSupplier {
+  // A definite "no" throws SupplierRequestRejected (or SupplierAuthError); an answer that is
+  // not known (timeout, 5xx, network) throws SupplierOutcomeUnknown: never book again then.
+  book(input: BookInput, context: SupplierContext): Promise<BookResult>;
+  // null when the supplier says there is no such booking.
+  findByAffiliateReference(ref: { affiliateReferenceId: string; email: string }, context: SupplierContext): Promise<RetrievedItinerary | null>;
+  retrieve(links: SupplierLinks, context: SupplierContext): Promise<RetrievedItinerary>;
+  cancelRoom(cancelLink: string, context: SupplierContext): Promise<void>;
+}

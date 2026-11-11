@@ -1,7 +1,8 @@
 import { ExpediaAdapter } from "./expedia/adapter";
+import { ExpediaBooking } from "./expedia/booking";
 import { ExpediaContentSource } from "./expedia/content";
 import { FakeContentSource, FakeSupplierAdapter } from "./fake";
-import type { ContentSource, SupplierAdapter } from "./types";
+import type { BookingSupplier, ContentSource, SupplierAdapter } from "./types";
 
 // The one place that picks the supplier. Expedia always, except SUPPLIER_MODE=fake (made-up
 // hotels and rates). The fake is allowed on a developer's machine, in the browser tests, and
@@ -22,6 +23,21 @@ function fakeRequested(): boolean {
 
 export function supplierAdapter(): SupplierAdapter {
   return fakeRequested() ? new FakeSupplierAdapter() : new ExpediaAdapter();
+}
+
+// Price check and booking together (the booking service needs both from the same supplier).
+export function bookingSupplier(): SupplierAdapter & BookingSupplier {
+  if (fakeRequested()) return new FakeSupplierAdapter();
+  const shop = new ExpediaAdapter();
+  const booking = new ExpediaBooking();
+  return {
+    searchAvailability: (q, c) => shop.searchAvailability(q, c),
+    priceCheck: (r, c) => shop.priceCheck(r, c),
+    book: (i, c) => booking.book(i, c),
+    findByAffiliateReference: (r, c) => booking.findByAffiliateReference(r, c),
+    retrieve: (l, c) => booking.retrieve(l, c),
+    cancelRoom: (l, c) => booking.cancelRoom(l, c),
+  };
 }
 
 export function contentSource(): ContentSource {

@@ -16,22 +16,24 @@ export async function enqueue(
   kind: JobKind,
   payload: Prisma.InputJsonObject,
   opts: { runAt?: Date; dedupeKey?: string } = {},
+  // A caller's transaction: the job then exists only if that transaction commits.
+  client: Prisma.TransactionClient = db,
 ): Promise<{ id: string; created: boolean }> {
   const runAt = opts.runAt ?? new Date();
   if (opts.dedupeKey) {
     // DO NOTHING (no row rewrite when it exists), then read the existing row's id.
     const payloadJson = JSON.stringify(payload);
-    const inserted = await db.$queryRaw<{ id: string }[]>`
+    const inserted = await client.$queryRaw<{ id: string }[]>`
       INSERT INTO "Job" ("id", "kind", "payload", "status", "attempts", "runAt", "dedupeKey", "createdAt")
       VALUES (gen_random_uuid()::text, ${kind}, ${payloadJson}::jsonb, 'QUEUED', 0, ${runAt}, ${opts.dedupeKey}, now())
       ON CONFLICT ("dedupeKey") DO NOTHING
       RETURNING "id"`;
     const [row] = inserted;
     if (row) return { id: row.id, created: true };
-    const existing = await db.job.findUniqueOrThrow({ where: { dedupeKey: opts.dedupeKey }, select: { id: true } });
+    const existing = await client.job.findUniqueOrThrow({ where: { dedupeKey: opts.dedupeKey }, select: { id: true } });
     return { id: existing.id, created: false };
   }
-  const job = await db.job.create({ data: { kind, payload, runAt }, select: { id: true } });
+  const job = await client.job.create({ data: { kind, payload, runAt }, select: { id: true } });
   return { id: job.id, created: true };
 }
 

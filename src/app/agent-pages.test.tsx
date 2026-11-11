@@ -94,8 +94,8 @@ describe("Header", () => {
     expect(summary).not.toMatch(/class="hidden[^"]*">Test Travel</);
   });
 
-  it("has no Bookings item", () => {
-    expect(html).not.toContain("Bookings");
+  it("links to the bookings list", () => {
+    expect(html).toMatch(/<a[^>]*href="\/bookings"[^>]*>Bookings<\/a>/);
   });
 
   it("shows the balance as a link to /balance", () => {

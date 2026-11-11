@@ -1,0 +1,4 @@
+{
+  "type": "upgrade_required",
+  "message": "This service requires the use of TLS."
+}

@@ -5,7 +5,7 @@ import { SupplierRateLimited } from "@/server/supplier/expedia/client";
 import type { AvailabilityQuery, Offer, PropertyOffers, SupplierAdapter } from "@/server/supplier/types";
 import { suggestDestinations } from "./destinations";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
-import { cleanupSnapshots, getHotelOffers, listResults, loadMore, searchSummary, startSearch } from "./search";
+import { cleanupSnapshots, findOffer, getHotelOffers, listResults, loadMore, searchSummary, startSearch } from "./search";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 const input = { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [] as number[] };
@@ -323,6 +323,18 @@ describe("search service", () => {
     const none = async () => new Map();
     for (let i = 0; i < 120; i++) await getHotelOffers("A", snapshotId, "1", NOW, { content: none });
     await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none })).rejects.toBeInstanceOf(SearchRateLimited);
+  });
+
+  it("findOffer returns one rate of the agency's own search, never another agency's or an expired one", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const ref = { snapshotId, propertyId: "1", rateId: "rt1", bedGroupId: "b1" };
+    const found = await findOffer("A", ref, NOW);
+    expect(found).toMatchObject({ offer: { rateId: "rt1" }, bedGroup: { id: "b1", priceCheckToken: "tok-a1" }, hotel: { name: "Hotel 1" }, query: { adults: 2 } });
+    expect(await findOffer("B", ref, NOW)).toBeNull();
+    expect(await findOffer("A", { ...ref, bedGroupId: "nope" }, NOW)).toBeNull();
+    expect(await findOffer("A", ref, new Date(NOW.getTime() + 31 * 60_000))).toBeNull();
   });
 
   it("cleanup deletes searches that expired more than an hour ago", async () => {

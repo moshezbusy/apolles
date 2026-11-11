@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { alertError, btnPrimary, card, link, sectionTitle } from "@/components/ui";
-import { toBlocks } from "@/lib/supplier-text";
 import { requireAgent } from "@/server/auth/guards";
 import { SearchRateLimited } from "@/server/search/errors";
 import { getHotelOffers, searchSummary } from "@/server/search/search";
-import type { Offer, PropertyContent } from "@/server/supplier/types";
+import type { Offer } from "@/server/supplier/types";
 import { HotelPhoto, Stars, shortDate, stayText } from "../../../parts";
-import { DUE_LABEL, LINE_LABEL, cancellationLabel, money, penaltyText } from "./rate-text";
+import { CancellationPolicy, Policies, PriceDetails, SupplierText } from "../../../../_components/hotel-info";
+import { cancellationLabel } from "../../../../_components/rate-text";
 
 export const metadata: Metadata = { title: "Hotel | Apolles", robots: { index: false, follow: false } };
 
@@ -17,83 +17,12 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 const KEEP = ["sort", "name", "room", "min", "max", "stars", "free", "cursor"];
 
-// Supplier text, shown as plain paragraphs and list items (never as HTML).
-function SupplierText({ html }: { html: string | null | undefined }) {
-  const blocks = toBlocks(html);
-  if (blocks.length === 0) return null;
-  const items = blocks.filter((b) => b.kind === "li");
-  return (
-    <div className="flex flex-col gap-1.5 text-[13.5px] leading-relaxed text-[#37413d]">
-      {blocks
-        .filter((b) => b.kind === "p")
-        .map((b, i) => (
-          <p key={`p${i}`}>{b.text}</p>
-        ))}
-      {items.length > 0 ? (
-        <ul className="list-disc pl-5">
-          {items.map((b, i) => (
-            <li key={`li${i}`}>{b.text}</li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
-function Policies({ content }: { content: PropertyContent }) {
-  const { checkin, checkout, fees } = content;
-  const checkinTime = [checkin.beginTime, checkin.endTime].filter(Boolean).join(" to ");
-  return (
-    <section id="policies" aria-labelledby="policies-title" className={`${card} bg-white p-5`}>
-      <h2 id="policies-title" className={sectionTitle}>
-        Policies
-      </h2>
-      <dl className="mt-4 grid gap-5 md:grid-cols-2">
-        <div>
-          <dt className="text-sm font-bold text-ink">Check-in</dt>
-          <dd className="mt-1 flex flex-col gap-1.5 text-[13.5px] text-[#37413d]">
-            {checkinTime ? <p>From {checkinTime}</p> : null}
-            {checkin.minAge ? <p>Minimum check-in age: {checkin.minAge}</p> : null}
-            <SupplierText html={checkin.instructions} />
-          </dd>
-        </div>
-        <div>
-          <dt className="text-sm font-bold text-ink">Check-out</dt>
-          <dd className="mt-1 text-[13.5px] text-[#37413d]">{checkout.time ? `By ${checkout.time}` : "See the hotel's instructions"}</dd>
-        </div>
-        {checkin.specialInstructions ? (
-          <div>
-            <dt className="text-sm font-bold text-ink">Special instructions</dt>
-            <dd className="mt-1">
-              <SupplierText html={checkin.specialInstructions} />
-            </dd>
-          </div>
-        ) : null}
-        {fees.mandatory || fees.optional ? (
-          <div>
-            <dt className="text-sm font-bold text-ink">Fees</dt>
-            <dd className="mt-1 flex flex-col gap-2">
-              <SupplierText html={fees.mandatory} />
-              <SupplierText html={fees.optional} />
-            </dd>
-          </div>
-        ) : null}
-        {content.knowBeforeYouGo ? (
-          <div className="md:col-span-2">
-            <dt className="text-sm font-bold text-ink">Know before you go</dt>
-            <dd className="mt-1">
-              <SupplierText html={content.knowBeforeYouGo} />
-            </dd>
-          </div>
-        ) : null}
-      </dl>
-    </section>
-  );
-}
-
-function RateRow({ offer, stay }: { offer: Offer; stay: string }) {
+// "Book room" opens guest details (screen 10) with the rate and the chosen bed type only; the
+// price and the price-check token stay on the server. The bed choice sits in another cell, so
+// its radios belong to the row's form through the `form` attribute.
+function RateRow({ offer, stay, snapshotId }: { offer: Offer; stay: string; snapshotId: string }) {
   const cancel = cancellationLabel(offer);
-  const { price } = offer;
+  const formId = `book-${offer.roomId}-${offer.rateId}`.replace(/[^A-Za-z0-9_-]/g, "_");
   return (
     <tr className="align-top">
       <td className="px-4 py-4">
@@ -103,7 +32,7 @@ function RateRow({ offer, stay }: { offer: Offer; stay: string }) {
             <legend className="text-xs font-semibold text-[#37413d]">Bed type</legend>
             {offer.bedGroups.map((bed, i) => (
               <label key={bed.id} className="mt-1 flex items-center gap-2 text-[13px] text-ink">
-                <input type="radio" name={`bed-${offer.rateId}`} value={bed.id} defaultChecked={i === 0} />
+                <input type="radio" form={formId} name="b" value={bed.id} defaultChecked={i === 0} />
                 {bed.description}
               </label>
             ))}
@@ -117,49 +46,24 @@ function RateRow({ offer, stay }: { offer: Offer; stay: string }) {
         <p className={`text-[13.5px] font-bold ${cancel.refundable ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>{cancel.text}</p>
         <details className="mt-1.5">
           <summary className="cursor-pointer text-xs font-semibold text-brand">Cancellation policy</summary>
-          <ul className="mt-1.5 flex flex-col gap-1 text-xs text-[#37413d]">
-            {offer.cancelPenalties.map((p, i) => (
-              <li key={i}>{penaltyText(p)}</li>
-            ))}
-            {offer.nonrefundableDateRanges.map((r, i) => (
-              <li key={`n${i}`}>
-                Non-refundable for stay dates {r.start} to {r.end}.
-              </li>
-            ))}
-            {!offer.refundable ? <li>This rate cannot be cancelled or changed without paying the full amount.</li> : null}
-            {offer.refundable && offer.cancelPenalties.length === 0 ? <li>Free cancellation before check-in.</li> : null}
-          </ul>
+          <div className="mt-1.5">
+            <CancellationPolicy refundable={offer.refundable} penalties={offer.cancelPenalties} nonrefundableDateRanges={offer.nonrefundableDateRanges} />
+          </div>
         </details>
       </td>
       <td className="px-4 py-4">
-        <p className="text-[20px] font-extrabold tabular-nums text-ink">{money(price.total)}</p>
-        <p className="text-xs text-muted">Total for {stay}</p>
-        <dl className="mt-2 flex flex-col gap-0.5 text-xs text-[#37413d]">
-          {price.lines.map((line) => (
-            <div key={line.kind} className="flex justify-between gap-3">
-              <dt>{LINE_LABEL[line.kind]}</dt>
-              <dd className="tabular-nums">{money(line.amount)}</dd>
-            </div>
-          ))}
-        </dl>
-        {price.dueAtProperty.length > 0 ? (
-          <div className="mt-2.5 rounded-[9px] border border-[#eadfbe] bg-[#fff9e9] p-2 text-xs text-[#6f5a20]">
-            <p className="font-bold">Paid at the property, not included in the total</p>
-            <ul className="mt-1 flex flex-col gap-0.5">
-              {price.dueAtProperty.map((fee, i) => (
-                <li key={i}>
-                  {DUE_LABEL[fee.kind]}: {fee.localAmount ? `${money(fee.localAmount)} (about ${money(fee.amount)})` : money(fee.amount)}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
+        <PriceDetails price={offer.price} stay={stay} />
       </td>
       <td className="px-4 py-4">
-        <button type="button" disabled className={`${btnPrimary} w-full`} title="Booking opens soon">
-          Book room
-        </button>
-        <p className="mt-1.5 text-center text-[11px] text-muted">Booking opens soon</p>
+        <form id={formId} method="get" action="/book/new">
+          <input type="hidden" name="s" value={snapshotId} />
+          <input type="hidden" name="p" value={offer.propertyId} />
+          <input type="hidden" name="r" value={offer.rateId} />
+          {offer.bedGroups.length === 1 ? <input type="hidden" name="b" value={offer.bedGroups[0]!.id} /> : null}
+          <button type="submit" className={`${btnPrimary} w-full`}>
+            Book room
+          </button>
+        </form>
       </td>
     </tr>
   );
@@ -249,7 +153,7 @@ export default async function HotelPage({ params, searchParams }: { params: Para
             </thead>
             <tbody className="divide-y divide-[#f0ece4]">
               {sorted.map((offer) => (
-                <RateRow key={`${offer.roomId}-${offer.rateId}`} offer={offer} stay={stay} />
+                <RateRow key={`${offer.roomId}-${offer.rateId}`} offer={offer} stay={stay} snapshotId={id} />
               ))}
             </tbody>
           </table>

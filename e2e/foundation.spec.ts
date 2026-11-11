@@ -153,6 +153,40 @@ test("foundation: admin creates an agency, tops it up, the agent sees the balanc
     await expect(agentPage.getByText("1 property found")).toBeVisible();
   });
 
+  await test.step("5d. the agent books a free-cancellation room from the balance, then cancels it", async () => {
+    await agentPage.getByRole("link", { name: "View rooms" }).click();
+    const rooms = agentPage.getByRole("region", { name: /Room options/ });
+    // Rates are sorted by price: the second is the free-cancellation Superior King Room.
+    await rooms.getByRole("button", { name: "Book room" }).nth(1).click();
+    await expect(agentPage.getByRole("heading", { name: "Guest details" })).toBeVisible();
+    const givens = agentPage.getByLabel("Given name");
+    const families = agentPage.getByLabel("Family name");
+    await givens.nth(0).fill("Dana");
+    await families.nth(0).fill("Levi");
+    await givens.nth(1).fill("Avi");
+    await families.nth(1).fill("Levi");
+    await agentPage.getByLabel("Email").fill("dana@example.com");
+    await agentPage.getByLabel("Country code").fill("972");
+    await agentPage.getByLabel("Phone number").fill("50 123 4567");
+    await agentPage.getByRole("button", { name: "Continue to review" }).click();
+
+    await expect(agentPage.getByRole("heading", { name: "Review and book" })).toBeVisible();
+    await expect(agentPage.getByText("Bed type is a request and not guaranteed.")).toBeVisible();
+    await agentPage.getByRole("checkbox").check();
+    await agentPage.getByRole("button", { name: "Book and issue voucher" }).click();
+
+    await expect(agentPage.getByRole("heading", { name: /Booking APL-/ })).toBeVisible();
+    await expect(agentPage.getByText("Confirmed", { exact: true })).toBeVisible();
+    await expect(agentPage.getByRole("banner")).not.toContainText("USD 1,000.00"); // paid from the balance
+
+    await agentPage.getByRole("button", { name: "Confirm cancellation" }).click();
+    await expect(agentPage.getByRole("status")).toContainText("The booking is cancelled");
+    await expect(agentPage.getByRole("banner")).toContainText("USD 1,000.00"); // refunded in full
+
+    await agentPage.getByRole("banner").getByRole("link", { name: "Bookings" }).click();
+    await expect(agentPage.getByRole("table")).toContainText("Cancelled");
+  });
+
   await test.step("6. the agent opening /admin ends at /login or a 404", async () => {
     const response = await agentPage.goto("/admin");
     const atLogin = new URL(agentPage.url()).pathname === "/login";
