@@ -163,6 +163,14 @@ describe("booking: book", () => {
     expect(events.map((e) => e.toStatus)).toEqual(["DRAFT", "PENDING_CONFIRMATION", "CONFIRMED"]);
   });
 
+  it("one 'confirmed' email is queued with the confirmation, never twice", async () => {
+    const { bookingId, total } = await reviewed();
+    await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: supplier(), now: later(2) });
+    await reconcile(bookingId, { supplier: supplier(), now: later(8) });
+    const emails = await db.job.findMany({ where: { kind: "email.booking" } });
+    expect(emails.map((j) => j.payload)).toEqual([{ bookingId, event: "confirmed" }]);
+  });
+
   it("not enough balance: shows the shortfall, holds nothing, never asks the supplier", async () => {
     const { bookingId, total } = await reviewed(1, 10_000);
     const s = supplier();
