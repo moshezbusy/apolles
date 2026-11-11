@@ -122,8 +122,16 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
                 </dd>
               </div>
               <div>
-                <dt className="font-semibold text-ink">Voucher and invoice</dt>
-                <dd className="text-muted">PDF documents are being added.</dd>
+                <dt className="font-semibold text-ink">Voucher</dt>
+                <dd>
+                  {b.status === "CONFIRMED" ? (
+                    <a href={`/bookings/${b.id}/voucher`} className={link}>
+                      Download voucher (PDF)
+                    </a>
+                  ) : (
+                    <span className="text-muted">Available once the booking is confirmed</span>
+                  )}
+                </dd>
               </div>
             </dl>
           </section>
