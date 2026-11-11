@@ -6,6 +6,7 @@ export type SearchFormValues = {
   checkin: string;
   checkout: string;
   adults: string;
+  childCount: string;
   childAges: string[];
 };
 
@@ -25,6 +26,7 @@ export function readSearchForm(formData: FormData): SearchFormValues {
     checkin: text(formData.get("checkin")),
     checkout: text(formData.get("checkout")),
     adults: text(formData.get("adults")),
+    childCount: text(formData.get("childCount")),
     childAges: formData.getAll("childAge").slice(0, 10).map(text),
   };
 }
@@ -40,4 +42,11 @@ export function toSearchInput(values: SearchFormValues) {
     adults: int(values.adults),
     childAges: values.childAges.map(int),
   };
+}
+
+// Every child the agent added must have an age: a missing one is refused, never dropped
+// (it would price the room for fewer guests).
+export function childAgesComplete(values: SearchFormValues): boolean {
+  const count = values.childCount === "" ? 0 : /^\d{1,2}$/.test(values.childCount) ? Number(values.childCount) : -1;
+  return count === values.childAges.length && values.childAges.every((age) => age !== "");
 }

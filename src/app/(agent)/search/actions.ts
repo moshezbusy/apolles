@@ -6,7 +6,7 @@ import { requireAgent } from "@/server/auth/guards";
 import { getClientIp, UNKNOWN_IP } from "@/server/client-ip";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "@/server/search/errors";
 import { startSearch } from "@/server/search/search";
-import { readSearchForm, toSearchInput, type SearchFormState } from "./form-state";
+import { childAgesComplete, readSearchForm, toSearchInput, type SearchFormState } from "./form-state";
 
 // Starts a search (screen 07) and opens its results. The agencyId comes only from the
 // session; the agency's country (point of sale) is read on the server. Expedia gets the
@@ -18,6 +18,7 @@ export async function startSearchAction(_previous: SearchFormState, formData: Fo
   const { userId, agencyId } = await requireAgent();
   const values = readSearchForm(formData);
   if (!values.destinationId) return { status: "error", message: "Choose a destination from the list.", values };
+  if (!childAgesComplete(values)) return { status: "error", message: "Choose the age of each child.", values };
 
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders);

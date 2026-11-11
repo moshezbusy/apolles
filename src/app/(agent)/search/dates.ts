@@ -19,6 +19,7 @@ export function defaultSearchValues(now: Date): SearchFormValues {
     checkin: iso(new Date(now.getTime() + 14 * DAY_MS)),
     checkout: iso(new Date(now.getTime() + 16 * DAY_MS)),
     adults: "2",
+    childCount: "0",
     childAges: [],
   };
 }

@@ -64,7 +64,10 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
   };
   const skip = Number(options.cursor ?? 0);
   const previous = skip > 0 ? String(Math.max(0, skip - 20)) : null;
-  const backTo = kept.toString();
+  // The hotel link keeps the filters and this page of results, for "Back to hotels".
+  const back = new URLSearchParams(kept);
+  if (options.cursor) back.set("cursor", options.cursor);
+  const backTo = back.toString();
 
   return (
     <main className="mx-auto w-[min(1260px,calc(100%-40px))] py-6">
@@ -177,7 +180,9 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                         <span className="text-xs text-muted">from</span>
                         <strong className="text-[22px] font-extrabold tabular-nums text-ink">{formatMinor(hotel.minTotal.minor, hotel.minTotal.currency)}</strong>
                         <span className="text-xs text-muted">{stayText(summary)}</span>
-                        <span className="text-xs text-muted">Total, taxes and fees included</span>
+                        <span className="text-xs text-muted">
+                          {hotel.feesAtProperty ? "Total, taxes included; more to pay at the property" : "Total, taxes and fees included"}
+                        </span>
                         <Link href={href} className={`${btnPrimary} mt-2 w-full`}>
                           View rooms
                         </Link>

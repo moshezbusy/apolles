@@ -308,6 +308,7 @@ model SearchSnapshot {
   createdAt    DateTime
   expiresAt    DateTime
   hotels       SearchHotel[]
+  rates        SearchRate[]
 
   @@index([agencyId, createdAt])
   @@index([expiresAt])
@@ -324,11 +325,28 @@ model SearchHotel {
   minTotalMinor       Int
   currency            String
   refundableAvailable Boolean
-  roomNames           String         @default("") // lowercased room names, one per line (room-name filter)
   offers              Json
   snapshot            SearchSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
 
   @@id([snapshotId, propertyId])
   @@index([snapshotId, position])
   @@index([snapshotId, minTotalMinor])
+}
+
+// One rate of a priced hotel in a search snapshot (plan 2c). The results filters (room name,
+// free cancellation, price) match one rate on all of them, and the card shows the cheapest
+// matching rate, so a hotel's "from" price is always a rate the agent can actually pick.
+model SearchRate {
+  snapshotId     String
+  propertyId     String
+  rateIndex      Int // position in SearchHotel.offers
+  roomName       String // lowercased, for the room-name filter
+  refundable     Boolean
+  totalMinor     Int
+  currency       String
+  feesAtProperty Boolean // something is paid at the hotel on top of the total (BP4)
+  snapshot       SearchSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@id([snapshotId, propertyId, rateIndex])
+  @@index([snapshotId, totalMinor])
 }

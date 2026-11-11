@@ -23,6 +23,7 @@ export function formValuesOf(s: SearchSummary): SearchFormValues {
     checkin: s.checkin,
     checkout: s.checkout,
     adults: String(s.adults),
+    childCount: String(s.childAges.length),
     childAges: s.childAges.map(String),
   };
 }

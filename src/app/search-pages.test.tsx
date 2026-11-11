@@ -53,7 +53,7 @@ describe("search action and destinations (screen 07)", () => {
   it("a valid search goes to its results page", async () => {
     signInAs("A");
     const { startSearchAction } = await import("./(agent)/search/actions");
-    const fields = { destinationId: "paris", destinationLabel: "Paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "2", childAge: ["4", "9"] };
+    const fields = { destinationId: "paris", destinationLabel: "Paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "2", childCount: "2", childAge: ["4", "9"] };
     await expect(startSearchAction(null, form(fields))).rejects.toThrow(/NEXT_REDIRECT:\/search\/[a-z0-9]+$/);
     const snapshot = await db.searchSnapshot.findFirstOrThrow();
     expect(snapshot.agencyId).toBe("A");
@@ -74,6 +74,15 @@ describe("search action and destinations (screen 07)", () => {
     const { startSearchAction } = await import("./(agent)/search/actions");
     const state = await startSearchAction(null, form({ destinationId: "paris", destinationLabel: "Paris", checkin: isoDaysFromNow(12), checkout: isoDaysFromNow(10), adults: "two" }));
     expect(state).toMatchObject({ status: "error", values: { destinationLabel: "Paris", adults: "two" } });
+    expect(await db.searchSnapshot.count()).toBe(0);
+  });
+
+  it("a child without an age is refused, never dropped from the search", async () => {
+    signInAs("A");
+    const { startSearchAction } = await import("./(agent)/search/actions");
+    const fields = { destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "2", childCount: "2", childAge: ["4"] };
+    const state = await startSearchAction(null, form(fields));
+    expect(state?.message).toMatch(/age of each child/i);
     expect(await db.searchSnapshot.count()).toBe(0);
   });
 
@@ -147,6 +156,13 @@ describe("results page (screen 08)", () => {
     expect(html).toContain('name="room"');
     expect(html).toContain('name="free"');
     expect(html).not.toMatch(/per night/i); // no divided (rounded) price, BP5
+  });
+
+  it("the link to a hotel keeps the results page, so 'Back to hotels' returns to it", async () => {
+    signInAs("A");
+    const id = await search("A");
+    const html = await renderResults(id, { sort: "price_asc", cursor: "0" });
+    expect(html).toContain(`href="/search/${id}/hotels/11?sort=price_asc&amp;cursor=0"`);
   });
 
   it("filters come from the URL", async () => {

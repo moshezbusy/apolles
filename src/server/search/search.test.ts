@@ -198,6 +198,53 @@ describe("search service", () => {
     expect(free?.hotels.map((h) => h.propertyId)).toEqual(["2"]);
   });
 
+  it("filters match one rate on every rate filter, and the card shows that rate's price", async () => {
+    await hotels(1);
+    const cheapLocked = { ...offer("1", 10_000, false), roomId: "a", rateId: "a", roomName: "Garden Double" };
+    const dearFree = { ...offer("1", 50_000, true), roomId: "b", rateId: "b", roomName: "Ocean Suite" };
+    const { adapter } = fakeAdapter(() => [{ propertyId: "1", offers: [cheapLocked, dearFree] }]);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+
+    const all = await listResults("A", snapshotId, { sort: "recommended" }, NOW);
+    expect(all?.hotels[0]).toMatchObject({ minTotal: { minor: 10_000 }, refundableAvailable: true });
+    // Free cancellation under USD 200: no single rate is both, so no hotel.
+    const none = await listResults("A", snapshotId, { sort: "recommended", freeCancellation: true, maxPriceMinor: 20_000 }, NOW);
+    expect(none?.hotels).toEqual([]);
+    expect(none?.total).toBe(0);
+    // Free cancellation only: the hotel shows the price of its free-cancellation rate.
+    const free = await listResults("A", snapshotId, { sort: "recommended", freeCancellation: true }, NOW);
+    expect(free?.hotels[0]?.minTotal.minor).toBe(50_000);
+    // A room name: that room's price.
+    const garden = await listResults("A", snapshotId, { sort: "recommended", roomName: "garden" }, NOW);
+    expect(garden?.hotels[0]).toMatchObject({ minTotal: { minor: 10_000 }, refundableAvailable: false });
+    // Sorting by price uses the matching price.
+    const ocean = await listResults("A", snapshotId, { sort: "price_asc", roomName: "ocean" }, NOW);
+    expect(ocean?.hotels[0]?.minTotal.minor).toBe(50_000);
+  });
+
+  it("marks a hotel whose shown rate has fees paid at the property", async () => {
+    await hotels(2);
+    const withFee = (id: string): Offer => {
+      const o = offer(id, 20_000);
+      return { ...o, price: { ...o.price, dueAtProperty: [{ kind: "resort_fee", amount: { minor: 1_000, currency: "USD" }, localAmount: null }] } };
+    };
+    const { adapter } = fakeAdapter((q) => q.propertyIds.map((id) => ({ propertyId: id, offers: [id === "1" ? withFee(id) : offer(id, 20_000)] })));
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const page = await listResults("A", snapshotId, { sort: "recommended" }, NOW);
+    expect(page?.hotels.map((h) => [h.propertyId, h.feesAtProperty])).toEqual([
+      ["1", true],
+      ["2", false],
+    ]);
+  });
+
+  it("a filter value with LIKE wildcards is matched literally", async () => {
+    await hotels(2);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    expect((await listResults("A", snapshotId, { sort: "recommended", name: "%" }, NOW))?.hotels).toEqual([]);
+    expect((await listResults("A", snapshotId, { sort: "recommended", roomName: "_" }, NOW))?.hotels).toEqual([]);
+  });
+
   it("counts the matching hotels and summarises the search for the page header", async () => {
     await hotels(3);
     const { adapter } = fakeAdapter(everyone);

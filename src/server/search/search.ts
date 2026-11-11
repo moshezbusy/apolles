@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { getContent } from "@/server/content/content-cache";
 import { db } from "@/server/db";
 import { hitRateLimit } from "@/server/rate-limit";
@@ -39,6 +39,7 @@ export type HotelCard = {
   starRating: string | null;
   minTotal: Money;
   refundableAvailable: boolean;
+  feesAtProperty: boolean; // the shown rate has something to pay at the hotel (BP4)
   heroImage: Image | null;
 };
 
@@ -166,13 +167,28 @@ async function fetchBatch(
         minTotalMinor: cheapest.price.total.minor,
         currency: cheapest.price.total.currency,
         refundableAvailable: offers.some((offer) => offer.refundable),
-        roomNames: [...new Set(offers.map((offer) => offer.roomName.toLowerCase()))].join("\n"),
         offers: offers as unknown as Prisma.InputJsonValue,
       },
     ];
   });
 
-  await db.searchHotel.createMany({ data: rows, skipDuplicates: true });
+  // One row per rate as well, so the results filters can match a single rate (see listResults).
+  const rates = rows.flatMap((row) =>
+    (byId.get(row.propertyId) ?? []).map((offer, rateIndex) => ({
+      snapshotId: snapshot.id,
+      propertyId: row.propertyId,
+      rateIndex,
+      roomName: offer.roomName.toLowerCase().slice(0, 300),
+      refundable: offer.refundable,
+      totalMinor: offer.price.total.minor,
+      currency: offer.price.total.currency,
+      feesAtProperty: offer.price.dueAtProperty.length > 0,
+    })),
+  );
+  await db.$transaction([
+    db.searchHotel.createMany({ data: rows, skipDuplicates: true }),
+    db.searchRate.createMany({ data: rates, skipDuplicates: true }),
+  ]);
   return batch.length;
 }
 
@@ -250,18 +266,34 @@ export async function loadMore(ctx: SearchContext, snapshotId: string, deps: Dep
   return { added, hasMore: snapshot.nextIndex + added < snapshot.candidateIds.length };
 }
 
-function orderBy(sort: ListOptions["sort"]): Prisma.SearchHotelOrderByWithRelationInput[] {
+function orderSql(sort: ListOptions["sort"]): Prisma.Sql {
   switch (sort) {
     case "price_asc":
-      return [{ minTotalMinor: "asc" }, { position: "asc" }];
+      return Prisma.sql`m."totalMinor" ASC, h."position" ASC`;
     case "price_desc":
-      return [{ minTotalMinor: "desc" }, { position: "asc" }];
+      return Prisma.sql`m."totalMinor" DESC, h."position" ASC`;
     case "stars_desc":
-      return [{ starRating: { sort: "desc", nulls: "last" } }, { position: "asc" }];
+      return Prisma.sql`h."starRating" DESC NULLS LAST, h."position" ASC`;
     default:
-      return [{ position: "asc" }];
+      return Prisma.sql`h."position" ASC`;
   }
 }
+
+// A LIKE pattern that matches the text anywhere, with its own wildcards taken literally.
+function containsPattern(text: string): string {
+  return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+type ResultRow = {
+  propertyId: string;
+  name: string;
+  city: string;
+  starRating: string | null;
+  totalMinor: number;
+  currency: string;
+  feesAtProperty: boolean;
+  anyRefundable: boolean;
+};
 
 export async function listResults(
   agencyId: string,
@@ -275,27 +307,42 @@ export async function listResults(
 
   const take = Math.min(Math.max(1, Math.trunc(opts.take ?? DEFAULT_TAKE)), MAX_TAKE);
   const skip = opts.cursor && /^\d{1,6}$/.test(opts.cursor) ? Number(opts.cursor) : 0;
-  const where: Prisma.SearchHotelWhereInput = { snapshotId: snapshot.id };
-  if (opts.minPriceMinor !== undefined || opts.maxPriceMinor !== undefined) {
-    where.minTotalMinor = {
-      ...(opts.minPriceMinor !== undefined ? { gte: opts.minPriceMinor } : {}),
-      ...(opts.maxPriceMinor !== undefined ? { lte: opts.maxPriceMinor } : {}),
-    };
-  }
-  if (opts.stars && opts.stars.length > 0) {
+  // Rate filters (room name, free cancellation, price) must all hold for one rate; the hotel
+  // then shows its cheapest such rate. Hotel filters (name, stars) apply to the hotel.
+  const rateWhere: Prisma.Sql[] = [Prisma.sql`r."snapshotId" = ${snapshot.id}`];
+  const roomName = opts.roomName?.trim().slice(0, 100).toLowerCase();
+  if (roomName) rateWhere.push(Prisma.sql`r."roomName" LIKE ${containsPattern(roomName)} ESCAPE '\\'`);
+  if (opts.freeCancellation) rateWhere.push(Prisma.sql`r."refundable"`);
+  if (opts.minPriceMinor !== undefined) rateWhere.push(Prisma.sql`r."totalMinor" >= ${Math.trunc(opts.minPriceMinor)}`);
+  if (opts.maxPriceMinor !== undefined) rateWhere.push(Prisma.sql`r."totalMinor" <= ${Math.trunc(opts.maxPriceMinor)}`);
+  const hotelWhere: Prisma.Sql[] = [Prisma.sql`m."rn" = 1`];
+  const name = opts.name?.trim().slice(0, 100);
+  if (name) hotelWhere.push(Prisma.sql`h."name" ILIKE ${containsPattern(name)} ESCAPE '\\'`);
+  const stars = (opts.stars ?? []).filter((s) => Number.isInteger(s) && s >= 0 && s <= 5);
+  if (stars.length > 0) {
     // Whole-star match: a 4.5 hotel counts as 4. A hotel with no rating matches no star filter.
-    where.OR = opts.stars.filter((s) => Number.isInteger(s) && s >= 0 && s <= 5).map((s) => ({ starRating: { gte: s, lt: s + 1 } }));
+    hotelWhere.push(Prisma.sql`(${Prisma.join(stars.map((s) => Prisma.sql`(h."starRating" >= ${s} AND h."starRating" < ${s + 1})`), " OR ")})`);
   }
-  const name = opts.name?.trim();
-  if (name) where.name = { contains: name.slice(0, 100), mode: "insensitive" };
-  const roomName = opts.roomName?.trim();
-  if (roomName) where.roomNames = { contains: roomName.slice(0, 100).toLowerCase() };
-  if (opts.freeCancellation) where.refundableAvailable = true;
-
-  const [rows, total] = await Promise.all([
-    db.searchHotel.findMany({ where, orderBy: orderBy(opts.sort), skip, take: take + 1 }),
-    db.searchHotel.count({ where }),
+  const matched = Prisma.sql`
+    WITH m AS (
+      SELECT r."propertyId", r."totalMinor", r."currency", r."feesAtProperty",
+             bool_or(r."refundable") OVER (PARTITION BY r."propertyId") AS "anyRefundable",
+             row_number() OVER (PARTITION BY r."propertyId" ORDER BY r."totalMinor" ASC, r."rateIndex" ASC) AS "rn"
+      FROM "SearchRate" r
+      WHERE ${Prisma.join(rateWhere, " AND ")}
+    )`;
+  const from = Prisma.sql`FROM m JOIN "SearchHotel" h ON h."snapshotId" = ${snapshot.id} AND h."propertyId" = m."propertyId"
+    WHERE ${Prisma.join(hotelWhere, " AND ")}`;
+  const [rows, counted] = await Promise.all([
+    db.$queryRaw<ResultRow[]>`${matched}
+      SELECT h."propertyId", h."name", h."city", h."starRating"::text AS "starRating",
+             m."totalMinor", m."currency", m."feesAtProperty", m."anyRefundable"
+      ${from}
+      ORDER BY ${orderSql(opts.sort)}
+      OFFSET ${skip} LIMIT ${take + 1}`,
+    db.$queryRaw<{ count: bigint }[]>`${matched} SELECT count(*) AS "count" ${from}`,
   ]);
+  const total = Number(counted[0]?.count ?? 0);
   const page = rows.slice(0, take);
 
   // Images from the content cache only: listing results never calls Expedia.
@@ -317,8 +364,9 @@ export async function listResults(
       name: row.name,
       city: row.city,
       starRating: row.starRating?.toString() ?? null,
-      minTotal: { minor: row.minTotalMinor, currency: row.currency },
-      refundableAvailable: row.refundableAvailable,
+      minTotal: { minor: row.totalMinor, currency: row.currency },
+      refundableAvailable: row.anyRefundable,
+      feesAtProperty: row.feesAtProperty,
       heroImage: heroById.get(row.propertyId) ?? null,
     })),
     total,

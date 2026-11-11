@@ -95,6 +95,7 @@ function Fields({ shown, minDate, maxDate, pending, compact }: { shown: SearchFo
           <label className={label}>
             Children
             <select
+              name="childCount"
               value={ages.length}
               onChange={(e) => {
                 const count = Number(e.target.value);
@@ -119,9 +120,7 @@ function Fields({ shown, minDate, maxDate, pending, compact }: { shown: SearchFo
                 onChange={(e) => setAges((current) => current.map((a, i) => (i === index ? e.target.value : a)))}
                 className={input}
               >
-                <option value="" disabled>
-                  Choose age
-                </option>
+                <option value="">Choose age</option>
                 {AGES.map((n) => (
                   <option key={n} value={n}>
                     {n === 0 ? "Under 1" : n}
