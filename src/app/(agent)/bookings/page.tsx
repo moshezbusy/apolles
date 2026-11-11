@@ -25,13 +25,20 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
   const search = one(q.q)?.slice(0, 100) ?? "";
   const cursor = one(q.cursor);
   const page = await listBookings(agencyId, { tab, ...(search ? { q: search } : {}), ...(cursor ? { cursor } : {}) });
-  const params = (extra: Record<string, string>) => new URLSearchParams({ tab, ...(search ? { q: search } : {}), ...extra }).toString();
+  // Links keep the tab and the search. Built as plain strings (no object inside a template).
+  const hrefFor = (path: string, values: { tab: string; cursor?: string | null }) => {
+    const p = new URLSearchParams();
+    p.set("tab", values.tab);
+    if (search) p.set("q", search);
+    if (values.cursor) p.set("cursor", values.cursor);
+    return path + "?" + p.toString();
+  };
 
   return (
     <main className="mx-auto w-[min(1260px,calc(100%-40px))] py-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h1 className={pageTitle}>Bookings</h1>
-        <a href={`/bookings/export?${params({})}`} className={btnSecondary}>
+        <a href={hrefFor("/bookings/export", { tab })} className={btnSecondary}>
           Export CSV
         </a>
       </div>
@@ -39,7 +46,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
         {BOOKING_TABS.map((t) => (
           <Link
             key={t}
-            href={`/bookings?${new URLSearchParams({ tab: t, ...(search ? { q: search } : {}) })}`}
+            href={hrefFor("/bookings", { tab: t })}
             aria-current={t === tab ? "page" : undefined}
             className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${t === tab ? "bg-brand text-paper" : "bg-white text-[#4d5a54] hover:text-brand"}`}
           >
@@ -98,7 +105,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
       )}
       {page.nextCursor ? (
         <p className="mt-4">
-          <Link href={`/bookings?${params({ cursor: page.nextCursor })}`} className={btnSecondary}>
+          <Link href={hrefFor("/bookings", { tab, cursor: page.nextCursor })} className={btnSecondary}>
             Load more
           </Link>
         </p>
