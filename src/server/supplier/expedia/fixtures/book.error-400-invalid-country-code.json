@@ -1,0 +1,17 @@
+{
+  "type": "invalid_input",
+  "message": "An invalid request was sent in, please check the nested errors for details.",
+  "errors": [
+    {
+      "type": "address.country_code.invalid",
+      "message": "Address country code is invalid.",
+      "fields": [
+        {
+          "name": "country_code",
+          "type": "body",
+          "value": "ABCD"
+        }
+      ]
+    }
+  ]
+}

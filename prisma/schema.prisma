@@ -46,6 +46,7 @@ model Agency {
   users         User[]
   ledgerEntries LedgerEntry[]
   logo          AgencyLogo?
+  bookings      Booking[]
 
   @@index([createdAt, id])
 }
@@ -90,6 +91,8 @@ model User {
   passwordTokens PasswordToken[]
   ledgerEntries  LedgerEntry[]
   auditLogs      AuditLog[]
+  bookings       Booking[]
+  bookingEvents  BookingEvent[]
 
   @@index([agencyId])
 }
@@ -349,4 +352,93 @@ model SearchRate {
 
   @@id([snapshotId, propertyId, rateIndex])
   @@index([snapshotId, totalMinor])
+}
+
+// Booking states (spec section 5; plan 3). Changes go only through src/server/booking/states.ts,
+// which updates conditionally inside a transaction and writes a BookingEvent row.
+enum BookingStatus {
+  DRAFT // guest details entered; nothing held, nothing sent
+  PENDING_CONFIRMATION // money held; the supplier was asked (or its answer is not known yet)
+  CONFIRMED // the supplier confirmed; the hold became a charge
+  FAILED // the supplier refused, or reconciliation found no booking; the hold was released
+  CANCEL_PENDING // the agent asked to cancel; waiting for the supplier
+  CANCELLED // the supplier confirmed the cancellation; the refund is in the wallet
+  CANCELLED_BY_SUPPLIER // cancelled by the supplier or the hotel (refund recorded by an admin)
+  EXPIRED // a draft left too long; nothing was held
+}
+
+// One hotel booking of one agency (phase 1: one room). Money in integer minor units (USD).
+// The price-check token and the supplier's links are server-only and never sent to a browser.
+model Booking {
+  id                      String        @id @default(cuid())
+  reference               String        @unique // "APL-XXXXXXXX"; also the supplier's affiliate_reference_id (TR1)
+  agencyId                String
+  userId                  String
+  status                  BookingStatus @default(DRAFT)
+  snapshotId              String? // the search it came from (gone after cleanup)
+  propertyId              String
+  hotelName               String
+  hotelCity               String
+  roomId                  String
+  roomName                String
+  rateId                  String
+  bedGroupId              String
+  bedDescription          String
+  checkin                 String // YYYY-MM-DD, the property's calendar date
+  checkout                String
+  adults                  Int
+  childAges               Int[]
+  leadGivenName           String
+  leadFamilyName          String
+  leadEmail               String
+  leadPhone               String
+  guests                  Json // [{ givenName, familyName }] for every guest, lead first
+  refundable              Boolean
+  totalMinor              Int // what the agency pays: the supplier's inclusive total (BP5)
+  currency                String
+  price                   Json // PriceBreakdown as last checked
+  cancelPenalties         Json // CancelPenalty[]
+  nonrefundableDateRanges Json
+  priceCheckToken         String // from the search snapshot; server-only
+  bookToken               String? // from the last price check; server-only
+  priceCheckedAt          DateTime?
+  previousTotalMinor      Int? // set when the last price check changed the price
+  holdId                  String?
+  supplierItineraryId     String?
+  supplierRoomId          String?
+  supplierLinks           Json? // retrieve and cancel hrefs from the supplier; server-only
+  hotelConfirmationId     String?
+  cancelChargeMinor       Int?
+  refundMinor             Int?
+  failureReason           String?
+  reconcileAttempts       Int           @default(0)
+  lastNotFoundAt          DateTime?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+  confirmedAt             DateTime?
+  cancelledAt             DateTime?
+
+  agency Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  user   User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  events BookingEvent[]
+
+  @@index([agencyId, createdAt])
+  @@index([agencyId, status, checkin])
+  @@index([status, updatedAt])
+}
+
+// The audit trail of a booking: one row per state change (who, from, to, why).
+model BookingEvent {
+  id          String         @id @default(cuid())
+  bookingId   String
+  fromStatus  BookingStatus?
+  toStatus    BookingStatus
+  actorUserId String? // null for the system (the reconcile job)
+  reason      String
+  createdAt   DateTime       @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  actor   User?   @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId, createdAt])
 }

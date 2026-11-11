@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { reconcile } from "@/server/booking/service";
 import { syncCatalog } from "@/server/content/catalog-sync";
 import { syncInactive } from "@/server/content/inactive-sync";
 import { syncRegions } from "@/server/content/regions-sync";
@@ -18,5 +20,10 @@ export const HANDLERS: Handlers = {
   },
   "search.cleanup": async () => {
     await cleanupSnapshots();
+  },
+  // A booking or cancellation without a clear supplier answer (plan 3). It never books again.
+  "booking.reconcile": async (payload) => {
+    const { bookingId } = z.object({ bookingId: z.string().min(1).max(64) }).strict().parse(payload);
+    await reconcile(bookingId);
   },
 };

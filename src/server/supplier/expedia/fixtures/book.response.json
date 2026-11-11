@@ -1,0 +1,9 @@
+{
+  "itinerary_id": "8999989898988",
+  "links": {
+    "retrieve": {
+      "method": "GET",
+      "href": "/v3/itineraries/8999989898988?token=tok-bk1"
+    }
+  }
+}

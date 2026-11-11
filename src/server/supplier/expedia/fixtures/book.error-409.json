@@ -1,0 +1,16 @@
+{
+  "type": "price_mismatch",
+  "message": "Payment amount did not match current price, please check price and try again.",
+  "fields": [
+    {
+      "name": "payments.amount",
+      "type": "body",
+      "value": "100.00"
+    },
+    {
+      "name": "price.amount",
+      "type": "body",
+      "value": "120.00"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "type": "invalid_input",
+  "message": "An invalid request was sent in, please check the nested errors for details.",
+  "errors": [
+    {
+      "type": "rooms.address.line_1.invalid",
+      "message": "Address line 1 is required.",
+      "fields": [
+        {
+          "name": "line_1",
+          "type": "body"
+        }
+      ]
+    }
+  ]
+}

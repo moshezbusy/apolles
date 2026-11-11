@@ -8,3 +8,9 @@ Test data for the Expedia adapter.
 - `availability.usd.json`: the official availability example with every amount in USD, totals
   made consistent with the nightly lines, and property fees with a local (EUR) amount.
 - `price-check.usd-available.json`: a USD price check following the schema.
+- `book.*`, `retrieve*.json` (plan 3): Expedia's official examples for create, retrieve and
+  retrieve-by-affiliate-reference, plus every documented error of create, copied from the
+  spec. Each token is replaced by its own short placeholder. `book.request-example.json` is
+  the spec's first create example, changed to our payment type: `affiliate_collect`, with
+  the billing contact only. The card number, CVV, 3-D Secure data, loyalty id and other
+  optional fields were removed, because Apolles never sends card data.

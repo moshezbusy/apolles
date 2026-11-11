@@ -1,0 +1,4 @@
+{
+  "type": "rooms_unavailable",
+  "message": "One or more requested rooms are unavailable."
+}

@@ -73,7 +73,14 @@ describe("FakeSupplierAdapter", () => {
     }
   });
 
-  it("price check is not available in the fake (booking comes in plan 3)", async () => {
-    await expect(fake().priceCheck({ propertyId: "1", roomId: "r", rateId: "x", token: "t" }, {})).rejects.toThrow();
+  it("price check rebuilds the searched price from the token, and booking returns an itinerary", async () => {
+    const [hotel] = await fake().searchAvailability(query, {});
+    const offer = hotel!.offers[1]!;
+    const checked = await fake().priceCheck({ propertyId: "101", roomId: offer.roomId, rateId: offer.rateId, token: offer.bedGroups[0]!.priceCheckToken }, {});
+    expect(checked).toMatchObject({ status: "available", price: offer.price });
+    if (checked.status === "sold_out") throw new Error("unexpected");
+    const booked = await new FakeSupplierAdapter().book({ bookToken: checked.bookToken, affiliateReferenceId: "APL-X", lead: { givenName: "A", familyName: "B", email: "a@b.c", phone: { countryCode: "972", number: "501234567" } } });
+    expect(booked.itineraryId).toBe("FAKE-APL-X");
+    expect(await fake().priceCheck({ propertyId: "999", roomId: "r", rateId: "x", token: offer.bedGroups[0]!.priceCheckToken }, {})).toEqual({ status: "sold_out" });
   });
 });

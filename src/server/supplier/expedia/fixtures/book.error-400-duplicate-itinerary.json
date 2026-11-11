@@ -1,0 +1,17 @@
+{
+  "type": "invalid_input",
+  "message": "An invalid request was sent in, please check the nested errors for details.",
+  "errors": [
+    {
+      "type": "duplicate_itinerary",
+      "message": "An itinerary already exists with this affiliate reference id.",
+      "fields": [
+        {
+          "name": "affiliate_reference_id",
+          "type": "body",
+          "value": "ABCD"
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,12 @@
 import { db } from "@/server/db";
+import { SupplierRequestRejected } from "./expedia/client";
 import type {
   AvailabilityQuery,
+  BookInput,
+  BookResult,
+  BookingSupplier,
+  RetrievedItinerary,
+  SupplierLinks,
   ContentSource,
   Offer,
   PriceCheckResult,
@@ -43,10 +49,10 @@ function offer(propertyId: string, n: number, nights: number, checkin: string, k
     bedGroups:
       kind === 1
         ? [
-            { id: "bg-king", description: "1 King Bed", priceCheckToken: `fake-${propertyId}-${kind}-king` },
-            { id: "bg-twin", description: "2 Twin Beds", priceCheckToken: `fake-${propertyId}-${kind}-twin` },
+            { id: "bg-king", description: "1 King Bed", priceCheckToken: `fake-${propertyId}-${kind}-king~${checkin}~${nights}` },
+            { id: "bg-twin", description: "2 Twin Beds", priceCheckToken: `fake-${propertyId}-${kind}-twin~${checkin}~${nights}` },
           ]
-        : [{ id: "bg-1", description: kind === 0 ? "1 Double Bed" : "1 King Bed and 1 Sofa Bed", priceCheckToken: `fake-${propertyId}-${kind}` }],
+        : [{ id: "bg-1", description: kind === 0 ? "1 Double Bed" : "1 King Bed and 1 Sofa Bed", priceCheckToken: `fake-${propertyId}-${kind}~${checkin}~${nights}` }],
     cancelPenalties: refundable
       ? [{ start: `${freeUntil}T00:00:00.000+02:00`, end: `${checkin}T23:59:00.000+02:00`, amount: usd(nightly), nights: null, percent: null }]
       : [],
@@ -65,7 +71,7 @@ function offer(propertyId: string, n: number, nights: number, checkin: string, k
   };
 }
 
-export class FakeSupplierAdapter implements SupplierAdapter {
+export class FakeSupplierAdapter implements SupplierAdapter, BookingSupplier {
   async searchAvailability(query: AvailabilityQuery): Promise<PropertyOffers[]> {
     const nights = nightsOf(query);
     return query.propertyIds.map((propertyId, n) => ({
@@ -74,9 +80,41 @@ export class FakeSupplierAdapter implements SupplierAdapter {
     }));
   }
 
-  async priceCheck(): Promise<PriceCheckResult> {
-    throw new Error("The fake supplier does not price-check or book");
+  // The rate as searched: the fake's prices never change. The price-check token carries what
+  // the fake needs to rebuild the same price (it is not a secret here).
+  async priceCheck(ref: { propertyId: string; roomId: string; rateId: string; token: string }): Promise<PriceCheckResult> {
+    const match = ref.token.match(/^fake-(.+)-([012])(?:-[a-z]+)?~(\d{4}-\d{2}-\d{2})~(\d{1,2})$/);
+    if (!match || match[1] !== ref.propertyId) return { status: "sold_out" };
+    const kind = Number(match[2]) as 0 | 1 | 2;
+    const rebuilt = offer(ref.propertyId, 0, Number(match[4]), match[3]!, kind);
+    return { status: "available", price: rebuilt.price, bookToken: `fakebk-${ref.propertyId}-${kind}` };
   }
+
+  async book(input: BookInput): Promise<BookResult> {
+    if (!input.bookToken.startsWith("fakebk-")) throw new SupplierRequestRejected("Fake supplier: unknown book token", 400);
+    return { itineraryId: `FAKE-${input.affiliateReferenceId}`, links: { retrieve: `fake-retrieve:${input.affiliateReferenceId}` } };
+  }
+
+  // Bookings are looked up in our own database: the fake has nowhere else to keep them.
+  async findByAffiliateReference(ref: { affiliateReferenceId: string }): Promise<RetrievedItinerary | null> {
+    const booking = await db.booking.findUnique({ where: { reference: ref.affiliateReferenceId }, select: { reference: true } });
+    return booking ? fakeItinerary(booking.reference, "booked") : null;
+  }
+
+  async retrieve(links: SupplierLinks): Promise<RetrievedItinerary> {
+    const reference = links.retrieve?.replace(/^fake-retrieve:/, "") ?? "";
+    const booking = await db.booking.findUnique({ where: { reference }, select: { reference: true, status: true } });
+    if (!booking) throw new SupplierRequestRejected("Fake supplier: no such itinerary", 404);
+    return fakeItinerary(booking.reference, booking.status === "CANCELLED" || booking.status === "CANCEL_PENDING" ? "cancelled" : "booked");
+  }
+
+  async cancelRoom(cancelLink: string): Promise<void> {
+    if (!cancelLink.startsWith("fake-cancel:")) throw new SupplierRequestRejected("Fake supplier: unknown cancel link", 400);
+  }
+}
+
+function fakeItinerary(reference: string, status: "booked" | "cancelled"): RetrievedItinerary {
+  return { itineraryId: `FAKE-${reference}`, rooms: [{ id: "room-1", status, hotelConfirmationId: `H-${reference.slice(-6)}`, cancelLink: `fake-cancel:${reference}` }] };
 }
 
 export class FakeContentSource implements ContentSource {

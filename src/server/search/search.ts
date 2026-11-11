@@ -437,6 +437,28 @@ export async function getHotelOffers(
   };
 }
 
+// One rate of one hotel of the agency's own, unexpired search, for the booking pages. Everything
+// a booking needs is read here on the server; the browser only names the rate.
+export async function findOffer(
+  agencyId: string,
+  ref: { snapshotId: string; propertyId: string; rateId: string; bedGroupId: string },
+  now: Date = new Date(),
+): Promise<{ offer: Offer; bedGroup: Offer["bedGroups"][number]; hotel: { name: string; city: string }; query: z.infer<typeof storedQuery> } | null> {
+  for (const value of Object.values(ref)) if (typeof value !== "string" || value.length === 0 || value.length > 128) return null;
+  const snapshot = await ownSnapshot(agencyId, ref.snapshotId);
+  if (!snapshot || snapshot.expiresAt <= now) return null;
+  const query = storedQuery.safeParse(snapshot.query);
+  if (!query.success) return null;
+  const hotel = await db.searchHotel.findUnique({ where: { snapshotId_propertyId: { snapshotId: snapshot.id, propertyId: ref.propertyId } } });
+  if (!hotel) return null;
+  const offers = storedOffers.safeParse(hotel.offers);
+  if (!offers.success) return null;
+  const offer = offers.data.find((o) => o.rateId === ref.rateId);
+  const bedGroup = offer?.bedGroups.find((b) => b.id === ref.bedGroupId);
+  if (!offer || !bedGroup) return null;
+  return { offer, bedGroup, hotel: { name: hotel.name, city: hotel.city }, query: query.data };
+}
+
 // Deletes searches whose expiry passed more than an hour ago (their hotels go with them).
 export async function cleanupSnapshots(now: Date = new Date()): Promise<number> {
   const result = await db.searchSnapshot.deleteMany({ where: { expiresAt: { lt: new Date(now.getTime() - CLEANUP_AFTER_MS) } } });
