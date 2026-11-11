@@ -43,6 +43,8 @@ export default defineConfig({
     env: {
       DATABASE_URL: E2E_DATABASE_URL,
       EMAIL_PROVIDER: "console",
+      // Search rates from the fake supplier (development and tests only; refused elsewhere).
+      SUPPLIER_MODE: "fake",
       EMAIL_SINK_FILE,
       APP_URL: BASE_URL,
       ADMIN_ALERT_EMAIL: "alerts@test.local",

@@ -254,6 +254,28 @@ describe("search service", () => {
     const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
     const result = await getHotelOffers("A", snapshotId, "2", NOW, { content: async () => new Map() });
     expect(result?.offers[0]).toMatchObject({ propertyId: "2", price: { total: { minor: 10_002 } } });
+    expect(result?.hotel).toEqual({ name: "Hotel 2", city: "Paris", starRating: "4.5" });
+  });
+
+  it("the hotel page still opens when hotel content cannot be loaded", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const broken = async () => {
+      throw new Error("EXPEDIA_API_KEY is not set");
+    };
+    const result = await getHotelOffers("A", snapshotId, "1", NOW, { content: broken });
+    expect(result?.content).toBeNull();
+    expect(result?.offers).toHaveLength(1);
+  });
+
+  it("opening hotel pages is rate limited per agency (120 a minute)", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const none = async () => new Map();
+    for (let i = 0; i < 120; i++) await getHotelOffers("A", snapshotId, "1", NOW, { content: none });
+    await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none })).rejects.toBeInstanceOf(SearchRateLimited);
   });
 
   it("cleanup deletes searches that expired more than an hour ago", async () => {

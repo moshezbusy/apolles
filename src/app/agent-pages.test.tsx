@@ -66,15 +66,16 @@ describe("Header", () => {
     expect(html).toContain("Apolles");
   });
 
-  it("shows Search, Quotes and Reporting disabled with 'Coming soon', not as links", () => {
+  it("shows Search as a link; Quotes and Reporting disabled with 'Coming soon', not as links", () => {
     // The text right after each disabled <span> tag, and right after each <a> tag.
     const disabledTexts = [...html.matchAll(/<span[^>]*aria-disabled="true"[^>]*>([^<]*)/g)].map((m) => m[1] ?? "");
     const linkTexts = [...html.matchAll(/<a[^>]*>([^<]*)/g)].map((m) => m[1] ?? "");
-    for (const item of ["Search", "Quotes", "Reporting"]) {
+    expect(html).toMatch(/<a[^>]*href="\/search"[^>]*>Search<\/a>/);
+    for (const item of ["Quotes", "Reporting"]) {
       expect(disabledTexts.some((text) => text.startsWith(item)), `${item} disabled`).toBe(true);
       expect(linkTexts.some((text) => text.startsWith(item)), `${item} not a link`).toBe(false);
     }
-    expect(html.match(/>Coming soon</g)?.length).toBe(3);
+    expect(html.match(/>Coming soon</g)?.length).toBe(2);
   });
 
   it("shows the balance chip of the mockup: the amount with a small 'Balance' label", () => {

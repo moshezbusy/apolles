@@ -24,6 +24,7 @@ const MAX_CANDIDATES = 5_000;
 const SNAPSHOT_TTL_MS = 30 * 60_000;
 const CLEANUP_AFTER_MS = 60 * 60_000;
 const SEARCH_RATE_LIMIT = { limit: 30, windowMs: 60_000 }; // per agency
+const HOTEL_RATE_LIMIT = { limit: 120, windowMs: 60_000 }; // hotel pages, per agency
 const DEFAULT_TAKE = 20;
 const MAX_TAKE = 50;
 const MAX_SNAPSHOTS_PER_AGENCY = 50; // older searches are removed, so one agency cannot fill the database
@@ -364,7 +365,9 @@ export async function getHotelOffers(
   propertyId: string,
   now: Date = new Date(),
   deps: { content?: typeof getContent } = {},
-): Promise<{ offers: Offer[]; content: PropertyContent | null } | null> {
+): Promise<{ offers: Offer[]; content: PropertyContent | null; hotel: { name: string; city: string; starRating: string | null } } | null> {
+  const { allowed } = await hitRateLimit(`hotel:agency:${agencyId}`, HOTEL_RATE_LIMIT.limit, HOTEL_RATE_LIMIT.windowMs);
+  if (!allowed) throw new SearchRateLimited("Too many hotel pages opened. Wait a minute and try again.");
   const snapshot = await ownSnapshot(agencyId, snapshotId);
   if (!snapshot || snapshot.expiresAt <= now) return null;
   if (typeof propertyId !== "string" || propertyId.length > 64) return null;
@@ -372,8 +375,18 @@ export async function getHotelOffers(
   if (!hotel) return null;
   const offers = storedOffers.safeParse(hotel.offers);
   if (!offers.success) return null;
-  const contents = await (deps.content ?? getContent)([propertyId], now);
-  return { offers: offers.data, content: contents.get(propertyId) ?? null };
+  // Content (photos, policies) is best effort: without it the page still shows the rates.
+  let content: PropertyContent | null = null;
+  try {
+    content = (await (deps.content ?? getContent)([propertyId], now)).get(propertyId) ?? null;
+  } catch (error) {
+    console.error(`hotel content failed: ${error instanceof Error ? error.name : "Error"}`);
+  }
+  return {
+    offers: offers.data,
+    content,
+    hotel: { name: hotel.name, city: hotel.city, starRating: hotel.starRating?.toString() ?? null },
+  };
 }
 
 // Deletes searches whose expiry passed more than an hour ago (their hotels go with them).

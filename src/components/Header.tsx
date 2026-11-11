@@ -2,10 +2,10 @@ import Link from "next/link";
 import { SignOutButton } from "@/components/SignOutButton";
 import { formatUsd } from "@/lib/money";
 
-// Agent header (mockup 07). Search, Quotes and Reporting are placeholders until later plans
-// build them: shown, but not links. Bookings arrives in plan 3. The agency menu is a plain
-// <details> element, so it needs no client JavaScript.
-const COMING_SOON = ["Search", "Quotes", "Reporting"] as const;
+// Agent header (mockup 07). Quotes and Reporting are phase 2: shown, but not links. Bookings
+// arrives in plan 3. The agency menu is a plain <details> element, so it needs no client
+// JavaScript.
+const COMING_SOON = ["Quotes", "Reporting"] as const;
 
 // "Test Travel" → "TT", "Caryotrip" → "CA". Shown in the avatar circle.
 export function initials(name: string): string {
@@ -18,9 +18,12 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
   return (
     <header className="sticky top-0 z-30 h-[68px] border-b border-line bg-white">
       <div className="mx-auto flex h-full w-[min(1260px,calc(100%-40px))] items-center gap-4 sm:gap-7">
-        <span className="font-serif text-[22px] text-ink sm:text-[27px]">Apolles</span>
+        <Link href="/search" className="font-serif text-[22px] text-ink sm:text-[27px]">
+          Apolles
+        </Link>
 
         <nav aria-label="Main" className="hidden h-full items-center gap-6 text-[13px] lg:flex">
+          <Link href="/search" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">Search</Link>
           {COMING_SOON.map((item) => (
             <span
               key={item}

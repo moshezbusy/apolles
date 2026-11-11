@@ -172,3 +172,59 @@ describe("results page (screen 08)", () => {
     expect(html).toContain('href="/search"');
   });
 });
+
+describe("hotel page (screen 09)", () => {
+  beforeEach(async () => {
+    await resetTestDb();
+    vi.stubEnv("SUPPLIER_MODE", "fake");
+    await seedDestination();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  async function searchAndRender(agencyId: string, viewer = agencyId): Promise<{ html: string; id: string }> {
+    const { startSearch } = await import("@/server/search/search");
+    const input = { destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: 2, childAges: [] };
+    const { snapshotId } = await startSearch({ agencyId, userId: "user-1", supplierContext: {} }, input);
+    signInAs(viewer);
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { default: HotelPage } = await import("./(agent)/search/[id]/hotels/[propertyId]/page");
+    const html = renderToStaticMarkup(
+      await HotelPage({ params: Promise.resolve({ id: snapshotId, propertyId: "11" }), searchParams: Promise.resolve({ sort: "price_asc" }) }),
+    );
+    return { html, id: snapshotId };
+  }
+
+  it("shows every rate with what Expedia requires on this page", async () => {
+    const { html, id } = await searchAndRender("A");
+    expect(html).toContain("Hotel 11");
+    expect(html).toContain("Standard Double Room");
+    expect(html).toContain("Non-refundable"); // AP2
+    expect(html).toContain("Free cancellation until"); // BP3
+    expect(html).toContain("Bed type is a request and not guaranteed"); // AP1
+    expect(html).toContain("1 King Bed");
+    expect(html).toContain("2 Twin Beds");
+    expect(html).toContain("Taxes and fees"); // BP5 / total with taxes
+    expect(html).toContain("Paid at the property"); // BP4
+    expect(html).toMatch(/EUR 37\.00/); // local currency, 2 nights × EUR 18.50
+    expect(html).toContain(`href="/search/${id}?sort=price_asc"`); // back to the same results
+  });
+
+  it("shows the policies together (AP3), as plain text, never the supplier's HTML", async () => {
+    const { html } = await searchAndRender("A");
+    const policies = html.slice(html.indexOf('id="policies"'));
+    for (const text of ["Check-in", "3:00 PM", "Check-out", "11:00 AM", "Special instructions", "Front desk staff", "Fees", "Resort fee", "Know before you go", "No pets allowed"]) {
+      expect(policies).toContain(text);
+    }
+    expect(html).toContain("Government-issued photo identification is required at check-in.");
+    expect(html).not.toMatch(/&lt;(p|ul|li)&gt;/);
+  });
+
+  it("never sends the price-check token to the browser", async () => {
+    const { html } = await searchAndRender("A");
+    expect(html).not.toContain("fake-11");
+  });
+
+  it("another agency's search gives not found (no IDOR)", async () => {
+    await expect(searchAndRender("A", "B")).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+});

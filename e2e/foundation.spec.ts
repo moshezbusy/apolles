@@ -71,7 +71,8 @@ test("foundation: admin creates an agency, tops it up, the agent sees the balanc
     await expect(agentPage).toHaveURL(/\/login\?reset=1$/);
 
     await signIn(agentPage, AGENT_EMAIL, AGENT_PASSWORD);
-    await expect(agentPage).toHaveURL(/\/balance$/);
+    await expect(agentPage).toHaveURL(/\/search$/);
+    await agentPage.goto("/balance");
     await expect(agentPage.getByRole("region", { name: "Available balance" })).toContainText("USD 0.00");
     await expect(agentPage.getByRole("banner")).toContainText("USD 0.00");
   });
@@ -124,6 +125,32 @@ test("foundation: admin creates an agency, tops it up, the agent sees the balanc
 
     await agentPage.reload();
     await expect(agentPage.getByLabel("Phone")).toHaveValue("+972 50 123 4567");
+  });
+
+  await test.step("5c. the agent searches Paris, filters, opens a hotel and sees its rates and policies", async () => {
+    await agentPage.getByRole("banner").getByRole("link", { name: "Search", exact: true }).click();
+    await expect(agentPage.getByRole("heading", { name: "Hotel search" })).toBeVisible();
+    await agentPage.getByRole("combobox", { name: "Destination" }).fill("Par");
+    await agentPage.getByRole("option", { name: /Paris, Ile-de-France, France/ }).click();
+    await agentPage.getByRole("button", { name: "Search" }).click();
+    await expect(agentPage.getByText("3 properties found")).toBeVisible();
+
+    await agentPage.getByLabel("Hotel name").fill("Lumiere");
+    await agentPage.getByRole("button", { name: "Apply filters" }).click();
+    await expect(agentPage.getByText("1 property found")).toBeVisible();
+
+    await agentPage.getByRole("link", { name: "View rooms" }).click();
+    await expect(agentPage.getByRole("heading", { name: /Hotel Lumiere/ })).toBeVisible();
+    const rooms = agentPage.getByRole("region", { name: /Room options/ });
+    await expect(rooms).toContainText("Non-refundable");
+    await expect(rooms).toContainText("Free cancellation until");
+    await expect(rooms).toContainText("Bed type is a request and not guaranteed.");
+    await expect(rooms).toContainText("Taxes and fees");
+    await expect(rooms).toContainText("Paid at the property, not included in the total");
+    await expect(agentPage.getByRole("region", { name: "Policies" })).toContainText("Know before you go");
+
+    await agentPage.getByRole("link", { name: "← Back to hotels" }).click();
+    await expect(agentPage.getByText("1 property found")).toBeVisible();
   });
 
   await test.step("6. the agent opening /admin ends at /login or a 404", async () => {
