@@ -256,3 +256,30 @@ model ContentSyncRun {
 
   @@index([kind, status, startedAt])
 }
+
+// Destinations agents search by (cities and multi-city areas), from Rapid /regions, refreshed
+// daily (src/server/content/regions-sync.ts). A prefix index on lower(name) for active rows is
+// added in the migration's raw SQL.
+model Destination {
+  id            String   @id // Expedia region id
+  name          String
+  nameFull      String
+  type          String // "city" | "multi_city_vicinity"
+  countryCode   String
+  propertyCount Int
+  active        Boolean  @default(true)
+  seenRunId     String
+  updatedAt     DateTime @updatedAt
+
+  @@index([countryCode, seenRunId])
+}
+
+// Which hotels are in which destination. No foreign key to Property: the two syncs run
+// independently, and search joins only active Property rows.
+model DestinationProperty {
+  destinationId String
+  propertyId    String
+
+  @@id([destinationId, propertyId])
+  @@index([propertyId])
+}
