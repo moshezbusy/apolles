@@ -283,3 +283,13 @@ model DestinationProperty {
   @@id([destinationId, propertyId])
   @@index([propertyId])
 }
+
+// Hotel content (images, check-in, fees, policies) from Rapid /properties/content, cached for
+// 24 hours; up to 7 days when Expedia is unavailable (src/server/content/content-cache.ts).
+model PropertyContentCache {
+  propertyId String   @id
+  data       Json // PropertyContent (src/server/supplier/types.ts)
+  fetchedAt  DateTime
+
+  @@index([fetchedAt])
+}

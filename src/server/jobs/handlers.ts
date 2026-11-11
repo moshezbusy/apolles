@@ -1,4 +1,5 @@
 import { syncCatalog } from "@/server/content/catalog-sync";
+import { syncInactive } from "@/server/content/inactive-sync";
 import { syncRegions } from "@/server/content/regions-sync";
 import type { Handlers } from "./runner";
 
@@ -10,5 +11,8 @@ export const HANDLERS: Handlers = {
   },
   "content.regions": async () => {
     await syncRegions();
+  },
+  "content.inactive": async () => {
+    await syncInactive();
   },
 };
