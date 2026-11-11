@@ -12,8 +12,12 @@ Browser → Cloudflare → shared Caddy (HTTPS, network n8n_default) → apolles
   database migrations, then starts the server on port 3000.
 - `apolles-staging-db` is PostgreSQL 16. Its data lives in the Docker volume
   `apolles-staging_apolles_staging_db`. It sits on the private network `apolles_staging_net`,
-  which has no route out, and only the app can reach it.
-- Neither container publishes a port. The only way in is through Caddy. Other containers on
+  which has no route out, and only the app and the worker can reach it.
+- `apolles-staging-worker` is the background worker: the same image, run as a separate
+  process (`src/worker.ts`). It runs the job queue (daily hotel content refresh and, later,
+  booking reconciliation and emails). It does not run migrations; the app container does.
+  It is capped at 256 MB. Logs: `docker compose -p apolles-staging logs --tail 50 apolles-staging-worker`.
+- No container publishes a port. The only way in is through Caddy. Other containers on
   the `n8n_default` network can still reach `apolles-staging:3000` directly, bypassing
   Cloudflare and `cf_only`. That is acceptable for demo-only staging; revisit it for production.
 - Staging has no email provider yet (`EMAIL_PROVIDER=staging-log`). Every email the app

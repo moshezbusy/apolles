@@ -1,0 +1,156 @@
+[
+  {
+    "id": "602962",
+    "type": "multi_city_vicinity",
+    "name": "Springfield",
+    "name_full": "Springfield, Missouri, United States of America",
+    "descriptor": "and vicinity",
+    "country_code": "US",
+    "country_subdivision_code": "US-MO",
+    "coordinates": {
+      "center_longitude": -93.310036,
+      "center_latitude": 37.227924,
+      "bounding_polygon": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -93.446782,
+              37.169329
+            ],
+            [
+              -93.4244,
+              37.169432
+            ],
+            [
+              -93.371097,
+              37.168636
+            ],
+            [
+              -93.376295,
+              37.139236
+            ],
+            [
+              -93.361419,
+              37.138634
+            ],
+            [
+              -93.347109,
+              37.100601
+            ],
+            [
+              -93.215792,
+              37.095905
+            ],
+            [
+              -93.215259,
+              37.138013
+            ],
+            [
+              -93.189332,
+              37.141503
+            ],
+            [
+              -93.191278,
+              37.333322
+            ],
+            [
+              -93.438268,
+              37.339372
+            ],
+            [
+              -93.446782,
+              37.169329
+            ]
+          ]
+        ]
+      }
+    },
+    "ancestors": [
+      {
+        "id": "227",
+        "type": "province_state"
+      },
+      {
+        "id": "201",
+        "type": "country"
+      },
+      {
+        "id": "500001",
+        "type": "continent"
+      }
+    ],
+    "descendants": {
+      "point_of_interest": [
+        "6064841",
+        "6064853"
+      ]
+    }
+  },
+  {
+    "id": "6064841",
+    "type": "point_of_interest",
+    "name": "American National Fish and Wildlife Museum",
+    "name_full": "American National Fish and Wildlife Museum, Springfield, Missouri, United States of America",
+    "country_code": "US",
+    "country_subdivision_code": "US-MO",
+    "coordinates": {
+      "center_longitude": -93.29635,
+      "center_latitude": 37.1826
+    },
+    "ancestors": [
+      {
+        "id": "602962",
+        "type": "multi_city_vicinity"
+      },
+      {
+        "id": "227",
+        "type": "province_state"
+      },
+      {
+        "id": "201",
+        "type": "country"
+      },
+      {
+        "id": "500001",
+        "type": "continent"
+      }
+    ]
+  },
+  {
+    "id": "4605779",
+    "type": "airport",
+    "name": "Springfield, MO (SGF-Springfield-Branson National)",
+    "name_full": "Springfield, MO, United States (SGF-Springfield-Branson National)",
+    "iata_airport_code": "SGF",
+    "country_code": "US",
+    "country_subdivision_code": "US-MO",
+    "coordinates": {
+      "center_longitude": -93.382095,
+      "center_latitude": 37.24233
+    },
+    "associations": {
+      "multi_city_vicinity": [
+        "6058734"
+      ]
+    },
+    "ancestors": [
+      {
+        "id": "602962",
+        "type": "multi_city_vicinity"
+      },
+      {
+        "id": "227",
+        "type": "province_state"
+      },
+      {
+        "id": "201",
+        "type": "country"
+      },
+      {
+        "id": "500001",
+        "type": "continent"
+      }
+    ]
+  }
+]

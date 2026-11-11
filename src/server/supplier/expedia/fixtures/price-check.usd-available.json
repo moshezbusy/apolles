@@ -1,0 +1,75 @@
+{
+  "status": "available",
+  "holdable": true,
+  "occupancy_pricing": {
+    "2": {
+      "nightly": [
+        [
+          {
+            "type": "base_rate",
+            "value": "90.00",
+            "currency": "USD"
+          },
+          {
+            "type": "tax_and_service_fee",
+            "value": "17.50",
+            "currency": "USD"
+          }
+        ],
+        [
+          {
+            "type": "base_rate",
+            "value": "90.00",
+            "currency": "USD"
+          },
+          {
+            "type": "tax_and_service_fee",
+            "value": "17.50",
+            "currency": "USD"
+          }
+        ]
+      ],
+      "totals": {
+        "inclusive": {
+          "billable_currency": {
+            "value": "215.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "215.00",
+            "currency": "USD"
+          }
+        },
+        "exclusive": {
+          "billable_currency": {
+            "value": "180.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "180.00",
+            "currency": "USD"
+          }
+        }
+      },
+      "fees": {
+        "mandatory_fee": {
+          "billable_currency": {
+            "value": "5.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "5.00",
+            "currency": "USD"
+          }
+        }
+      }
+    }
+  },
+  "links": {
+    "book": {
+      "method": "POST",
+      "href": "/v3/itineraries?token=tok-b2",
+      "expires": "2027-02-01T07:23:14.000Z"
+    }
+  }
+}

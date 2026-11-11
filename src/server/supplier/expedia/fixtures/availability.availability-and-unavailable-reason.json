@@ -1,0 +1,422 @@
+[
+  {
+    "property_id": "824739",
+    "status": "partially_unavailable",
+    "score": 12345,
+    "unavailable_reason": {
+      "code": "adults_exceed_threshold",
+      "data": "2"
+    }
+  },
+  {
+    "property_id": "19248",
+    "status": "available",
+    "rooms": [
+      {
+        "id": "123abc",
+        "room_name": "Fancy Queen Room",
+        "rates": [
+          {
+            "id": "333abc",
+            "status": "available",
+            "available_rooms": 12,
+            "refundable": true,
+            "member_deal_available": true,
+            "sale_scenario": {
+              "package": false,
+              "member": false,
+              "corporate": false,
+              "distribution": false,
+              "mobile_promotion": false
+            },
+            "merchant_of_record": "expedia",
+            "amenities": {
+              "1234": {
+                "id": "1234",
+                "name": "Free Wireless Internet"
+              }
+            },
+            "links": {
+              "payment_options": {
+                "method": "GET",
+                "href": "/v3/properties/19248/payment-options?token=tok-a1"
+              }
+            },
+            "bed_groups": {
+              "12345": {
+                "links": {
+                  "price_check": {
+                    "method": "GET",
+                    "href": "/v3/properties/19248/rooms/abc123/rates/abc123?token=tok-a1",
+                    "expires": "2019-03-05T07:23:14.000Z"
+                  }
+                },
+                "id": "12345",
+                "description": "1 Queen Bed",
+                "configuration": [
+                  {
+                    "type": "Bed",
+                    "size": "Queen",
+                    "quantity": 1
+                  }
+                ]
+              }
+            },
+            "cancel_penalties": [
+              {
+                "currency": "USD",
+                "start": "2018-02-12T11:59:00.000-08:00",
+                "end": "2018-02-12T11:59:00.000-08:00",
+                "amount": "10.00"
+              }
+            ],
+            "nonrefundable_date_ranges": [
+              {
+                "start": "2022-02-02",
+                "end": "2022-02-02"
+              }
+            ],
+            "occupancy_pricing": {
+              "2": {
+                "nightly": [
+                  [
+                    {
+                      "type": "base_rate",
+                      "value": "309.00",
+                      "currency": "CAD"
+                    },
+                    {
+                      "type": "tax_and_service_fee",
+                      "value": "37.00",
+                      "currency": "CAD"
+                    }
+                  ],
+                  [
+                    {
+                      "type": "base_rate",
+                      "value": "309.00",
+                      "currency": "CAD"
+                    },
+                    {
+                      "type": "tax_and_service_fee",
+                      "value": "37.00",
+                      "currency": "CAD"
+                    }
+                  ]
+                ],
+                "stay": [
+                  {
+                    "type": "extra_person_fee",
+                    "value": "10.00",
+                    "currency": "CAD"
+                  }
+                ],
+                "totals": {
+                  "inclusive": {
+                    "billable_currency": {
+                      "value": "702.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "530.97",
+                      "currency": "USD"
+                    }
+                  },
+                  "exclusive": {
+                    "billable_currency": {
+                      "value": "628.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "475.00",
+                      "currency": "USD"
+                    }
+                  },
+                  "inclusive_strikethrough": {
+                    "billable_currency": {
+                      "value": "726.63",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "549.60",
+                      "currency": "USD"
+                    }
+                  },
+                  "strikethrough": {
+                    "billable_currency": {
+                      "value": "650.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "491.64",
+                      "currency": "USD"
+                    }
+                  },
+                  "marketing_fee": {
+                    "billable_currency": {
+                      "value": "15.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "11.34",
+                      "currency": "USD"
+                    }
+                  },
+                  "gross_profit": {
+                    "billable_currency": {
+                      "value": "15.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "11.34",
+                      "currency": "USD"
+                    }
+                  },
+                  "minimum_selling_price": {
+                    "billable_currency": {
+                      "value": "702.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "530.97",
+                      "currency": "USD"
+                    }
+                  },
+                  "property_fees": {
+                    "billable_currency": {
+                      "value": "15.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "11.34",
+                      "currency": "USD"
+                    }
+                  }
+                },
+                "fees": {
+                  "mandatory_fee": {
+                    "billable_currency": {
+                      "value": "5.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "3.78",
+                      "currency": "USD"
+                    }
+                  },
+                  "resort_fee": {
+                    "billable_currency": {
+                      "value": "5.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "3.78",
+                      "currency": "USD"
+                    }
+                  },
+                  "mandatory_tax": {
+                    "billable_currency": {
+                      "value": "5.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "3.78",
+                      "currency": "USD"
+                    }
+                  }
+                }
+              },
+              "1-7,10": {
+                "nightly": [
+                  [
+                    {
+                      "type": "base_rate",
+                      "value": "309.00",
+                      "currency": "CAD"
+                    },
+                    {
+                      "type": "tax_and_service_fee",
+                      "value": "37.00",
+                      "currency": "CAD"
+                    }
+                  ],
+                  [
+                    {
+                      "type": "base_rate",
+                      "value": "309.00",
+                      "currency": "CAD"
+                    },
+                    {
+                      "type": "tax_and_service_fee",
+                      "value": "37.00",
+                      "currency": "CAD"
+                    }
+                  ]
+                ],
+                "stay": [
+                  {
+                    "type": "extra_person_fee",
+                    "value": "10.00",
+                    "currency": "CAD"
+                  }
+                ],
+                "totals": {
+                  "inclusive": {
+                    "billable_currency": {
+                      "value": "702.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "530.97",
+                      "currency": "USD"
+                    }
+                  },
+                  "exclusive": {
+                    "billable_currency": {
+                      "value": "628.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "475.00",
+                      "currency": "USD"
+                    }
+                  },
+                  "inclusive_strikethrough": {
+                    "billable_currency": {
+                      "value": "726.63",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "549.60",
+                      "currency": "USD"
+                    }
+                  },
+                  "strikethrough": {
+                    "billable_currency": {
+                      "value": "650.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "491.64",
+                      "currency": "USD"
+                    }
+                  },
+                  "marketing_fee": {
+                    "billable_currency": {
+                      "value": "15.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "11.34",
+                      "currency": "USD"
+                    }
+                  },
+                  "gross_profit": {
+                    "billable_currency": {
+                      "value": "15.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "11.34",
+                      "currency": "USD"
+                    }
+                  },
+                  "minimum_selling_price": {
+                    "billable_currency": {
+                      "value": "702.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "530.97",
+                      "currency": "USD"
+                    }
+                  },
+                  "property_fees": {
+                    "billable_currency": {
+                      "value": "15.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "11.34",
+                      "currency": "USD"
+                    }
+                  }
+                },
+                "fees": {
+                  "mandatory_fee": {
+                    "billable_currency": {
+                      "value": "5.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "3.78",
+                      "currency": "USD"
+                    }
+                  },
+                  "resort_fee": {
+                    "billable_currency": {
+                      "value": "5.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "3.78",
+                      "currency": "USD"
+                    }
+                  },
+                  "mandatory_tax": {
+                    "billable_currency": {
+                      "value": "5.00",
+                      "currency": "CAD"
+                    },
+                    "request_currency": {
+                      "value": "3.78",
+                      "currency": "USD"
+                    }
+                  }
+                }
+              }
+            },
+            "promotions": {
+              "value_adds": {
+                "123abc": {
+                  "id": "123abc",
+                  "description": "10 USD credit on activities and sports for your stay.",
+                  "category": "entertainment",
+                  "offer_type": "credit",
+                  "frequency": "per_stay",
+                  "person_count": 1
+                }
+              },
+              "deal": {
+                "id": "999abc",
+                "description": "Book early and save 15%"
+              }
+            },
+            "card_on_file_limit": {
+              "value": "500.00",
+              "currency": "USD"
+            },
+            "refundable_damage_deposit": {
+              "value": "500.00",
+              "currency": "USD"
+            },
+            "deposits": [
+              {
+                "value": "70.00",
+                "due": "2025-12-21",
+                "currency": "USD"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "links": {
+      "additional_rates": {
+        "method": "GET",
+        "href": "/v3/properties/12345/availability?token=tok-a1"
+      }
+    },
+    "score": 10052
+  }
+]

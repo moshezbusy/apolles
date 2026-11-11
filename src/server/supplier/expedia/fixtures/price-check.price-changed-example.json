@@ -1,0 +1,154 @@
+{
+  "status": "price_changed",
+  "occupancy_pricing": {
+    "1234": {
+      "nightly": {
+        "type": "base_rate",
+        "value": "90.00",
+        "currency": "USD"
+      },
+      "stay": {
+        "type": "base_rate",
+        "value": "90.00",
+        "currency": "USD"
+      },
+      "totals": {
+        "inclusive": {
+          "billable_currency": {
+            "value": "215.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "215.00",
+            "currency": "USD"
+          }
+        },
+        "exclusive": {
+          "billable_currency": {
+            "value": "215.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "215.00",
+            "currency": "USD"
+          }
+        },
+        "strikethrough": {
+          "billable_currency": {
+            "value": "215.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "215.00",
+            "currency": "USD"
+          }
+        },
+        "marketing_fee": {
+          "billable_currency": {
+            "value": "18.00",
+            "currency": "CAD"
+          },
+          "request_currency": {
+            "value": "12.00",
+            "currency": "USD"
+          }
+        },
+        "gross_profit": {
+          "billable_currency": {
+            "value": "15.00",
+            "currency": "CAD"
+          },
+          "request_currency": {
+            "value": "10.00",
+            "currency": "USD"
+          }
+        },
+        "minimum_selling_price": {
+          "billable_currency": {
+            "value": "215.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "215.00",
+            "currency": "USD"
+          }
+        },
+        "property_fees": {
+          "billable_currency": {
+            "value": "8.50",
+            "currency": "EUR"
+          },
+          "request_currency": {
+            "value": "10.00",
+            "currency": "USD"
+          }
+        }
+      },
+      "fees": {
+        "mandatory_fee": {
+          "billable_currency": {
+            "value": "8.50",
+            "currency": "EUR"
+          },
+          "request_currency": {
+            "value": "10.00",
+            "currency": "USD"
+          }
+        }
+      },
+      "marketing_fee_details": {
+        "base": {
+          "billable_currency": {
+            "value": "3.50",
+            "currency": "CAD"
+          },
+          "request_currency": {
+            "value": "2.33",
+            "currency": "USD"
+          }
+        },
+        "overrides": {
+          "billable_currency": {
+            "value": "10.00",
+            "currency": "CAD"
+          },
+          "request_currency": {
+            "value": "6.67",
+            "currency": "USD"
+          }
+        },
+        "incentives": {
+          "billable_currency": {
+            "value": "1.50",
+            "currency": "CAD"
+          },
+          "request_currency": {
+            "value": "1.00",
+            "currency": "USD"
+          }
+        },
+        "other": {
+          "billable_currency": {
+            "value": "3.00",
+            "currency": "CAD"
+          },
+          "request_currency": {
+            "value": "2.00",
+            "currency": "USD"
+          }
+        }
+      }
+    }
+  },
+  "links": {
+    "additional_rates": {
+      "method": "GET",
+      "href": "/v3/properties/1234/availability?token=tok-ex"
+    },
+    "book": {
+      "method": "POST",
+      "href": "/v3/itineraries?token=tok-ex",
+      "expires": "2019-03-05T07:23:14.000Z"
+    }
+  }
+}

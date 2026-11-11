@@ -17,7 +17,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma generate && prisma db seed",
-    "admin:unlock": "prisma generate && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./prisma/ts-loader.mjs prisma/unlock.ts"
+    "admin:unlock": "prisma generate && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./prisma/ts-loader.mjs prisma/unlock.ts",
+    "worker": "prisma generate && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./prisma/ts-loader.mjs src/worker.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "2.2.2",

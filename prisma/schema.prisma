@@ -167,3 +167,167 @@ model RateLimitBucket {
   @@id([key, windowStart])
   @@index([windowStart])
 }
+
+// Every request to and response from a supplier (Expedia), for the site review and debugging
+// (spec section 6, "supplier log"). Bodies have personal data masked (src/server/supplier/mask.ts)
+// and are capped in size. Kept 90 days; the cleanup job comes with the background worker.
+model SupplierCallLog {
+  id                   String   @id @default(cuid())
+  supplier             String // "expedia"
+  method               String
+  path                 String // path and query; never credentials
+  status               Int? // null on a timeout or network error
+  durationMs           Int
+  affiliateReferenceId String?
+  requestBody          Json?
+  responseBody         Json?
+  error                String? // "timeout" | "network" | null
+  // Names (never values) of response fields the adapter did not know and dropped
+  // (owner decision 2026-11-10, docs/decisions/2026-11-10-supplier-unknown-fields.md).
+  unknownFields        String[] @default([])
+  createdAt            DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([affiliateReferenceId])
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+// Background work (spec section 7: daily content refresh, reconciliation, emails, PDFs), run by
+// the separate worker process (src/worker.ts). Claimed with FOR UPDATE SKIP LOCKED, so two
+// workers never run the same job (src/server/jobs/queue.ts).
+model Job {
+  id         String    @id @default(cuid())
+  kind       String
+  payload    Json
+  status     JobStatus @default(QUEUED)
+  attempts   Int       @default(0)
+  runAt      DateTime
+  lockedAt   DateTime?
+  lastError  String? // the error class and at most 500 characters, never a response body
+  dedupeKey  String?   @unique
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([status, runAt])
+}
+
+enum ContentSyncStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+// The local copy of Expedia's hotel list (spec section 7, "local hotel database"), refreshed
+// daily from the catalog file (src/server/content/catalog-sync.ts). Only the countries in
+// CONTENT_COUNTRIES are stored. Coordinates and star ratings are decimals, never floats.
+model Property {
+  id               String   @id // Expedia property id
+  name             String
+  city             String
+  countryCode      String
+  stateProvince    String?
+  starRating       Decimal? @db.Decimal(2, 1)
+  latitude         Decimal? @db.Decimal(9, 6)
+  longitude        Decimal? @db.Decimal(9, 6)
+  rank             Int?
+  expediaCollect   Boolean
+  active           Boolean  @default(true)
+  catalogSeenRunId String
+  updatedAt        DateTime @updatedAt
+
+  @@index([active, expediaCollect, rank])
+  @@index([countryCode, catalogSeenRunId])
+}
+
+// One run of a content sync job (catalog, regions, inactive), for auditing and for "since".
+model ContentSyncRun {
+  id         String            @id @default(cuid())
+  kind       String
+  status     ContentSyncStatus @default(RUNNING)
+  startedAt  DateTime          @default(now())
+  finishedAt DateTime?
+  counts     Json?
+
+  @@index([kind, status, startedAt])
+}
+
+// Destinations agents search by (cities and multi-city areas), from Rapid /regions, refreshed
+// daily (src/server/content/regions-sync.ts). A prefix index on lower(name) for active rows is
+// added in the migration's raw SQL.
+model Destination {
+  id            String   @id // Expedia region id
+  name          String
+  nameFull      String
+  type          String // "city" | "multi_city_vicinity"
+  countryCode   String
+  propertyCount Int
+  active        Boolean  @default(true)
+  seenRunId     String
+  updatedAt     DateTime @updatedAt
+
+  @@index([countryCode, seenRunId])
+}
+
+// Which hotels are in which destination. No foreign key to Property: the two syncs run
+// independently, and search joins only active Property rows.
+model DestinationProperty {
+  destinationId String
+  propertyId    String
+
+  @@id([destinationId, propertyId])
+  @@index([propertyId])
+}
+
+// Hotel content (images, check-in, fees, policies) from Rapid /properties/content, cached for
+// 24 hours; up to 7 days when Expedia is unavailable (src/server/content/content-cache.ts).
+model PropertyContentCache {
+  propertyId String   @id
+  data       Json // PropertyContent (src/server/supplier/types.ts)
+  fetchedAt  DateTime
+
+  @@index([fetchedAt])
+}
+
+// A search an agent ran (plan 2b, task 6): the candidate hotels in rank order and how far the
+// supplier calls got. Results are stored as a snapshot for 30 minutes, so filtering, sorting and
+// paging never call Expedia again; the price is checked again before booking anyway. Every
+// query is scoped by agencyId (no IDOR).
+model SearchSnapshot {
+  id           String        @id @default(cuid())
+  agencyId     String
+  userId       String
+  query        Json
+  candidateIds String[]
+  nextIndex    Int           @default(0)
+  createdAt    DateTime
+  expiresAt    DateTime
+  hotels       SearchHotel[]
+
+  @@index([agencyId, createdAt])
+  @@index([expiresAt])
+}
+
+// One priced hotel in a search snapshot: its cheapest total and all its offers (Offer[]).
+model SearchHotel {
+  snapshotId          String
+  propertyId          String
+  position            Int // rank order within the search ("recommended")
+  name                String
+  city                String
+  starRating          Decimal?       @db.Decimal(2, 1)
+  minTotalMinor       Int
+  currency            String
+  refundableAvailable Boolean
+  offers              Json
+  snapshot            SearchSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@id([snapshotId, propertyId])
+  @@index([snapshotId, position])
+  @@index([snapshotId, minTotalMinor])
+}

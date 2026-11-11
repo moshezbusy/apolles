@@ -1,0 +1,9 @@
+{
+  "status": "sold_out",
+  "links": {
+    "shop": {
+      "method": "GET",
+      "href": "/v3/properties/1234/availability?token=tok-ex"
+    }
+  }
+}
