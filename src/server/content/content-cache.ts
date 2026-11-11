@@ -16,7 +16,7 @@ const STALE_LIMIT_MS = 7 * 24 * 3_600_000;
 const BATCH = 250;
 
 const image = z.object({ url: z.string().startsWith("https://"), caption: z.string().nullable() });
-const contentShape: z.ZodType<PropertyContent> = z.object({
+export const contentShape: z.ZodType<PropertyContent> = z.object({
   propertyId: z.string(),
   name: z.string(),
   address: z.object({

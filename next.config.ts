@@ -4,6 +4,9 @@ const nextConfig: NextConfig = {
   // `next build` also writes a self-contained server (.next/standalone) with only the files
   // it needs; the staging container image runs that (Dockerfile, deploy/staging).
   output: "standalone",
+  // pdfkit reads its font metric files from its own folder at run time: load it from
+  // node_modules instead of bundling it (src/server/booking/voucher.ts).
+  serverExternalPackages: ["pdfkit"],
   async headers() {
     return [
       // No page may be shown inside a frame on another site (clickjacking: a hidden admin

@@ -158,6 +158,11 @@ describe("booking screens", () => {
     expect(html).toContain("Confirmed");
     expect(html).toContain("Hotel confirmation");
     expect(html).toContain("Cancel booking");
+    expect(html).toContain(`href="/bookings/${id}/voucher"`);
+    const { GET: voucher } = await import("./(agent)/bookings/[id]/voucher/route");
+    const pdf = await voucher(new Request(`http://localhost/bookings/${id}/voucher`), { params: Promise.resolve({ id }) });
+    expect(pdf.headers.get("content-type")).toBe("application/pdf");
+    expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString()).toBe("%PDF-");
 
     const { cancelAction } = await import("./(agent)/bookings/[id]/actions");
     expect(await redirectOf(cancelAction(form({ bookingId: id, expectedCharge: "0" })))).toBe(`/bookings/${id}?notice=cancelled`);

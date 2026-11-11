@@ -178,6 +178,10 @@ test("foundation: admin creates an agency, tops it up, the agent sees the balanc
     await expect(agentPage.getByRole("heading", { name: /Booking APL-/ })).toBeVisible();
     await expect(agentPage.getByText("Confirmed", { exact: true })).toBeVisible();
     await expect(agentPage.getByRole("banner")).not.toContainText("USD 1,000.00"); // paid from the balance
+    const voucherHref = await agentPage.getByRole("link", { name: "Download voucher (PDF)" }).getAttribute("href");
+    const voucher = await agentPage.request.get(voucherHref!);
+    expect(voucher.headers()["content-type"]).toBe("application/pdf");
+    expect((await voucher.body()).subarray(0, 5).toString()).toBe("%PDF-");
 
     await agentPage.getByRole("button", { name: "Confirm cancellation" }).click();
     await expect(agentPage.getByRole("status")).toContainText("The booking is cancelled");
