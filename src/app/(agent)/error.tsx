@@ -1,26 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { btnPrimary, card, link } from "@/components/ui";
+import { StatePanel } from "@/components/StatePanel";
+import { btnPrimary, btnSecondary } from "@/components/ui";
 
-// Shown instead of the browser's bare "Application error" when something in the agent area
-// fails (for example a request the server refuses as too large). The error's own message is
-// never shown: it may contain internal details.
-export default function AgentError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
+// Something failed in the agent area (screen 24). The error's own message is never shown (it
+// may hold internal details); the digest is a short code support can find in the server log.
+// During a booking the agent is sent to "My bookings" first, so nobody books twice.
+export default function AgentError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
-    <main className="flex flex-1 items-center justify-center px-4 py-16">
-      <div className={`w-full max-w-[460px] p-6 text-center ${card}`}>
-        <h1 className="mb-2 font-serif text-[28px] font-medium leading-tight text-ink">Something went wrong</h1>
-        <p className="mb-6 text-sm text-muted">Nothing was changed. Please try again. If it keeps happening, contact Apolles support.</p>
-        <div className="flex items-center justify-center gap-4">
+    <StatePanel
+      icon="!"
+      tone="warn"
+      title="Something went wrong on our side"
+      actions={
+        <>
           <button type="button" onClick={reset} className={btnPrimary}>
             Try again
           </button>
-          <Link href="/balance" className={link}>
-            Go to balance
+          <Link href="/bookings" className={btnSecondary}>
+            My bookings
           </Link>
-        </div>
-      </div>
-    </main>
+        </>
+      }
+      footnote={error.digest ? `Error code: ${error.digest.slice(0, 12)} · give this code to support` : undefined}
+    >
+      Please try again in a minute. If you were booking, check My bookings before trying again, so you don&apos;t book twice.
+    </StatePanel>
   );
 }

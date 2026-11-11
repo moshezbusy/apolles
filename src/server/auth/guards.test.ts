@@ -65,7 +65,13 @@ describe("auth guards", () => {
   });
 
   it("requireAgent with no cookie redirects to /login", async () => {
-    await expect(requireAgent()).rejects.toThrow("NEXT_REDIRECT:/login");
+    await expect(requireAgent()).rejects.toThrow(/^NEXT_REDIRECT:\/login$/);
+  });
+
+  it("a session that ended (12 hours) goes to /login with the 'signed out' notice", async () => {
+    await agentSession();
+    await db.session.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
+    await expect(requireAgent()).rejects.toThrow(/^NEXT_REDIRECT:\/login\?expired=1$/);
   });
 
   it("requireAgent with an unknown token redirects to /login", async () => {

@@ -13,11 +13,19 @@ async function currentSession(): Promise<SessionContext | null> {
   return getSession(rawToken);
 }
 
+// Where to send someone without a valid session: a browser that still holds a session cookie
+// had a session that ended (12 hours, sign-out elsewhere, suspension), so the sign-in page
+// says "you were signed out" (screen 24). No cookie: the plain sign-in page.
+async function signInPath(): Promise<string> {
+  return (await cookies()).get(SESSION_COOKIE)?.value ? "/login?expired=1" : "/login";
+}
+
 // For every agent page and server action. The agencyId comes only from the session,
 // never from the request. Anyone else (no session, expired, suspended, admin) goes to /login.
 export async function requireAgent(): Promise<{ userId: string; agencyId: string }> {
   const session = await currentSession();
-  if (!session || session.user.role !== "AGENT" || !session.agency) redirect("/login");
+  if (!session) redirect(await signInPath());
+  if (session.user.role !== "AGENT" || !session.agency) redirect("/login");
   return { userId: session.user.id, agencyId: session.agency.id };
 }
 
@@ -29,7 +37,8 @@ export async function requireAgent(): Promise<{ userId: string; agencyId: string
 //   code not entered yet       → /admin/2fa
 export async function requireAdmin(): Promise<{ userId: string }> {
   const session = await currentSession();
-  if (!session || session.user.role !== "ADMIN") redirect("/login");
+  if (!session) redirect(await signInPath());
+  if (session.user.role !== "ADMIN") redirect("/login");
   if (!session.user.totpConfirmedAt) redirect("/admin/2fa/setup");
   if (!session.totpVerifiedAt) redirect("/admin/2fa");
   return { userId: session.user.id };
