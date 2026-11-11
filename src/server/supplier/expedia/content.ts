@@ -207,6 +207,7 @@ export class ExpediaContentSource implements ContentSource {
       query: { language: LANGUAGE, supply_source: SUPPLY_SOURCE },
       context: {},
       timeoutMs: SHORT_TIMEOUT_MS,
+      logResponseBody: false, // the link is signed: whoever holds it can download the file
     });
     const notes = new ParseNotes();
     const link = check(lenient.catalogLink, strict.catalogLink, data, "", notes);

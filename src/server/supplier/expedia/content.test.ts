@@ -22,6 +22,14 @@ describe("nextFromLink (Rapid paging)", () => {
     );
   });
 
+  it("a next URL that contains a comma is read whole", () => {
+    expect(nextFromLink('<https://test.ean.com/v3/regions?token=a,b&x=1>; rel="next"', "https://test.ean.com/v3")).toBe("/regions?token=a,b&x=1");
+  });
+
+  it("a Link header with a next relation that cannot be read is an error, never 'no more pages'", () => {
+    expect(() => nextFromLink('rel="next"; garbage', "https://test.ean.com/v3")).toThrow();
+  });
+
   it("no header, no next relation → null", () => {
     expect(nextFromLink(null, "https://test.ean.com/v3")).toBeNull();
     expect(nextFromLink('<https://test.ean.com/v3/regions?token=a>; rel="prev"', "https://test.ean.com/v3")).toBeNull();
@@ -143,6 +151,13 @@ describe("ExpediaContentSource", () => {
       expect(await source.catalogLink()).toEqual({ href: "https://files.example/catalog.jsonl.gz" });
       const url = new URL(String(fetchMock.mock.calls[0]![0]));
       expect(url.pathname).toBe("/v3/files/properties/catalog");
+    });
+
+    it("does not store the signed download link in the supplier log", async () => {
+      fetchMock.mockResolvedValue(json(200, { method: "GET", href: "https://files.example/catalog.jsonl.gz?sig=abc", expires: "2027-01-01T00:00:00Z" }));
+      await source.catalogLink();
+      const row = await db.supplierCallLog.findFirstOrThrow();
+      expect(JSON.stringify(row.responseBody ?? null)).not.toContain("files.example");
     });
   });
 

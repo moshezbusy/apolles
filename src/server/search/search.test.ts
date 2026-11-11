@@ -114,6 +114,36 @@ describe("search service", () => {
     expect(searchAvailability.mock.calls[2]![0].propertyIds).toHaveLength(100);
   });
 
+  it("two load-more calls at the same moment fetch the next batch only once", async () => {
+    await hotels(600);
+    const { adapter, searchAvailability } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    await Promise.all([loadMore(ctx(), snapshotId, { adapter, now: NOW }), loadMore(ctx(), snapshotId, { adapter, now: NOW })]);
+    expect(searchAvailability).toHaveBeenCalledTimes(2);
+    const snap = await db.searchSnapshot.findUniqueOrThrow({ where: { id: snapshotId } });
+    expect(snap.nextIndex).toBe(500);
+  });
+
+  it("an agency keeps at most 50 searches; older ones are removed", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    for (let i = 0; i < 52; i++) {
+      await db.searchSnapshot.create({
+        data: { agencyId: "A", userId: "u1", query: {}, candidateIds: [], createdAt: new Date(NOW.getTime() - (60 - i) * 1000), expiresAt: NOW },
+      });
+    }
+    await startSearch(ctx(), input, { adapter, now: NOW });
+    expect(await db.searchSnapshot.count({ where: { agencyId: "A" } })).toBe(50);
+  });
+
+  it("stored offers are checked when read back; a damaged row gives nothing instead of a broken page", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    await db.searchHotel.updateMany({ where: { snapshotId }, data: { offers: [{ broken: true }] } });
+    expect(await getHotelOffers("A", snapshotId, "1", NOW, { content: async () => new Map() })).toBeNull();
+  });
+
   it("another agency's search id gives nothing (no IDOR)", async () => {
     await hotels(3);
     const { adapter } = fakeAdapter(everyone);

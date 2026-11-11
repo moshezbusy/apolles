@@ -69,12 +69,23 @@ describe("syncRegions", () => {
     const source = {
       listRegions: vi.fn(async ({ countryCode }: { countryCode: string }) => {
         if (countryCode === "IT") throw new SupplierRateLimited("429", 429);
-        return { regions: [], next: null };
+        return { regions: [region("1", "FR", [])], next: null };
       }),
     } as unknown as ContentSource;
     await expect(syncRegions({ source })).rejects.toBeInstanceOf(SupplierRateLimited);
     expect(await db.destination.count({ where: { active: true } })).toBe(2);
     expect(await db.contentSyncRun.count({ where: { kind: "content.regions", status: "FAILED" } })).toBe(1);
+  });
+
+  it("a country that suddenly returns no regions fails the run and deactivates nothing", async () => {
+    await syncRegions({ source: sourceWith({ FR: [{ regions: [region("1", "FR", ["a"])], next: null }] }) });
+    await expect(syncRegions({ source: sourceWith({ FR: [{ regions: [], next: null }] }) })).rejects.toThrow(/refusing/);
+    expect((await db.destination.findUniqueOrThrow({ where: { id: "1" } })).active).toBe(true);
+  });
+
+  it("two syncs of the same kind never run at once", async () => {
+    await db.contentSyncRun.create({ data: { kind: "content.regions" } });
+    await expect(syncRegions({ source: sourceWith({ FR: [{ regions: [region("1", "FR", [])], next: null }] }) })).rejects.toThrow(/already running/);
   });
 
   it("stops following pages if the supplier loops", async () => {

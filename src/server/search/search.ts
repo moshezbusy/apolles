@@ -26,6 +26,7 @@ const CLEANUP_AFTER_MS = 60 * 60_000;
 const SEARCH_RATE_LIMIT = { limit: 30, windowMs: 60_000 }; // per agency
 const DEFAULT_TAKE = 20;
 const MAX_TAKE = 50;
+const MAX_SNAPSHOTS_PER_AGENCY = 50; // older searches are removed, so one agency cannot fill the database
 
 export type SearchContext = { agencyId: string; userId: string; supplierContext: SupplierContext };
 type Deps = { adapter?: SupplierAdapter; now?: Date; content?: typeof getContent };
@@ -59,6 +60,45 @@ const storedQuery = z.object({
   countryCode: z.string(),
 });
 
+// Offers are read back from the database before the hotel page and booking use them: a damaged
+// or old-format row gives "not found", never a half-read price.
+const money = z.object({ minor: z.number().int(), currency: z.string().regex(/^[A-Z]{3}$/) }).strict();
+const offerSchema: z.ZodType<Offer> = z
+  .object({
+    propertyId: z.string(),
+    roomId: z.string(),
+    roomName: z.string(),
+    rateId: z.string(),
+    refundable: z.boolean(),
+    bedGroups: z.array(z.object({ id: z.string(), description: z.string(), priceCheckToken: z.string() }).strict()),
+    cancelPenalties: z.array(
+      z
+        .object({ start: z.string(), end: z.string(), amount: money.nullable(), nights: z.number().int().nullable(), percent: z.string().nullable() })
+        .strict(),
+    ),
+    nonrefundableDateRanges: z.array(z.object({ start: z.string(), end: z.string() }).strict()),
+    price: z
+      .object({
+        total: money,
+        lines: z.array(
+          z
+            .object({
+              kind: z.enum(["room_rate", "extra_person_fee", "taxes_and_fees", "taxes", "discount", "service_fee"]),
+              amount: money,
+            })
+            .strict(),
+        ),
+        dueAtProperty: z.array(
+          z.object({ kind: z.enum(["mandatory_fee", "resort_fee", "mandatory_tax"]), amount: money, localAmount: money.nullable() }).strict(),
+        ),
+        dueAtPropertyTotal: money.nullable(),
+        nights: z.number().int().positive(),
+      })
+      .strict(),
+  })
+  .strict();
+const storedOffers = z.array(offerSchema).min(1);
+
 async function rateLimit(agencyId: string): Promise<void> {
   const { allowed } = await hitRateLimit(`search:agency:${agencyId}`, SEARCH_RATE_LIMIT.limit, SEARCH_RATE_LIMIT.windowMs);
   if (!allowed) throw new SearchRateLimited("Too many searches. Wait a minute and try again.");
@@ -72,6 +112,11 @@ async function fetchBatch(
 ): Promise<number> {
   const batch = snapshot.candidateIds.slice(snapshot.nextIndex, snapshot.nextIndex + BATCH);
   if (batch.length === 0) return 0;
+  const end = snapshot.nextIndex + batch.length;
+  // Claim the batch first: of two load-more clicks at the same moment only one moves nextIndex
+  // and asks Expedia; the other gets 0. A supplier failure gives the claim back.
+  const claimed = await db.searchSnapshot.updateMany({ where: { id: snapshot.id, nextIndex: snapshot.nextIndex }, data: { nextIndex: end } });
+  if (claimed.count === 0) return 0;
   let results;
   try {
     results = await adapter.searchAvailability(
@@ -85,6 +130,7 @@ async function fetchBatch(
       supplierContext,
     );
   } catch (error) {
+    await db.searchSnapshot.updateMany({ where: { id: snapshot.id, nextIndex: end }, data: { nextIndex: snapshot.nextIndex } });
     if (error instanceof SupplierError) throw new SearchUnavailable("Hotel search is unavailable right now. Try again in a few minutes.");
     throw error;
   }
@@ -122,10 +168,7 @@ async function fetchBatch(
     ];
   });
 
-  await db.$transaction([
-    db.searchHotel.createMany({ data: rows, skipDuplicates: true }),
-    db.searchSnapshot.update({ where: { id: snapshot.id }, data: { nextIndex: snapshot.nextIndex + batch.length } }),
-  ]);
+  await db.searchHotel.createMany({ data: rows, skipDuplicates: true });
   return batch.length;
 }
 
@@ -172,6 +215,13 @@ export async function startSearch(ctx: SearchContext, rawInput: unknown, deps: D
       expiresAt: new Date(now.getTime() + SNAPSHOT_TTL_MS),
     },
   });
+  const older = await db.searchSnapshot.findMany({
+    where: { agencyId: ctx.agencyId },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    skip: MAX_SNAPSHOTS_PER_AGENCY,
+    select: { id: true },
+  });
+  if (older.length > 0) await db.searchSnapshot.deleteMany({ where: { agencyId: ctx.agencyId, id: { in: older.map((o) => o.id) } } });
   if (candidates.length > 0) {
     await fetchBatch({ ...snapshot, query }, ctx.supplierContext, deps.adapter ?? new ExpediaAdapter());
     await prefetchContent(snapshot.id, deps.content ?? getContent, now);
@@ -279,8 +329,10 @@ export async function getHotelOffers(
   if (typeof propertyId !== "string" || propertyId.length > 64) return null;
   const hotel = await db.searchHotel.findUnique({ where: { snapshotId_propertyId: { snapshotId: snapshot.id, propertyId } } });
   if (!hotel) return null;
+  const offers = storedOffers.safeParse(hotel.offers);
+  if (!offers.success) return null;
   const contents = await (deps.content ?? getContent)([propertyId], now);
-  return { offers: hotel.offers as unknown as Offer[], content: contents.get(propertyId) ?? null };
+  return { offers: offers.data, content: contents.get(propertyId) ?? null };
 }
 
 // Deletes searches whose expiry passed more than an hour ago (their hotels go with them).

@@ -62,6 +62,13 @@ describe("job queue", () => {
     expect(again?.id).toBe(id);
   });
 
+  it("an abandoned job that already used every attempt is marked FAILED, not run again", async () => {
+    const { id } = await enqueue("search.cleanup", {}, { runAt: NOW });
+    await db.job.update({ where: { id }, data: { status: "RUNNING", attempts: 3, lockedAt: NOW } });
+    expect(await claimNext(minutes(31))).toBeNull();
+    expect((await db.job.findUniqueOrThrow({ where: { id } })).status).toBe("FAILED");
+  });
+
   it("lastError keeps the error class and at most 500 characters, never more", async () => {
     const { id } = await enqueue("search.cleanup", {}, { runAt: NOW });
     await claimNext(NOW);

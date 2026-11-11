@@ -64,6 +64,35 @@ describe("syncCatalog", () => {
     expect(await db.contentSyncRun.count({ where: { status: "FAILED" } })).toBe(1);
   });
 
+  it("an empty catalog file deactivates nothing and fails the run", async () => {
+    await syncCatalog({ source, open: async () => lines([line("1", "FR"), line("2", "FR")]) });
+    await expect(syncCatalog({ source, open: async () => lines([]) })).rejects.toThrow(/refusing/);
+    expect(await db.property.count({ where: { active: true } })).toBe(2);
+    expect(await db.contentSyncRun.count({ where: { status: "FAILED" } })).toBe(1);
+  });
+
+  it("a file with far fewer hotels than before (a broken or partial file) deactivates nothing", async () => {
+    await syncCatalog({ source, open: async () => lines(Array.from({ length: 10 }, (_, i) => line(String(i + 1), "FR"))) });
+    await expect(syncCatalog({ source, open: async () => lines([line("1", "FR"), line("2", "FR")]) })).rejects.toThrow(/refusing/);
+    expect(await db.property.count({ where: { active: true } })).toBe(10);
+  });
+
+  it("a file whose lines are mostly invalid (a format change) deactivates nothing", async () => {
+    await syncCatalog({ source, open: async () => lines([line("1", "FR")]) });
+    const broken = Array.from({ length: 200 }, () => "{\"property_id\":\"x\"}");
+    await expect(syncCatalog({ source, open: async () => lines([line("1", "FR"), ...broken]) })).rejects.toThrow(/refusing/);
+    expect((await db.property.findUniqueOrThrow({ where: { id: "1" } })).active).toBe(true);
+  });
+
+  it("strips NUL characters and refuses an impossible rank instead of failing the batch", async () => {
+    const result = await syncCatalog({
+      source,
+      open: async () => lines([line("1", "FR", { name: "Bad\u0000Name" }), line("2", "FR", { rank: 3_000_000_000 }), line("3", "FR")]),
+    });
+    expect(result).toMatchObject({ upserted: 2, invalid: 1 });
+    expect((await db.property.findUniqueOrThrow({ where: { id: "1" } })).name).toBe("BadName");
+  });
+
   it("records whether Expedia collects payment for the hotel", async () => {
     await syncCatalog({
       source,
@@ -109,6 +138,33 @@ describe("openCatalogStream", () => {
     expect(out).toHaveLength(2);
     const headers = new Headers(fetchMock.mock.calls[0]![1]?.headers);
     expect(headers.has("authorization")).toBe(false);
+  });
+
+  it("a connection that breaks in the middle of the download is an error, not a crash", async () => {
+    const gz = gzipSync(Buffer.from(`${line("1", "FR")}\n${line("2", "FR")}\n`));
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(gz.subarray(0, 10));
+        controller.error(new Error("socket hang up"));
+      },
+    });
+    fetchMock.mockResolvedValue(new Response(body, { status: 200 }));
+    const read = async () => {
+      for await (const _ of await openCatalogStream("https://files.example/c.jsonl.gz")) void _;
+    };
+    await expect(read()).rejects.toThrow();
+  });
+
+  it("refuses a line longer than the limit (a file with no line breaks)", async () => {
+    fetchMock.mockResolvedValue(new Response(gzipSync(Buffer.from("x".repeat(3_000_000))), { status: 200 }));
+    const read = async () => {
+      for await (const _ of await openCatalogStream("https://files.example/c.jsonl.gz")) void _;
+    };
+    await expect(read()).rejects.toThrow(/line/);
+  });
+
+  it("refuses localhost with a trailing dot and single-label internal names", async () => {
+    for (const href of ["https://localhost./c.gz", "https://apolles-staging-db/c.gz"]) await expect(openCatalogStream(href)).rejects.toThrow();
   });
 
   it("a non-200 download is an error", async () => {

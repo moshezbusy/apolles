@@ -43,6 +43,8 @@ export type ExpediaRequest = {
   context: RequestContext;
   timeoutMs: number;
   affiliateReferenceId?: string;
+  // false for answers that hold a signed link or another secret: the log keeps the status only.
+  logResponseBody?: boolean;
 };
 
 const FALLBACK_USER_AGENT = "Apolles/1.0";
@@ -64,24 +66,34 @@ function buildUrl(baseUrl: string, path: string, query: ExpediaRequest["query"])
 // to another host or outside the API path is refused: the signed request must stay with Expedia.
 export function nextFromLink(header: string | null, baseUrl: string): string | null {
   if (!header) return null;
-  for (const part of header.split(",")) {
-    const match = part.match(/<([^>]+)>\s*;(.*)$/);
-    if (!match || !/rel="?next"?/.test(match[2] ?? "")) continue;
-    const base = new URL(baseUrl);
-    const target = new URL(match[1] ?? "", base);
-    if (target.origin !== base.origin || !target.pathname.startsWith(`${base.pathname}/`)) {
-      throw new SupplierError("Expedia next-page link points outside the API");
-    }
-    return `${target.pathname.slice(base.pathname.length)}${target.search}`;
+  // Each link is `<url>; params`. The URL is read up to its closing ">", so a comma inside it
+  // (a token, say) never splits it.
+  const links = [...header.matchAll(/<([^>]*)>\s*((?:;[^,<]*)*)/g)];
+  const next = links.find((m) => /(^|;)\s*rel="?([^";]*\s)?next(\s[^";]*)?"?\s*(;|$)/i.test(m[2] ?? ""));
+  if (!next) {
+    // A next relation we could not read must not be taken for "no more pages".
+    if (/rel="?([^";]*\s)?next/i.test(header)) throw new SupplierError("Expedia next-page link could not be read");
+    return null;
   }
-  return null;
+  const base = new URL(baseUrl);
+  let target: URL;
+  try {
+    target = new URL(next[1] ?? "", base);
+  } catch {
+    throw new SupplierError("Expedia next-page link could not be read");
+  }
+  if (target.origin !== base.origin || !target.pathname.startsWith(`${base.pathname}/`)) {
+    throw new SupplierError("Expedia next-page link points outside the API");
+  }
+  return `${target.pathname.slice(base.pathname.length)}${target.search}`;
 }
 
 async function readBody(response: Response): Promise<unknown> {
   const text = await response.text();
   if (!text) return undefined;
   try {
-    return JSON.parse(text);
+    // NUL is removed from supplier text here, once, so no later write to Postgres fails on it.
+    return JSON.parse(text, (_key, value: unknown) => (typeof value === "string" ? value.replaceAll("\u0000", "") : value));
   } catch {
     return { nonJsonBody: true, bytes: text.length };
   }
@@ -204,10 +216,12 @@ export async function expediaRequest(
       durationMs: elapsed(),
       affiliateReferenceId: request.affiliateReferenceId,
       requestBody: request.body,
-      responseBody: data,
+      responseBody: request.logResponseBody === false ? { omitted: true } : data,
     });
 
-    if (status >= 200 && status < 300) return { status, data, logId, next: nextFromLink(link, config.baseUrl) };
+    // Paging exists only on GET lists; a Link header on a booking answer is ignored, so it can
+    // never turn a successful booking into an error.
+    if (status >= 200 && status < 300) return { status, data, logId, next: method === "GET" ? nextFromLink(link, config.baseUrl) : null };
     if (status === 401 || status === 403) throw new SupplierAuthError(`Expedia refused the credentials (HTTP ${status})`, status);
     if (status === 429) throw new SupplierRateLimited("Expedia rate limit reached (HTTP 429)", status);
     if (status >= 500) {

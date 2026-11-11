@@ -6,6 +6,17 @@ import { runPending } from "@/server/jobs/runner";
 import { ensureDailyJobs } from "@/server/jobs/schedule";
 
 const TICK_MS = 5_000;
+
+// Same rule as the app container's entrypoint: a production build runs only as staging or
+// production, never by accident with another setting.
+if (process.env.NODE_ENV === "production" && !["staging", "production"].includes(process.env.APP_ENV ?? "")) {
+  console.error("Refusing to start: APP_ENV must be staging or production.");
+  process.exit(1);
+}
+if (!process.env.DATABASE_URL) {
+  console.error("Refusing to start: DATABASE_URL is not set.");
+  process.exit(1);
+}
 let stopping = false;
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
@@ -20,7 +31,7 @@ async function main(): Promise<void> {
     const now = new Date();
     try {
       await ensureDailyJobs(now);
-      await runPending(now, HANDLERS, () => stopping);
+      await runPending(() => new Date(), HANDLERS, () => stopping);
     } catch (error) {
       // A database hiccup must not kill the worker; the next tick tries again.
       console.error(`worker tick failed: ${error instanceof Error ? error.name : "Error"}`);

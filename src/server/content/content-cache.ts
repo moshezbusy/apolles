@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Prisma } from "@/generated/prisma/client";
+import { stripNul } from "@/lib/strip-nul";
 import { db } from "@/server/db";
 import { SupplierError } from "@/server/supplier/expedia/client";
 import { ExpediaContentSource } from "@/server/supplier/expedia/content";
@@ -76,16 +76,17 @@ export async function getContent(
   for (let i = 0; i < missing.length; i += BATCH) {
     const batch = missing.slice(i, i + BATCH);
     try {
-      const fetched = await source.propertyContent(batch);
-      for (const item of fetched) {
-        if (!batch.includes(item.propertyId)) continue; // never cache a hotel we did not ask for
-        result.set(item.propertyId, item);
-        const data = item as unknown as Prisma.InputJsonValue;
-        await db.propertyContentCache.upsert({
-          where: { propertyId: item.propertyId },
-          create: { propertyId: item.propertyId, data, fetchedAt: now },
-          update: { data, fetchedAt: now },
-        });
+      const fetched = (await source.propertyContent(batch)).filter((item) => batch.includes(item.propertyId)); // never cache a hotel we did not ask for
+      const items = [...new Map(fetched.map((item) => [item.propertyId, stripNul(item)])).values()];
+      for (const item of items) result.set(item.propertyId, item);
+      if (items.length > 0) {
+        // One statement per batch of up to 250 hotels.
+        await db.$executeRaw`
+          INSERT INTO "PropertyContentCache" ("propertyId", "data", "fetchedAt")
+          SELECT x."propertyId", x."data", ${now}
+          FROM json_to_recordset(${JSON.stringify(items.map((item) => ({ propertyId: item.propertyId, data: item })))}::json)
+            AS x("propertyId" text, "data" jsonb)
+          ON CONFLICT ("propertyId") DO UPDATE SET "data" = EXCLUDED."data", "fetchedAt" = EXCLUDED."fetchedAt"`;
       }
     } catch (error) {
       if (!(error instanceof SupplierError)) throw error;

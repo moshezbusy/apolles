@@ -72,6 +72,19 @@ describe("getContent", () => {
     expect(map.size).toBe(600);
   });
 
+  it("NUL characters in supplier text are removed before caching (Postgres JSON refuses them)", async () => {
+    const s = source(async () => [content("1", "Bad\u0000Name")]);
+    const map = await getContent(["1"], NOW, { source: s });
+    expect(map.get("1")?.name).toBe("BadName");
+    expect(await db.propertyContentCache.count()).toBe(1);
+  });
+
+  it("caches a batch in one statement", async () => {
+    const s = source(async (batch) => batch.map((id) => content(id)));
+    await getContent(["1", "2", "3"], NOW, { source: s });
+    expect(await db.propertyContentCache.count()).toBe(3);
+  });
+
   it("a cached row that does not match the content shape is ignored and refetched", async () => {
     await db.propertyContentCache.create({ data: { propertyId: "1", data: { broken: true }, fetchedAt: hoursAgo(1) } });
     const s = source(async () => [content("1")]);

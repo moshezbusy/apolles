@@ -1,6 +1,7 @@
 import { db } from "@/server/db";
 import { ExpediaContentSource } from "@/server/supplier/expedia/content";
 import type { ContentSource } from "@/server/supplier/types";
+import { finishSyncRun, startSyncRun } from "./sync-run";
 
 // Daily: hotels that became inactive at Expedia are marked inactive here (so search stops
 // offering them) and their cached content is deleted (plan 2b, task 5). "Since" is the start
@@ -16,7 +17,7 @@ export async function syncInactive(now: Date = new Date(), deps: { source?: Cont
     select: { startedAt: true },
   });
   const since = (last?.startedAt ?? new Date(now.getTime() - 24 * 3_600_000)).toISOString().slice(0, 10);
-  const run = await db.contentSyncRun.create({ data: { kind: "content.inactive", startedAt: now } });
+  const run = await startSyncRun("content.inactive", now);
   const counts = { deactivated: 0 };
 
   try {
@@ -34,10 +35,10 @@ export async function syncInactive(now: Date = new Date(), deps: { source?: Cont
       if (!result.next) break;
       next = result.next;
     }
-    await db.contentSyncRun.update({ where: { id: run.id }, data: { status: "DONE", finishedAt: new Date(), counts } });
+    await finishSyncRun(run.id, "DONE", counts);
     return counts;
   } catch (error) {
-    await db.contentSyncRun.update({ where: { id: run.id }, data: { status: "FAILED", finishedAt: new Date(), counts } });
+    await finishSyncRun(run.id, "FAILED", counts);
     throw error;
   }
 }

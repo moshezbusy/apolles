@@ -19,14 +19,15 @@ export async function enqueue(
 ): Promise<{ id: string; created: boolean }> {
   const runAt = opts.runAt ?? new Date();
   if (opts.dedupeKey) {
-    const rows = await db.$queryRaw<{ id: string; inserted: boolean }[]>`
+    // DO NOTHING (no row rewrite when it exists), then read the existing row's id.
+    const inserted = await db.$queryRaw<{ id: string }[]>`
       INSERT INTO "Job" ("id", "kind", "payload", "status", "attempts", "runAt", "dedupeKey", "createdAt")
       VALUES (gen_random_uuid()::text, ${kind}, ${JSON.stringify(payload)}::jsonb, 'QUEUED', 0, ${runAt}, ${opts.dedupeKey}, now())
-      ON CONFLICT ("dedupeKey") DO UPDATE SET "dedupeKey" = EXCLUDED."dedupeKey"
-      RETURNING "id", (xmax = 0) AS "inserted"`;
-    const row = rows[0];
-    if (!row) throw new Error("enqueue: no row returned");
-    return { id: row.id, created: row.inserted };
+      ON CONFLICT ("dedupeKey") DO NOTHING
+      RETURNING "id"`;
+    if (inserted[0]) return { id: inserted[0].id, created: true };
+    const existing = await db.job.findUniqueOrThrow({ where: { dedupeKey: opts.dedupeKey }, select: { id: true } });
+    return { id: existing.id, created: false };
   }
   const job = await db.job.create({ data: { kind, payload, runAt }, select: { id: true } });
   return { id: job.id, created: true };
@@ -34,6 +35,11 @@ export async function enqueue(
 
 export async function claimNext(now: Date): Promise<Job | null> {
   const staleBefore = new Date(now.getTime() - STALE_LOCK_MS);
+  // An abandoned job that already used every attempt is final: FAILED, never run again.
+  await db.$executeRaw`
+    UPDATE "Job" SET "status" = 'FAILED', "lockedAt" = NULL, "finishedAt" = ${now},
+      "lastError" = COALESCE("lastError", 'Abandoned: the worker stopped during the last attempt')
+    WHERE "status" = 'RUNNING' AND "lockedAt" < ${staleBefore} AND "attempts" >= ${MAX_ATTEMPTS}`;
   const rows = await db.$queryRaw<Job[]>`
     UPDATE "Job" SET "status" = 'RUNNING', "lockedAt" = ${now}, "attempts" = "attempts" + 1
     WHERE "id" = (
@@ -46,6 +52,11 @@ export async function claimNext(now: Date): Promise<Job | null> {
     )
     RETURNING *`;
   return rows[0] ?? null;
+}
+
+// Keeps a running job's lock fresh, so a long job is never taken for abandoned.
+export async function heartbeat(id: string, now: Date): Promise<void> {
+  await db.job.updateMany({ where: { id, status: "RUNNING" }, data: { lockedAt: now } });
 }
 
 export async function completeJob(id: string): Promise<void> {

@@ -183,6 +183,12 @@ describe("expediaRequest", () => {
     ).rejects.toThrow(/Test header/);
   });
 
+  it("a strange Link header on a successful booking never fails the booking call", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ itinerary_id: "1" }), { status: 201, headers: { Link: "<not a url" } }));
+    const result = await expediaRequest({ method: "POST", path: "/itineraries", body: {}, context: { ...context, test: "standard" }, timeoutMs: 60_000 });
+    expect(result).toMatchObject({ status: 201, next: null });
+  });
+
   it("masks email and token in the logged path", async () => {
     fetchMock.mockResolvedValue(json(200, []));
     await expediaRequest({ method: "GET", path: "/itineraries", query: { email: "guest@example.com", affiliate_reference_id: "APL-1" }, context, timeoutMs: 15_000 });
