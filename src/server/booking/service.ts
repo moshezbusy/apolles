@@ -7,7 +7,7 @@ import { findOffer } from "@/server/search/search";
 import { bookingSupplier } from "@/server/supplier";
 import { SupplierAuthError, SupplierError, SupplierRateLimited, SupplierRequestRejected } from "@/server/supplier/expedia/client";
 import { SupplierNotSent } from "@/server/supplier/expedia/booking";
-import type { BookingSupplier, CancelPenalty, PriceBreakdown, SupplierAdapter, SupplierContext, SupplierLinks } from "@/server/supplier/types";
+import type { BookingSupplier, CancelPenalty, SupplierAdapter, SupplierContext, SupplierLinks } from "@/server/supplier/types";
 import { captureHold, credit, getBalance, placeHold, releaseHold } from "@/server/wallet/ledger";
 import { InsufficientFunds } from "@/server/wallet/errors";
 import { cancelChargeAt } from "./cancel-charge";

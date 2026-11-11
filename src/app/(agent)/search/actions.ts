@@ -3,9 +3,9 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
-import { getClientIp, UNKNOWN_IP } from "@/server/client-ip";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "@/server/search/errors";
 import { startSearch } from "@/server/search/search";
+import { supplierContextFrom } from "@/server/supplier-context";
 import { childAgesComplete, readSearchForm, toSearchInput, type SearchFormState } from "./form-state";
 
 // Starts a search (screen 07) and opens its results. The agencyId comes only from the
@@ -20,10 +20,7 @@ export async function startSearchAction(_previous: SearchFormState, formData: Fo
   if (!values.destinationId) return { status: "error", message: "Choose a destination from the list.", values };
   if (!childAgesComplete(values)) return { status: "error", message: "Choose the age of each child.", values };
 
-  const requestHeaders = await headers();
-  const ip = getClientIp(requestHeaders);
-  const userAgent = requestHeaders.get("user-agent")?.slice(0, 255);
-  const supplierContext = { ...(ip !== UNKNOWN_IP ? { customerIp: ip } : {}), ...(userAgent ? { userAgent } : {}) };
+  const supplierContext = supplierContextFrom(await headers());
 
   let snapshotId: string;
   try {
