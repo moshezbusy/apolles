@@ -44,7 +44,7 @@ describe("admin pages", () => {
   // it: /admin only redirects, and the 2fa pages have their own Sign out form (tested in
   // admin-2fa.test.tsx) because a half-signed-in admin must not see the admin menu.
   it("every admin page is under a console section with the header layout, apart from /admin and the 2fa pages", () => {
-    const sections = ["agencies/", "bookings/", "supplier-log/"];
+    const sections = ["agencies/", "bookings/", "supplier-log/", "demo/"];
     const outside = adminPages().filter((page) => !sections.some((section) => page.startsWith(section)));
     expect(outside.sort()).toEqual(["2fa/page.tsx", "2fa/setup/page.tsx", "page.tsx"]);
     expect(adminPages().filter((page) => page.startsWith("agencies/")).length).toBeGreaterThanOrEqual(4);

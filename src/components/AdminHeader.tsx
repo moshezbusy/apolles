@@ -8,6 +8,7 @@ const TABS = [
   { key: "agencies", label: "Agencies", href: "/admin/agencies" },
   { key: "bookings", label: "Bookings", href: "/admin/bookings" },
   { key: "supplier-log", label: "Supplier log", href: "/admin/supplier-log" },
+  { key: "demo", label: "Demo access", href: "/admin/demo" },
 ] as const;
 
 export function AdminHeader({ active = "agencies" }: { active?: (typeof TABS)[number]["key"] }) {

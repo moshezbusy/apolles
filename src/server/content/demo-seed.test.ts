@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import { getBalance } from "@/server/wallet/ledger";
-import { seedDemoAgent, seedDemoContent } from "./demo-seed";
+import { isValidPassword, verifyPassword } from "@/server/auth/password";
+import { resetDemoAgentPassword, seedDemoAgent, seedDemoContent } from "./demo-seed";
 
 describe("seedDemoContent (staging demo data)", () => {
   beforeEach(async () => {
@@ -43,5 +44,26 @@ describe("seedDemoAgent (staging demo login)", () => {
     expect(await getBalance("demo-agency")).toEqual({ balanceCents: 1_000_000, heldCents: 0 });
     await db.user.update({ where: { email: "demo-agent@apolles.test" }, data: { passwordHash: "set" } });
     expect((await seedDemoAgent("https://staging.example")).setPasswordLink).toBeNull();
+  });
+});
+
+describe("resetDemoAgentPassword (admin button, staging demo)", () => {
+  beforeEach(async () => {
+    await resetTestDb();
+    await db.user.create({ data: { id: "admin-1", email: "owner@test.local", name: "Owner", role: "ADMIN" } });
+  });
+
+  it("gives a fresh readable password that signs in, ends old sessions and is audited", async () => {
+    const { email, password } = await resetDemoAgentPassword("admin-1", "https://staging.example");
+    expect(email).toBe("demo-agent@apolles.test");
+    expect(password).toMatch(/^[A-HJ-NP-Za-km-z2-9]{4}-[A-HJ-NP-Za-km-z2-9]{4}-[A-HJ-NP-Za-km-z2-9]{4}$/);
+    expect(isValidPassword(password)).toBe(true);
+    const user = await db.user.findUniqueOrThrow({ where: { email } });
+    expect(await verifyPassword(user.passwordHash!, password)).toBe(true);
+    const second = await resetDemoAgentPassword("admin-1", "https://staging.example");
+    expect(second.password).not.toBe(password);
+    const audit = await db.auditLog.findMany({ where: { action: "demo.agent_password_reset" } });
+    expect(audit).toHaveLength(2);
+    expect(JSON.stringify(audit)).not.toContain(password);
   });
 });
