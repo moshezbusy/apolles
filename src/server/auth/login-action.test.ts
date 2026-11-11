@@ -63,11 +63,11 @@ describe("loginAction", () => {
     requestHeaders.set("x-forwarded-for", "203.0.113.7");
   });
 
-  it("agent success → sets a secure session cookie and redirects to /balance", async () => {
+  it("agent success → sets a secure session cookie and redirects to /search", async () => {
     const agent = await createAgent();
     await expect(
       loginAction(null, form({ email: "agent@example.com", password: GOOD })),
-    ).rejects.toThrow("NEXT_REDIRECT:/balance");
+    ).rejects.toThrow("NEXT_REDIRECT:/search");
 
     expect(setCalls).toHaveLength(1);
     const call = setCalls[0]!;
@@ -166,7 +166,7 @@ describe("loginAction", () => {
       await seedRateLimit("signin:ip:203.0.113.7", limit - 1, windowMs);
       await expect(
         loginAction(null, form({ email: "agent@example.com", password: GOOD })),
-      ).rejects.toThrow("NEXT_REDIRECT:/balance");
+      ).rejects.toThrow("NEXT_REDIRECT:/search");
     });
 
     it("the 11th is refused before the password is checked: failedLogins unchanged, no session", async () => {
@@ -206,7 +206,7 @@ describe("loginAction", () => {
       requestHeaders.set("x-forwarded-for", "198.51.100.20");
       await expect(
         loginAction(null, form({ email: "agent@example.com", password: GOOD })),
-      ).rejects.toThrow("NEXT_REDIRECT:/balance");
+      ).rejects.toThrow("NEXT_REDIRECT:/search");
     });
   });
 });

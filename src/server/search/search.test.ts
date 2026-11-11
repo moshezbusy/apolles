@@ -5,7 +5,7 @@ import { SupplierRateLimited } from "@/server/supplier/expedia/client";
 import type { AvailabilityQuery, Offer, PropertyOffers, SupplierAdapter } from "@/server/supplier/types";
 import { suggestDestinations } from "./destinations";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
-import { cleanupSnapshots, getHotelOffers, listResults, loadMore, startSearch } from "./search";
+import { cleanupSnapshots, getHotelOffers, listResults, loadMore, searchSummary, startSearch } from "./search";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 const input = { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [] as number[] };
@@ -183,6 +183,88 @@ describe("search service", () => {
     expect(searchAvailability).toHaveBeenCalledTimes(1);
   });
 
+  it("filters by room name and by free cancellation", async () => {
+    await hotels(3);
+    const { adapter } = fakeAdapter((q) =>
+      q.propertyIds.map((id) => ({
+        propertyId: id,
+        offers: [{ ...offer(id, 20_000, id === "2"), roomName: id === "1" ? "Ocean View King" : "Garden Double" }],
+      })),
+    );
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const ocean = await listResults("A", snapshotId, { sort: "recommended", roomName: "ocean view" }, NOW);
+    expect(ocean?.hotels.map((h) => h.propertyId)).toEqual(["1"]);
+    const free = await listResults("A", snapshotId, { sort: "recommended", freeCancellation: true }, NOW);
+    expect(free?.hotels.map((h) => h.propertyId)).toEqual(["2"]);
+  });
+
+  it("filters match one rate on every rate filter, and the card shows that rate's price", async () => {
+    await hotels(1);
+    const cheapLocked = { ...offer("1", 10_000, false), roomId: "a", rateId: "a", roomName: "Garden Double" };
+    const dearFree = { ...offer("1", 50_000, true), roomId: "b", rateId: "b", roomName: "Ocean Suite" };
+    const { adapter } = fakeAdapter(() => [{ propertyId: "1", offers: [cheapLocked, dearFree] }]);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+
+    const all = await listResults("A", snapshotId, { sort: "recommended" }, NOW);
+    expect(all?.hotels[0]).toMatchObject({ minTotal: { minor: 10_000 }, refundableAvailable: true });
+    // Free cancellation under USD 200: no single rate is both, so no hotel.
+    const none = await listResults("A", snapshotId, { sort: "recommended", freeCancellation: true, maxPriceMinor: 20_000 }, NOW);
+    expect(none?.hotels).toEqual([]);
+    expect(none?.total).toBe(0);
+    // Free cancellation only: the hotel shows the price of its free-cancellation rate.
+    const free = await listResults("A", snapshotId, { sort: "recommended", freeCancellation: true }, NOW);
+    expect(free?.hotels[0]?.minTotal.minor).toBe(50_000);
+    // A room name: that room's price.
+    const garden = await listResults("A", snapshotId, { sort: "recommended", roomName: "garden" }, NOW);
+    expect(garden?.hotels[0]).toMatchObject({ minTotal: { minor: 10_000 }, refundableAvailable: false });
+    // Sorting by price uses the matching price.
+    const ocean = await listResults("A", snapshotId, { sort: "price_asc", roomName: "ocean" }, NOW);
+    expect(ocean?.hotels[0]?.minTotal.minor).toBe(50_000);
+  });
+
+  it("marks a hotel whose shown rate has fees paid at the property", async () => {
+    await hotels(2);
+    const withFee = (id: string): Offer => {
+      const o = offer(id, 20_000);
+      return { ...o, price: { ...o.price, dueAtProperty: [{ kind: "resort_fee", amount: { minor: 1_000, currency: "USD" }, localAmount: null }] } };
+    };
+    const { adapter } = fakeAdapter((q) => q.propertyIds.map((id) => ({ propertyId: id, offers: [id === "1" ? withFee(id) : offer(id, 20_000)] })));
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const page = await listResults("A", snapshotId, { sort: "recommended" }, NOW);
+    expect(page?.hotels.map((h) => [h.propertyId, h.feesAtProperty])).toEqual([
+      ["1", true],
+      ["2", false],
+    ]);
+  });
+
+  it("a filter value with LIKE wildcards is matched literally", async () => {
+    await hotels(2);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    expect((await listResults("A", snapshotId, { sort: "recommended", name: "%" }, NOW))?.hotels).toEqual([]);
+    expect((await listResults("A", snapshotId, { sort: "recommended", roomName: "_" }, NOW))?.hotels).toEqual([]);
+  });
+
+  it("counts the matching hotels and summarises the search for the page header", async () => {
+    await hotels(3);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const page = await listResults("A", snapshotId, { sort: "recommended", take: 2 }, NOW);
+    expect(page?.total).toBe(3);
+    expect(await searchSummary("A", snapshotId, NOW)).toEqual({
+      destinationId: "paris",
+      destinationLabel: "Paris, France",
+      checkin: "2027-04-10",
+      checkout: "2027-04-12",
+      nights: 2,
+      adults: 2,
+      childAges: [],
+      expired: false,
+    });
+    expect(await searchSummary("B", snapshotId, NOW)).toBeNull();
+    expect((await searchSummary("A", snapshotId, new Date(NOW.getTime() + 31 * 60_000)))?.expired).toBe(true);
+  });
+
   it("pages the results with a cursor", async () => {
     await hotels(5);
     const { adapter } = fakeAdapter(everyone);
@@ -219,6 +301,28 @@ describe("search service", () => {
     const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
     const result = await getHotelOffers("A", snapshotId, "2", NOW, { content: async () => new Map() });
     expect(result?.offers[0]).toMatchObject({ propertyId: "2", price: { total: { minor: 10_002 } } });
+    expect(result?.hotel).toEqual({ name: "Hotel 2", city: "Paris", starRating: "4.5" });
+  });
+
+  it("the hotel page still opens when hotel content cannot be loaded", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const broken = async () => {
+      throw new Error("EXPEDIA_API_KEY is not set");
+    };
+    const result = await getHotelOffers("A", snapshotId, "1", NOW, { content: broken });
+    expect(result?.content).toBeNull();
+    expect(result?.offers).toHaveLength(1);
+  });
+
+  it("opening hotel pages is rate limited per agency (120 a minute)", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const none = async () => new Map();
+    for (let i = 0; i < 120; i++) await getHotelOffers("A", snapshotId, "1", NOW, { content: none });
+    await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none })).rejects.toBeInstanceOf(SearchRateLimited);
   });
 
   it("cleanup deletes searches that expired more than an hour ago", async () => {

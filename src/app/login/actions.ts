@@ -57,5 +57,5 @@ export async function loginAction(
   });
 
   // Admins continue to the admin area (TOTP step is added with admin TOTP).
-  redirect(result.needsTotp ? "/admin" : "/balance");
+  redirect(result.needsTotp ? "/admin" : "/search");
 }

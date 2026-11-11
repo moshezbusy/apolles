@@ -1,10 +1,10 @@
 import { z } from "zod";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { getContent } from "@/server/content/content-cache";
 import { db } from "@/server/db";
 import { hitRateLimit } from "@/server/rate-limit";
 import { SupplierError } from "@/server/supplier/expedia/client";
-import { ExpediaAdapter } from "@/server/supplier/expedia/adapter";
+import { supplierAdapter } from "@/server/supplier";
 import type { Image, Offer, PropertyContent, SupplierAdapter, SupplierContext } from "@/server/supplier/types";
 import type { Money } from "@/lib/supplier-money";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
@@ -24,6 +24,7 @@ const MAX_CANDIDATES = 5_000;
 const SNAPSHOT_TTL_MS = 30 * 60_000;
 const CLEANUP_AFTER_MS = 60 * 60_000;
 const SEARCH_RATE_LIMIT = { limit: 30, windowMs: 60_000 }; // per agency
+const HOTEL_RATE_LIMIT = { limit: 120, windowMs: 60_000 }; // hotel pages, per agency
 const DEFAULT_TAKE = 20;
 const MAX_TAKE = 50;
 const MAX_SNAPSHOTS_PER_AGENCY = 50; // older searches are removed, so one agency cannot fill the database
@@ -38,6 +39,7 @@ export type HotelCard = {
   starRating: string | null;
   minTotal: Money;
   refundableAvailable: boolean;
+  feesAtProperty: boolean; // the shown rate has something to pay at the hotel (BP4)
   heroImage: Image | null;
 };
 
@@ -47,6 +49,8 @@ export type ListOptions = {
   maxPriceMinor?: number;
   stars?: number[];
   name?: string;
+  roomName?: string;
+  freeCancellation?: boolean;
   cursor?: string;
   take?: number;
 };
@@ -168,7 +172,23 @@ async function fetchBatch(
     ];
   });
 
-  await db.searchHotel.createMany({ data: rows, skipDuplicates: true });
+  // One row per rate as well, so the results filters can match a single rate (see listResults).
+  const rates = rows.flatMap((row) =>
+    (byId.get(row.propertyId) ?? []).map((offer, rateIndex) => ({
+      snapshotId: snapshot.id,
+      propertyId: row.propertyId,
+      rateIndex,
+      roomName: offer.roomName.toLowerCase().slice(0, 300),
+      refundable: offer.refundable,
+      totalMinor: offer.price.total.minor,
+      currency: offer.price.total.currency,
+      feesAtProperty: offer.price.dueAtProperty.length > 0,
+    })),
+  );
+  await db.$transaction([
+    db.searchHotel.createMany({ data: rows, skipDuplicates: true }),
+    db.searchRate.createMany({ data: rates, skipDuplicates: true }),
+  ]);
   return batch.length;
 }
 
@@ -223,7 +243,7 @@ export async function startSearch(ctx: SearchContext, rawInput: unknown, deps: D
   });
   if (older.length > 0) await db.searchSnapshot.deleteMany({ where: { agencyId: ctx.agencyId, id: { in: older.map((o) => o.id) } } });
   if (candidates.length > 0) {
-    await fetchBatch({ ...snapshot, query }, ctx.supplierContext, deps.adapter ?? new ExpediaAdapter());
+    await fetchBatch({ ...snapshot, query }, ctx.supplierContext, deps.adapter ?? supplierAdapter());
     await prefetchContent(snapshot.id, deps.content ?? getContent, now);
   }
   return { snapshotId: snapshot.id };
@@ -241,51 +261,88 @@ export async function loadMore(ctx: SearchContext, snapshotId: string, deps: Dep
   const query = storedQuery.parse(snapshot.query);
   if (snapshot.nextIndex >= snapshot.candidateIds.length) return { added: 0, hasMore: false };
   await rateLimit(ctx.agencyId);
-  const added = await fetchBatch({ ...snapshot, query }, ctx.supplierContext, deps.adapter ?? new ExpediaAdapter());
+  const added = await fetchBatch({ ...snapshot, query }, ctx.supplierContext, deps.adapter ?? supplierAdapter());
   await prefetchContent(snapshot.id, deps.content ?? getContent, now);
   return { added, hasMore: snapshot.nextIndex + added < snapshot.candidateIds.length };
 }
 
-function orderBy(sort: ListOptions["sort"]): Prisma.SearchHotelOrderByWithRelationInput[] {
+function orderSql(sort: ListOptions["sort"]): Prisma.Sql {
   switch (sort) {
     case "price_asc":
-      return [{ minTotalMinor: "asc" }, { position: "asc" }];
+      return Prisma.sql`m."totalMinor" ASC, h."position" ASC`;
     case "price_desc":
-      return [{ minTotalMinor: "desc" }, { position: "asc" }];
+      return Prisma.sql`m."totalMinor" DESC, h."position" ASC`;
     case "stars_desc":
-      return [{ starRating: { sort: "desc", nulls: "last" } }, { position: "asc" }];
+      return Prisma.sql`h."starRating" DESC NULLS LAST, h."position" ASC`;
     default:
-      return [{ position: "asc" }];
+      return Prisma.sql`h."position" ASC`;
   }
 }
+
+// A LIKE pattern that matches the text anywhere, with its own wildcards taken literally.
+function containsPattern(text: string): string {
+  return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+type ResultRow = {
+  propertyId: string;
+  name: string;
+  city: string;
+  starRating: string | null;
+  totalMinor: number;
+  currency: string;
+  feesAtProperty: boolean;
+  anyRefundable: boolean;
+};
 
 export async function listResults(
   agencyId: string,
   snapshotId: string,
   opts: ListOptions,
   now: Date = new Date(),
-): Promise<{ hotels: HotelCard[]; nextCursor: string | null; hasMoreFromSupplier: boolean; expired: boolean } | null> {
+): Promise<{ hotels: HotelCard[]; total: number; nextCursor: string | null; hasMoreFromSupplier: boolean; expired: boolean } | null> {
   const snapshot = await ownSnapshot(agencyId, snapshotId);
   if (!snapshot) return null;
-  if (snapshot.expiresAt <= now) return { hotels: [], nextCursor: null, hasMoreFromSupplier: false, expired: true };
+  if (snapshot.expiresAt <= now) return { hotels: [], total: 0, nextCursor: null, hasMoreFromSupplier: false, expired: true };
 
   const take = Math.min(Math.max(1, Math.trunc(opts.take ?? DEFAULT_TAKE)), MAX_TAKE);
   const skip = opts.cursor && /^\d{1,6}$/.test(opts.cursor) ? Number(opts.cursor) : 0;
-  const where: Prisma.SearchHotelWhereInput = { snapshotId: snapshot.id };
-  if (opts.minPriceMinor !== undefined || opts.maxPriceMinor !== undefined) {
-    where.minTotalMinor = {
-      ...(opts.minPriceMinor !== undefined ? { gte: opts.minPriceMinor } : {}),
-      ...(opts.maxPriceMinor !== undefined ? { lte: opts.maxPriceMinor } : {}),
-    };
-  }
-  if (opts.stars && opts.stars.length > 0) {
+  // Rate filters (room name, free cancellation, price) must all hold for one rate; the hotel
+  // then shows its cheapest such rate. Hotel filters (name, stars) apply to the hotel.
+  const rateWhere: Prisma.Sql[] = [Prisma.sql`r."snapshotId" = ${snapshot.id}`];
+  const roomName = opts.roomName?.trim().slice(0, 100).toLowerCase();
+  if (roomName) rateWhere.push(Prisma.sql`r."roomName" LIKE ${containsPattern(roomName)} ESCAPE '\\'`);
+  if (opts.freeCancellation) rateWhere.push(Prisma.sql`r."refundable"`);
+  if (opts.minPriceMinor !== undefined) rateWhere.push(Prisma.sql`r."totalMinor" >= ${Math.trunc(opts.minPriceMinor)}`);
+  if (opts.maxPriceMinor !== undefined) rateWhere.push(Prisma.sql`r."totalMinor" <= ${Math.trunc(opts.maxPriceMinor)}`);
+  const hotelWhere: Prisma.Sql[] = [Prisma.sql`m."rn" = 1`];
+  const name = opts.name?.trim().slice(0, 100);
+  if (name) hotelWhere.push(Prisma.sql`h."name" ILIKE ${containsPattern(name)} ESCAPE '\\'`);
+  const stars = (opts.stars ?? []).filter((s) => Number.isInteger(s) && s >= 0 && s <= 5);
+  if (stars.length > 0) {
     // Whole-star match: a 4.5 hotel counts as 4. A hotel with no rating matches no star filter.
-    where.OR = opts.stars.filter((s) => Number.isInteger(s) && s >= 0 && s <= 5).map((s) => ({ starRating: { gte: s, lt: s + 1 } }));
+    hotelWhere.push(Prisma.sql`(${Prisma.join(stars.map((s) => Prisma.sql`(h."starRating" >= ${s} AND h."starRating" < ${s + 1})`), " OR ")})`);
   }
-  const name = opts.name?.trim();
-  if (name) where.name = { contains: name.slice(0, 100), mode: "insensitive" };
-
-  const rows = await db.searchHotel.findMany({ where, orderBy: orderBy(opts.sort), skip, take: take + 1 });
+  const matched = Prisma.sql`
+    WITH m AS (
+      SELECT r."propertyId", r."totalMinor", r."currency", r."feesAtProperty",
+             bool_or(r."refundable") OVER (PARTITION BY r."propertyId") AS "anyRefundable",
+             row_number() OVER (PARTITION BY r."propertyId" ORDER BY r."totalMinor" ASC, r."rateIndex" ASC) AS "rn"
+      FROM "SearchRate" r
+      WHERE ${Prisma.join(rateWhere, " AND ")}
+    )`;
+  const from = Prisma.sql`FROM m JOIN "SearchHotel" h ON h."snapshotId" = ${snapshot.id} AND h."propertyId" = m."propertyId"
+    WHERE ${Prisma.join(hotelWhere, " AND ")}`;
+  const [rows, counted] = await Promise.all([
+    db.$queryRaw<ResultRow[]>`${matched}
+      SELECT h."propertyId", h."name", h."city", h."starRating"::text AS "starRating",
+             m."totalMinor", m."currency", m."feesAtProperty", m."anyRefundable"
+      ${from}
+      ORDER BY ${orderSql(opts.sort)}
+      OFFSET ${skip} LIMIT ${take + 1}`,
+    db.$queryRaw<{ count: bigint }[]>`${matched} SELECT count(*) AS "count" ${from}`,
+  ]);
+  const total = Number(counted[0]?.count ?? 0);
   const page = rows.slice(0, take);
 
   // Images from the content cache only: listing results never calls Expedia.
@@ -307,13 +364,46 @@ export async function listResults(
       name: row.name,
       city: row.city,
       starRating: row.starRating?.toString() ?? null,
-      minTotal: { minor: row.minTotalMinor, currency: row.currency },
-      refundableAvailable: row.refundableAvailable,
+      minTotal: { minor: row.totalMinor, currency: row.currency },
+      refundableAvailable: row.anyRefundable,
+      feesAtProperty: row.feesAtProperty,
       heroImage: heroById.get(row.propertyId) ?? null,
     })),
+    total,
     nextCursor: rows.length > take ? String(skip + take) : null,
     hasMoreFromSupplier: snapshot.nextIndex < snapshot.candidateIds.length,
     expired: false,
+  };
+}
+
+// What the results and hotel pages show above the list: the search as the agent entered it.
+export type SearchSummary = {
+  destinationId: string;
+  destinationLabel: string;
+  checkin: string;
+  checkout: string;
+  nights: number;
+  adults: number;
+  childAges: number[];
+  expired: boolean;
+};
+
+export async function searchSummary(agencyId: string, snapshotId: string, now: Date = new Date()): Promise<SearchSummary | null> {
+  const snapshot = await ownSnapshot(agencyId, snapshotId);
+  if (!snapshot) return null;
+  const parsed = storedQuery.safeParse(snapshot.query);
+  if (!parsed.success) return null;
+  const q = parsed.data;
+  const destination = await db.destination.findUnique({ where: { id: q.destinationId }, select: { nameFull: true } });
+  return {
+    destinationId: q.destinationId,
+    destinationLabel: destination?.nameFull ?? "",
+    checkin: q.checkin,
+    checkout: q.checkout,
+    nights: Math.round((Date.parse(`${q.checkout}T00:00:00Z`) - Date.parse(`${q.checkin}T00:00:00Z`)) / 86_400_000),
+    adults: q.adults,
+    childAges: q.childAges,
+    expired: snapshot.expiresAt <= now,
   };
 }
 
@@ -323,7 +413,9 @@ export async function getHotelOffers(
   propertyId: string,
   now: Date = new Date(),
   deps: { content?: typeof getContent } = {},
-): Promise<{ offers: Offer[]; content: PropertyContent | null } | null> {
+): Promise<{ offers: Offer[]; content: PropertyContent | null; hotel: { name: string; city: string; starRating: string | null } } | null> {
+  const { allowed } = await hitRateLimit(`hotel:agency:${agencyId}`, HOTEL_RATE_LIMIT.limit, HOTEL_RATE_LIMIT.windowMs);
+  if (!allowed) throw new SearchRateLimited("Too many hotel pages opened. Wait a minute and try again.");
   const snapshot = await ownSnapshot(agencyId, snapshotId);
   if (!snapshot || snapshot.expiresAt <= now) return null;
   if (typeof propertyId !== "string" || propertyId.length > 64) return null;
@@ -331,8 +423,18 @@ export async function getHotelOffers(
   if (!hotel) return null;
   const offers = storedOffers.safeParse(hotel.offers);
   if (!offers.success) return null;
-  const contents = await (deps.content ?? getContent)([propertyId], now);
-  return { offers: offers.data, content: contents.get(propertyId) ?? null };
+  // Content (photos, policies) is best effort: without it the page still shows the rates.
+  let content: PropertyContent | null = null;
+  try {
+    content = (await (deps.content ?? getContent)([propertyId], now)).get(propertyId) ?? null;
+  } catch (error) {
+    console.error(`hotel content failed: ${error instanceof Error ? error.name : "Error"}`);
+  }
+  return {
+    offers: offers.data,
+    content,
+    hotel: { name: hotel.name, city: hotel.city, starRating: hotel.starRating?.toString() ?? null },
+  };
 }
 
 // Deletes searches whose expiry passed more than an hour ago (their hotels go with them).
