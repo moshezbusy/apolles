@@ -48,13 +48,33 @@ export type ExpediaRequest = {
 const FALLBACK_USER_AGENT = "Apolles/1.0";
 
 function buildUrl(baseUrl: string, path: string, query: ExpediaRequest["query"]): string {
+  // A path may already carry a query (a "next page" link from Expedia, kept exactly as given).
+  const [pathOnly = "", given = ""] = path.split("?", 2);
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query ?? {})) {
     if (value === undefined) continue;
     for (const item of Array.isArray(value) ? value : [value]) params.append(key, String(item));
   }
-  const search = params.toString();
-  return `${baseUrl}${path}${search ? `?${search}` : ""}`;
+  const search = [given, params.toString()].filter(Boolean).join("&");
+  return `${baseUrl}${pathOnly}${search ? `?${search}` : ""}`;
+}
+
+// The next page from a Rapid Link header (RFC 5988): `<https://…/v3/regions?token=…>; rel="next"`.
+// Returned as a path and query relative to the base URL, to be requested exactly as given. A link
+// to another host or outside the API path is refused: the signed request must stay with Expedia.
+export function nextFromLink(header: string | null, baseUrl: string): string | null {
+  if (!header) return null;
+  for (const part of header.split(",")) {
+    const match = part.match(/<([^>]+)>\s*;(.*)$/);
+    if (!match || !/rel="?next"?/.test(match[2] ?? "")) continue;
+    const base = new URL(baseUrl);
+    const target = new URL(match[1] ?? "", base);
+    if (target.origin !== base.origin || !target.pathname.startsWith(`${base.pathname}/`)) {
+      throw new SupplierError("Expedia next-page link points outside the API");
+    }
+    return `${target.pathname.slice(base.pathname.length)}${target.search}`;
+  }
+  return null;
 }
 
 async function readBody(response: Response): Promise<unknown> {
@@ -117,7 +137,7 @@ export async function recordUnknownFields(logId: string | null, names: string[])
 
 export async function expediaRequest(
   request: ExpediaRequest,
-): Promise<{ status: number; data: unknown; logId: string | null }> {
+): Promise<{ status: number; data: unknown; logId: string | null; next: string | null }> {
   const config = readExpediaConfig();
   const { method, path, context } = request;
   const changesState = method !== "GET";
@@ -147,6 +167,7 @@ export async function expediaRequest(
     const elapsed = () => Math.round(performance.now() - started);
     let status: number;
     let data: unknown;
+    let link: string | null = null;
     try {
       const response = await fetch(url, {
         method,
@@ -155,6 +176,7 @@ export async function expediaRequest(
         signal: AbortSignal.timeout(request.timeoutMs),
       });
       status = response.status;
+      link = response.headers.get("link");
       data = await readBody(response); // the timeout covers the body too
     } catch (error) {
       const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
@@ -185,7 +207,7 @@ export async function expediaRequest(
       responseBody: data,
     });
 
-    if (status >= 200 && status < 300) return { status, data, logId };
+    if (status >= 200 && status < 300) return { status, data, logId, next: nextFromLink(link, config.baseUrl) };
     if (status === 401 || status === 403) throw new SupplierAuthError(`Expedia refused the credentials (HTTP ${status})`, status);
     if (status === 429) throw new SupplierRateLimited("Expedia rate limit reached (HTTP 429)", status);
     if (status >= 500) {

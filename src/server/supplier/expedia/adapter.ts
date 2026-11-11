@@ -16,6 +16,7 @@ import type {
   SupplierContext,
 } from "@/server/supplier/types";
 import { SupplierError, expediaRequest, recordUnknownFields } from "./client";
+import { type ObjectFactory, ParseNotes, check } from "./parse";
 
 // Expedia Rapid v3 → the supplier-neutral model (src/server/supplier/types.ts).
 // Built from the official OpenAPI spec (docs/research/expedia-api/rapid-3-specs.yaml).
@@ -39,9 +40,7 @@ const CURRENCY = "USD";
 const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/; // property, room and rate ids and tokens in a path or query
 
 // ---------- schemas ----------
-// Built twice from one definition: with z.object (unknown keys dropped) for the data, and with
-// z.strictObject only to list the unknown keys for the log.
-type ObjectFactory = typeof z.object;
+// Built twice from one definition (see parse.ts).
 
 function schemas(object: ObjectFactory) {
   const unused = z.unknown().optional(); // a field Expedia documents but we do not use
@@ -148,37 +147,6 @@ const strict = schemas(z.strictObject as unknown as ObjectFactory);
 
 type Pricing = z.infer<typeof lenient.pricing>;
 type Rate = z.infer<typeof lenient.rate>;
-
-// Notes for the supplier log: names of unknown fields, and "invalid:<path>" for dropped items.
-class ParseNotes {
-  readonly names: string[] = [];
-  invalid(path: string): void {
-    this.names.push(`invalid:${path}`);
-  }
-}
-
-function formatPath(path: readonly PropertyKey[]): string {
-  return path.map((part) => (typeof part === "number" ? `[${part}]` : `.${String(part)}`)).join("").replace(/^\./, "");
-}
-
-// Checks one item. Returns null (and notes it) when it does not fit; records unknown keys.
-function check<T>(lenientSchema: z.ZodType<T>, strictSchema: z.ZodType<unknown>, data: unknown, at: string, notes: ParseNotes): T | null {
-  const result = lenientSchema.safeParse(data);
-  if (!result.success) {
-    const first = result.error.issues[0];
-    notes.invalid(`${at}${first ? `.${formatPath(first.path)}` : ""}`.replace(/^\./, ""));
-    return null;
-  }
-  const probe = strictSchema.safeParse(data);
-  if (!probe.success) {
-    for (const issue of probe.error.issues) {
-      if (issue.code !== "unrecognized_keys") continue;
-      const base = [at, formatPath(issue.path)].filter(Boolean).join(".");
-      for (const key of issue.keys) notes.names.push(base ? `${base}.${key}` : key);
-    }
-  }
-  return result.data;
-}
 
 // ---------- mapping ----------
 export function occupancyKey(occupancy: Occupancy): string {

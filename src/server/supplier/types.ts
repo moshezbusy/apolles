@@ -72,3 +72,52 @@ export interface SupplierAdapter {
     context: SupplierContext,
   ): Promise<PriceCheckResult>;
 }
+
+// ---------- content (plan 2b) ----------
+// Destinations, the hotel catalog and per-hotel content. Supplier text (descriptions, policies,
+// fees) is kept exactly as given and may contain HTML: it must be rendered safely (plan 2c).
+
+export type RegionInfo = {
+  id: string;
+  name: string;
+  nameFull: string;
+  type: "city" | "multi_city_vicinity";
+  countryCode: string;
+  propertyIds: string[];
+};
+
+export type Image = { url: string; caption: string | null }; // url is always https
+
+export type RoomContent = { id: string; name: string; images: Image[]; amenities: string[]; maxOccupancy: number | null };
+
+export type PropertyContent = {
+  propertyId: string;
+  name: string;
+  address: { line1: string; city: string; stateProvince: string | null; postalCode: string | null; countryCode: string };
+  starRating: string | null; // as given, e.g. "4.5"
+  coordinates: { lat: string; lng: string } | null; // decimal strings, never floats in arithmetic
+  heroImage: Image | null;
+  images: Image[];
+  amenities: string[];
+  checkin: {
+    beginTime: string | null;
+    endTime: string | null;
+    instructions: string | null;
+    specialInstructions: string | null;
+    minAge: number | null;
+  };
+  checkout: { time: string | null };
+  fees: { mandatory: string | null; optional: string | null };
+  knowBeforeYouGo: string | null;
+  description: string | null;
+  onsiteCurrency: string | null;
+  rooms: RoomContent[];
+};
+
+// `next` is an opaque "next page" path from the supplier, followed exactly as given.
+export interface ContentSource {
+  listRegions(q: { countryCode: string; next?: string }): Promise<{ regions: RegionInfo[]; next: string | null }>;
+  catalogLink(): Promise<{ href: string }>;
+  propertyContent(ids: string[]): Promise<PropertyContent[]>;
+  inactiveSince(q: { since: string; next?: string }): Promise<{ propertyIds: string[]; next: string | null }>;
+}
