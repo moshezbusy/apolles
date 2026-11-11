@@ -1,4 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
+import { removeNul } from "@/lib/strip-nul";
 import { db } from "@/server/db";
 import { forLog, maskQuery } from "@/server/supplier/mask";
 import { TEST_BASE_URL, readExpediaConfig } from "./config";
@@ -93,7 +94,7 @@ async function readBody(response: Response): Promise<unknown> {
   if (!text) return undefined;
   try {
     // NUL is removed from supplier text here, once, so no later write to Postgres fails on it.
-    return JSON.parse(text, (_key, value: unknown) => (typeof value === "string" ? value.replaceAll("\u0000", "") : value));
+    return JSON.parse(text, (_key, value: unknown) => (typeof value === "string" ? removeNul(value) : value));
   } catch {
     return { nonJsonBody: true, bytes: text.length };
   }

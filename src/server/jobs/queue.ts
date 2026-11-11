@@ -20,12 +20,14 @@ export async function enqueue(
   const runAt = opts.runAt ?? new Date();
   if (opts.dedupeKey) {
     // DO NOTHING (no row rewrite when it exists), then read the existing row's id.
+    const payloadJson = JSON.stringify(payload);
     const inserted = await db.$queryRaw<{ id: string }[]>`
       INSERT INTO "Job" ("id", "kind", "payload", "status", "attempts", "runAt", "dedupeKey", "createdAt")
-      VALUES (gen_random_uuid()::text, ${kind}, ${JSON.stringify(payload)}::jsonb, 'QUEUED', 0, ${runAt}, ${opts.dedupeKey}, now())
+      VALUES (gen_random_uuid()::text, ${kind}, ${payloadJson}::jsonb, 'QUEUED', 0, ${runAt}, ${opts.dedupeKey}, now())
       ON CONFLICT ("dedupeKey") DO NOTHING
       RETURNING "id"`;
-    if (inserted[0]) return { id: inserted[0].id, created: true };
+    const [row] = inserted;
+    if (row) return { id: row.id, created: true };
     const existing = await db.job.findUniqueOrThrow({ where: { dedupeKey: opts.dedupeKey }, select: { id: true } });
     return { id: existing.id, created: false };
   }

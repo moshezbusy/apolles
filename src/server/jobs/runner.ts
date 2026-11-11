@@ -1,8 +1,15 @@
-import type { JobKind } from "./kinds";
+import { JOB_KINDS, type JobKind } from "./kinds";
 import { claimNext, completeJob, failJob, heartbeat } from "./queue";
 
 export type JobHandler = (payload: unknown) => Promise<void>;
 export type Handlers = Partial<Record<JobKind, JobHandler>>;
+
+// Only a known kind's own handler runs; a kind read from the database is never used to pick
+// an arbitrary property of the handlers object.
+function handlerFor(handlers: Handlers, kind: string): JobHandler | undefined {
+  const known = JOB_KINDS.find((k) => k === kind);
+  return known && Object.hasOwn(handlers, known) ? new Map(Object.entries(handlers)).get(known) : undefined;
+}
 
 const HEARTBEAT_MS = 5 * 60_000;
 
@@ -22,7 +29,7 @@ export async function runPending(
     const job = await claimNext(now());
     if (!job) break;
     ran++;
-    const handler = handlers[job.kind as JobKind];
+    const handler = handlerFor(handlers, job.kind);
     const beat = setInterval(() => {
       heartbeat(job.id, clock()).catch(() => console.error("job heartbeat failed"));
     }, opts.heartbeatMs ?? HEARTBEAT_MS);

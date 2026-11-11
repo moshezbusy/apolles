@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { removeNul } from "@/lib/strip-nul";
 import { db } from "@/server/db";
 import { ExpediaContentSource } from "@/server/supplier/expedia/content";
 import type { ContentSource } from "@/server/supplier/types";
@@ -22,7 +23,7 @@ const MAX_INVALID_SHARE = 0.1; // refuse a file where more than 10% of lines are
 const INVALID_ALLOWANCE = 100; // …once there are more than 100 of them
 
 // Postgres text cannot hold NUL; one such character must not fail a batch of 1,000 hotels.
-const text = (max: number) => z.string().transform((v) => v.replaceAll("\u0000", "")).pipe(z.string().max(max));
+const text = (max: number) => z.string().transform((v) => removeNul(v)).pipe(z.string().max(max));
 
 // The catalog line is a subset of the property content schema; only the fields we store are read.
 const catalogLine = z.object({
