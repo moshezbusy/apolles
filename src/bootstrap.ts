@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { MockSupplierAdapter, type MockHotel } from './adapters/mock/mock-adapter.js';
 import { OtaAdapter } from './adapters/ota/ota-adapter.js';
+import { TboAdapter } from './adapters/tbo/tbo-adapter.js';
 import type { OtaVendorProfile } from './adapters/ota/profile.js';
 import { OTA_PROFILES } from './adapters/profiles.js';
 import { JsonlFileAuditSink, type AuditSink } from './audit/audit.js';
@@ -34,6 +35,21 @@ export type SupplierConfig =
       searchTimeoutMs?: number;
       /** Facts learned in certification, applied on top of the profile. */
       profileOverrides?: DeepPartial<OtaVendorProfile>;
+    }
+  | {
+      id: string;
+      type: 'tbo';
+      enabled: boolean;
+      environment: 'test' | 'production';
+      /** Not secret: test https://api.tbotechnology.in/TBOHolidays_HotelAPI */
+      baseUrl: string;
+      /** Set true only after TBO signs off certification. */
+      certified: boolean;
+      /** Env var NAMES for Basic auth. Omit when a network proxy injects the credential. */
+      secrets?: { username: string; password: string };
+      agencyEmail: string;
+      agencyPhone: string;
+      searchTimeoutMs?: number;
     };
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
@@ -64,6 +80,17 @@ export async function createSupplierService(opts: BootstrapOptions): Promise<Sup
       continue;
     }
     if (!s.enabled) continue; // don't require credentials for suppliers that are off
+    if (s.type === 'tbo') {
+      const transport = new HttpTransport({ supplierId: s.id, audit, rateLimitPerSecond: 5, maxAttempts: 2 });
+      registry.register(
+        new TboAdapter({
+          id: s.id, baseUrl: s.baseUrl, environment: s.environment, certified: s.certified, transport,
+          secretNames: s.secrets, secrets, agencyEmail: s.agencyEmail, agencyPhone: s.agencyPhone,
+        }),
+        { enabled: true, searchTimeoutMs: s.searchTimeoutMs ?? 25_000 },
+      );
+      continue;
+    }
     const base = OTA_PROFILES[s.profile];
     if (!base) throw new Error(`Supplier ${s.id}: unknown profile "${s.profile}"`);
     const profile = mergeProfile(base, s.profileOverrides);

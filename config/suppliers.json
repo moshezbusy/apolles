@@ -11,9 +11,30 @@
       "type": "mock",
       "enabled": true,
       "hotels": [
-        { "code": "MOCK-CUN-1", "name": "Demo Resort Cancun", "nightly": "250.00", "currency": "USD" },
-        { "code": "MOCK-PUJ-1", "name": "Demo Resort Punta Cana", "nightly": "180.00", "currency": "USD" }
+        {
+          "code": "MOCK-CUN-1",
+          "name": "Demo Resort Cancun",
+          "nightly": "250.00",
+          "currency": "USD"
+        },
+        {
+          "code": "MOCK-PUJ-1",
+          "name": "Demo Resort Punta Cana",
+          "nightly": "180.00",
+          "currency": "USD"
+        }
       ]
+    },
+    {
+      "id": "tbo",
+      "type": "tbo",
+      "enabled": false,
+      "environment": "test",
+      "baseUrl": "https://api.tbotechnology.in/TBOHolidays_HotelAPI",
+      "certified": false,
+      "agencyEmail": "bookings@example.com",
+      "agencyPhone": "972000000000",
+      "searchTimeoutMs": 25000
     },
     {
       "id": "omnibees",
@@ -22,7 +43,10 @@
       "enabled": false,
       "environment": "test",
       "baseUrlEnv": "OMNIBEES_BASE_URL",
-      "secrets": { "username": "OMNIBEES_USERNAME", "password": "OMNIBEES_PASSWORD" },
+      "secrets": {
+        "username": "OMNIBEES_USERNAME",
+        "password": "OMNIBEES_PASSWORD"
+      },
       "searchTimeoutMs": 8000,
       "profileOverrides": {}
     },
@@ -33,7 +57,10 @@
       "enabled": false,
       "environment": "test",
       "baseUrlEnv": "DINGUS_BASE_URL",
-      "secrets": { "username": "DINGUS_USERNAME", "password": "DINGUS_PASSWORD" },
+      "secrets": {
+        "username": "DINGUS_USERNAME",
+        "password": "DINGUS_PASSWORD"
+      },
       "searchTimeoutMs": 8000,
       "profileOverrides": {}
     }

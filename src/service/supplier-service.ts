@@ -272,6 +272,11 @@ export class SupplierService {
   async reconcileOne(record: BookingRecord, requestId: string = randomUUID()): Promise<BookingRecord> {
     if (record.status !== 'UNKNOWN') return record;
     const s = this.registry.require(record.supplierId);
+    const waitMs = s.adapter.capabilities.reconcileAfterMs ?? 0;
+    if (waitMs > 0) {
+      const since = [...record.history].reverse().find((h) => h.status === 'UNKNOWN')?.at ?? record.updatedAt;
+      if (this.opts.now().getTime() - Date.parse(since) < waitMs) return record; // too early; the scheduler retries
+    }
     if (!s.adapter.capabilities.lookupByClientReference && !record.supplierBookingRef) {
       this.transition(record, 'NEEDS_REVIEW', 'Supplier cannot look up by our reference; check manually');
       await this.bookings.update(record);

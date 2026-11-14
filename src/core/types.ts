@@ -119,6 +119,8 @@ export interface Guest {
   lastName: string;
   type: 'ADULT' | 'CHILD';
   age?: number;
+  /** Some suppliers (TBO) require it. */
+  title?: 'Mr' | 'Mrs' | 'Ms';
 }
 
 export interface Holder {

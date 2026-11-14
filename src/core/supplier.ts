@@ -49,6 +49,11 @@ export interface SupplierCapabilities {
   /** Supplier can find a booking by OUR reference (key for safe reconciliation). */
   lookupByClientReference: boolean;
   cancel: boolean;
+  /**
+   * Wait this long after an unknown booking outcome before asking the
+   * supplier (TBO requires 120 s). Earlier lookups can return a false "not found".
+   */
+  reconcileAfterMs?: number;
 }
 
 export interface CallContext {

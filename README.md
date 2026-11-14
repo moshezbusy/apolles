@@ -65,6 +65,25 @@ Types: `src/core/types.ts`. Money is always `{ minor, currency }` (integer cents
   marked `verified` after certification on the supplier's test environment.
 - The mock supplier refuses to start when `NODE_ENV=production`.
 
+## Suppliers
+
+| Supplier | Adapter | Status |
+|---|---|---|
+| TBO Holidays (bed bank, JSON) | `src/adapters/tbo` | built from spec V2.1; staging credentials currently rejected (401) |
+| Omnibees (OTA 2014B, SOAP) | `src/adapters/ota` + profile | profile not verified yet |
+| Dingus | `src/adapters/ota` + profile | profile not verified yet |
+| Mock | `src/adapters/mock` | dev/test only |
+
+Live TBO staging check (logs go to `audit-logs/`, usable as certification logs):
+
+```bash
+npm run build
+TBO_USERNAME=... TBO_PASSWORD=... node dist/tools/tbo-smoke.js            # search + prebook
+TBO_USERNAME=... TBO_PASSWORD=... node dist/tools/tbo-smoke.js --book     # + fake booking, detail, cancel
+```
+
+Behind an HTTPS proxy add `NODE_USE_ENV_PROXY=1`.
+
 ## Adding a supplier
 
 See [docs/adding-a-supplier.md](docs/adding-a-supplier.md).
