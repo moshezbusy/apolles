@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>
+<OTA_HotelAvailRS xmlns="http://www.opentravel.org/OTA/2003/05" Version="1.0">
+  <Success/>
+  <RoomStays>
+    <RoomStay>
+      <RoomTypes>
+        <RoomType RoomTypeCode="JSOV"><RoomDescription Name="Junior Suite Ocean View"/></RoomType>
+      </RoomTypes>
+      <RatePlans>
+        <RatePlan RatePlanCode="AI-FLEX" RatePlanName="All Inclusive Flexible">
+          <MealsIncluded MealPlanCodes="1"/>
+          <CancelPenalties>
+            <CancelPenalty>
+              <Deadline OffsetTimeUnit="Day" OffsetUnitMultiplier="3" OffsetDropTime="BeforeArrival"/>
+              <AmountPercent NmbrOfNights="1"/>
+              <PenaltyDescription><Text>Free cancellation until 3 days before arrival</Text></PenaltyDescription>
+            </CancelPenalty>
+          </CancelPenalties>
+        </RatePlan>
+        <RatePlan RatePlanCode="AI-NR" RatePlanName="All Inclusive Non Refundable">
+          <MealsIncluded MealPlanCodes="1"/>
+          <CancelPenalties><CancelPenalty NonRefundable="true"/></CancelPenalties>
+        </RatePlan>
+      </RatePlans>
+      <RoomRates>
+        <RoomRate RoomTypeCode="JSOV" RatePlanCode="AI-FLEX"><Rates><Rate><Total AmountAfterTax="2000.00" CurrencyCode="USD"/></Rate></Rates><Total AmountAfterTax="2000.00" CurrencyCode="USD"/></RoomRate>
+        <RoomRate RoomTypeCode="JSOV" RatePlanCode="AI-NR"><Total AmountAfterTax="170000" DecimalPlaces="2" CurrencyCode="USD"/></RoomRate>
+      </RoomRates>
+      <BasicPropertyInfo HotelCode="PLAYA-123"/>
+    </RoomStay>
+  </RoomStays>
+</OTA_HotelAvailRS>
+</soap:Body></soap:Envelope>

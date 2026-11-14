@@ -1,0 +1,41 @@
+{
+  "service": {
+    "maxPriceIncreasePercent": 0,
+    "offerTtlMs": 1200000,
+    "quoteTtlMs": 600000,
+    "maxReconcileAttempts": 10
+  },
+  "suppliers": [
+    {
+      "id": "mock",
+      "type": "mock",
+      "enabled": true,
+      "hotels": [
+        { "code": "MOCK-CUN-1", "name": "Demo Resort Cancun", "nightly": "250.00", "currency": "USD" },
+        { "code": "MOCK-PUJ-1", "name": "Demo Resort Punta Cana", "nightly": "180.00", "currency": "USD" }
+      ]
+    },
+    {
+      "id": "omnibees",
+      "type": "ota",
+      "profile": "omnibees",
+      "enabled": false,
+      "environment": "test",
+      "baseUrlEnv": "OMNIBEES_BASE_URL",
+      "secrets": { "username": "OMNIBEES_USERNAME", "password": "OMNIBEES_PASSWORD" },
+      "searchTimeoutMs": 8000,
+      "profileOverrides": {}
+    },
+    {
+      "id": "dingus",
+      "type": "ota",
+      "profile": "dingus",
+      "enabled": false,
+      "environment": "test",
+      "baseUrlEnv": "DINGUS_BASE_URL",
+      "secrets": { "username": "DINGUS_USERNAME", "password": "DINGUS_PASSWORD" },
+      "searchTimeoutMs": 8000,
+      "profileOverrides": {}
+    }
+  ]
+}

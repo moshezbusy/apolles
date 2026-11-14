@@ -1,0 +1,22 @@
+{
+  "name": "apolles-suppliers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Apolles supplier layer: one internal model, one adapter per hotel supplier (Omnibees, Dingus, other OTA/XML connectivity providers).",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "node dist/server/main.js"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^5.1.0"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "supplierId": "mock",
+  "hotels": {
+    "APL-CUN-0001": "MOCK-CUN-1",
+    "APL-PUJ-0001": "MOCK-PUJ-1"
+  },
+  "boards": { "RO": "RO", "AI": "AI" }
+}

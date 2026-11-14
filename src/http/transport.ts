@@ -1,0 +1,191 @@
+import { SupplierError } from '../core/errors.js';
+import type { CallContext } from '../core/supplier.js';
+import type { AuditSink } from '../audit/audit.js';
+import { NullAuditSink } from '../audit/audit.js';
+import { redactHeaders, redactText } from '../security/redact.js';
+import { TokenBucket } from './rate-limit.js';
+
+export interface HttpRequest {
+  /** Logical operation for the audit log: search, checkRate, book, ... */
+  operation: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  url: string;
+  headers?: Record<string, string>;
+  body?: string;
+  timeoutMs: number;
+  /**
+   * True for calls that are safe to repeat (search, read). Book and cancel
+   * are NOT: a timeout there becomes OUTCOME_UNKNOWN and is never retried.
+   */
+  idempotent: boolean;
+}
+
+export interface HttpResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+  durationMs: number;
+}
+
+export interface TransportOptions {
+  supplierId: string;
+  audit?: AuditSink;
+  /** Max attempts for idempotent calls (1 = no retry). */
+  maxAttempts?: number;
+  baseDelayMs?: number;
+  /** Requests per second allowed by the supplier contract. */
+  rateLimitPerSecond?: number;
+  fetchImpl?: typeof fetch;
+  /** Responses bigger than this are refused (protects memory). */
+  maxResponseBytes?: number;
+}
+
+export class HttpTransport {
+  private readonly supplierId: string;
+  private readonly audit: AuditSink;
+  private readonly maxAttempts: number;
+  private readonly baseDelayMs: number;
+  private readonly limiter?: TokenBucket;
+  private readonly fetchImpl: typeof fetch;
+  private readonly maxResponseBytes: number;
+
+  constructor(opts: TransportOptions) {
+    this.supplierId = opts.supplierId;
+    this.audit = opts.audit ?? new NullAuditSink();
+    this.maxAttempts = Math.max(1, opts.maxAttempts ?? 3);
+    this.baseDelayMs = opts.baseDelayMs ?? 200;
+    this.limiter = opts.rateLimitPerSecond ? new TokenBucket(opts.rateLimitPerSecond) : undefined;
+    this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.maxResponseBytes = opts.maxResponseBytes ?? 20 * 1024 * 1024;
+  }
+
+  async send(req: HttpRequest, ctx: CallContext): Promise<HttpResponse> {
+    if (!req.url.startsWith('https://') && !isLocal(req.url)) {
+      throw new SupplierError(this.supplierId, 'VALIDATION', `Refusing non-HTTPS supplier URL for ${req.operation}`);
+    }
+    const attempts = req.idempotent ? this.maxAttempts : 1;
+    let lastError: SupplierError | undefined;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      if (attempt > 1) await sleep(this.backoff(attempt), ctx.signal);
+      try {
+        const res = await this.once(req, ctx, attempt);
+        if (res.status === 429 || res.status >= 500) {
+          lastError = new SupplierError(
+            this.supplierId,
+            res.status === 429 ? 'RATE_LIMITED' : 'UNAVAILABLE',
+            `${req.operation}: HTTP ${res.status}`,
+          );
+          if (!req.idempotent) throw this.unknownOutcome(req, lastError);
+          continue;
+        }
+        if (res.status === 401 || res.status === 403) {
+          throw new SupplierError(this.supplierId, 'AUTH', `${req.operation}: HTTP ${res.status}`);
+        }
+        return res;
+      } catch (err) {
+        if (err instanceof SupplierError) {
+          if (err.code === 'OUTCOME_UNKNOWN' || !err.retryable) throw err;
+          if (!req.idempotent) throw this.unknownOutcome(req, err);
+          lastError = err;
+          continue;
+        }
+        if (ctx.signal?.aborted) throw err;
+        const wrapped = classifyNetworkError(this.supplierId, req.operation, err);
+        if (!req.idempotent) throw this.unknownOutcome(req, wrapped);
+        lastError = wrapped;
+      }
+    }
+    throw lastError ?? new SupplierError(this.supplierId, 'UNAVAILABLE', `${req.operation} failed`);
+  }
+
+  private async once(req: HttpRequest, ctx: CallContext, attempt: number): Promise<HttpResponse> {
+    await this.limiter?.take(ctx.signal);
+    const started = Date.now();
+    const timeout = AbortSignal.timeout(req.timeoutMs);
+    const signal = ctx.signal ? AbortSignal.any([ctx.signal, timeout]) : timeout;
+    const headers = req.headers ?? {};
+    let status: number | undefined;
+    let body: string | undefined;
+    let error: string | undefined;
+    try {
+      const res = await this.fetchImpl(req.url, { method: req.method, headers, body: req.body, signal });
+      status = res.status;
+      const len = Number(res.headers.get('content-length') ?? '0');
+      if (len > this.maxResponseBytes) {
+        throw new SupplierError(this.supplierId, 'PROTOCOL', `${req.operation}: response too large`);
+      }
+      body = await res.text();
+      if (body.length > this.maxResponseBytes) {
+        throw new SupplierError(this.supplierId, 'PROTOCOL', `${req.operation}: response too large`);
+      }
+      const resHeaders: Record<string, string> = {};
+      res.headers.forEach((v, k) => (resHeaders[k] = v));
+      return { status: res.status, headers: resHeaders, body, durationMs: Date.now() - started };
+    } catch (err) {
+      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      if (timeout.aborted && !ctx.signal?.aborted) {
+        throw new SupplierError(this.supplierId, 'TIMEOUT', `${req.operation}: timed out after ${req.timeoutMs}ms`, { cause: err });
+      }
+      throw err;
+    } finally {
+      await Promise.resolve(
+        this.audit.record({
+          at: new Date(started).toISOString(),
+          requestId: ctx.requestId,
+          supplierId: this.supplierId,
+          operation: req.operation,
+          attempt,
+          method: req.method,
+          url: redactText(req.url),
+          requestHeaders: redactHeaders(headers),
+          requestBody: req.body === undefined ? undefined : redactText(req.body),
+          status,
+          responseBody: body === undefined ? undefined : redactText(body),
+          durationMs: Date.now() - started,
+          error,
+        }),
+      ).catch(() => {
+        /* audit must never break a booking */
+      });
+    }
+  }
+
+  private unknownOutcome(req: HttpRequest, cause: SupplierError): SupplierError {
+    return new SupplierError(
+      this.supplierId,
+      'OUTCOME_UNKNOWN',
+      `${req.operation}: ${cause.message}. The supplier may have processed it; reconcile before retrying.`,
+      { cause },
+    );
+  }
+
+  private backoff(attempt: number): number {
+    const exp = this.baseDelayMs * 2 ** (attempt - 2);
+    return exp + Math.floor(Math.random() * this.baseDelayMs);
+  }
+}
+
+function classifyNetworkError(supplierId: string, operation: string, err: unknown): SupplierError {
+  const msg = err instanceof Error ? err.message : String(err);
+  return new SupplierError(supplierId, 'UNAVAILABLE', `${operation}: network error: ${msg}`, { cause: err });
+}
+
+function isLocal(url: string): boolean {
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(url);
+}
+
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const t = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}

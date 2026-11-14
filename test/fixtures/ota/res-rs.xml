@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>
+<OTA_HotelResRS xmlns="http://www.opentravel.org/OTA/2003/05" Version="1.0">
+  <Success/>
+  <HotelReservations>
+    <HotelReservation ResStatus="Commit">
+      <UniqueID Type="14" ID="APL-BK-0001"/>
+      <ResGlobalInfo>
+        <HotelReservationIDs>
+          <HotelReservationID ResID_Type="14" ResID_Value="OB-998877"/>
+          <HotelReservationID ResID_Type="10" ResID_Value="HTL-5566"/>
+        </HotelReservationIDs>
+        <Total AmountAfterTax="2000.00" CurrencyCode="USD"/>
+      </ResGlobalInfo>
+    </HotelReservation>
+  </HotelReservations>
+</OTA_HotelResRS>
+</soap:Body></soap:Envelope>
