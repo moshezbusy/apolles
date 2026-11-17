@@ -7,6 +7,7 @@
  *
  * Options: --destination PMI --nationality IL --checkin 2027-03-10 --nights 3
  * Credentials: HOTELBEDS_API_KEY / HOTELBEDS_SECRET env vars.
+ * Behind an HTTPS proxy (Node 22): run with NODE_USE_ENV_PROXY=1.
  * Evaluation keys allow ~50 requests a day: run it sparingly.
  */
 import { randomUUID } from 'node:crypto';
@@ -46,7 +47,7 @@ async function main(): Promise<void> {
   const key = secrets.get(names.apiKey);
   const ts = Math.floor(Date.now() / 1000);
   const status = await transport.send({
-    operation: 'status', method: 'GET', url: `${BASE}/status`, timeoutMs: 15_000, idempotent: true,
+    operation: 'status', method: 'GET', url: `${BASE}/status`, timeoutMs: 15_000, idempotent: true, sensitiveValues: [key, secrets.get(names.secret)],
     headers: { 'api-key': key, 'x-signature': signature(key, secrets.get(names.secret), ts), accept: 'application/json' },
   }, ctx);
   step('Status', `HTTP ${status.status} ${status.body.slice(0, 200)}`);
@@ -54,7 +55,7 @@ async function main(): Promise<void> {
 
   // 2. Find hotels with availability in the destination (raw call, discovery only).
   const discovery = await transport.send({
-    operation: 'discover', method: 'POST', url: `${BASE}/hotels`, timeoutMs: 25_000, idempotent: true,
+    operation: 'discover', method: 'POST', url: `${BASE}/hotels`, timeoutMs: 25_000, idempotent: true, sensitiveValues: [key, secrets.get(names.secret)],
     headers: {
       'api-key': key, 'x-signature': signature(key, secrets.get(names.secret), Math.floor(Date.now() / 1000)),
       accept: 'application/json', 'accept-encoding': 'gzip', 'content-type': 'application/json',

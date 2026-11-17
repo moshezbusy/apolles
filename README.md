@@ -102,7 +102,9 @@ See [docs/adding-a-supplier.md](docs/adding-a-supplier.md).
 
 1. Put the key and secret from developer.hotelbeds.com (Dashboard > My API keys)
    in `HOTELBEDS_API_KEY` / `HOTELBEDS_SECRET`.
-2. `npm run build && node dist/tools/hotelbeds-smoke.js` (add `--book` for a test booking + cancel).
+2. `npm run build && node dist/tools/hotelbeds-smoke.js` (add `--book` for a test booking + cancel;
+   behind an HTTPS proxy add `NODE_USE_ENV_PROXY=1`). Verified live 2026-11-17: search, CheckRate,
+   book, lookup by clientReference, cancel.
 3. Set `"enabled": true` for `hotelbeds` in `config/suppliers.json` and map hotels in
    `config/mappings/hotelbeds.json`.
 

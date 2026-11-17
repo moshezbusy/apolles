@@ -61,7 +61,8 @@ describe('Hotelbeds adapter', () => {
   });
 
   it('never writes the key or signature to the audit log', async () => {
-    const { adapter, audit } = make([{ body: AVAIL_RS }]);
+    // Real Hotelbeds answers echo the API key in auditData.internal.
+    const { adapter, audit } = make([{ body: { ...AVAIL_RS, auditData: { internal: '0|D130ACF|IL|01|key123||||' } } }]);
     await adapter.search(search, { requestId: 'r' });
     const logged = JSON.stringify(audit.entries);
     expect(logged).not.toContain('key123');

@@ -18,6 +18,11 @@ export interface HttpRequest {
    * are NOT: a timeout there becomes OUTCOME_UNKNOWN and is never retried.
    */
   idempotent: boolean;
+  /**
+   * Secret values (API keys, secrets) to mask wherever they appear in the
+   * audit log, including supplier responses that echo them back.
+   */
+  sensitiveValues?: string[];
 }
 
 export interface HttpResponse {
@@ -129,6 +134,7 @@ export class HttpTransport {
       }
       throw err;
     } finally {
+      const mask = (t: string) => maskValues(redactText(t), req.sensitiveValues);
       await Promise.resolve(
         this.audit.record({
           at: new Date(started).toISOString(),
@@ -137,13 +143,13 @@ export class HttpTransport {
           operation: req.operation,
           attempt,
           method: req.method,
-          url: redactText(req.url),
+          url: mask(req.url),
           requestHeaders: redactHeaders(headers),
-          requestBody: req.body === undefined ? undefined : redactText(req.body),
+          requestBody: req.body === undefined ? undefined : mask(req.body),
           status,
-          responseBody: body === undefined ? undefined : redactText(body),
+          responseBody: body === undefined ? undefined : mask(body),
           durationMs: Date.now() - started,
-          error,
+          error: error === undefined ? undefined : mask(error),
         }),
       ).catch(() => {
         /* audit must never break a booking */
@@ -169,6 +175,14 @@ export class HttpTransport {
 function classifyNetworkError(supplierId: string, operation: string, err: unknown): SupplierError {
   const msg = err instanceof Error ? err.message : String(err);
   return new SupplierError(supplierId, 'UNAVAILABLE', `${operation}: network error: ${msg}`, { cause: err });
+}
+
+function maskValues(text: string, values: string[] | undefined): string {
+  let out = text;
+  for (const v of values ?? []) {
+    if (v && v.length >= 6) out = out.split(v).join('***');
+  }
+  return out;
 }
 
 function isLocal(url: string): boolean {

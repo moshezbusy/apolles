@@ -381,6 +381,8 @@ export class HotelbedsAdapter implements SupplierAdapter {
       {
         operation, method, url: `${this.cfg.baseUrl.replace(/\/+$/, '')}${path}`, headers,
         body: body === undefined ? undefined : JSON.stringify(body), timeoutMs, idempotent,
+        // Hotelbeds echoes the API key back in auditData.internal.
+        sensitiveValues: [apiKey, secret],
       },
       ctx,
     );
