@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clients | Apolles</title>
+<style>
+*{box-sizing:border-box}
+:root{--ink:#17211d;--muted:#6d756f;--green:#173f35;--green-2:#245c4e;--green-soft:#eef3f0;--line:#e7e2d8;--bg:#faf9f6;--shadow:0 14px 36px rgba(19,47,39,.08);--amber:#87691f;--amber-soft:#fff7e7;--blue:#426b82;--blue-soft:#eef5fb;--red:#94554e;--red-soft:#fbf1ef}
+html,body{margin:0;min-height:100%;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg)}
+a{text-decoration:none;color:inherit}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+.topbar{position:sticky;top:0;z-index:100;height:68px;background:#fff;border-bottom:1px solid var(--line)}
+.topbar-inner{width:min(1280px,calc(100% - 40px));height:100%;margin:auto;display:flex;align-items:center;gap:28px}
+.brand{font-family:Georgia,"Times New Roman",serif;font-size:27px;margin-right:10px}
+.nav{display:flex;height:100%;align-items:center;gap:26px}
+.nav-link{height:100%;display:flex;align-items:center;position:relative;font-size:13px;color:#6c7671}
+.nav-link.active{color:var(--green);font-weight:700}
+.nav-link.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-group{position:relative;height:100%;display:flex;align-items:center}
+.nav-trigger{
+  height:100%;border:0;background:transparent;padding:0;cursor:pointer;
+  color:#6c7671;font-size:13px;display:flex;align-items:center;gap:5px;position:relative;
+}
+.nav-trigger.active{color:var(--green);font-weight:700}
+.nav-trigger.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-trigger span{font-size:11px;color:#8a938e}
+.nav-menu{
+  position:absolute;top:58px;left:-10px;z-index:180;
+  width:190px;padding:7px;background:#fff;border:1px solid #e1e6e3;
+  border-radius:11px;box-shadow:0 15px 38px rgba(19,47,39,.14);
+  opacity:0;visibility:hidden;transform:translateY(5px);transition:.14s ease;
+}
+.nav-group:hover>.nav-menu,.nav-group.menu-open>.nav-menu{opacity:1;visibility:visible;transform:translateY(0)}
+.nav-menu a{display:block;padding:8px 10px;border-radius:7px;color:#4d5a54;font-size:12.5px}
+.nav-menu a:hover{background:#f1f6f3;color:var(--green)}
+.nav-sep{height:1px;background:#eeeae5;margin:5px 2px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:14px;color:#647069;font-size:12px}
+.balance-chip{
+  display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;
+  padding:6px 11px;border:1px solid #dce6e0;border-radius:10px;background:#f7faf8;
+}
+.balance-chip small{font-size:11px;color:#7f8984;font-weight:600}
+.balance-chip b{font-size:12.5px;color:var(--green)}
+.balance-chip:hover{border-color:#bcd0c6}
+.account-group{height:auto}
+.account-trigger{border:0;background:transparent;display:flex;align-items:center;gap:8px;color:#4d5a54;font-size:12.5px;padding:0;cursor:pointer}
+.account-trigger b{font-size:11px;font-weight:500}
+.account-menu{left:auto;right:0;top:40px}
+.avatar{
+  width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#e5eee9;color:var(--green);
+  font-size:11px;font-weight:800;
+}
+
+
+.page{width:min(1280px,calc(100% - 40px));margin:auto;padding:30px 0 60px}
+.page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-bottom:16px}
+.page-head h1{margin:0 0 6px;font:500 36px/1 Georgia,"Times New Roman",serif;letter-spacing:-.02em}
+.page-head p{margin:0;color:var(--muted);font-size:13px}
+.new-btn{height:42px;padding:0 16px;border:0;border-radius:9px;background:var(--green);color:#fff;font-size:12.5px;font-weight:800;display:inline-flex;align-items:center;gap:8px}
+.new-btn span{font-size:18px;line-height:1}
+.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.search-wrap{flex:1;position:relative}
+.search-wrap:before{content:"⌕";position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#8a938e}
+.search-input{width:100%;height:40px;border:1px solid #dce3df;border-radius:9px;padding:0 12px 0 32px;font-size:13px;background:#fff;outline:none}
+.count{font-size:12px;color:#7c8580;white-space:nowrap}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;align-items:start}
+.list-card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.clients{width:100%;border-collapse:collapse}
+.clients th{text-align:left;padding:10px 14px;background:#fbfbfa;color:#7b8580;font-size:11px;text-transform:uppercase;letter-spacing:.045em;border-bottom:1px solid #ece9e4}
+.clients td{padding:12px 14px;border-bottom:1px solid #f0eeea;font-size:12.5px;vertical-align:top}
+.clients td span{display:block;margin-top:3px;color:#8a938e;font-size:11px}
+.clients tr{cursor:pointer}
+.clients tbody tr:hover{background:#fbfcfb}
+.clients tbody tr.on{background:var(--green-soft)}
+.empty{display:none;padding:30px;text-align:center;color:#7c8580;font-size:12.5px}
+.detail{position:sticky;top:86px;background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:16px}
+.detail-head{display:flex;align-items:center;gap:12px}
+.detail-head h2{margin:0;font:500 22px Georgia,"Times New Roman",serif}
+.detail-head span{font-size:11.5px;color:#8a938e}
+.detail-head .ghost-btn{margin-left:auto}
+.avatar-lg{width:44px;height:44px;border-radius:50%;background:#e5eee9;color:var(--green);font-weight:800;display:grid;place-items:center}
+.detail-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 4px}
+.primary-btn,.ghost-btn{height:36px;padding:0 12px;border-radius:9px;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.primary-btn{background:var(--green);color:#fff;border:1px solid var(--green)}
+.ghost-btn{background:#fff;color:var(--green);border:1px solid #d4ddd8}
+.block{border-top:1px solid #f0eeea;margin-top:12px;padding-top:12px}
+.block h3{margin:0 0 8px;font-size:13px}
+.block-head{display:flex;justify-content:space-between;align-items:center}
+.link-btn{border:0;background:none;color:var(--green);font-size:12px;font-weight:700}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:12px}
+.kv span{color:#7c8580}
+.kv.note{flex-direction:column;gap:3px}
+.kv.note strong{font-weight:500;color:#46534d}
+.companion{display:flex;justify-content:space-between;padding:7px 0;font-size:12.5px;border-bottom:1px dashed #edf0ee}
+.companion span{color:#7c8580;font-size:11.5px}
+.hint{margin:8px 0 0;font-size:11px;color:#8a928e;line-height:1.45}
+.item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid #e8ece9;border-radius:10px;margin-bottom:6px}
+.item strong{display:block;font-size:12.5px}
+.item span{display:block;font-size:11px;color:#8a938e;margin-top:2px}
+.status{font-style:normal;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap}
+.status.viewed{background:var(--amber-soft);color:var(--amber)}
+.status.confirmed{background:var(--green-soft);color:var(--green)}
+.overlay{position:fixed;inset:0;z-index:400;background:rgba(16,45,38,.38);display:none;align-items:center;justify-content:center;padding:18px}
+.overlay.show{display:flex}
+.dialog{width:min(520px,100%);background:#fff;border-radius:16px;padding:20px;box-shadow:0 30px 80px rgba(16,45,38,.3)}
+.dialog h3{margin:0 0 12px;font:500 24px Georgia,"Times New Roman",serif}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid2 label{display:block;font-size:11.5px;font-weight:700;color:#4b5852;margin-bottom:5px}
+.grid2 input,.grid2 select{width:100%;height:38px;border:1px solid #dce3df;border-radius:8px;padding:0 10px;font-size:13px;background:#fff}
+.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+@media(max-width:1000px){.layout{grid-template-columns:1fr}.detail{position:static}}
+@media(max-width:760px){
+  .topbar-inner,.page{width:min(100% - 24px,1280px)}
+  .nav{gap:14px;overflow:auto}
+  .account-name{display:none}.balance-chip small{display:none}
+  .nav-menu{position:fixed;left:12px;right:12px;top:62px;width:auto}.account-menu{top:62px}
+  .clients th:nth-child(2),.clients td:nth-child(2),.clients th:nth-child(3),.clients td:nth-child(3),.clients th:nth-child(6),.clients td:nth-child(6){display:none}
+  .grid2{grid-template-columns:1fr}
+}
+
+.form-msg{margin:12px 0 0;font-size:12.5px;line-height:1.5;color:#6d756f;min-height:0}
+.form-msg:empty{display:none}
+.form-msg.err{color:#94554e}
+.toast{position:fixed;right:18px;bottom:18px;z-index:500;padding:11px 14px;border-radius:10px;background:var(--green);color:#fff;font-size:13px;font-weight:700;opacity:0;transform:translateY(8px);transition:.18s ease;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+
+/* v4: one look across all agent pages */
+.new-btn{height:40px}
+.page-head h1{font-size:34px}
+@media(max-width:760px){.page-head h1{font-size:30px}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="07-search.html">Apolles</a>
+
+    <nav class="nav">
+      <a class="nav-link" href="07-search.html">Search</a>
+
+      <div class="nav-group">
+        <button class="nav-trigger active" type="button">Quotes <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="14-quotes.html">All quotes</a>
+          <a href="15-quote-editor.html">New quote</a>
+          <div class="nav-sep"></div>
+          <a href="18-clients.html">Clients</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Bookings <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="13-bookings.html">All bookings</a>
+          <a href="13-bookings.html">Upcoming stays</a>
+          <a href="13-bookings.html">Completed</a>
+          <a href="13-bookings.html">Cancelled</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Reporting <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="19-reports.html">Overview</a>
+          <a href="19-reports.html">Balance history</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="top-actions">
+      <a class="balance-chip" href="20-agency-settings.html#balance" title="Balance and top-ups">
+        <small>Balance</small>
+        <b>USD 4,250.00</b>
+      </a>
+
+      <div class="nav-group account-group">
+        <button class="account-trigger" type="button">
+          <span class="avatar">MZ</span>
+          <span class="account-name">My Agency</span>
+          <b>⌄</b>
+        </button>
+        <div class="nav-menu account-menu">
+          <a href="20-agency-settings.html">Agency settings</a>
+          <a href="20-agency-settings.html#balance">Balance &amp; top-ups</a>
+          <a href="#">Support</a>
+          <div class="nav-sep"></div>
+          <a href="04-login.html">Sign out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <div class="page-head">
+    <div>
+      <h1>Clients</h1>
+      <p>Your clients, their travel companions, quotes and bookings.</p>
+    </div>
+    <button class="new-btn" type="button" id="addClientBtn"><span>+</span> Add client</button>
+  </div>
+
+  <div class="toolbar">
+    <div class="search-wrap"><input class="search-input" id="clientSearch" placeholder="Search by name, email or phone"></div>
+    <span class="count" id="clientCount"></span>
+  </div>
+
+  <section class="layout">
+    <div class="list-card">
+      <table class="clients">
+        <thead>
+          <tr><th>Client</th><th>Contact</th><th>Travelers</th><th>Quotes</th><th>Bookings</th><th>Last activity</th></tr>
+        </thead>
+        <tbody id="clientRows"></tbody>
+      </table>
+      <div class="empty" id="emptyState">No clients match your search.</div>
+    </div>
+
+    <aside class="detail" id="detail"></aside>
+  </section>
+</main>
+
+<div class="overlay" id="addOverlay">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+    <h3 id="addTitle">Add client</h3>
+    <div class="grid2">
+      <div><label for="fFirst">First name</label><input id="fFirst"></div>
+      <div><label for="fLast">Last name</label><input id="fLast"></div>
+      <div><label for="fPhone">WhatsApp phone</label><input id="fPhone" type="tel" placeholder="+972 50 000 0000"></div>
+      <div><label for="fEmail">Email (optional)</label><input id="fEmail" type="email"></div>
+      <div><label for="fNat">Nationality</label><select id="fNat"><option>Israel</option><option>United States</option><option>Other</option></select></div>
+      <div><label for="fNotes">Notes</label><input id="fNotes" placeholder="Optional"></div>
+    </div>
+    <p class="form-msg" id="formMsg"></p>
+    <div class="dialog-actions">
+      <button class="ghost-btn" type="button" data-close>Cancel</button>
+      <button class="primary-btn" type="button" id="saveClient">Save client</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  /* Top menu: click also opens, not only hover */
+  document.querySelectorAll('.nav-trigger,.account-trigger').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const group=btn.closest('.nav-group');
+      document.querySelectorAll('.nav-group.menu-open').forEach(g=>{ if(g!==group) g.classList.remove('menu-open'); });
+      group.classList.toggle('menu-open');
+    });
+  });
+  document.addEventListener('click',()=>document.querySelectorAll('.nav-group.menu-open').forEach(g=>g.classList.remove('menu-open')));
+
+  /* Demo data (in the real system this comes from the Clients table) */
+  const clients = [
+    {first:'Daniel',last:'Levy',email:'daniel.levy@email.com',phone:'+972 50 123 4567',nat:'Israel',since:'Sep 2026',notes:'Prefers adults-only resorts. Anniversary in October.',
+     companions:[['Daniel Levy','Lead · Adult'],['Maya Levy','Spouse · Adult'],['Noa Levy','Daughter · 7 years old']],
+     quotes:[['Mexico Honeymoon','Q-1048 · Oct 25 to Nov 2','Viewed','viewed']],
+     bookings:[['Hotel Xcaret Mexico','AP9K2M · Dec 6 to Dec 10','Vouchered','confirmed']],
+     act:['Sep 16','Quote viewed']},
+    {first:'Maya',last:'Cohen',email:'maya@example.com',phone:'+972 52 444 1180',nat:'Israel',since:'Aug 2026',notes:'',
+     companions:[['Maya Cohen','Lead · Adult'],['Eli Cohen','Spouse · Adult'],['Tom Cohen','Son · 12 years old'],['Lia Cohen','Daughter · 9 years old']],
+     quotes:[['Cyprus family week','Q-1039 · Sep 12 to Sep 18','Booked','confirmed']],
+     bookings:[['Mare Paphos','RM8T4C · Sep 12 to Sep 18','In stay','confirmed']],
+     act:['Sep 15','In stay']},
+    {first:'Noa',last:'Elkobi',email:'noa@example.com',phone:'+972 54 220 9910',nat:'Israel',since:'Sep 2026',notes:'',
+     companions:[['Noa Elkobi','Lead · Adult'],['Avi Elkobi','Spouse · Adult']],
+     quotes:[['Cancún getaway','Q-1044 · Oct 27 to Oct 30','Booked','confirmed']],
+     bookings:[['Secrets The Vine Cancun','FO0CDJ · Oct 27 to Oct 30','Cancelled','viewed']],
+     act:['Sep 27','Booking cancelled']},
+    {first:'Ron',last:'Shavit',email:'ron@example.com',phone:'+972 50 771 2345',nat:'Israel',since:'Sep 2026',notes:'',
+     companions:[['Ron Shavit','Lead · Adult'],['Dana Shavit','Spouse · Adult']],
+     quotes:[['Riviera Maya','Q-1046 · Oct 3 to Oct 8','Booked','confirmed']],
+     bookings:[['Hyatt Zilara Cancun','KX2P7A · Oct 3 to Oct 8','Pending','viewed']],
+     act:['Sep 13','Booking pending']},
+    {first:'Omar',last:'Shahin',email:'omar@example.com',phone:'+972 58 330 1177',nat:'Israel',since:'Jul 2026',notes:'',
+     companions:[['Omar Shahin','Lead · Adult'],['Rana Shahin','Spouse · Adult']],
+     quotes:[['Punta Cana','Q-1041 · Nov 20 to Nov 27','Booked','confirmed']],
+     bookings:[['Excellence Punta Cana','AP2H6N · Nov 20 to Nov 27','Confirmed','viewed']],
+     act:['Sep 11','Booked from quote']},
+    {first:'Gal',last:'Cohen',email:'gal@example.com',phone:'+972 53 909 1212',nat:'Israel',since:'Aug 2026',notes:'',
+     companions:[['Gal Cohen','Lead · Adult'],['Shir Cohen','Partner · Adult']],
+     quotes:[['Mexico in spring','Q-1033 · Apr 4 to Apr 11','Sent','viewed']],
+     bookings:[],
+     act:['Aug 29','Quote sent']}
+  ];
+  let current = 0, editing = null;
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const name = c => c.first + ' ' + c.last;
+  /* Phone matching ignores spaces, dashes and the leading 0 / +972 (country code from Agency settings) */
+  const digits = p => { let d = String(p||'').replace(/\D/g,''); if(d.startsWith('00')) d = d.slice(2); else if(d.startsWith('0')) d = '972' + d.slice(1); return d; };
+  function matches(c, q){
+    if(!q) return true;
+    const text = (name(c) + ' ' + c.email).toLowerCase();
+    if(text.includes(q.toLowerCase())) return true;
+    const qd = q.replace(/\D/g,'');
+    if(qd.length >= 3){
+      const pd = digits(c.phone), local = '0' + pd.slice(3);
+      return pd.includes(qd) || local.includes(qd) || pd.includes(digits(q));
+    }
+    return false;
+  }
+
+  function renderRows(){
+    const q = $('clientSearch').value.trim();
+    let n = 0;
+    $('clientRows').innerHTML = clients.map((c, i) => {
+      if(!matches(c, q)) return '';
+      n++;
+      return '<tr data-i="' + i + '" class="' + (i === current ? 'on' : '') + '"><td><strong>' + esc(name(c)) + '</strong><span>' + esc(c.nat) + '</span></td>' +
+        '<td>' + esc(c.email || 'No email') + '<span>' + esc(c.phone) + '</span></td><td>' + c.companions.length + '</td><td>' + c.quotes.length + '</td><td>' + c.bookings.length + '</td>' +
+        '<td>' + esc(c.act[0]) + '<span>' + esc(c.act[1]) + '</span></td></tr>';
+    }).join('');
+    $('clientCount').textContent = n + ' client' + (n === 1 ? '' : 's');
+    $('emptyState').style.display = n ? 'none' : 'block';
+  }
+
+  function renderDetail(){
+    const c = clients[current];
+    const initials = (c.first[0] || '') + (c.last[0] || '');
+    const item = x => '<a class="item" href="' + (x[2] === 'Sent' || x[2] === 'Viewed' ? '15-quote-editor.html' : '12-booking-summary.html') + '"><div><strong>' + esc(x[0]) + '</strong><span>' + esc(x[1]) + '</span></div><em class="status ' + x[3] + '">' + esc(x[2]) + '</em></a>';
+    $('detail').innerHTML =
+      '<div class="detail-head"><div class="avatar-lg">' + esc(initials) + '</div><div><h2>' + esc(name(c)) + '</h2><span>Client since ' + esc(c.since) + '</span></div>' +
+        '<button class="ghost-btn" type="button" id="editBtn">Edit</button></div>' +
+      '<div class="detail-actions"><a class="primary-btn" href="15-quote-editor.html" title="Opens a new quote with this client already chosen">New quote</a>' +
+        '<a class="ghost-btn" href="07-search.html" title="Search, then Guest details opens with this client as the lead guest">New booking</a></div>' +
+      '<div class="block"><h3>Details</h3>' +
+        '<div class="kv"><span>Email</span><strong>' + esc(c.email || 'No email') + '</strong></div>' +
+        '<div class="kv"><span>WhatsApp phone</span><strong>' + esc(c.phone) + '</strong></div>' +
+        '<div class="kv"><span>Nationality</span><strong>' + esc(c.nat) + '</strong></div>' +
+        (c.notes ? '<div class="kv note"><span>Notes</span><strong>' + esc(c.notes) + '</strong></div>' : '') + '</div>' +
+      '<div class="block"><div class="block-head"><h3>Travel companions</h3><button class="link-btn" type="button">+ Add</button></div>' +
+        c.companions.map(p => '<div class="companion"><strong>' + esc(p[0]) + '</strong><span>' + esc(p[1]) + '</span></div>').join('') +
+        '<p class="hint">Companions fill the guest names in one click when booking. Check children\'s ages for each trip.</p></div>' +
+      '<div class="block"><h3>Quotes</h3>' + (c.quotes.length ? c.quotes.map(item).join('') : '<p class="hint">No quotes yet.</p>') + '</div>' +
+      '<div class="block"><h3>Bookings</h3>' + (c.bookings.length ? c.bookings.map(item).join('') : '<p class="hint">No bookings yet.</p>') + '</div>';
+    $('editBtn').addEventListener('click', () => openForm(current));
+  }
+
+  $('clientSearch').addEventListener('input', renderRows);
+  $('clientRows').addEventListener('click', e => {
+    const tr = e.target.closest('tr[data-i]'); if(!tr) return;
+    current = +tr.dataset.i; renderRows(); renderDetail();
+    if(window.innerWidth <= 1000) $('detail').scrollIntoView({behavior:'smooth'});
+  });
+
+  /* Add / edit client */
+  const overlay = $('addOverlay');
+  function openForm(i){
+    editing = i;
+    const c = i == null ? {first:'',last:'',phone:'',email:'',nat:'Israel',notes:''} : clients[i];
+    $('addTitle').textContent = i == null ? 'Add client' : 'Edit client';
+    $('fFirst').value = c.first; $('fLast').value = c.last; $('fPhone').value = c.phone; $('fEmail').value = c.email; $('fNat').value = c.nat; $('fNotes').value = c.notes;
+    $('formMsg').innerHTML = '';
+    overlay.classList.add('show');
+    setTimeout(() => $('fFirst').focus(), 30);
+  }
+  function closeForm(){ overlay.classList.remove('show'); }
+  $('addClientBtn').addEventListener('click', () => openForm(null));
+  overlay.addEventListener('click', e => { if(e.target === overlay || e.target.hasAttribute('data-close')) closeForm(); });
+  document.addEventListener('keydown', e => {
+    if(!overlay.classList.contains('show')) return;
+    if(e.key === 'Escape') closeForm();
+    if(e.key === 'Enter' && e.target.tagName === 'INPUT'){ e.preventDefault(); $('saveClient').click(); }
+  });
+  $('formMsg').addEventListener('click', e => {
+    const a = e.target.closest('[data-open]'); if(!a) return;
+    current = +a.dataset.open; closeForm(); $('clientSearch').value = ''; renderRows(); renderDetail();
+  });
+  $('saveClient').addEventListener('click', () => {
+    const v = {first:$('fFirst').value.trim(), last:$('fLast').value.trim(), phone:$('fPhone').value.trim(), email:$('fEmail').value.trim(), nat:$('fNat').value, notes:$('fNotes').value.trim()};
+    const msg = $('formMsg');
+    if(!v.first || !v.last || !v.phone){ msg.className = 'form-msg err'; msg.textContent = 'First name, last name and WhatsApp phone are needed.'; return; }
+    // One client per phone or email: clients are added here, in the quote editor and on Guest details
+    const dup = clients.findIndex((c, i) => i !== editing && (digits(c.phone) === digits(v.phone) || (v.email && c.email.toLowerCase() === v.email.toLowerCase())));
+    if(dup > -1){
+      const same = digits(clients[dup].phone) === digits(v.phone) ? 'phone' : 'email';
+      msg.className = 'form-msg err';
+      msg.innerHTML = 'A client with this ' + same + ' already exists: <b>' + esc(name(clients[dup])) + '</b>. <button type="button" class="link-btn" data-open="' + dup + '">Open client</button>';
+      return;
+    }
+    if(editing == null){
+      clients.unshift(Object.assign(v, {since:'Sep 2026', companions:[[v.first + ' ' + v.last,'Lead · Adult']], quotes:[], bookings:[], act:['Today','Client added']}));
+      current = 0;
+    } else {
+      Object.assign(clients[editing], v); current = editing;
+    }
+    closeForm(); $('clientSearch').value = ''; renderRows(); renderDetail();
+    toast(editing == null ? v.first + ' ' + v.last + ' added to Clients' : 'Client saved');
+  });
+
+  function toast(t){ const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 2200); }
+
+  renderRows(); renderDetail();
+})();
+</script>
+
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>
+

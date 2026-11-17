@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reporting | Apolles</title>
+<style>
+:root{
+  --ink:#17211d;--muted:#6d756f;--green:#173f35;--green-soft:#eef3f0;
+  --line:#e7e2d8;--bg:#faf9f6;--card:#fff;--shadow:0 14px 36px rgba(19,47,39,.08);
+  --amber:#8a671c;--amber-soft:#fff8e8;--red:#94554e;--red-soft:#fbf1ef;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg)}
+a{text-decoration:none;color:inherit}button,select{font:inherit}
+.topbar{position:sticky;top:0;z-index:100;height:68px;background:#fff;border-bottom:1px solid var(--line)}
+.topbar-inner{width:min(1280px,calc(100% - 40px));height:100%;margin:auto;display:flex;align-items:center;gap:28px}
+.brand{font-family:Georgia,"Times New Roman",serif;font-size:27px;margin-right:10px}
+.nav{display:flex;height:100%;align-items:center;gap:26px}
+.nav-link{height:100%;display:flex;align-items:center;position:relative;font-size:13px;color:#6c7671}
+.nav-link.active{color:var(--green);font-weight:700}
+.nav-link.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-group{position:relative;height:100%;display:flex;align-items:center}
+.nav-trigger{
+  height:100%;border:0;background:transparent;padding:0;cursor:pointer;
+  color:#6c7671;font-size:13px;display:flex;align-items:center;gap:5px;position:relative;
+}
+.nav-trigger.active{color:var(--green);font-weight:700}
+.nav-trigger.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-trigger span{font-size:11px;color:#8a938e}
+.nav-menu{
+  position:absolute;top:58px;left:-10px;z-index:180;
+  width:190px;padding:7px;background:#fff;border:1px solid #e1e6e3;
+  border-radius:11px;box-shadow:0 15px 38px rgba(19,47,39,.14);
+  opacity:0;visibility:hidden;transform:translateY(5px);transition:.14s ease;
+}
+.nav-group:hover>.nav-menu,.nav-group.menu-open>.nav-menu{opacity:1;visibility:visible;transform:translateY(0)}
+.nav-menu a{display:block;padding:8px 10px;border-radius:7px;color:#4d5a54;font-size:12.5px}
+.nav-menu a:hover{background:#f1f6f3;color:var(--green)}
+.nav-sep{height:1px;background:#eeeae5;margin:5px 2px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:14px;color:#647069;font-size:12px}
+.balance-chip{
+  display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;
+  padding:6px 11px;border:1px solid #dce6e0;border-radius:10px;background:#f7faf8;
+}
+.balance-chip small{font-size:11px;color:#7f8984;font-weight:600}
+.balance-chip b{font-size:12.5px;color:var(--green)}
+.balance-chip:hover{border-color:#bcd0c6}
+.account-group{height:auto}
+.account-trigger{border:0;background:transparent;display:flex;align-items:center;gap:8px;color:#4d5a54;font-size:12.5px;padding:0;cursor:pointer}
+.account-trigger b{font-size:11px;font-weight:500}
+.account-menu{left:auto;right:0;top:40px}
+.avatar{
+  width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#e5eee9;color:var(--green);
+  font-size:11px;font-weight:800;
+}
+
+.page{width:min(1280px,calc(100% - 40px));margin:auto;padding:28px 0 60px}
+.page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-bottom:18px}
+.page-title h1{margin:0 0 6px;font-family:Georgia,"Times New Roman",serif;font-size:34px;font-weight:500;letter-spacing:-.02em}
+.page-title p{margin:0;color:var(--muted);font-size:13px}
+.head-actions{display:flex;gap:8px}
+.range-select,.export-btn{height:39px;border:1px solid #dce3df;border-radius:8px;background:#fff;color:#46534d;font-size:13px;padding:0 12px}
+.export-btn{color:var(--green);font-weight:750}
+
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 16px}
+.kpi-label{font-size:12.5px;color:#7b8580;font-weight:700;margin-bottom:8px}
+.kpi-value{font-size:23px;font-weight:850;line-height:1;letter-spacing:-.02em}
+.kpi-foot{margin-top:7px;font-size:12px;color:#8c9490}
+.positive{color:var(--green)}
+
+.grid-two{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.55fr);gap:14px;margin-bottom:14px}
+.bottom-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+.card-head{min-height:58px;padding:0 16px 0 18px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid #f0ece6}
+.card-title h2{margin:0;font-size:15px}
+.card-title p{margin:4px 0 0;font-size:12.5px;color:#8a938e}
+.card-body{padding:16px 18px 18px}
+
+.legend{display:flex;gap:14px;align-items:center;font-size:12px;color:#6f7974}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-dot{width:7px;height:7px;border-radius:50%}
+.legend-dot.sales{background:var(--green)} .legend-dot.profit{background:#9eb8ad}
+.chart{height:270px;position:relative;padding:16px 10px 28px 42px}
+.gridlines{position:absolute;left:42px;right:10px;top:16px;bottom:32px;border-left:1px solid #e7ebe8;border-bottom:1px solid #e7ebe8;background:linear-gradient(to bottom,transparent 24%,#edf0ee 25%,transparent 26%,transparent 49%,#edf0ee 50%,transparent 51%,transparent 74%,#edf0ee 75%,transparent 76%)}
+.y{position:absolute;left:0;color:#9aa19d;font-size:11px}
+.y1{top:12px}.y2{top:67px}.y3{top:122px}.y4{top:177px}
+.bars{position:absolute;left:42px;right:10px;top:16px;bottom:32px;display:grid;grid-template-columns:repeat(6,1fr);gap:14px;align-items:end}
+.group{display:flex;justify-content:center;align-items:end;gap:4px;height:100%}
+.bar{width:17px;border-radius:4px 4px 0 0}.sales{background:var(--green)}.profitbar{background:#abc1b8}
+.xlabels{position:absolute;left:42px;right:10px;bottom:8px;display:grid;grid-template-columns:repeat(6,1fr);gap:14px;text-align:center;font-size:11px;color:#929a96}
+
+.metric-row{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #f0eeea}
+.metric-row:last-child{border-bottom:0}.metric-row span{color:#77817c;font-size:13px}.metric-row strong{font-size:13.5px}
+.status-list{display:grid;gap:9px;margin-top:14px}
+.status-row{display:grid;grid-template-columns:150px 1fr 30px;gap:8px;align-items:center;font-size:12.5px}
+.status-track{height:7px;background:#eef1ef;border-radius:999px;overflow:hidden}.status-fill{height:100%;background:var(--green);border-radius:999px}.status-value{text-align:right;font-weight:800}
+
+.commission-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.comm-box{border:1px solid #e5ebe7;border-radius:12px;padding:13px;background:#fbfcfb}
+.comm-box.available{background:var(--green-soft);border-color:#dce8e2}
+.comm-box.pending{background:var(--amber-soft);border-color:#eadfbe}
+.comm-label{color:#75807b;font-size:12px;margin-bottom:6px}.comm-value{font-size:20px;font-weight:850}.comm-note{margin-top:5px;font-size:12px;color:#8d9591}
+
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th{text-align:left;padding:9px 10px;color:#7e8782;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #ece9e4;background:#fbfbfa}
+td{padding:11px 10px;border-bottom:1px solid #f0eeea;font-size:13px;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+.ref{font-weight:850;font-size:12.5px}.sub{margin-top:3px;color:#929a96;font-size:12px}.money{font-weight:800}
+.payout-pill{display:inline-flex;align-items:center;gap:5px;min-height:23px;padding:0 8px;border-radius:999px;font-size:11px;font-weight:800}
+.payout-pill:before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+.payout-pill.available{background:var(--green-soft);color:var(--green)}
+.payout-pill.pending{background:var(--amber-soft);color:var(--amber)}
+.payout-pill.paid{background:#f0f2f1;color:#66716b}
+
+.rank-row{display:grid;grid-template-columns:minmax(0,1fr) 70px 92px 92px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #f0eeea;font-size:13px}
+.rank-row:last-child{border-bottom:0}.rank-head{color:#8b938f;font-size:11px;text-transform:uppercase}.rank-name{font-weight:750}.rank-num{text-align:right}
+.recent-item{display:grid;grid-template-columns:minmax(0,1fr) 100px 95px 96px;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid #f0eeea}
+.recent-item:last-child{border-bottom:0}.recent-hotel{font-size:13.5px;font-weight:750}.recent-ref{color:#8d9591;font-size:12px;margin-top:3px}.recent-money{text-align:right;font-size:13px;font-weight:800}
+.recent-head{padding:4px 0 8px;color:#8b938f;font-size:11px;text-transform:uppercase;letter-spacing:.04em;font-weight:700}.recent-head .recent-money{font-size:11px;color:#8b938f}
+.recent-money.muted{color:#98a39e}
+.status.cancelled{background:#fbf1ef;color:#94554e}
+.status{justify-self:end;padding:4px 9px;border-radius:999px;font-size:11.5px;font-weight:800;background:var(--green-soft);color:var(--green)}
+.note-box{margin-top:10px;padding:10px 12px;border:1px solid #e4e9e6;border-radius:10px;background:#fafbfa;color:#68736d;font-size:12.5px;line-height:1.5}
+
+
+/* v2 additions */
+.kpi-warn{display:inline-block;margin-top:7px;font-size:12px;font-weight:700;color:#8a6516;background:#fff7e3;border-radius:999px;padding:3px 8px}
+.money.plus{color:var(--green)}
+.money.minus{color:#5f6a65}
+.card-head .export-btn{text-decoration:none}
+
+@media(max-width:1080px){.kpis{grid-template-columns:1fr 1fr}.grid-two,.bottom-grid{grid-template-columns:1fr}}
+@media(max-width:760px){
+  .topbar-inner,.page{width:min(100% - 24px,1280px)}
+  .nav{gap:14px;overflow:auto}.account-name{display:none}.balance-chip small{display:none}.nav-menu{position:fixed;left:12px;right:12px;top:62px;width:auto}.account-menu{top:62px}
+  .page-head{align-items:flex-start}.page-title h1{font-size:30px}.head-actions{flex-wrap:wrap}
+  .commission-summary{grid-template-columns:1fr}.recent-item{grid-template-columns:minmax(0,1fr) 82px 75px}.recent-item .status{display:none}
+}
+@media(max-width:520px){.page-head{display:block}.head-actions{margin-top:14px}.kpis{grid-template-columns:1fr 1fr}.kpi-value{font-size:20px}}
+
+/* v4: one look across all agent pages */
+.export-btn{border-radius:9px;height:40px}
+.status{font-size:11px}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="07-search.html">Apolles</a>
+
+    <nav class="nav">
+      <a class="nav-link" href="07-search.html">Search</a>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Quotes <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="14-quotes.html">All quotes</a>
+          <a href="15-quote-editor.html">New quote</a>
+          <div class="nav-sep"></div>
+          <a href="18-clients.html">Clients</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Bookings <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="13-bookings.html">All bookings</a>
+          <a href="13-bookings.html">Upcoming stays</a>
+          <a href="13-bookings.html">Completed</a>
+          <a href="13-bookings.html">Cancelled</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger active" type="button">Reporting <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="19-reports.html">Overview</a>
+          <a href="19-reports.html">Balance history</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="top-actions">
+      <a class="balance-chip" href="20-agency-settings.html#balance" title="Balance and top-ups">
+        <small>Balance</small>
+        <b>USD 4,250.00</b>
+      </a>
+
+      <div class="nav-group account-group">
+        <button class="account-trigger" type="button">
+          <span class="avatar">MZ</span>
+          <span class="account-name">My Agency</span>
+          <b>⌄</b>
+        </button>
+        <div class="nav-menu account-menu">
+          <a href="20-agency-settings.html">Agency settings</a>
+          <a href="20-agency-settings.html#balance">Balance &amp; top-ups</a>
+          <a href="#">Support</a>
+          <div class="nav-sep"></div>
+          <a href="04-login.html">Sign out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <div class="page-head">
+    <div class="page-title">
+      <h1>Reporting</h1>
+      <p>Track bookings, sales, profit and balance activity.</p>
+    </div>
+    <div class="head-actions">
+      <select class="range-select"><option>This month</option><option>Last 7 days</option><option>Last month</option><option>This year</option><option>Custom range</option></select>
+      <button class="export-btn">Export CSV</button>
+    </div>
+  </div>
+
+  <section class="kpis">
+    <article class="kpi"><div class="kpi-label">Gross sales</div><div class="kpi-value">USD 24,860</div><div class="kpi-foot positive">+12.4% vs previous month</div></article>
+    <article class="kpi"><div class="kpi-label">Paid from balance</div><div class="kpi-value">USD 21,390</div><div class="kpi-foot">Net cost of vouchered bookings</div></article>
+    <article class="kpi"><div class="kpi-label">Your profit</div><div class="kpi-value">USD 3,470</div><div class="kpi-foot positive">14.0% average margin</div><a class="kpi-warn" href="13-bookings.html">3 bookings without a selling price →</a></article>
+    <article class="kpi"><div class="kpi-label">Bookings</div><div class="kpi-value">18</div><div class="kpi-foot">11 vouchered · 3 no voucher · 1 pending · 2 completed</div></article>
+  </section>
+
+  <section class="grid-two">
+    <article class="card">
+      <div class="card-head">
+        <div class="card-title"><h2>Sales performance</h2><p>Sales and profit by week</p></div>
+        <div class="legend"><div class="legend-item"><span class="legend-dot sales"></span>Sales</div><div class="legend-item"><span class="legend-dot profit"></span>Profit</div></div>
+      </div>
+      <div class="card-body">
+        <div class="chart">
+          <span class="y y1">$8k</span><span class="y y2">$6k</span><span class="y y3">$4k</span><span class="y y4">$2k</span>
+          <div class="gridlines"></div>
+          <div class="bars">
+            <div class="group"><div class="bar sales" style="height:48%"></div><div class="bar profitbar" style="height:9%"></div></div>
+            <div class="group"><div class="bar sales" style="height:72%"></div><div class="bar profitbar" style="height:12%"></div></div>
+            <div class="group"><div class="bar sales" style="height:64%"></div><div class="bar profitbar" style="height:11%"></div></div>
+            <div class="group"><div class="bar sales" style="height:87%"></div><div class="bar profitbar" style="height:15%"></div></div>
+            <div class="group"><div class="bar sales" style="height:55%"></div><div class="bar profitbar" style="height:10%"></div></div>
+            <div class="group"><div class="bar sales" style="height:77%"></div><div class="bar profitbar" style="height:14%"></div></div>
+          </div>
+          <div class="xlabels"><span>Sep 1</span><span>Sep 6</span><span>Sep 11</span><span>Sep 16</span><span>Sep 21</span><span>Sep 26</span></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head"><div class="card-title"><h2>Booking performance</h2><p>Key booking metrics</p></div></div>
+      <div class="card-body">
+        <div class="metric-row"><span>Average booking value</span><strong>USD 1,381</strong></div>
+        <div class="metric-row"><span>Average profit per booking</span><strong>USD 193</strong></div>
+        <div class="metric-row"><span>Average margin</span><strong>14.0%</strong></div>
+        <div class="metric-row"><span>Cancellation rate</span><strong>5.6%</strong></div>
+        <div style="margin-top:18px;font-size:11px;font-weight:800">Booking status</div>
+        <div class="status-list">
+          <div class="status-row"><span>Vouchered</span><div class="status-track"><div class="status-fill" style="width:61%"></div></div><span class="status-value">11</span></div>
+          <div class="status-row"><span>Confirmed, no voucher</span><div class="status-track"><div class="status-fill" style="width:17%;background:#7fa094"></div></div><span class="status-value">3</span></div>
+          <div class="status-row"><span>Pending</span><div class="status-track"><div class="status-fill" style="width:6%;background:#c6a75d"></div></div><span class="status-value">1</span></div>
+          <div class="status-row"><span>In stay</span><div class="status-track"><div class="status-fill" style="width:6%;background:#5f8a7a"></div></div><span class="status-value">1</span></div>
+          <div class="status-row"><span>Completed</span><div class="status-track"><div class="status-fill" style="width:11%;background:#98a39e"></div></div><span class="status-value">2</span></div>
+          <div class="status-row"><span>Cancelled</span><div class="status-track"><div class="status-fill" style="width:6%;background:#bd8a83"></div></div><span class="status-value">1</span></div>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="card" id="balance-activity" style="margin-bottom:14px;scroll-margin-top:84px">
+    <div class="card-head">
+      <div class="card-title"><h2>Balance activity</h2><p>Top-ups, vouchers issued and refunds from cancellations</p></div>
+      <a class="export-btn" href="20-agency-settings.html#balance" style="display:inline-flex;align-items:center">View all activity</a>
+    </div>
+    <div class="card-body">
+      <div class="commission-summary">
+        <div class="comm-box available"><div class="comm-label">Current balance</div><div class="comm-value">USD 4,250.00</div><div class="comm-note">Available for new bookings</div></div>
+        <div class="comm-box"><div class="comm-label">Top-ups this month</div><div class="comm-value">USD 24,500.00</div><div class="comm-note">3 bank transfers · 1 card top-up</div></div>
+        <div class="comm-box pending"><div class="comm-label">Refunds this month</div><div class="comm-value">USD 1,137.25</div><div class="comm-note">Returned from 1 cancelled booking</div></div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Activity</th><th>Reference</th><th>Amount</th><th>Balance after</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Sep 27, 2026</td><td><strong>Refund · cancelled booking</strong><div class="sub">Dreams Jade Resort &amp; Spa</div></td><td><div class="ref">JD4N7C</div></td><td class="money plus">+ USD 1,137.25</td><td>USD 4,250.00</td></tr>
+            <tr><td>Sep 16, 2026</td><td><strong>Voucher issued</strong><div class="sub">Hotel Xcaret Mexico</div></td><td><div class="ref">AP9K2M</div></td><td class="money minus">− USD 3,050.00</td><td>USD 3,112.75</td></tr>
+            <tr><td>Sep 16, 2026</td><td><strong>Voucher issued</strong><div class="sub">Secrets The Vine Cancun</div></td><td><div class="ref">FO0CDJ</div></td><td class="money minus">− USD 1,137.25</td><td>USD 6,162.75</td></tr>
+            <tr><td>Sep 15, 2026</td><td><strong>Top-up · bank transfer</strong><div class="sub">Reference APL-2217</div></td><td><div class="ref">TU-0192</div></td><td class="money plus">+ USD 5,000.00</td><td>USD 7,300.00</td></tr>
+            <tr><td>Sep 13, 2026</td><td><strong>Voucher issued</strong><div class="sub">Hyatt Zilara Cancun</div></td><td><div class="ref">KX2P7A</div></td><td class="money minus">− USD 1,910.00</td><td>USD 2,300.00</td></tr>
+            <tr><td>Sep 12, 2026</td><td><strong>Top-up · card</strong><div class="sub">Visa ending 4831 · card fee paid by agency</div></td><td><div class="ref">TU-0191</div></td><td class="money plus">+ USD 1,500.00</td><td>USD 4,210.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note-box">Refunds return to your balance once the hotel confirms the cancellation, minus the cancellation charge if there is one. Bank transfers are added once they arrive, usually within 1 to 3 business days.</div>
+    </div>
+  </section>
+
+  <section class="bottom-grid">
+    <article class="card">
+      <div class="card-head"><div class="card-title"><h2>Top destinations</h2><p>Highest-performing destinations by sales</p></div></div>
+      <div class="card-body">
+        <div class="rank-row rank-head"><span>Destination</span><span class="rank-num">Bookings</span><span class="rank-num">Sales</span><span class="rank-num">Profit</span></div>
+        <div class="rank-row"><span class="rank-name">Cancun</span><span class="rank-num">7</span><span class="rank-num">USD 10,420</span><span class="rank-num positive">USD 1,485</span></div>
+        <div class="rank-row"><span class="rank-name">Punta Cana</span><span class="rank-num">4</span><span class="rank-num">USD 6,280</span><span class="rank-num positive">USD 890</span></div>
+        <div class="rank-row"><span class="rank-name">Miami</span><span class="rank-num">3</span><span class="rank-num">USD 4,160</span><span class="rank-num positive">USD 510</span></div>
+        <div class="rank-row"><span class="rank-name">Paphos</span><span class="rank-num">2</span><span class="rank-num">USD 2,480</span><span class="rank-num positive">USD 325</span></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head"><div class="card-title"><h2>Top hotels</h2><p>Hotels generating the most sales</p></div></div>
+      <div class="card-body">
+        <div class="rank-row rank-head"><span>Hotel</span><span class="rank-num">Bookings</span><span class="rank-num">Sales</span><span class="rank-num">Profit</span></div>
+        <div class="rank-row"><span class="rank-name">Secrets The Vine Cancun</span><span class="rank-num">4</span><span class="rank-num">USD 5,910</span><span class="rank-num positive">USD 840</span></div>
+        <div class="rank-row"><span class="rank-name">Hotel Xcaret Mexico</span><span class="rank-num">3</span><span class="rank-num">USD 5,240</span><span class="rank-num positive">USD 695</span></div>
+        <div class="rank-row"><span class="rank-name">Hyatt Zilara Cancun</span><span class="rank-num">2</span><span class="rank-num">USD 3,180</span><span class="rank-num positive">USD 420</span></div>
+        <div class="rank-row"><span class="rank-name">Secrets Cap Cana</span><span class="rank-num">2</span><span class="rank-num">USD 2,960</span><span class="rank-num positive">USD 398</span></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><div class="card-title"><h2>Recent booking performance</h2><p>Latest booking activity and profitability</p></div></div>
+    <div class="card-body">
+      <div class="recent-item recent-head"><span>Booking</span><span class="recent-money">Sale</span><span class="recent-money">Profit</span><span></span></div>
+      <div class="recent-item"><div><div class="recent-hotel">Dreams Jade Resort &amp; Spa</div><div class="recent-ref">JD4N7C · Tal Mizrahi</div></div><div class="recent-money">USD 1,290</div><div class="recent-money muted">USD 0</div><span class="status cancelled">Cancelled</span></div>
+      <div class="recent-item"><div><div class="recent-hotel">Hotel Xcaret Mexico</div><div class="recent-ref">AP9K2M · Daniel Levy</div></div><div class="recent-money">USD 3,480</div><div class="recent-money positive">USD 430</div><span class="status">Vouchered</span></div>
+      <div class="recent-item"><div><div class="recent-hotel">Mare Paphos</div><div class="recent-ref">RM8T4C · Maya Cohen</div></div><div class="recent-money">USD 1,286</div><div class="recent-money positive">USD 164</div><span class="status">In stay</span></div>
+      <div class="recent-item"><div><div class="recent-hotel">Hyatt Zilara Cancun</div><div class="recent-ref">KX2P7A · Ron Shavit</div></div><div class="recent-money">USD 2,196</div><div class="recent-money positive">USD 286</div><span class="status">Pending</span></div>
+    </div>
+  </section>
+</main>
+<script>
+document.querySelectorAll('.nav-trigger,.account-trigger').forEach(btn=>{
+  btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const group=btn.closest('.nav-group');
+    document.querySelectorAll('.nav-group.menu-open').forEach(g=>{ if(g!==group) g.classList.remove('menu-open'); });
+    group.classList.toggle('menu-open');
+  });
+});
+document.addEventListener('click',()=>document.querySelectorAll('.nav-group.menu-open').forEach(g=>g.classList.remove('menu-open')));
+</script>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

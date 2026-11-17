@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Join Apolles | Travel Agent Access</title>
+<meta name="description" content="Apply for access to the Apolles hotel booking platform for verified travel professionals.">
+<style>
+:root{
+  --ink:#17211d;
+  --muted:#6d756f;
+  --green:#173f35;
+  --green-2:#245c4e;
+  --cream:#f7f4ed;
+  --paper:#fffdf8;
+  --line:#e7e2d8;
+  --shadow:0 20px 60px rgba(19,47,39,.10);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  color:var(--ink);
+  background:
+    radial-gradient(circle at 85% 10%,rgba(184,145,85,.12),transparent 25%),
+    linear-gradient(180deg,#fbf8f0 0%,#fffdf8 55%);
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  line-height:1.55;
+}
+h1,h2,h3,.brand{
+  font-family:Georgia,"Times New Roman",serif;
+  font-weight:500;
+}
+a{text-decoration:none;color:inherit}
+.container{width:min(1180px,calc(100% - 40px));margin:auto}
+
+header{
+  position:sticky;top:0;z-index:30;
+  background:rgba(255,253,248,.94);
+  backdrop-filter:blur(14px);
+  border-bottom:1px solid rgba(231,226,216,.8);
+}
+.nav{
+  height:78px;display:flex;align-items:center;gap:28px;
+}
+.brand{font-size:29px;letter-spacing:.02em;margin-right:auto}
+.actions{display:flex;gap:10px}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:46px;padding:0 19px;border-radius:999px;
+  border:1px solid var(--green);font-weight:650;font-size:14px;
+  transition:.2s ease;background:transparent;color:var(--green);
+}
+.btn:hover{transform:translateY(-1px)}
+
+main{padding:74px 0 90px}
+.join-grid{
+  display:grid;
+  grid-template-columns:.82fr 1.18fr;
+  gap:72px;
+  align-items:start;
+}
+.copy{
+  position:sticky;
+  top:130px;
+  padding-top:22px;
+}
+.eyebrow{
+  color:var(--green-2);
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  margin-bottom:17px
+}
+h1{
+  font-size:clamp(48px,6vw,72px);
+  line-height:.98;
+  letter-spacing:-.045em;
+  margin:0 0 24px
+}
+.lead{
+  font-size:19px;
+  color:#59645f;
+  max-width:560px;
+  margin:0 0 28px
+}
+.verify{
+  border-top:1px solid var(--line);
+  padding-top:22px;
+  margin-top:32px;
+  color:#5d6863;
+  font-size:14px
+}
+.verify strong{color:var(--ink)}
+.mini{
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
+  margin-top:18px
+}
+.mini-icon{
+  width:32px;height:32px;flex:0 0 32px;
+  border-radius:10px;background:#eaf1ee;
+  display:grid;place-items:center;
+  color:var(--green);font-weight:800;font-size:12px
+}
+.mini p{margin:2px 0 0;font-size:13px;color:#69736e}
+
+/* Stripe-like form, using existing site colors */
+.form-card{
+  background:#fff;
+  border:1px solid #ece7de;
+  border-radius:18px;
+  box-shadow:0 8px 24px rgba(23,63,53,.06);
+  overflow:hidden;
+}
+.form-head{
+  padding:22px 24px 16px;
+  border-bottom:1px solid #f0ece5;
+  background:#fff;
+}
+.form-head h2{
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:24px;
+  line-height:1.1;
+  font-weight:700;
+  letter-spacing:-.02em;
+  margin:0 0 6px;
+}
+.form-head p{
+  margin:0;
+  color:#6f7873;
+  font-size:13px;
+}
+.form-body{
+  padding:20px 24px 22px;
+}
+.form-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+}
+.field.full{grid-column:1/-1}
+label{
+  display:block;
+  font-size:12px;
+  font-weight:600;
+  margin-bottom:6px;
+  color:#37413d;
+  letter-spacing:.01em;
+}
+.optional{
+  color:#99a09c;
+  font-weight:500;
+  margin-left:3px;
+}
+input,select,textarea{
+  width:100%;
+  border:1px solid #d9e1dc;
+  background:#fff;
+  border-radius:8px;
+  min-height:36px;
+  padding:8px 11px;
+  font:inherit;
+  font-size:14px;
+  color:var(--ink);
+  outline:none;
+  transition:border-color .14s ease, box-shadow .14s ease, background .14s ease;
+  box-shadow:none;
+}
+textarea{
+  min-height:78px;
+  resize:vertical;
+  padding-top:9px;
+}
+input::placeholder, textarea::placeholder{color:#9ba29e}
+input:focus,select:focus,textarea:focus{
+  border-color:#95aba2;
+  box-shadow:0 0 0 3px rgba(23,63,53,.07);
+  background:#fff;
+}
+.checkbox{
+  display:flex;
+  gap:10px;
+  align-items:flex-start;
+  margin-top:2px;
+}
+.checkbox input{
+  width:15px;height:15px;min-height:auto;margin-top:2px;
+  accent-color:var(--green);
+  box-shadow:none;
+}
+.checkbox label{
+  margin:0;
+  font-size:12px;
+  font-weight:500;
+  color:#69726d;
+  line-height:1.45;
+}
+.checkbox a{
+  text-decoration:underline;
+  text-underline-offset:2px;
+}
+.submit{
+  width:100%;
+  border:0;
+  margin-top:2px;
+  min-height:38px;
+  border-radius:8px;
+  background:var(--green);
+  color:#fff;
+  font-weight:700;
+  font-size:14px;
+  cursor:pointer;
+  transition:.14s ease;
+}
+.submit:hover{
+  background:#12352d;
+}
+.note{
+  text-align:center;
+  color:#8b928e;
+  font-size:11.5px;
+  margin:9px 0 0;
+}
+.form-alert{
+  display:none;
+  margin-bottom:10px;
+  padding:11px 12px;
+  border-radius:9px;
+  border:1px solid #edd9d4;
+  background:#fbf4f2;
+  color:#8a3f32;
+  font-size:12.5px;
+}
+.form-alert.show{display:block}
+.form-alert a{text-decoration:underline;text-underline-offset:2px;font-weight:600}
+.form-help{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  margin-top:14px;
+  padding-top:13px;
+  border-top:1px solid #f2ede6;
+}
+.form-help span{
+  color:#808884;
+  font-size:11.5px;
+}
+.form-help a{
+  color:var(--green);
+  font-size:11.5px;
+  font-weight:600;
+}
+
+footer{
+  background:#102d26;
+  color:#d9e2de;
+  padding:32px 0
+}
+.footer-inner{
+  display:flex;
+  justify-content:space-between;
+  gap:20px;
+  align-items:center
+}
+footer .brand{color:white;font-size:25px}
+footer p{
+  margin:0;
+  font-size:12px;
+  color:#9db0a8
+}
+.footer-links{
+  display:flex;gap:18px;font-size:12px;color:#b5c3be
+}
+
+@media(max-width:900px){
+  .join-grid{grid-template-columns:1fr;gap:42px}
+  .copy{position:static;padding-top:0}
+}
+@media(max-width:650px){
+  .container{width:min(100% - 26px,1180px)}
+  .nav{height:68px}
+  .brand{font-size:25px}
+  main{padding:48px 0 65px}
+  h1{font-size:48px}
+  .lead{font-size:17px}
+  .form-head{padding:18px 16px 14px}
+  .form-body{padding:16px}
+  .form-card{border-radius:16px}
+  .form-grid{grid-template-columns:1fr}
+  .field.full{grid-column:auto}
+  .footer-inner{flex-direction:column;align-items:flex-start}
+  .footer-links{flex-wrap:wrap}
+  .form-help{flex-direction:column;align-items:flex-start}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container nav">
+    <a class="brand" href="#">Apolles</a>
+    <div class="actions">
+      <a class="btn" href="#">Agent Login</a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="container join-grid">
+
+    <section class="copy">
+      <div class="eyebrow">Travel professional access</div>
+      <h1>Join Apolles</h1>
+      <p class="lead">Apply for free access to the Apolles hotel booking platform.</p>
+
+      <div class="verify">
+        <strong>Access is reviewed before activation.</strong>
+        <div class="mini">
+          <div class="mini-icon">01</div>
+          <p>Submit your agency details.</p>
+        </div>
+        <div class="mini">
+          <div class="mini-icon">02</div>
+          <p>We verify your travel business.</p>
+        </div>
+        <div class="mini">
+          <div class="mini-icon">03</div>
+          <p>Once approved, you get an email with a link to set your password and sign in.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="form-card">
+      <div class="form-head">
+        <h2>Apply for access</h2>
+        <p>Tell us a little about your travel business.</p>
+      </div>
+
+      <div class="form-body">
+        <form id="joinForm">
+          <div class="form-grid">
+
+            <div class="field">
+              <label for="agency">Agency name</label>
+              <input id="agency" name="agency" type="text" placeholder="Your agency name" required>
+            </div>
+
+            <div class="field">
+              <label for="contact">Contact name</label>
+              <input id="contact" name="contact" type="text" placeholder="Full name" required>
+            </div>
+
+            <div class="field">
+              <label for="email">Business email</label>
+              <input id="email" name="email" type="email" placeholder="name@agency.com" required>
+            </div>
+
+            <div class="field">
+              <label for="phone">Phone</label>
+              <input id="phone" name="phone" type="tel" placeholder="+1 555 000 0000" required>
+            </div>
+
+            <div class="field">
+              <label for="country">Country</label>
+              <select id="country" name="country" required>
+                <option value="">Select country</option>
+                <option>Israel</option>
+                <option>United States</option>
+                <option>United Kingdom</option>
+                <option>Canada</option>
+                <option>Mexico</option>
+                <option>Spain</option>
+                <option>France</option>
+                <option>Italy</option>
+                <option>Germany</option>
+                <option>United Arab Emirates</option>
+                <option>Other</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="website">Website or social media page</label>
+              <input id="website" name="website" type="text" placeholder="Website, Facebook or Instagram link" required>
+            </div>
+
+            <div class="field full">
+              <label for="license">IATA / TIDS / travel license <span class="optional">optional</span></label>
+              <input id="license" name="license" type="text" placeholder="Professional ID or license number">
+            </div>
+
+            <div class="field full">
+              <label for="notes">Notes <span class="optional">optional</span></label>
+              <textarea id="notes" name="notes" placeholder="Anything relevant about your agency"></textarea>
+            </div>
+
+            <div class="field full checkbox">
+              <input id="terms" name="terms" type="checkbox" required>
+              <label for="terms">I agree to the <a href="#">Terms of Use</a> and <a href="#">Privacy Policy</a>.</label>
+            </div>
+
+            <div class="field full">
+              <div class="form-alert" id="duplicateAlert">An application with this email already exists. <a href="#">Sign in</a> or <a href="#">contact support</a>.</div>
+              <button class="submit" type="submit">Apply for Access</button>
+              <p class="note">We review every application. You will not be able to sign in until your agency is approved.</p>
+            </div>
+
+          </div>
+        </form>
+
+        <div class="form-help">
+          <span>Need help before applying?</span>
+          <a href="#">Contact support</a>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <div class="container footer-inner">
+    <div>
+      <div class="brand">Apolles</div>
+      <p>Hotel booking tools for verified travel professionals.</p>
+    </div>
+    <div class="footer-links">
+      <a href="#">Agent Login</a>
+      <a href="#">Support</a>
+      <a href="#">Terms</a>
+      <a href="#">Privacy</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+// Mockup behavior:
+// - An email that already has an application shows the red alert above the button
+//   (demo: any email that starts with "taken@").
+// - A new application goes to the "Application received" page.
+document.getElementById('joinForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  var email = document.getElementById('email').value.trim().toLowerCase();
+  var alertBox = document.getElementById('duplicateAlert');
+  if (email.indexOf('taken@') === 0) {
+    alertBox.classList.add('show');
+    return;
+  }
+  alertBox.classList.remove('show');
+  window.location.href = '03-application-received.html';
+});
+</script>
+
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

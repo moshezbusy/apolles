@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Booking FO0CDJ | Apolles</title>
+<style>
+:root{
+  --ink:#17211d;
+  --muted:#6d756f;
+  --green:#173f35;
+  --green-soft:#eef3f0;
+  --line:#e7e2d8;
+  --bg:#faf9f6;
+  --card:#fff;
+  --shadow:0 14px 36px rgba(19,47,39,.08);
+  --red:#94554e;
+  --red-soft:#fbf1ef;
+  --amber:#7a5a17;
+  --amber-soft:#fff7e3;
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  min-height:100%;
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--ink);
+  background:var(--bg);
+}
+a{text-decoration:none;color:inherit}
+button,input,textarea,select{font:inherit}
+
+.topbar{
+  position:sticky;
+  top:0;
+  z-index:100;
+  height:68px;
+  background:#fff;
+  border-bottom:1px solid var(--line);
+}
+.topbar-inner{
+  width:min(1280px,calc(100% - 40px));
+  height:100%;
+  margin:auto;
+  display:flex;
+  align-items:center;
+  gap:28px;
+}
+.brand{
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:27px;
+  margin-right:10px;
+}
+.nav{display:flex;height:100%;align-items:center;gap:26px}
+.nav-link{height:100%;display:flex;align-items:center;position:relative;font-size:13px;color:#6c7671}
+.nav-link.active{color:var(--green);font-weight:700}
+.nav-link.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-group{position:relative;height:100%;display:flex;align-items:center}
+.nav-trigger{
+  height:100%;border:0;background:transparent;padding:0;cursor:pointer;
+  color:#6c7671;font-size:13px;display:flex;align-items:center;gap:5px;position:relative;
+}
+.nav-trigger.active{color:var(--green);font-weight:700}
+.nav-trigger.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-trigger span{font-size:11px;color:#8a938e}
+.nav-menu{
+  position:absolute;top:58px;left:-10px;z-index:180;
+  width:190px;padding:7px;background:#fff;border:1px solid #e1e6e3;
+  border-radius:11px;box-shadow:0 15px 38px rgba(19,47,39,.14);
+  opacity:0;visibility:hidden;transform:translateY(5px);transition:.14s ease;
+}
+.nav-group:hover>.nav-menu,.nav-group.menu-open>.nav-menu{opacity:1;visibility:visible;transform:translateY(0)}
+.nav-menu a{display:block;padding:8px 10px;border-radius:7px;color:#4d5a54;font-size:12.5px}
+.nav-menu a:hover{background:#f1f6f3;color:var(--green)}
+.nav-sep{height:1px;background:#eeeae5;margin:5px 2px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:14px;color:#647069;font-size:12px}
+.balance-chip{
+  display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;
+  padding:6px 11px;border:1px solid #dce6e0;border-radius:10px;background:#f7faf8;
+}
+.balance-chip small{font-size:11px;color:#7f8984;font-weight:600}
+.balance-chip b{font-size:12.5px;color:var(--green)}
+.balance-chip:hover{border-color:#bcd0c6}
+.account-group{height:auto}
+.account-trigger{border:0;background:transparent;display:flex;align-items:center;gap:8px;color:#4d5a54;font-size:12.5px;padding:0;cursor:pointer}
+.account-trigger b{font-size:11px;font-weight:500}
+.account-menu{left:auto;right:0;top:40px}
+.avatar{
+  width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#e5eee9;color:var(--green);
+  font-size:11px;font-weight:800;
+}
+
+.page{
+  width:min(1280px,calc(100% - 40px));
+  margin:auto;
+  padding:22px 0 50px;
+}
+
+.page-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 320px;
+  gap:18px;
+  align-items:start;
+}
+.content-col{display:grid;gap:14px}
+.right-rail{position:sticky;top:86px;display:grid;gap:14px}
+
+.hero-main,.rail-card,.card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:18px;
+  box-shadow:var(--shadow);
+}
+
+/* ===== Top card: status, references, stay ===== */
+.hero-main{padding:18px}
+.hero-top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:14px}
+.status-pill{
+  display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:0 12px;
+  border-radius:999px;background:var(--green-soft);color:var(--green);font-size:12px;font-weight:700;
+}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
+.status-pill.pending{background:var(--amber-soft);color:var(--amber)}
+.status-pill.pending .status-dot{background:#c79a2e}
+.status-pill.cancelled{background:var(--red-soft);color:var(--red)}
+.status-pill.cancelled .status-dot{background:var(--red)}
+.refs{display:flex;gap:22px;text-align:right}
+.ref-label{color:#8b938f;font-size:11px;margin-bottom:4px}
+.ref-value{font-size:13px;font-weight:800}
+.ref-value.waiting{color:var(--amber);font-weight:700}
+.hero-main h1{margin:0 0 6px;font-size:28px;line-height:1.1;font-family:Georgia,"Times New Roman",serif;font-weight:500}
+.hero-sub{color:#6e7873;font-size:12px}
+
+.stay-top{
+  display:grid;grid-template-columns:minmax(0,1fr) 170px 170px;gap:10px;align-items:stretch;
+  margin-top:16px;padding:14px 0;border-top:1px solid #f0ece6;border-bottom:1px solid #f0ece6;
+}
+.stay-hotel{display:flex;gap:12px;align-items:center;min-width:0}
+.hotel-thumb{
+  flex:0 0 84px;height:64px;border-radius:10px;
+  background:linear-gradient(135deg,rgba(23,63,53,.14),rgba(23,63,53,.02)),linear-gradient(180deg,#92bdca,#d9e9ed 55%,#c1ad8e);
+}
+.hotel-name{font-size:19px;font-weight:700;line-height:1.2}
+.hotel-addr{margin-top:4px;color:#6e7873;font-size:11.5px;line-height:1.45}
+.date-box{border:1px solid #e3e9e5;border-radius:12px;padding:10px 12px;background:#fbfcfb;display:flex;flex-direction:column;justify-content:center}
+.date-box span{color:#75807b;font-size:11px}
+.date-box strong{display:block;font-size:12.5px;margin-top:3px}
+.date-box em{display:block;font-style:normal;color:#6d756f;font-size:11px;margin-top:2px}
+.stay-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px 16px;padding-top:14px}
+.stay-item span{display:block;color:#75807b;font-size:11px;margin-bottom:3px}
+.stay-item strong{display:block;font-size:12.5px}
+
+.hero-actions{display:flex;gap:8px;flex-wrap:nowrap;margin-top:16px}
+.hero-actions .btn{padding:0 12px;white-space:nowrap}
+.btn{
+  height:38px;padding:0 14px;border-radius:10px;border:1px solid #d7e0db;background:#fff;
+  color:var(--green);font-size:12px;font-weight:700;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+.btn.primary{background:var(--green);color:#fff;border-color:var(--green)}
+.btn.warn{border-color:#eadcc0;color:#8d5f1d;background:#fffaf0}
+.btn.danger{border-color:#e4c7c1;color:var(--red);background:#fff}
+.btn.danger-solid{border-color:var(--red);background:var(--red);color:#fff}
+.btn:disabled,.btn.off{opacity:.45;cursor:not-allowed;pointer-events:none}
+.free-cancel-note{margin-top:10px;font-size:11.5px;color:#557167;line-height:1.5}
+
+/* ===== Messages (pending, cancel failed) ===== */
+.notice{display:none;border-radius:14px;padding:13px 15px;font-size:12px;line-height:1.55}
+.notice.show{display:block}
+.notice strong{display:block;font-size:13px;margin-bottom:2px}
+.notice.auto{background:#eef5fb;border:1px solid #cfe0ef;color:#24476a}
+.status-pill.open{background:#eef5fb;color:#24476a}
+.status-pill.open .status-dot{background:#3f79ad}
+.btn.hide{display:none}
+.dialog .notice{margin-bottom:12px}
+.notice.pending{background:var(--amber-soft);border:1px solid #f0dfb2;color:#6f5a20}
+.notice.error{background:var(--red-soft);border:1px solid #efd3cd;color:#7a3b2e}
+
+/* ===== Cards ===== */
+.card-head{padding:15px 18px;border-bottom:1px solid #f0ece6;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.card-head h2{margin:0;font-size:15px}
+.card-head small{color:#8a928e;font-size:11px}
+.card-body{padding:14px 18px 16px}
+
+.guests-list{display:grid;gap:0}
+.guest-row{display:grid;grid-template-columns:110px minmax(0,1fr) 90px;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid #f0f2f1;font-size:12.5px}
+.guest-row:last-child{border-bottom:0}
+.guest-row span{color:#75807b;font-size:11.5px}
+.guest-row span:last-child{text-align:right}
+.contact-line{margin-top:10px;padding:10px 12px;border-radius:10px;background:#f7f9f8;font-size:12px;color:#46534d;line-height:1.5}
+.contact-line strong{color:#1e2924}
+
+.requests{display:flex;gap:8px;flex-wrap:wrap}
+.request-chip{padding:7px 12px;border-radius:999px;background:var(--green-soft);border:1px solid #dce9e2;color:var(--green);font-size:11.5px;font-weight:700}
+.request-note{margin-top:10px;color:#6f7974;font-size:11px;line-height:1.5}
+
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:stretch}
+.norms{color:#55615b;font-size:11.5px;line-height:1.7}
+.sub-head{margin:14px 0 8px;padding-top:12px;border-top:1px solid #f0ece6;font-size:12.5px;font-weight:700}
+.sub-head em{font-style:normal;font-weight:500;color:#8a928e;font-size:11px;margin-left:6px}
+.cancel-card .cancellation-table{font-size:11px}
+.cancel-card .cancellation-table th,.cancel-card .cancellation-table td{padding:8px 9px}
+.cancel-card .cancellation-table small{color:#7a837f;font-size:11px}
+
+.cancellation-table{width:100%;border-collapse:collapse;font-size:11.5px}
+.cancellation-table th,.cancellation-table td{border:1px solid #e5e9e7;padding:9px 10px;text-align:left}
+.cancellation-table th{background:#f8f9f8;color:#415049}
+.cancellation-table td:last-child,.cancellation-table th:last-child{text-align:right;white-space:nowrap}
+.cancellation-note{margin-top:10px;color:#5d6863;font-size:11px;line-height:1.5}
+
+/* ===== Right rail: payment ===== */
+.rail-card{padding:16px}
+.rail-card h3{margin:0 0 12px;font-size:15px}
+.total{background:var(--green-soft);border-radius:10px;padding:12px}
+.total .label{font-size:11px;color:#66736d}
+.total .amount{margin-top:4px;font-size:22px;font-weight:800}
+.total .sub{margin-top:4px;font-size:11px;color:#7a837f}
+.total.pending{background:var(--amber-soft)}
+.total.cancelled{background:var(--red-soft)}
+
+.property-fee{margin-top:12px;border:1px solid #eadfbe;border-radius:10px;overflow:hidden;background:#fffdf7}
+.property-fee-head{padding:8px 11px;background:#fff7dd;color:#6f5a20;font-size:11px;font-weight:700}
+.property-fee-body{padding:10px 11px;display:flex;justify-content:space-between;gap:12px}
+.property-fee-name{font-size:12px;font-weight:700}
+.property-fee-note{margin-top:3px;font-size:11px;color:#7c8580}
+.property-fee-amount{font-size:13px;font-weight:800;white-space:nowrap}
+
+details.markup{margin-top:12px;border-top:1px solid #f0ece6;padding-top:10px}
+details.markup summary{list-style:none;cursor:pointer;font-size:12.5px;font-weight:700;color:var(--green);display:flex;justify-content:space-between;align-items:center;gap:8px}
+details.markup summary::-webkit-details-marker{display:none}
+details.markup summary em{font-style:normal;font-weight:600;color:#6d756f;font-size:11.5px}
+details.markup summary:after{content:"+";font-size:17px;font-weight:500}
+details.markup[open] summary:after{content:"−"}
+details.markup[open] summary{margin-bottom:10px}
+.markup-type{display:flex;gap:14px;margin-bottom:10px}
+.markup-type label{display:flex;align-items:center;gap:6px;font-size:11px;color:#5d6863}
+.markup-type input{accent-color:var(--green)}
+.markup-row input{width:100%;height:36px;border:1px solid #dce3df;border-radius:8px;padding:0 10px;font-size:12px}
+.markup-result{margin-top:8px;display:flex;justify-content:space-between;gap:10px;font-size:11.5px}
+.markup-result span{color:#75807b}
+.markup-result strong{color:var(--green);text-align:right}
+.markup-note{margin-top:6px;font-size:11px;color:#8a928e}
+
+.demo{padding:9px 11px;border:1px dashed #d8dfdb;border-radius:10px;font-size:11px;color:#7d8581;line-height:1.6}
+.demo a{color:var(--green);font-weight:600;text-decoration:underline;cursor:pointer}
+
+/* ===== Dialogs and toast ===== */
+.overlay{position:fixed;inset:0;z-index:400;background:rgba(16,45,38,.38);display:none;align-items:center;justify-content:center;padding:18px}
+.overlay.show{display:flex}
+.dialog{width:min(440px,100%);background:#fff;border-radius:16px;box-shadow:0 30px 80px rgba(16,45,38,.3);padding:20px}
+.dialog h3{margin:0 0 4px;font-family:Georgia,"Times New Roman",serif;font-weight:500;font-size:24px}
+.dialog-sub{margin:0 0 14px;color:#6f7974;font-size:12px;line-height:1.5}
+.dialog-rows{border:1px solid #e4e9e6;border-radius:10px;overflow:hidden;margin-bottom:12px}
+.dialog-rows div{display:flex;justify-content:space-between;padding:9px 11px;font-size:12.5px;border-bottom:1px solid #eef1ef}
+.dialog-rows div:last-child{border-bottom:0}
+.dialog-rows span{color:#6f7974}
+.dialog-rows .back{background:var(--green-soft)}
+.dialog-rows .back strong{color:var(--green)}
+.dialog-note{margin:0 0 12px;font-size:11.5px;color:#7a6a45;background:#fff9e9;border:1px solid #eadfbe;border-radius:9px;padding:9px 10px;line-height:1.5}
+.dialog-label{display:block;font-size:11.5px;font-weight:700;color:#4b5852;margin:10px 0 5px}
+.dialog-field{width:100%;border:1px solid #dce3df;border-radius:8px;padding:8px 10px;font-size:12.5px;font-family:inherit;background:#fff}
+select.dialog-field{height:38px}
+.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.toast{position:fixed;right:18px;bottom:18px;z-index:450;background:var(--green);color:#fff;padding:11px 14px;border-radius:10px;font-size:12px;opacity:0;transform:translateY(8px);transition:.18s ease;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+
+@media(max-width:1080px){
+  .page-grid{grid-template-columns:1fr}
+  .pair{grid-template-columns:1fr}
+  .right-rail{position:static}
+  .stay-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:760px){
+  .topbar-inner,.page{width:min(100% - 24px,1280px)}
+  .nav{gap:14px;overflow:auto}
+  .account-name{display:none}
+  .balance-chip small{display:none}
+  .nav-menu{position:fixed;left:12px;right:12px;top:62px;width:auto}
+  .account-menu{top:62px}
+  .hero-top{flex-direction:column;gap:12px}
+  .hero-actions{flex-wrap:wrap}
+  .refs{text-align:left}
+  .stay-top{grid-template-columns:1fr 1fr}
+  .stay-hotel{grid-column:1 / -1}
+  .stay-grid{grid-template-columns:1fr 1fr}
+  .guest-row{grid-template-columns:1fr auto}
+  .guest-row span:first-child{grid-column:1 / -1}
+}
+
+/* v4: one look across all agent pages */
+.btn{border-radius:9px}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="07-search.html">Apolles</a>
+
+    <nav class="nav">
+      <a class="nav-link" href="07-search.html">Search</a>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Quotes <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="14-quotes.html">All quotes</a>
+          <a href="15-quote-editor.html">New quote</a>
+          <div class="nav-sep"></div>
+          <a href="18-clients.html">Clients</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger active" type="button">Bookings <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="13-bookings.html">All bookings</a>
+          <a href="13-bookings.html#upcoming">Upcoming stays</a>
+          <a href="13-bookings.html#completed">Completed</a>
+          <a href="13-bookings.html#cancelled">Cancelled</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Reporting <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="19-reports.html">Overview</a>
+          <a href="19-reports.html">Balance history</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="top-actions">
+      <a class="balance-chip" href="20-agency-settings.html#balance" title="Balance and top-ups">
+        <small>Balance</small>
+        <b>USD 4,250.00</b>
+      </a>
+
+      <div class="nav-group account-group">
+        <button class="account-trigger" type="button">
+          <span class="avatar">MZ</span>
+          <span class="account-name">My Agency</span>
+          <b>⌄</b>
+        </button>
+        <div class="nav-menu account-menu">
+          <a href="20-agency-settings.html">Agency settings</a>
+          <a href="20-agency-settings.html#balance">Balance &amp; top-ups</a>
+          <a href="#">Support</a>
+          <div class="nav-sep"></div>
+          <a href="04-login.html">Sign out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <section class="page-grid">
+
+    <div class="content-col">
+
+      <section class="hero-main">
+        <div class="hero-top">
+          <div class="status-pill" id="statusPill"><span class="status-dot"></span><span id="statusText">Booking confirmed</span></div>
+          <div class="refs">
+            <div><div class="ref-label">Apolles reference</div><div class="ref-value">FO0CDJ</div></div>
+            <div><div class="ref-label">Hotel confirmation</div><div class="ref-value" id="hotelConf">88365120</div></div>
+          </div>
+        </div>
+
+        <h1>Booking summary</h1>
+        <div class="hero-sub" id="heroSub">Booked by Moshe Zafrani · Sep 16, 2026 at 14:15 Israel time · Voucher issued</div>
+
+        <!-- One stay block: hotel, dates with times, room, meal plan, guests -->
+        <div class="stay-top">
+          <div class="stay-hotel">
+            <div class="hotel-thumb"></div>
+            <div style="min-width:0">
+              <div class="hotel-name">Secrets The Vine Cancun</div>
+              <div class="hotel-addr">Blvd. Kukulcan Km. 14.5, Zona Hotelera, Cancún, Mexico</div>
+            </div>
+          </div>
+          <div class="date-box"><span>Check-in</span><strong>Tue, Oct 20, 2026</strong><em>from 15:00</em></div>
+          <div class="date-box"><span>Check-out</span><strong>Fri, Oct 23, 2026</strong><em>until 12:00</em></div>
+        </div>
+        <div class="stay-grid">
+          <div class="stay-item"><span>Room</span><strong>Ocean View King Global Getaway</strong></div>
+          <div class="stay-item"><span>Meal plan</span><strong>All inclusive</strong></div>
+          <div class="stay-item"><span>Guests</span><strong>2 adults · 1 room</strong></div>
+          <div class="stay-item"><span>Guest nationality</span><strong>Israel</strong></div>
+          <div class="stay-item"><span>Nights</span><strong>3</strong></div>
+        </div>
+
+        <div class="hero-actions">
+          <button class="btn primary" id="issueBtn" type="button">Issue voucher</button>
+          <a class="btn primary" id="voucherBtn" href="21-voucher.html">Voucher</a>
+          <a class="btn" id="invoiceBtn" href="22-invoice.html">Invoice</a>
+          <button class="btn" id="emailBtn" type="button">Email to client</button>
+          <button class="btn" id="copyBtn" type="button">Copy details</button>
+          <button class="btn warn" id="amendBtn" type="button">Request a change</button>
+          <button class="btn danger" id="cancelBtn" type="button">Cancel booking</button>
+        </div>
+        <div class="free-cancel-note" id="freeNote">Free cancellation until Oct 14, 2026, 23:59 hotel time. Cancelling now returns the full amount to your balance.</div>
+      </section>
+
+      <!-- State: confirmed, voucher not issued. Auto-cancel runs 24 hours before free cancellation ends. -->
+      <div class="notice auto" id="noticeAuto">
+        <strong>Issue the voucher by Oct 13, 2026, 23:59 hotel time</strong>
+        If the voucher is not issued by then, this booking is cancelled automatically at no charge. Issuing the voucher pays USD 1,137.25 from your balance and turns off the automatic cancellation.
+      </div>
+
+      <!-- State: the hotel has not confirmed yet -->
+      <div class="notice pending" id="noticePending">
+        <strong>Waiting for hotel confirmation</strong>
+        USD 1,137.25 is held from your balance until the hotel answers. If the hotel declines, the full amount returns to your balance. The voucher and invoice are available after the hotel confirms. We email you as soon as there is an answer.
+      </div>
+
+      <!-- State: the cancellation did not go through -->
+      <div class="notice error" id="noticeCancelFailed">
+        <strong>The booking was not cancelled</strong>
+        The hotel did not confirm the cancellation. Your booking is still active and nothing changed in your balance. Try again, or contact support.
+      </div>
+
+      <div class="pair">
+      <section class="card">
+        <div class="card-head">
+          <h2>Guests and requests</h2>
+          <small>As sent to the hotel</small>
+        </div>
+        <div class="card-body">
+          <div class="guests-list">
+            <div class="guest-row"><span>Lead guest</span><strong>Mrs Noa Elkobi</strong><span>Adult 1</span></div>
+            <div class="guest-row"><span>Guest 2</span><strong>Mr Noam Elkobi</strong><span>Adult 2</span></div>
+          </div>
+          <div class="contact-line"><strong>Client contact:</strong> noa.elkobi@email.com · +972 50 123 4567</div>
+          <div class="sub-head">Special requests <em>sent to the hotel with the booking</em></div>
+          <div class="requests">
+            <span class="request-chip">Honeymoon</span>
+          </div>
+          <div class="request-note">Requests are not guaranteed and depend on the hotel. To add or change a request, use Request a change.</div>
+        </div>
+      </section>
+
+
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Hotel policies</h2>
+          <small>Important notes from supplier and property</small>
+        </div>
+        <div class="card-body">
+          <div class="norms">
+            Important notices: in case of any amendment please contact us to verify rates, conditions and hotel acceptance. Environmental or sanitation taxes may be collected directly by the hotel and are not included in the rate. Hotel will invoice the total amount of this booking in case of no-show or late cancellation according to the applicable policy. Check-in and check-out hours remain subject to hotel rules. Some supplements or resort fees may be collected locally at the destination. Booking amendments remain subject to supplier approval and may affect the final price or the applicable cancellation terms.
+          </div>
+        </div>
+      </section>
+      </div>
+
+    </div>
+
+    <aside class="right-rail">
+      <section class="rail-card">
+        <h3>Payment</h3>
+
+        <div class="total" id="totalBox">
+          <div class="label" id="totalLabel">Paid from balance</div>
+          <div class="amount">USD 1,137.25</div>
+          <div class="sub" id="totalSub">Deducted on Sep 16, 2026</div>
+        </div>
+
+        <div class="property-fee">
+          <div class="property-fee-head">Not included in the price · Payable at property</div>
+          <div class="property-fee-body">
+            <div>
+              <div class="property-fee-name">Management fee</div>
+              <div class="property-fee-note">USD 40.00 per night · paid by the guest</div>
+            </div>
+            <div class="property-fee-amount">USD 120.00</div>
+          </div>
+        </div>
+
+        <!-- Selling price: for the agent's reports only. Closed by default, updates while typing. -->
+        <details class="markup">
+          <summary><span>Your selling price</span><em id="markupShort">Profit USD 136.47</em></summary>
+          <div class="markup-type">
+            <label><input type="radio" name="markup" value="fixed"> Fixed (USD)</label>
+            <label><input type="radio" name="markup" value="pct" checked> Percentage (%)</label>
+          </div>
+          <div class="markup-row">
+            <input type="number" id="markupInput" value="12" min="0" aria-label="Markup">
+          </div>
+          <div class="markup-result"><span>Selling price · your profit</span><strong id="markupResult">USD 1,273.72 · USD 136.47</strong></div>
+          <div class="markup-note">For your reports only. Not shown on the voucher.</div>
+        </details>
+      </section>
+
+      <section class="rail-card cancel-card">
+          <h3>Cancellation charges</h3>
+          <div>
+            <table class="cancellation-table">
+              <thead>
+                <tr><th>Cancelled</th><th>Charge</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Until Oct 14, 2026, 23:59</td><td>USD 0.00</td></tr>
+                <tr><td>Oct 15, 00:00 to Oct 18, 23:59</td><td>USD 352.55</td></tr>
+                <tr><td>From Oct 19, 00:00</td><td>USD 1,137.25<br><small>100%</small></td></tr>
+              </tbody>
+            </table>
+            <div class="cancellation-note">
+              All times are hotel time: Cancún (UTC−5). No-show: 100% of the booking amount. Early check-out may be charged in full.
+            </div>
+          </div>
+      </section>
+
+      <div class="demo">Mockup demo only. Show this booking as: <a id="demoVouchered">vouchered</a> · <a id="demoConfirmed">confirmed, no voucher</a> · <a id="demoPending">waiting for hotel</a> · <a id="demoCancelled">cancelled</a> · <a id="demoCancelFail">next cancel fails</a> · <a id="demoLowBal">low balance</a></div>
+    </aside>
+
+  </section>
+</main>
+
+<!-- Cancel booking -->
+<div class="overlay" id="cancelOverlay">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="cancelTitle">
+    <h3 id="cancelTitle">Cancel this booking?</h3>
+    <p class="dialog-sub">Secrets The Vine Cancun · Oct 20 to Oct 23, 2026 · FO0CDJ</p>
+    <div class="dialog-rows">
+      <div><span id="cancelPaidLabel">Paid from balance</span><strong id="cancelPaid">USD 1,137.25</strong></div>
+      <div><span>Cancellation charge now</span><strong>USD 0.00</strong></div>
+      <div class="back"><span>Returned to your balance</span><strong id="cancelBack">USD 1,137.25</strong></div>
+    </div>
+    <p class="dialog-note" id="cancelNote">Free cancellation until Oct 14, 2026, 23:59 hotel time. Cancellation is final and cannot be undone. The amount returns to your balance once the hotel confirms the cancellation. You get a confirmation email with a credit note. Let your client know.</p>
+    <label class="dialog-label" for="cancelReason">Reason (optional)</label>
+    <select class="dialog-field" id="cancelReason">
+      <option>Choose a reason</option>
+      <option>Client changed plans</option>
+      <option>Found a better option</option>
+      <option>Booked by mistake</option>
+      <option>Other</option>
+    </select>
+    <div class="dialog-actions">
+      <button class="btn" type="button" id="keepBtn" data-close>Keep booking</button>
+      <button class="btn danger-solid" type="button" id="confirmCancel">Cancel booking</button>
+    </div>
+  </div>
+</div>
+
+<!-- Issue voucher: pays from the balance and turns off the automatic cancellation -->
+<div class="overlay" id="issueOverlay">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="issueTitle">
+    <h3 id="issueTitle">Issue the voucher?</h3>
+    <p class="dialog-sub">Secrets The Vine Cancun · Oct 20 to Oct 23, 2026 · FO0CDJ</p>
+    <div class="dialog-rows">
+      <div><span>Paid from your balance now</span><strong>USD 1,137.25</strong></div>
+      <div><span>Your balance</span><strong id="ivBal">USD 4,250.00</strong></div>
+      <div class="back"><span>After the voucher</span><strong id="ivAfter">USD 3,112.75</strong></div>
+    </div>
+    <p class="dialog-note">After the voucher is issued, the booking is no longer cancelled automatically, and collecting payment from your client is your responsibility. You can still cancel under the cancellation policy.</p>
+    <div class="notice error" id="ivLow">
+      <strong>Not enough balance</strong>
+      <span id="ivLowText">You need USD 637.25 more to issue this voucher.</span>
+      <div class="dialog-actions" style="justify-content:flex-start;margin-top:10px">
+        <a class="btn" href="20-agency-settings.html#balance">Top up by card</a>
+        <a class="btn" href="20-agency-settings.html#balance">Bank transfer details</a>
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn" type="button" id="ivClose" data-close>Close</button>
+      <button class="btn primary" type="button" id="confirmIssue">Issue voucher and pay USD 1,137.25</button>
+    </div>
+  </div>
+</div>
+
+<!-- Request a change -->
+<div class="overlay" id="amendOverlay">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="amendTitle">
+    <h3 id="amendTitle">Request a change</h3>
+    <p class="dialog-sub">Our team checks the change with the hotel and replies by email. The price or cancellation terms may change.</p>
+    <label class="dialog-label" for="amendType">What do you want to change?</label>
+    <select class="dialog-field" id="amendType">
+      <option>Guest names</option>
+      <option>Dates</option>
+      <option>Room type</option>
+      <option>Number of guests</option>
+      <option>Special requests</option>
+      <option>Other</option>
+    </select>
+    <label class="dialog-label" for="amendDetails">Details</label>
+    <textarea class="dialog-field" id="amendDetails" rows="4" placeholder="For example: change the check-out to Oct 24"></textarea>
+    <div class="dialog-actions">
+      <button class="btn" type="button" data-close>Close</button>
+      <button class="btn primary" type="button" id="sendAmend">Send request</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const money=n=>'USD '+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const NET=1137.25;
+  let balance=4250, state='vouchered', cancelFails=false, busy=false;
+  const chip=()=>document.querySelector('.balance-chip b');
+
+  /* header menus */
+  document.querySelectorAll('.nav-trigger,.account-trigger').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const group=btn.closest('.nav-group');
+      document.querySelectorAll('.nav-group.menu-open').forEach(g=>{ if(g!==group) g.classList.remove('menu-open'); });
+      group.classList.toggle('menu-open');
+    });
+  });
+  document.addEventListener('click',()=>document.querySelectorAll('.nav-group.menu-open').forEach(g=>g.classList.remove('menu-open')));
+
+  /* toast and dialogs */
+  const toast=$('toast'); let t;
+  function show(msg){ toast.textContent=msg; toast.classList.add('show'); clearTimeout(t); t=setTimeout(()=>toast.classList.remove('show'),2600); }
+  document.querySelectorAll('.overlay').forEach(o=>{
+    o.addEventListener('click',e=>{ if(busy) return; if(e.target===o || e.target.hasAttribute('data-close')) o.classList.remove('show'); });
+  });
+
+  /* selling price: updates while typing, no Apply button */
+  function markup(){
+    const v=parseFloat($('markupInput').value)||0;
+    const type=document.querySelector('input[name=markup]:checked').value;
+    const sell= type==='pct' ? NET*(1+v/100) : NET+v;
+    $('markupResult').textContent=money(sell)+' · '+money(sell-NET);
+    $('markupShort').textContent='Profit '+money(sell-NET);
+  }
+  $('markupInput').addEventListener('input',markup);
+  document.querySelectorAll('input[name=markup]').forEach(r=>r.addEventListener('change',markup));
+
+  /* page states:
+     confirmed  = hotel confirmed, voucher not issued, nothing paid, auto-cancel on
+     vouchered  = voucher issued, paid from balance, auto-cancel off
+     pending    = waiting for the hotel
+     cancelled  = cancelled */
+  const BTNS=['issueBtn','voucherBtn','invoiceBtn','emailBtn','copyBtn','amendBtn','cancelBtn'];
+  function setState(next, paid){
+    state=next;
+    const pill=$('statusPill');
+    pill.classList.remove('pending','cancelled','open');
+    ['noticePending','noticeCancelFailed','noticeAuto'].forEach(id=>$(id).classList.remove('show'));
+    BTNS.forEach(id=>{ $(id).classList.remove('off','hide'); $(id).disabled=false; });
+    $('invoiceBtn').textContent='Invoice';
+    $('invoiceBtn').setAttribute('href','22-invoice.html');
+    $('totalBox').className='total';
+    $('hotelConf').textContent='88365120'; $('hotelConf').classList.remove('waiting');
+    chip().textContent=money(balance);
+    let cancelPaid=NET;
+
+    if(next==='vouchered'){
+      $('issueBtn').classList.add('hide');
+      $('statusText').textContent='Vouchered · paid';
+      $('heroSub').textContent='Booked by Moshe Zafrani · Sep 16, 2026 at 14:15 Israel time · Voucher issued';
+      $('totalLabel').textContent='Paid from balance';
+      $('totalSub').textContent='Deducted on Sep 16, 2026, when the voucher was issued';
+      $('freeNote').textContent='Free cancellation until Oct 14, 2026, 23:59 hotel time. Cancelling now returns the full amount to your balance.';
+    }
+    if(next==='confirmed'){
+      pill.classList.add('open');
+      ['voucherBtn','invoiceBtn','emailBtn'].forEach(id=>$(id).classList.add('hide'));
+      $('statusText').textContent='Confirmed · voucher not issued';
+      $('heroSub').textContent='Booked by Moshe Zafrani · Sep 16, 2026 at 14:15 Israel time · Voucher not issued yet';
+      $('noticeAuto').classList.add('show');
+      $('totalBox').className='total pending';
+      $('totalLabel').textContent='Nothing paid yet';
+      $('totalSub').textContent='Paid from your balance when you issue the voucher';
+      $('freeNote').textContent='Free cancellation until Oct 14, 2026, 23:59 hotel time. Automatic cancellation on Oct 13, 2026, 23:59 hotel time if the voucher is not issued.';
+      cancelPaid=0;
+    }
+    if(next==='pending'){
+      pill.classList.add('pending');
+      $('issueBtn').classList.add('hide');
+      $('statusText').textContent='Waiting for hotel confirmation';
+      $('heroSub').textContent='Booked by Moshe Zafrani · Sep 16, 2026 at 14:15 Israel time';
+      $('hotelConf').textContent='Not yet'; $('hotelConf').classList.add('waiting');
+      $('noticePending').classList.add('show');
+      ['voucherBtn','invoiceBtn','emailBtn','copyBtn','amendBtn'].forEach(id=>$(id).classList.add('off'));
+      $('totalBox').className='total pending';
+      $('totalLabel').textContent='Held from balance';
+      $('totalSub').textContent='Held since Sep 16, 2026 · returns in full if the hotel declines';
+      $('freeNote').textContent='You can cancel while waiting. The held amount returns to your balance in full.';
+    }
+    if(next==='cancelled'){
+      const wasPaid = paid!==false;
+      pill.classList.add('cancelled');
+      $('statusText').textContent= wasPaid ? 'Cancelled · USD 1,137.25 returned to balance' : 'Cancelled · nothing was paid';
+      $('heroSub').textContent='Booked by Moshe Zafrani · Sep 16, 2026 at 14:15 Israel time · Cancelled Sep 27, 2026';
+      ['issueBtn'].forEach(id=>$(id).classList.add('hide'));
+      ['voucherBtn','emailBtn','amendBtn','cancelBtn'].forEach(id=>{ $(id).classList.add('off'); $(id).disabled=true; });
+      if(wasPaid){
+        $('invoiceBtn').textContent='Credit note';
+        $('invoiceBtn').setAttribute('href','22-invoice.html#credit');
+      } else {
+        ['voucherBtn','invoiceBtn','emailBtn'].forEach(id=>$(id).classList.add('hide'));
+      }
+      $('totalBox').className='total cancelled';
+      $('totalLabel').textContent= wasPaid ? 'Returned to your balance' : 'Nothing was paid';
+      $('totalSub').textContent= wasPaid ? 'Returned on Sep 27, 2026 · cancellation charge USD 0.00' : 'No voucher was issued · no charge';
+      $('freeNote').textContent= wasPaid
+        ? 'Cancelled on Sep 27, 2026. No charge. USD 1,137.25 was returned to your balance after the hotel confirmed the cancellation.'
+        : 'Cancelled on Sep 27, 2026. No charge. The voucher was not issued, so nothing was paid.';
+    }
+
+    // cancel dialog text follows what was paid
+    $('cancelPaidLabel').textContent= next==='pending' ? 'Held from balance' : 'Paid from balance';
+    $('cancelPaid').textContent=money(cancelPaid);
+    $('cancelBack').textContent=money(cancelPaid);
+    $('cancelNote').textContent= cancelPaid
+      ? 'Free cancellation until Oct 14, 2026, 23:59 hotel time. Cancellation is final and cannot be undone. The amount returns to your balance once the hotel confirms the cancellation. You get a confirmation email with a credit note. Let your client know.'
+      : 'Free cancellation until Oct 14, 2026, 23:59 hotel time. Cancellation is final and cannot be undone. The voucher was not issued, so nothing was paid and nothing is returned. Let your client know.';
+  }
+
+  /* issue voucher: checks the balance, locks on the first click, then pays and turns off auto-cancel */
+  function fillIssue(){
+    $('ivBal').textContent=money(balance);
+    const low=balance<NET;
+    $('ivAfter').textContent= low ? 'Not enough' : money(balance-NET);
+    $('ivLow').classList.toggle('show',low);
+    $('ivLowText').textContent='You need '+money(NET-balance)+' more to issue this voucher.';
+    $('confirmIssue').disabled=low;
+  }
+  $('issueBtn').addEventListener('click',()=>{ fillIssue(); $('issueOverlay').classList.add('show'); });
+  $('confirmIssue').addEventListener('click',()=>{
+    if(busy || balance<NET) return;
+    busy=true;
+    const btn=$('confirmIssue');
+    btn.disabled=true; $('ivClose').disabled=true; btn.textContent='Issuing…';
+    setTimeout(()=>{
+      busy=false; $('ivClose').disabled=false; btn.textContent='Issue voucher and pay USD 1,137.25';
+      $('issueOverlay').classList.remove('show');
+      balance-=NET;
+      setState('vouchered');
+      $('totalSub').textContent='Deducted on Sep 27, 2026, when the voucher was issued';
+      show('Voucher issued. USD 1,137.25 paid from your balance.');
+    },1200);
+  });
+
+  /* cancel: locks on the first click, returns money only after the hotel confirms */
+  $('cancelBtn').addEventListener('click',()=>{ $('noticeCancelFailed').classList.remove('show'); $('cancelOverlay').classList.add('show'); });
+  $('confirmCancel').addEventListener('click',()=>{
+    if(busy) return;
+    busy=true;
+    const btn=$('confirmCancel');
+    btn.disabled=true; $('keepBtn').disabled=true; btn.textContent='Cancelling…';
+    setTimeout(()=>{
+      busy=false; btn.disabled=false; $('keepBtn').disabled=false; btn.textContent='Cancel booking';
+      $('cancelOverlay').classList.remove('show');
+      if(cancelFails){
+        cancelFails=false;
+        $('noticeCancelFailed').classList.add('show');
+        $('noticeCancelFailed').scrollIntoView({behavior:'smooth',block:'center'});
+        return;
+      }
+      const wasPaid = state!=='confirmed';
+      if(wasPaid) balance+=NET;
+      setState('cancelled', wasPaid);
+      show(wasPaid ? 'Booking cancelled. USD 1,137.25 returned to your balance.' : 'Booking cancelled. Nothing was paid.');
+    },1400);
+  });
+
+  $('amendBtn').addEventListener('click',()=>$('amendOverlay').classList.add('show'));
+  $('sendAmend').addEventListener('click',()=>{
+    $('amendOverlay').classList.remove('show');
+    show('Change request sent. We will reply by email.');
+  });
+  $('copyBtn').addEventListener('click',()=>show('Booking details copied, ready to paste to your client.'));
+  $('emailBtn').addEventListener('click',()=>show('Booking and voucher sent to your client at noa.elkobi@email.com.'));
+
+  /* demo links (mockup only) */
+  const demo=(st)=>{ cancelFails=false; balance=4250; setState(st); };
+  $('demoVouchered').addEventListener('click',()=>demo('vouchered'));
+  $('demoConfirmed').addEventListener('click',()=>demo('confirmed'));
+  $('demoPending').addEventListener('click',()=>demo('pending'));
+  $('demoCancelled').addEventListener('click',()=>demo('cancelled'));
+  $('demoCancelFail').addEventListener('click',()=>{ cancelFails=true; show('Demo: the next cancellation will not go through.'); });
+  $('demoLowBal').addEventListener('click',()=>{ balance=500; setState('confirmed'); show('Demo: balance USD 500.00. Try Issue voucher.'); });
+
+  const h=location.hash.replace('#','');
+  setState(['confirmed','pending','cancelled'].includes(h) ? h : 'vouchered');
+})();
+</script>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

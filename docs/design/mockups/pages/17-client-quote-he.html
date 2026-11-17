@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>ירח דבש במקסיקו | My Agency</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Frank+Ruhl+Libre:wght@500;700&display=swap">
+<style>
+:root{
+  --ink:#17211d;
+  --muted:#6f7974;
+  --green:#173f35;
+  --green2:#245c4e;
+  --green-soft:#edf4f0;
+  --cream:#f7f4ed;
+  --line:#e7e2d8;
+  --bg:#faf9f6;
+  --shadow:0 12px 32px rgba(19,47,39,.08);
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:Assistant,Heebo,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+button{font:inherit;cursor:pointer}
+a{color:inherit;text-decoration:none}
+
+/* Header: agency brand only */
+.client-top{height:72px;background:#fff;border-bottom:1px solid var(--line)}
+.client-top-inner{width:min(1120px,calc(100% - 36px));height:100%;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.agency-brand{display:flex;align-items:center;gap:10px;min-width:0}
+.agency-logo{width:40px;height:40px;border-radius:10px;background:#e9e1d1;color:#7a5f30;font:500 16px Georgia,"Frank Ruhl Libre","Times New Roman",serif;display:grid;place-items:center;flex:0 0 auto}
+.agency-brand strong{display:block;font-size:14.5px}
+.agency-brand div span{display:block;margin-top:2px;color:#7f8883;font-size:12px}
+.contact-actions{display:flex;gap:8px}
+.contact-btn{height:38px;padding:0 15px;border-radius:999px;border:1px solid #d4ddd8;display:inline-flex;align-items:center;font-size:13px;font-weight:700;color:var(--green);background:#fff}
+.contact-btn.wa{background:var(--green);border-color:var(--green);color:#fff}
+
+.page{width:min(1000px,calc(100% - 32px));margin:auto;padding:26px 0 72px}
+
+/* Hero */
+.hero{background:linear-gradient(135deg,#173f35,#245c4e);color:#fff;border-radius:20px;padding:28px 30px;box-shadow:var(--shadow)}
+.hero-kicker{color:#bdd0c7;font-size:11.5px;text-transform:uppercase;letter-spacing:.1em;font-weight:800;margin-bottom:10px}
+.hero h1{margin:0;font:500 40px/1.08 Georgia,"Frank Ruhl Libre","Times New Roman",serif;letter-spacing:-.02em}
+.hero-sub{margin-top:10px;color:#d9e4df;font-size:14.5px;line-height:1.55;max-width:680px}
+.hero-meta{margin-top:18px;display:flex;gap:8px;flex-wrap:wrap}
+.hero-pill{min-height:32px;display:inline-flex;align-items:center;padding:0 12px;border:1px solid rgba(255,255,255,.18);border-radius:999px;background:rgba(255,255,255,.08);color:#eef5f2;font-size:12.5px;font-weight:700}
+
+/* Intro */
+.intro{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;padding:22px 2px 6px}
+.intro h2{margin:0;font-size:20px}
+.intro p{margin:6px 0 0;color:var(--muted);font-size:13.5px;line-height:1.6;max-width:600px}
+.intro p b{color:var(--ink);font-weight:700}
+.progress{flex:0 0 auto;min-width:170px;text-align:left}
+.progress strong{display:block;font-size:15px}
+.progress > span{display:block;margin-top:4px;color:#7f8883;font-size:12px}
+.cur-switch{display:inline-flex;padding:3px;border-radius:9px;background:#f1f3f1;border:1px solid #e1e6e3;margin-bottom:10px}
+.cur-switch button{height:30px;padding:0 12px;border:0;border-radius:7px;background:transparent;color:#66716b;font-size:12.5px;font-weight:700}
+.cur-switch button.on{background:#fff;color:var(--green);box-shadow:0 1px 3px rgba(19,47,39,.1)}
+
+/* Booked banner */
+.locked-banner{margin-top:16px;padding:14px 16px;border-radius:13px;background:#f6efe2;border:1px solid #eadcc0;color:#6c5323;font-size:13.5px;line-height:1.55}
+.locked-banner strong{display:block;margin-bottom:2px;color:#4f3c17;font-size:14.5px}
+
+/* Destination */
+.destination{margin-top:16px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:hidden}
+.destination-head{padding:16px 18px;background:#fbfcfb;border-bottom:1px solid #ece9e4;display:flex;justify-content:space-between;align-items:center;gap:16px}
+.destination-title{display:flex;align-items:center;gap:11px}
+.destination-index{width:34px;height:34px;border-radius:10px;background:var(--green);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:800;flex:0 0 auto}
+.destination-title h3{margin:0;font-size:17px}
+.destination-title p{margin:3px 0 0;color:#7f8883;font-size:12.5px}
+.destination-state{flex:0 0 auto;padding:6px 10px;border-radius:999px;background:#f1f3f2;color:#6f7974;font-size:11.5px;font-weight:800}
+.destination.has-selection .destination-state{background:#dfeee7;color:var(--green)}
+.destination.partial .destination-state{background:#fbf1dc;color:#7a5a17}
+
+.hotel-list{padding:12px;display:grid;gap:9px}
+.hotel{border:1px solid #e1e6e3;border-radius:13px;background:#fff;overflow:hidden;transition:border-color .15s ease}
+.hotel:hover{border-color:#cbd7d1}
+.hotel.selected{border:2px solid #769b8b;box-shadow:0 0 0 3px rgba(23,63,53,.04)}
+.hotel-main{display:grid;grid-template-columns:84px minmax(0,1fr) 190px 36px;gap:14px;align-items:center;padding:10px 12px 10px 10px;cursor:pointer}
+.photo{width:84px;height:66px;border-radius:9px;background:linear-gradient(145deg,#91b4bf,#dce9e8 56%,#c9ac7e)}
+.photo.p2{background:linear-gradient(145deg,#a7bdaf,#e6d5b2 58%,#8e7a61)}
+.photo.p3{background:linear-gradient(145deg,#98aebf,#e2c8b7 55%,#7e736a)}
+.hotel-info{min-width:0}
+.hotel-name{font-size:15px;font-weight:800;line-height:1.3}
+.pick-tag{display:inline-flex;margin-right:6px;padding:2px 8px;border-radius:999px;background:#f6efe2;color:#8a6a2f;font-size:11px;font-weight:800;vertical-align:middle}
+.hotel-meta{margin-top:3px;font-size:12.5px;color:#6f7974;line-height:1.45}
+.stars{margin-top:3px;color:#b88e3c;font-size:11.5px;letter-spacing:1px}
+.hotel-tax{margin-top:3px;font-size:12px;color:#7a5f30;line-height:1.4}
+.selected-chip{display:none;margin-top:6px;padding:4px 8px;border-radius:999px;background:var(--green-soft);color:var(--green);font-size:11px;font-weight:800}
+.hotel.selected .selected-chip{display:inline-flex}
+.hotel-price{text-align:left}
+.hotel-price strong{display:block;font-size:15px}
+.hotel-price strong.na{color:#a53a31;font-size:13.5px}
+.hotel-price span{display:block;margin-top:3px;color:#7f8883;font-size:11.5px;line-height:1.4}
+.expand{width:34px;height:34px;border:0;border-radius:8px;background:#f4f6f5;color:#55615b;font-size:15px}
+
+/* Room options */
+.rooms{display:none;border-top:1px solid #efede9;background:#fbfcfb}
+.hotel.open .rooms{display:block}
+.room-group{padding:10px 106px 6px 14px;font-size:12px;font-weight:800;color:var(--green);letter-spacing:.02em;border-bottom:1px solid #efede9;background:#f4f8f6}
+.room{display:grid;grid-template-columns:minmax(0,1fr) 200px 110px;gap:12px;align-items:center;padding:11px 106px 11px 14px;border-bottom:1px solid #efede9;cursor:pointer}
+.room:last-child{border-bottom:0}
+.room:hover{background:#f5f8f6}
+.room.selected{background:#e8f2ed}
+.room-name{font-size:13.5px;font-weight:800;line-height:1.3}
+.room-name{unicode-bidi:plaintext;text-align:right} /* supplier room names stay in English order */
+.room-meta{margin-top:3px;font-size:12px;color:#6f7974;line-height:1.45}
+.room-meta .tax{color:#7a5f30}
+.room-types{margin-top:3px;font-size:12px;color:#44524b;line-height:1.45}
+.room-cancel{justify-self:start;font-size:11.5px;line-height:1.35;padding:5px 9px;border-radius:8px;background:#f1f3f2;color:#4d5a54}
+.room-cancel:before{content:"ביטול: ";font-weight:800}
+.room-cancel.is-free{background:#e8f7ee;color:#1d6b40}
+.room-cancel.is-nonref{background:#fdecea;color:#a53a31}
+.room-price{text-align:left}
+.room-price strong{display:block;font-size:14.5px}
+.room-price span{display:block;margin-top:3px;color:#7f8883;font-size:11.5px}
+.room.selected .room-price span{color:var(--green);font-weight:800}
+.room-missing{padding:11px 106px 11px 14px;border-bottom:1px solid #efede9;color:#8a928e;font-size:12.5px;font-style:italic}
+.room-missing:last-child{border-bottom:0}
+body.locked .room{cursor:default}
+body.locked .room:hover{background:transparent}
+body.locked .room.selected:hover{background:#e8f2ed}
+
+/* Empty proposal */
+.empty-proposal{margin-top:16px;padding:34px 20px;border:1.5px dashed #cfd8d3;border-radius:16px;background:#fff;text-align:center;color:#55615b;font-size:14px;line-height:1.6}
+.empty-proposal strong{display:block;margin-bottom:4px;color:var(--ink);font-size:16px}
+
+/* Notes and summary */
+.ils-note{display:none;margin-top:12px;padding:11px 13px;border-radius:10px;background:#fff9e9;border:1px solid #eadfbe;color:#6f5a20;font-size:12.5px;line-height:1.5}
+.note{margin-top:14px;padding:13px 15px;border-radius:11px;background:#f1efe9;color:#55615b;font-size:12.5px;line-height:1.6}
+.client-note{margin-top:14px}
+.client-note label{display:block;margin-bottom:7px;font-size:13px;font-weight:700;color:#33413b}
+.client-note textarea{width:100%;padding:11px 12px;border:1px solid #d8e1dc;border-radius:10px;background:#fff;font:inherit;font-size:13.5px;color:var(--ink);resize:vertical;outline:none}
+.client-note textarea:focus{border-color:#9cada5;box-shadow:0 0 0 3px rgba(23,63,53,.06)}
+
+.summary{position:sticky;bottom:14px;z-index:70;margin-top:18px;background:#fff;border:1px solid #d4dfd9;border-radius:16px;box-shadow:0 14px 38px rgba(19,47,39,.16);padding:13px 15px;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:18px;align-items:center}
+.summary-title{font-size:14px;font-weight:800}
+.summary-detail{margin-top:3px;color:#6f7974;font-size:12.5px;line-height:1.4}
+.summary-tax{margin-top:3px;color:#7a5f30;font-size:12px}
+.summary-price{text-align:left}
+.summary-price span{display:block;color:#7f8883;font-size:11.5px}
+.summary-price strong{display:block;margin-top:2px;font-size:19px}
+.send-btn{height:46px;border:0;border-radius:10px;background:var(--green);color:#fff;padding:0 20px;font-size:13.5px;font-weight:800;white-space:nowrap}
+.send-btn:disabled{opacity:.4;cursor:not-allowed}
+.send-btn.busy{opacity:.7;cursor:progress}
+
+.footer{margin-top:24px;text-align:center;color:#7f8883;font-size:12px;line-height:1.7}
+.toast{position:fixed;z-index:200;left:50%;bottom:96px;transform:translate(-50%,10px);max-width:calc(100% - 32px);background:#173f35;color:#fff;padding:11px 16px;border-radius:10px;font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:.18s ease;text-align:center}
+.toast.warn{background:#7a3a1c}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* Broken link */
+.gone{margin:60px auto 0;max-width:520px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:34px 28px;text-align:center}
+.gone h1{margin:0 0 10px;font:500 27px/1.2 Georgia,"Frank Ruhl Libre","Times New Roman",serif}
+.gone p{margin:0 0 20px;color:#55615b;font-size:14px;line-height:1.6}
+.gone .contact-actions{justify-content:center}
+
+/* Prototype-only state switcher (not part of the real page) */
+.demo{direction:ltr;margin:28px auto 0;max-width:760px;padding:12px 14px;border:1px dashed #cbd3cf;border-radius:12px;font-size:12px;color:#6f7974;text-align:center;line-height:1.9}
+.demo b{color:#44524b}
+.demo button{margin:0 3px;padding:3px 9px;border:1px solid #d4ddd8;border-radius:999px;background:#fff;color:var(--green);font-size:11.5px;font-weight:700}
+.demo button.on{background:var(--green);border-color:var(--green);color:#fff}
+
+@media(max-width:720px){
+  .client-top{height:64px}
+  .client-top-inner,.page{width:calc(100% - 24px)}
+  .agency-brand div span{display:none}
+  .contact-btn{height:36px;padding:0 12px}
+  .hero{padding:20px;border-radius:16px}
+  .hero h1{font-size:30px}
+  .hero-sub{font-size:14px}
+  .intro{display:block}
+  .progress{text-align:right;margin-top:12px}
+  .destination{border-radius:14px}
+  .destination-head{padding:13px;align-items:flex-start}
+  .hotel-list{padding:9px}
+  .hotel-main{grid-template-columns:62px minmax(0,1fr) 34px;grid-template-rows:auto auto;gap:6px 10px;padding:9px;align-items:start}
+  .photo{width:62px;height:56px;grid-row:1 / span 2}
+  .hotel-info{grid-column:2;grid-row:1}
+  .hotel-price{grid-column:2;grid-row:2;text-align:right}
+  .expand{grid-column:3;grid-row:1}
+  .room-group{padding:9px 12px 6px}
+  .room{grid-template-columns:minmax(0,1fr) auto;gap:7px 10px;padding:10px 12px}
+  .room-cancel{grid-column:1;grid-row:2}
+  .room-price{grid-column:2;grid-row:1 / span 2;align-self:center;min-width:84px}
+  .room-missing{padding:10px 12px}
+  .summary{bottom:8px;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;padding:11px 12px;border-radius:13px}
+  .summary-price{grid-column:1;grid-row:2;text-align:right;display:flex;align-items:baseline;gap:8px}
+  .summary-price strong{font-size:17px;margin:0}
+  .send-btn{grid-column:2;grid-row:1 / span 2;height:44px;padding:0 14px}
+}
+@media(max-width:430px){
+  .hero h1{font-size:27px}
+  .contact-btn{padding:0 10px;font-size:12.5px}
+  .agency-brand strong{font-size:13.5px}
+}
+</style>
+</head>
+<body>
+
+<header class="client-top">
+  <div class="client-top-inner">
+    <div class="agency-brand">
+      <span class="agency-logo">MA</span>
+      <div>
+        <strong>My Agency</strong>
+        <span>משה צפרני · יועץ נסיעות</span>
+      </div>
+    </div>
+    <div class="contact-actions">
+      <a class="contact-btn wa" href="https://wa.me/972505550100" target="_blank" rel="noopener">וואטסאפ</a>
+      <a class="contact-btn" href="tel:+972505550100">שיחה</a>
+    </div>
+  </div>
+</header>
+
+<main class="page" id="page"></main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- Demo data (in the real system this comes from the quote) ---------- */
+const HONEYMOON = {
+  code:'Q-1048', title:'ירח דבש במקסיקו', first:'דניאל',
+  message:'היי דניאל, בחרתי עבורך את אפשרויות המלונות האלה. בחרו את המלון והחדר שאתם מעדיפים בכל יעד.',
+  dates:'מ-25 באוקטובר עד 2 בנובמבר 2026',
+  rooms:[{id:'r1',adults:2,children:[]}],
+  showCancel:true,
+  stays:[
+    {id:'s1',city:'Playa Mujeres',dates:'25 עד 27 באוקטובר',nights:2,hotels:[
+      {id:'h1',name:'Finest Playa Mujeres',area:'Playa Mujeres',stars:5,tax:{amt:3,per:'room',basis:'night'},pricing:'per_room',options:[
+        {id:'o1',for:'r1',name:'Swim Up Double Junior Suite',extra:'88 m²',board:'הכל כלול',cancel:{type:'nonref'},price:1423},
+        {id:'o2',for:'r1',name:'Rooftop Terrace with Plunge Pool',extra:'148 m²',board:'הכל כלול',cancel:{type:'nonref'},price:1471}]},
+      {id:'h2',name:'Atelier Playa Mujeres',area:'למבוגרים בלבד',stars:5,tax:null,pricing:'per_room',options:[
+        {id:'o3',for:'r1',name:'Junior Suite King',extra:'מיטת קינג',board:'הכל כלול',cancel:{type:'free',until:'18 באוקטובר'},price:1536}]}]},
+    {id:'s2',city:'Cancún',dates:'27 עד 30 באוקטובר',nights:3,hotels:[
+      {id:'h3',name:'Secrets The Vine Cancun',area:'Zona Hotelera · למבוגרים בלבד',stars:5,pick:true,tax:{amt:2,per:'person',basis:'night'},pricing:'per_room',options:[
+        {id:'o4',for:'r1',name:'Ocean View King Global Getaway',extra:'נוף לים',board:'הכל כלול',cancel:{type:'free',until:'20 באוקטובר'},price:1137.25},
+        {id:'o5',for:'r1',name:'Preferred Club Deluxe Ocean View',extra:'Preferred Club',board:'הכל כלול',cancel:{type:'free',until:'20 באוקטובר'},price:1284}]},
+      {id:'h4',name:'Hyatt Zilara Cancun',area:'Zona Hotelera · למבוגרים בלבד',stars:5,tax:{amt:2,per:'person',basis:'night'},pricing:'per_room',options:[
+        {id:'o6',for:'r1',name:'Ocean View Junior Suite King',extra:'נוף לים',board:'הכל כלול',cancel:{type:'free',until:'19 באוקטובר'},price:1296}]}]},
+    {id:'s3',city:'Tulum',dates:'30 באוקטובר עד 2 בנובמבר',nights:3,hotels:[
+      {id:'h5',name:'Secrets Tulum Resort & Beach Club',area:'Tulum · למבוגרים בלבד',stars:5,tax:{amt:3,per:'room',basis:'night'},pricing:'per_room',options:[
+        {id:'o7',for:'r1',name:'Junior Suite Tropical View King',extra:'מיטת קינג',board:'הכל כלול',cancel:{type:'free',until:'22 באוקטובר'},price:1090}]},
+      {id:'h6',name:'Conrad Tulum Riviera Maya',area:'Tulum · על החוף',stars:5,tax:null,pricing:'per_room',options:[
+        {id:'o8',for:'r1',name:'Tropical View King Room',extra:'מיטת קינג',board:'כולל ארוחת בוקר',cancel:{type:'free',until:'23 באוקטובר'},price:1248},
+        {id:'o9',for:'r1',name:'Tropical View King Room',extra:'מיטת קינג',board:'לינה בלבד',cancel:{type:'nonref'},price:1096}]}]}
+  ]
+};
+
+const FAMILY = {
+  code:'Q-1052', title:'טיול משפחות במקסיקו', first:'נועה',
+  message:'היי נועה, אלה אפשרויות המלונות למשפחה. בחרו מלון בכל יעד ואפשרות לכל חדר.',
+  dates:'מ-20 עד 27 בדצמבר 2026',
+  rooms:[{id:'r1',adults:2,children:[]},{id:'r2',adults:2,children:[5,9]}],
+  showCancel:true,
+  stays:[
+    {id:'f1',city:'Cancún',dates:'20 עד 24 בדצמבר',nights:4,hotels:[
+      {id:'fh1',name:'Hyatt Ziva Cancun',area:'Punta Cancún',stars:5,pick:true,tax:{amt:2,per:'person',basis:'night'},pricing:'per_room',options:[
+        {id:'fo1',for:'r1',name:'Deluxe King',extra:'נוף לריזורט',board:'הכל כלול',cancel:{type:'free',until:'5 בדצמבר'},price:1890},
+        {id:'fo2',for:'r1',name:'Ocean Front King',extra:'חזית לים',board:'הכל כלול',cancel:{type:'free',until:'5 בדצמבר'},price:2140},
+        {id:'fo3',for:'r2',name:'Family Suite',extra:'2 חדרי שינה',board:'הכל כלול',cancel:{type:'free',until:'5 בדצמבר'},price:2560}]},
+      {id:'fh2',name:'Grand Fiesta Americana Coral Beach',area:'Zona Hotelera',stars:5,tax:{amt:3,per:'room',basis:'night'},pricing:'total',options:[
+        {id:'fo4',for:'all',name:'2 × Deluxe Ocean View',types:{r1:'Deluxe Ocean View',r2:'Deluxe Ocean View'},board:'כולל ארוחת בוקר',cancel:{type:'free',until:'8 בדצמבר'},price:4120},
+        {id:'fo5',for:'all',name:'Deluxe Ocean View + Family Suite',types:{r1:'Deluxe Ocean View',r2:'Family Suite'},board:'כולל ארוחת בוקר',cancel:{type:'nonref'},price:4480}]},
+      {id:'fh3',name:'Secrets The Vine Cancun',area:'Zona Hotelera · למבוגרים בלבד',stars:5,tax:{amt:2,per:'person',basis:'night'},pricing:'per_room',options:[
+        {id:'fo6',for:'r1',name:'Ocean View King',extra:'נוף לים',board:'הכל כלול',cancel:{type:'free',until:'6 בדצמבר'},price:1710}]}]},
+    {id:'f2',city:'Tulum',dates:'24 עד 27 בדצמבר',nights:3,hotels:[
+      {id:'fh4',name:'Dreams Tulum Resort & Spa',area:'Tulum',stars:5,tax:{amt:3,per:'room',basis:'night'},pricing:'per_room',options:[
+        {id:'fo7',for:'r1',name:'Deluxe Tropical View',extra:'מיטת קינג',board:'הכל כלול',cancel:{type:'free',until:'10 בדצמבר'},price:1320},
+        {id:'fo8',for:'r2',name:'Family Suite Tropical View',extra:'2 מיטות קווין',board:'הכל כלול',cancel:{type:'free',until:'10 בדצמבר'},price:1880}]}]}
+  ]
+};
+
+/* ---------- Page state ---------- */
+const RATE = 3.70; // demo: today's representative rate, for the ILS display only
+let Q, mode, cur = 'usd', sel = {}, open = new Set(), sent = false, sending = false;
+const page = document.getElementById('page');
+const toastEl = document.getElementById('toast');
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money = n => cur === 'ils'
+  ? '<bdi dir="ltr">≈ ₪' + Math.round(Number(n) * RATE).toLocaleString('en-US') + '</bdi>'
+  : '<bdi dir="ltr">USD ' + Number(n).toLocaleString('en-US',{minimumFractionDigits:Number(n)%1?2:0,maximumFractionDigits:2}) + '</bdi>';
+/* Hebrew counts: one / many */
+const HE = {adult:['מבוגר אחד','מבוגרים'], child:['ילד אחד','ילדים'], room:['חדר אחד','חדרים'], night:['לילה אחד','לילות'], destination:['יעד אחד','יעדים']};
+const plural = (n, w) => n === 1 ? HE[w][0] : n + ' ' + HE[w][1];
+const multi = () => Q.rooms.length > 1;
+const roomNo = id => Q.rooms.findIndex(r => r.id === id) + 1;
+function partyLabel(r){
+  let s = plural(r.adults, 'adult');
+  if(r.children.length){
+    const ages = r.children.map(a => a === 0 ? 'מתחת לגיל 1' : a).join(', ');
+    s += ' + ' + plural(r.children.length, 'child') + ' (\u2066' + ages + '\u2069)'; // ages kept left-to-right
+  }
+  return s;
+}
+function guestsText(){
+  const a = Q.rooms.reduce((t,r) => t + r.adults, 0);
+  const c = Q.rooms.reduce((t,r) => t + r.children.length, 0);
+  return (multi() ? plural(Q.rooms.length,'room') + ' · ' : '') + plural(a,'adult') + (c ? ' · ' + plural(c,'child') : '');
+}
+
+/* Hotel tax, paid at the hotel. Comes from the supplier. */
+function taxForRoom(h, r, nights){
+  if(!h.tax) return 0;
+  const people = r.adults + r.children.length;
+  return h.tax.amt * (h.tax.basis === 'night' ? nights : 1) * (h.tax.per === 'person' ? people : 1);
+}
+function taxForOption(h, o, nights){
+  const rs = o.for === 'all' ? Q.rooms : Q.rooms.filter(r => r.id === o.for);
+  return rs.reduce((t,r) => t + taxForRoom(h, r, nights), 0);
+}
+function taxLabel(h){
+  if(!h.tax) return '';
+  return 'מס מלון ' + money(h.tax.amt) + (h.tax.per === 'person' ? ' לאדם' : ' לחדר') + (h.tax.basis === 'night' ? ' ללילה' : ' לכל השהייה') + ', משולם במלון';
+}
+function cancelPill(c){
+  if(!Q.showCancel || !c) return '';
+  if(c.type === 'nonref') return '<div class="room-cancel is-nonref">ללא החזר</div>';
+  return '<div class="room-cancel is-free">' + (c.until ? 'חינם עד ' + esc(c.until) : 'חינם') + '</div>';
+}
+
+/* What a stay needs: one pick per trip room, or one pick for "all rooms together" */
+function needKeys(h){ return h.pricing === 'total' ? ['all'] : Q.rooms.map(r => r.id); }
+function stayState(st){
+  const s = sel[st.id];
+  if(!s) return {picked:0, need:0, complete:false, price:0, tax:0, hotel:null};
+  const h = st.hotels.find(x => x.id === s.hotel);
+  const keys = needKeys(h);
+  let price = 0, tax = 0, picked = 0;
+  keys.forEach(k => {
+    const o = h.options.find(x => x.id === s.picks[k]);
+    if(o){ picked++; price += o.price; tax += taxForOption(h, o, st.nights); }
+  });
+  return {picked, need:keys.length, complete:picked === keys.length, price, tax, hotel:h};
+}
+
+function hotelPrice(h, st){
+  const cap = 'סה״כ ל' + (st.nights === 1 ? 'לילה אחד' : '-' + st.nights + ' לילות') + (multi() ? (h.pricing === 'total' ? ', לכל החדרים יחד' : ', לכל החדרים') : '');
+  if(h.pricing === 'total'){
+    const min = Math.min(...h.options.map(o => o.price));
+    return '<strong>' + (h.options.length > 1 ? 'החל מ-' : '') + money(min) + '</strong><span>' + cap + '</span>';
+  }
+  let sum = 0, several = false; const missing = [];
+  Q.rooms.forEach(r => {
+    const os = h.options.filter(o => o.for === r.id);
+    if(!os.length){ missing.push('חדר ' + roomNo(r.id)); return; }
+    if(os.length > 1) several = true;
+    sum += Math.min(...os.map(o => o.price));
+  });
+  if(missing.length){
+    return '<strong class="na">לא זמין ל' + missing.join(', ') + '</strong><span>החל מ-' + money(sum) + ' לשאר החדרים</span>';
+  }
+  return '<strong>' + (several ? 'החל מ-' : '') + money(sum) + '</strong><span>' + cap + '</span>';
+}
+function hotelBoard(h){
+  const boards = [...new Set(h.options.map(o => o.board))];
+  return boards.length === 1 ? boards[0] : 'בסיסי אירוח שונים';
+}
+
+function optionRow(h, st, o){
+  const s = sel[st.id];
+  const isSel = s && s.hotel === h.id && s.picks[o.for] === o.id;
+  const tax = taxForOption(h, o, st.nights);
+  const meta = [o.extra, o.board].filter(Boolean).map(esc).join(' · ') + (tax ? ' · <span class="tax">+ ' + money(tax) + ' מס במלון</span>' : '');
+  const types = o.types ? '<div class="room-types">' + Q.rooms.map(r => 'חדר ' + roomNo(r.id) + ': ' + esc(o.types[r.id])).join(' · ') + '</div>' : '';
+  const cap = mode === 'booked' ? 'סה״כ' : (isSel ? 'נבחר' : 'בחירה');
+  return '<div class="room' + (isSel ? ' selected' : '') + '" data-stay="' + st.id + '" data-hotel="' + h.id + '" data-opt="' + o.id + '" data-for="' + o.for + '"' + (mode === 'booked' ? '' : ' role="button" tabindex="0"') + '>' +
+    '<div><div class="room-name">' + esc(o.name) + '</div>' + types + '<div class="room-meta">' + meta + '</div></div>' +
+    (cancelPill(o.cancel) || '<div></div>') +
+    '<div class="room-price"><strong>' + money(o.price) + '</strong><span>' + cap + '</span></div></div>';
+}
+
+function hotelCard(h, st, i){
+  const s = sel[st.id];
+  const isSel = s && s.hotel === h.id;
+  let rows = '';
+  if(h.pricing === 'total'){
+    rows += '<div class="room-group">כל ' + Q.rooms.length + ' החדרים יחד · מחיר כולל אחד</div>';
+    rows += h.options.map(o => optionRow(h, st, o)).join('');
+  } else if(multi()){
+    Q.rooms.forEach(r => {
+      rows += '<div class="room-group">חדר ' + roomNo(r.id) + ' · ' + esc(partyLabel(r)) + '</div>';
+      const os = h.options.filter(o => o.for === r.id);
+      rows += os.length ? os.map(o => optionRow(h, st, o)).join('') : '<div class="room-missing">אין אפשרות לחדר הזה במלון הזה</div>';
+    });
+  } else {
+    rows += h.options.map(o => optionRow(h, st, o)).join('');
+  }
+  const isOpen = open.has(h.id);
+  return '<article class="hotel' + (isSel ? ' selected' : '') + (isOpen ? ' open' : '') + '" data-hotel="' + h.id + '">' +
+    '<div class="hotel-main" data-toggle="' + h.id + '">' +
+      '<div class="photo p' + (i % 3 + 1) + '"></div>' +
+      '<div class="hotel-info">' +
+        '<div class="hotel-name">' + esc(h.name) + (h.pick ? ' <span class="pick-tag">ההמלצה שלנו</span>' : '') + '</div>' +
+        '<div class="hotel-meta">' + esc(h.area) + ' · ' + esc(hotelBoard(h)) + '</div>' +
+        (h.stars ? '<div class="stars">' + '★'.repeat(h.stars) + '</div>' : '') +
+        (h.tax ? '<div class="hotel-tax">' + taxLabel(h) + '</div>' : '') +
+        '<span class="selected-chip">נבחר</span>' +
+      '</div>' +
+      '<div class="hotel-price">' + hotelPrice(h, st) + '</div>' +
+      '<button class="expand" type="button" aria-label="' + (isOpen ? 'הסתרת חדרים' : 'הצגת חדרים') + '" aria-expanded="' + isOpen + '">' + (isOpen ? '⌃' : '⌄') + '</button>' +
+    '</div>' +
+    '<div class="rooms">' + rows + '</div></article>';
+}
+
+function render(){
+  document.body.classList.toggle('locked', mode === 'booked');
+  document.title = (mode === 'gone' ? 'ההצעה לא זמינה' : Q.title) + ' | My Agency';
+
+  if(mode === 'gone'){
+    page.innerHTML = '<section class="gone"><h1>הקישור להצעה לא זמין</h1>' +
+      '<p>ייתכן שהקישור לא שלם, או שההצעה הוסרה. פנו ליועץ הנסיעות לקבלת קישור חדש.</p>' +
+      '<div class="contact-actions"><a class="contact-btn wa" href="https://wa.me/972505550100" target="_blank" rel="noopener">וואטסאפ</a><a class="contact-btn" href="tel:+972505550100">שיחה</a></div></section>' + demoBar();
+    return;
+  }
+
+  const stays = mode === 'empty' ? [] : Q.stays;
+  const states = stays.map(stayState);
+  const complete = states.filter(s => s.complete).length;
+  const partial = stays.map((st,i) => ({st, s:states[i]})).filter(x => x.s.picked && !x.s.complete);
+  const anyPick = states.some(s => s.picked);
+  const total = states.reduce((t,s) => t + s.price, 0);
+  const tax = states.reduce((t,s) => t + s.tax, 0);
+  const anyTax = stays.some(st => st.hotels.some(h => h.tax));
+
+  let introP;
+  if(mode === 'booked') introP = 'אלה המלונות שבחרתם. היועץ שלכם מזמין אותם עכשיו.';
+  else if(multi()) introP = 'בחרו מלון אחד בכל יעד, ואז אפשרות לכל אחד מהחדרים שלכם: ' + Q.rooms.map(r => '<b>חדר ' + roomNo(r.id) + '</b> (' + esc(partyLabel(r)) + ')').join(', ') + '. אם לא רוצים לבחור ביעד מסוים, משאירים אותו בלי בחירה.';
+  else introP = 'בחרו מלון וחדר אחד בכל יעד. אם לא רוצים לבחור ביעד מסוים, משאירים אותו בלי בחירה. לחיצה נוספת על חדר שנבחר מבטלת את הבחירה.';
+
+  let progressCap = 'לחצו על חדר כדי לבחור אותו';
+  if(sent) progressCap = 'הבחירה האחרונה שלכם נשלחה ליועץ';
+
+  let html = '';
+  html += '<section class="hero"><div class="hero-kicker">הצעת הנסיעה שלך</div><h1>' + esc(Q.title) + '</h1>' +
+    '<div class="hero-sub">' + esc(Q.message) + '</div>' +
+    '<div class="hero-meta"><span class="hero-pill">' + esc(Q.dates) + '</span><span class="hero-pill">' + esc(guestsText()) + '</span>' +
+    (stays.length ? '<span class="hero-pill">' + plural(stays.length, 'destination') + '</span>' : '') + '</div></section>';
+
+  if(mode === 'booked'){
+    html += '<div class="locked-banner"><strong>היועץ שלכם מטפל בהזמנה</strong>יועץ הנסיעות מזמין את המלונות שבחרתם. לכל שינוי, פנו ישירות ליועץ.</div>';
+  }
+
+  if(!stays.length){
+    html += '<div class="empty-proposal"><strong>ההצעה שלכם כמעט מוכנה</strong>היועץ עדיין מכין את אפשרויות המלונות. בדקו שוב בקרוב.</div>';
+    page.innerHTML = html + footer() + demoBar();
+    return;
+  }
+
+  html += '<section class="intro"><div><h2>' + (mode === 'booked' ? 'המלונות שבחרתם' : 'בחרו את המלונות') + '</h2><p>' + introP + '</p></div>' +
+    '<div class="progress"><div class="cur-switch" role="tablist" aria-label="הצגת מחירים ב">' +
+      '<button type="button" data-cur="usd" class="' + (cur === 'usd' ? 'on' : '') + '">$ דולר</button>' +
+      '<button type="button" data-cur="ils" class="' + (cur === 'ils' ? 'on' : '') + '">₪ שקל</button></div>' +
+    '<strong>נבחרו ' + complete + ' מתוך ' + stays.length + '</strong>' + (mode === 'booked' ? '' : '<span>' + progressCap + '</span>') + '</div></section>';
+
+  stays.forEach((st, i) => {
+    const s = states[i];
+    let pill = 'לא נבחר', cls = '';
+    if(s.complete){ pill = 'נבחר'; cls = ' has-selection'; }
+    else if(s.picked){ const left = s.need - s.picked; pill = left === 1 ? 'בחרו עוד חדר אחד' : 'בחרו עוד ' + left + ' חדרים'; cls = ' partial'; }
+    html += '<section class="destination' + cls + '"><div class="destination-head"><div class="destination-title"><div class="destination-index">' + (i + 1) + '</div>' +
+      '<div><h3>' + esc(st.city) + '</h3><p>' + esc(st.dates) + ' · ' + plural(st.nights, 'night') + '</p></div></div>' +
+      '<div class="destination-state">' + pill + '</div></div>' +
+      '<div class="hotel-list">' + st.hotels.map((h, j) => hotelCard(h, st, j)).join('') + '</div></section>';
+  });
+
+  html += '<div class="ils-note" style="display:' + (cur === 'ils' ? 'block' : 'none') + '">המחירים בשקלים הם בקירוב, לפי השער היציג של היום (1 דולר = 3.70 ש״ח), לתצוגה בלבד. המחירים הסופיים בדולרים.</div>';
+  html += '<div class="note">המחירים והזמינות יכולים להשתנות עד שההזמנה מאושרת.' + (anyTax ? ' מסי המלון משולמים ישירות במלון.' : '') + ' הבחירה שלכם מראה ליועץ אילו אפשרויות אתם מעדיפים. היא לא יוצרת הזמנה ולא מחייבת כרטיס אשראי.</div>';
+
+  if(mode !== 'booked'){
+    html += '<div class="client-note"><label for="clientNote">רוצים לכתוב משהו ליועץ? (לא חובה)</label>' +
+      '<textarea id="clientNote" rows="2" placeholder="לדוגמה: מעדיפים קומה גבוהה, או חדר עם נוף לים"></textarea></div>';
+
+    let title = 'בחרו את האפשרויות שאתם מעדיפים', detail = 'עדיין לא נבחר כלום.';
+    if(complete || partial.length){
+      title = complete ? (complete === 1 ? 'נבחר יעד אחד' : 'נבחרו ' + complete + ' יעדים') : 'עדיין בוחרים חדרים';
+      const done = stays.filter((st,i) => states[i].complete).map(st => st.city);
+      detail = done.join(' · ');
+      if(partial.length) detail = (detail ? detail + ' · ' : '') + 'עדיין בוחרים חדרים ב-' + partial.map(x => x.st.city).join(', ');
+    }
+    html += '<section class="summary"><div><div class="summary-title">' + title + '</div><div class="summary-detail">' + esc(detail) + '</div>' +
+      (tax ? '<div class="summary-tax">+ ' + money(tax) + ' מסי מלון, משולמים במלון</div>' : '') + '</div>' +
+      '<div class="summary-price"><span>סה״כ לבחירות</span><strong>' + money(total) + '</strong></div>' +
+      '<button class="send-btn' + (sending ? ' busy' : '') + '" id="sendBtn" type="button"' + (!anyPick || sending ? ' disabled' : '') + '>' +
+      (sending ? 'שולח…' : (sent ? 'עדכנו את הבחירות' : 'שלחו את הבחירות')) + '</button></section>';
+  }
+
+  const keepNote = document.getElementById('clientNote');
+  const noteVal = keepNote ? keepNote.value : '';
+  page.innerHTML = html + footer() + demoBar();
+  const n = document.getElementById('clientNote');
+  if(n) n.value = noteVal;
+}
+
+function footer(){
+  return '<div class="footer">הצעה ' + esc(Q.code) + ' · הוכנה על ידי My Agency<br>שאלות? כתבו ליועץ בוואטסאפ או התקשרו.</div>';
+}
+
+const MODES = [
+  ['normal','Normal'],['family','2 rooms, family'],['reopened','Reopened after sending'],
+  ['booked','Booked (locked)'],['nocancel','Cancellation hidden'],['empty','Still preparing'],['gone','Broken link']
+];
+let demoKey = 'normal';
+function demoBar(){
+  return '<div class="demo"><b>Prototype only, not part of the real page.</b> Show: ' +
+    MODES.map(m => '<button type="button" data-demo="' + m[0] + '" class="' + (demoKey === m[0] ? 'on' : '') + '">' + m[1] + '</button>').join('') + '</div>';
+}
+
+function toast(msg, warn){
+  toastEl.textContent = msg;
+  toastEl.classList.toggle('warn', !!warn);
+  toastEl.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => toastEl.classList.remove('show'), 2600);
+}
+
+/* Hotels start open when they are the only hotel in the destination, or hold the client's pick */
+function autoOpen(){
+  open = new Set();
+  Q.stays.forEach(st => {
+    if(st.hotels.length === 1) open.add(st.hotels[0].id);
+    if(sel[st.id]) open.add(sel[st.id].hotel);
+  });
+}
+
+function load(key){
+  demoKey = key; sent = false; sending = false; sel = {};
+  toastEl.classList.remove('show');
+  Q = JSON.parse(JSON.stringify(key === 'family' ? FAMILY : HONEYMOON));
+  mode = key === 'booked' ? 'booked' : key === 'empty' ? 'empty' : key === 'gone' ? 'gone' : 'open';
+  if(key === 'nocancel') Q.showCancel = false;
+  if(key === 'reopened' || key === 'booked'){
+    // The selection saved on the server when the client last sent it
+    sel = {s1:{hotel:'h2',picks:{r1:'o3'}}, s2:{hotel:'h3',picks:{r1:'o4'}}};
+    sent = key === 'reopened';
+  }
+  autoOpen();
+  render();
+}
+
+/* ---------- Events ---------- */
+page.addEventListener('click', e => {
+  const demo = e.target.closest('[data-demo]');
+  if(demo){ load(demo.dataset.demo); window.scrollTo(0,0); return; }
+
+  const c = e.target.closest('[data-cur]');
+  if(c){ cur = c.dataset.cur; render(); return; }
+
+  const tog = e.target.closest('[data-toggle]');
+  if(tog){ const id = tog.dataset.toggle; open.has(id) ? open.delete(id) : open.add(id); render(); return; }
+
+  const row = e.target.closest('.room[data-opt]');
+  if(row && mode !== 'booked'){ pick(row); return; }
+
+  if(e.target.closest('#sendBtn')) send();
+});
+page.addEventListener('keydown', e => {
+  const row = e.target.closest && e.target.closest('.room[data-opt]');
+  if(row && (e.key === 'Enter' || e.key === ' ') && mode !== 'booked'){ e.preventDefault(); pick(row); }
+});
+
+function pick(row){
+  const st = row.dataset.stay, h = row.dataset.hotel, o = row.dataset.opt, k = row.dataset.for;
+  let s = sel[st];
+  if(!s || s.hotel !== h) s = sel[st] = {hotel:h, picks:{}};
+  if(s.picks[k] === o) delete s.picks[k];   // tap again to unselect
+  else s.picks[k] = o;
+  if(!Object.keys(s.picks).length) delete sel[st];
+  open.add(h);
+  render();
+}
+
+function send(){
+  if(sending) return;
+  const stays = Q.stays;
+  for(const st of stays){
+    const s = stayState(st);
+    if(s.picked && !s.complete){
+      const h = s.hotel, missing = needKeys(h).filter(k => !sel[st.id].picks[k]);
+      toast('בחרו אפשרות לחדר ' + roomNo(missing[0]) + ' ב-' + st.city + '.', true);
+      return;
+    }
+  }
+  const note = (document.getElementById('clientNote') || {}).value || '';
+  sending = true; render();
+  // Demo: the real page posts the selection and the note to the server here.
+  // On error: show the server message in the toast and enable the button again.
+  setTimeout(() => {
+    sending = false; sent = true; render();
+    toast(note.trim() ? 'הבחירות וההערה נשלחו ליועץ הנסיעות שלכם.' : 'הבחירות נשלחו ליועץ הנסיעות שלכם.');
+  }, 900);
+}
+
+load('normal');
+</script>
+
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

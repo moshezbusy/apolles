@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Automatic emails | Apolles</title>
+<style>
+*{box-sizing:border-box}
+:root{--ink:#17211d;--muted:#6d756f;--green:#173f35;--green2:#245c4e;--cream:#faf8f3;--sage:#eef3f0;--gold:#b89155;--line:#e7e2d8}
+body{margin:0;background:var(--cream);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.page{width:min(1040px,calc(100% - 32px));margin:0 auto;padding:34px 0 60px}
+h1{margin:0;font:500 34px Georgia,"Times New Roman",serif;letter-spacing:-.015em}
+.lead{margin:8px 0 0;font-size:14px;color:#4d5a54;line-height:1.6;max-width:720px}
+
+.frames{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:26px 0 8px}
+.frame{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.frame-label{padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--line);background:#fbfaf7}
+.mail{padding:18px}
+.mail-head{display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:1px solid #eee}
+.mail-head .wordmark{font:500 20px Georgia,"Times New Roman",serif;color:var(--green)}
+.mail-head .logo{width:34px;height:34px;border-radius:9px;background:#e9e1d1;color:#7a5f30;font:500 13px Georgia,serif;display:grid;place-items:center}
+.mail-head strong{font-size:13px;display:block}
+.mail-head span{font-size:11px;color:var(--muted)}
+.mail h3{margin:14px 0 6px;font:500 19px Georgia,"Times New Roman",serif}
+.mail p{margin:0 0 12px;font-size:12.5px;line-height:1.6;color:#3f4a45}
+.mail .btn{display:inline-block;padding:9px 16px;border-radius:9px;background:var(--green);color:#fff;font-size:12.5px;font-weight:700;text-decoration:none}
+.mail .foot{margin-top:16px;padding-top:10px;border-top:1px solid #eee;font-size:11px;color:#8a928e;line-height:1.5}
+.frame-note{padding:0 18px 16px;font-size:11.5px;color:var(--muted);line-height:1.5}
+.mail-from{font-size:11.5px;color:var(--muted);line-height:1.5;margin:0 0 10px;padding:7px 10px;border-radius:8px;background:#fbfaf7;border:1px solid #efece4;overflow-wrap:anywhere}
+.mail-from b{color:#3f4a45;font-weight:600}
+
+.group{margin-top:34px}
+.group h2{margin:0 0 4px;font:500 22px Georgia,"Times New Roman",serif}
+.group > p{margin:0 0 14px;font-size:12.5px;color:var(--muted)}
+.list{display:grid;gap:10px}
+.email{background:#fff;border:1px solid var(--line);border-radius:14px}
+.email summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:28px 1fr auto auto;gap:12px;align-items:center;padding:14px 16px}
+.email summary::-webkit-details-marker{display:none}
+.email .n{width:28px;height:28px;border-radius:50%;background:var(--sage);color:var(--green);font-size:12px;font-weight:800;display:grid;place-items:center}
+.email summary strong{display:block;font-size:14px}
+.email summary span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.tag{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:4px 9px;border-radius:999px;white-space:nowrap}
+.tag.agent{background:var(--sage);color:var(--green)}
+.tag.client{background:#f6eedd;color:#7a5f1c}
+.tag.admin{background:#ecebe6;color:#4d5a54}
+.body{padding:0 16px 16px 56px;display:grid;grid-template-columns:150px 1fr;gap:8px 14px;font-size:12.5px;line-height:1.55}
+.body dt{color:var(--muted);font-weight:600}
+.body dd{margin:0}
+.body .copy{background:#fbfaf7;border:1px solid #efece4;border-radius:10px;padding:10px 12px;white-space:pre-line}
+.chev{transition:transform .15s}
+.email[open] .chev{transform:rotate(180deg)}
+
+.rules{margin-top:34px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 20px}
+.rules h2{margin:0 0 10px;font:500 22px Georgia,"Times New Roman",serif}
+.rules ul{margin:0;padding-left:18px;font-size:13px;line-height:1.7;color:#3f4a45}
+
+@media(max-width:760px){
+  .frames{grid-template-columns:1fr}
+  .email summary{grid-template-columns:28px 1fr}
+  .email summary .tag{grid-column:2;justify-self:start}
+  .email summary .chev{display:none}
+  .body{padding:0 16px 16px;grid-template-columns:1fr}
+  .body dt{margin-top:6px}
+  h1{font-size:28px}
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <h1>Automatic emails</h1>
+  <p class="lead">Every email the system sends by itself, who gets it, when, and what it says. Emails to agents come from Apolles. Emails to clients carry only the agency brand, come from a neutral domain and never mention Apolles.</p>
+
+  <div class="frames">
+    <div class="frame">
+      <div class="frame-label">Template A · to agents (Apolles brand)</div>
+      <div class="mail">
+        <p class="mail-from"><b>From:</b> Apolles &lt;no-reply@apolles.com&gt;</p>
+        <div class="mail-head"><span class="wordmark">Apolles</span></div>
+        <h3>Your client sent their choices</h3>
+        <p>Daniel Levy selected 2 options in "Mexico Honeymoon". Prices can change, so book soon.</p>
+        <a class="btn" href="#">Open quote</a>
+        <div class="foot">Apolles · You get this email because you have an Apolles agency account.</div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="frame-label">Template B · to clients (agency brand only)</div>
+      <div class="mail">
+        <p class="mail-from"><b>From:</b> My Agency &lt;my-agency@(client domain)&gt;<br><b>Reply-to:</b> moshe@myagency.com</p>
+        <div class="mail-head"><span class="logo">MA</span><div><strong>My Agency</strong><span>Moshe Zafrani · Travel advisor</span></div></div>
+        <h3>Your travel proposal: Mexico Honeymoon</h3>
+        <p>Hi Daniel, here are the hotel options I prepared for you. Choose what you like and send me your choice.</p>
+        <a class="btn" href="#">View your proposal</a>
+        <div class="foot">Sent by My Agency · Reply to this email to reach Moshe Zafrani.</div>
+      </div>
+      <p class="frame-note">Logo, name and color come from Agency settings. The language comes from the quote. Sent from the neutral client domain, never from apolles.com. Replies go straight to the agent.</p>
+    </div>
+  </div>
+
+  <section class="group">
+    <h2>Account</h2>
+    <p>Sign-up, approval and sign-in.</p>
+    <div class="list">
+      <details class="email"><summary><span class="n">1</span><div><strong>Application received</strong><span>Right after the join form is sent</span></div><span class="tag agent">Applicant</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>We received your Apolles application</dd><dt>Content</dt><dd class="copy">Thanks for applying. We review every agency within 2 to 3 business days and will email you the result.</dd><dt>Button</dt><dd>None</dd></dl></details>
+
+      <details class="email"><summary><span class="n">2</span><div><strong>New application to review</strong><span>Right after the join form is sent</span></div><span class="tag admin">Apolles admin</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>New agency application: (agency name)</dd><dt>Content</dt><dd class="copy">Agency name, contact, country and website or social page.</dd><dt>Button</dt><dd>Review application (opens admin)</dd></dl></details>
+
+      <details class="email"><summary><span class="n">3</span><div><strong>Application approved</strong><span>When admin approves</span></div><span class="tag agent">Agent</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Your Apolles account is ready</dd><dt>Content</dt><dd class="copy">Your agency was approved. Set your password to sign in. To book, add funds to your balance by bank transfer or card.</dd><dt>Button</dt><dd>Set your password (link valid 7 days, then the agent uses "Forgot password")</dd></dl></details>
+
+      <details class="email"><summary><span class="n">4</span><div><strong>Application not approved</strong><span>When admin rejects</span></div><span class="tag agent">Applicant</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>About your Apolles application</dd><dt>Content</dt><dd class="copy">Thank you for your interest in Apolles. We are not able to approve your application at this time.</dd><dt>Rule</dt><dd>Polite, no reason given.</dd></dl></details>
+
+      <details class="email"><summary><span class="n">5</span><div><strong>Reset password</strong><span>When the agent asks on "Forgot password"</span></div><span class="tag agent">Agent</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Reset your Apolles password</dd><dt>Content</dt><dd class="copy">Use the button to choose a new password. The link expires in 60 minutes. If you did not ask for this, ignore this email.</dd><dt>Button</dt><dd>Reset password</dd></dl></details>
+
+      <details class="email"><summary><span class="n">6</span><div><strong>New device sign-in code</strong><span>When signing in from a new device</span></div><span class="tag agent">Agent</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Your Apolles sign-in code: 482913</dd><dt>Content</dt><dd class="copy">Enter this 6-digit code to finish signing in. It expires in 10 minutes. If this was not you, change your password.</dd><dt>Button</dt><dd>None</dd></dl></details>
+    </div>
+  </section>
+
+  <section class="group">
+    <h2>Quotes</h2>
+    <p>Sending proposals and client replies.</p>
+    <div class="list">
+      <details class="email"><summary><span class="n">7</span><div><strong>Quote to the client</strong><span>When the agent clicks Send (if sent by email)</span></div><span class="tag client">Client</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Your travel proposal: (quote name)</dd><dt>Content</dt><dd class="copy">The "Message to client" written on the quote. If it is empty, the agency default message with the client's first name.</dd><dt>Button</dt><dd>View your proposal (client quote link, on the client domain)</dd><dt>Rules</dt><dd>Template B. English or Hebrew as chosen on the quote (Hebrew right to left). Reply-to is the agent.</dd></dl></details>
+
+      <details class="email"><summary><span class="n">8</span><div><strong>Client sent their choices</strong><span>When the client submits selections on the quote</span></div><span class="tag agent">Agent</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>(client name) sent their choices for (quote name)</dd><dt>Content</dt><dd class="copy">The selected options, the client's note, and a reminder that prices can change.</dd><dt>Button</dt><dd>Open quote</dd><dt>Rule</dt><dd>Sent every time the client sends or updates the selection.</dd></dl></details>
+    </div>
+  </section>
+
+  <section class="group">
+    <h2>Bookings</h2>
+    <p>Confirmation, voucher, cancellation and deadlines.</p>
+    <div class="list">
+      <details class="email"><summary><span class="n">9</span><div><strong>Booking confirmed</strong><span>When the hotel confirms the booking</span></div><span class="tag agent">Agent</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Booking confirmed: (hotel), (dates), ref (Apolles ref)</dd><dt>Content</dt><dd class="copy">Hotel, dates, guests, Apolles reference, hotel confirmation number and the free cancellation deadline.
+If the voucher was issued at booking: amount paid from balance and new balance.
+If booked with pay later: "Nothing is paid yet. Issue the voucher by (date, time, hotel time) or the booking is cancelled automatically at no charge."</dd><dt>Attachments</dt><dd>Voucher PDF and invoice PDF, only if the voucher was issued at booking</dd><dt>Button</dt><dd>View booking (or Issue voucher, for pay later)</dd><dt>Rule</dt><dd>Goes to the agent only. The client gets the voucher when the agent clicks "Email to client".</dd></dl></details>
+      <details class="email"><summary><span class="n">10</span><div><strong>Booking not confirmed by the hotel</strong><span>When a pending booking is declined by the hotel</span></div><span class="tag agent">Agent</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Booking not confirmed: (hotel), (dates), ref (Apolles ref)</dd><dt>Content</dt><dd class="copy">The hotel did not confirm this booking. The held amount, USD (amount), is back in your balance. New balance. Nothing to cancel.</dd><dt>Button</dt><dd>Search again (same hotel, dates and guests)</dd><dt>Rule</dt><dd>No email to the client. The agent informs the client.</dd></dl></details>
+      <details class="email"><summary><span class="n">11</span><div><strong>Voucher issued</strong><span>When the agent issues the voucher on a pay-later booking</span></div><span class="tag agent">Agent</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Voucher issued: (hotel), (dates), ref (Apolles ref)</dd><dt>Content</dt><dd class="copy">Amount paid from balance, new balance, and a note that the booking is no longer cancelled automatically.</dd><dt>Attachments</dt><dd>Voucher PDF and invoice PDF</dd><dt>Button</dt><dd>View booking</dd></dl></details>
+      <details class="email"><summary><span class="n">12</span><div><strong>Booking to the client</strong><span>When the agent clicks "Email to client"</span></div><span class="tag client">Client</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Your hotel booking: (hotel), (dates)</dd><dt>Content</dt><dd class="copy">Hotel, dates, guests, booking reference, check-in details and fees payable at the hotel. No prices.</dd><dt>Attachments</dt><dd>Voucher PDF (agency logo only)</dd><dt>Rules</dt><dd>Template B. Only for bookings with an issued voucher. The agent can edit the email address before sending. Language: the quote language when the booking came from a quote; otherwise the agency default quote language.</dd></dl></details>
+      <details class="email"><summary><span class="n">13</span><div><strong>Issue the voucher reminder</strong><span>72 hours and 24 hours before the automatic cancellation</span></div><span class="tag agent">Agent</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Issue the voucher by (date, time) or booking (Apolles ref) is cancelled</dd><dt>Content</dt><dd class="copy">Hotel, guest, dates, the exact auto-cancel time (hotel time), the amount to pay, the current balance and whether it is enough.</dd><dt>Button</dt><dd>Issue voucher</dd><dt>Rule</dt><dd>Only for bookings without a voucher. Not sent if the voucher was issued.</dd></dl></details>
+      <details class="email"><summary><span class="n">14</span><div><strong>Free cancellation ends soon</strong><span>72 hours before the free cancellation deadline</span></div><span class="tag agent">Agent</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Free cancellation ends in 72 hours: ref (Apolles ref)</dd><dt>Content</dt><dd class="copy">Hotel, guest, dates, the exact deadline (date and time, hotel time with the time zone) and the charge after it.</dd><dt>Button</dt><dd>View booking</dd><dt>Rule</dt><dd>Only for bookings with an issued voucher (the others get the reminder above).</dd></dl></details>
+      <details class="email"><summary><span class="n">15</span><div><strong>Booking cancelled</strong><span>When the agent cancels, or when the system cancels a booking without a voucher</span></div><span class="tag agent">Agent</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Booking cancelled: ref (Apolles ref). Automatic: Booking cancelled automatically: ref (Apolles ref), voucher not issued</dd><dt>Content</dt><dd class="copy">Paid booking: cancellation charge, amount returned to balance, new balance.
+Automatic cancellation: the voucher was not issued by (date, time), nothing was paid, no charge.</dd><dt>Attachments</dt><dd>Credit note PDF, only if money was paid</dd><dt>Button</dt><dd>View booking</dd><dt>Rule</dt><dd>Sent only after the supplier confirms the cancellation, together with the refund to the balance. No email to the client. The agent informs the client.</dd></dl></details>
+      <details class="email"><summary><span class="n">16</span><div><strong>Automatic cancellation failed</strong><span>Right away, when the supplier does not confirm an automatic cancellation</span></div><span style="display:flex;gap:6px;flex-wrap:wrap"><span class="tag agent">Agent</span><span class="tag admin">Apolles admin</span></span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Urgent: booking (Apolles ref) was not cancelled</dd><dt>Content</dt><dd class="copy">The booking is still active and nothing was paid. Hotel, dates, the free cancellation deadline and the time left before charges start.</dd><dt>Button</dt><dd>View booking (agent) · Open booking in admin (admin)</dd><dt>Rule</dt><dd>Admin must cancel it manually with the supplier before the free cancellation ends.</dd></dl></details>
+      <details class="email"><summary><span class="n">17</span><div><strong>Pay-later daily report</strong><span>Every day at 08:00 Israel time</span></div><span class="tag admin">Apolles admin</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Pay-later report: (date)</dd><dt>Content</dt><dd class="copy">Bookings without a voucher and their auto-cancel times. Automatic cancellations of the last day: done and failed. Per agency: total of bookings without a voucher against its pay-later limit.</dd><dt>Button</dt><dd>Open pay-later bookings (admin)</dd><dt>Rule</dt><dd>For checking that automatic cancellation works, so the limit can later be raised or removed.</dd></dl></details>
+    </div>
+  </section>
+
+  <section class="group">
+    <h2>Balance</h2>
+    <p>Top-ups and low balance.</p>
+    <div class="list">
+      <details class="email"><summary><span class="n">18</span><div><strong>Top-up received</strong><span>When a card top-up succeeds or admin confirms a bank transfer</span></div><span class="tag agent">Agent</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>USD (amount) added to your Apolles balance</dd><dt>Content</dt><dd class="copy">Amount added, method (card or bank transfer), card fee if any, new balance.</dd><dt>Button</dt><dd>View balance</dd></dl></details>
+
+      <details class="email"><summary><span class="n">19</span><div><strong>Low balance</strong><span>When the balance drops below USD 500</span></div><span class="tag agent">Agent</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Your Apolles balance is low</dd><dt>Content</dt><dd class="copy">Current balance, bank transfer details with the agency reference, and the card top-up option.</dd><dt>Button</dt><dd>Add funds</dd><dt>Rule</dt><dd>Once per drop below USD 500, not on every booking.</dd></dl></details>
+
+      <details class="email"><summary><span class="n">20</span><div><strong>Bank transfer to match</strong><span>Daily, while bank transfers wait to be matched</span></div><span class="tag admin">Apolles admin</span></summary>
+        <dl class="body"><dt>Subject</dt><dd>Transfers waiting to be confirmed</dd><dt>Content</dt><dd class="copy">Unmatched incoming transfers and the agency reference written on each (e.g. APL-2217).</dd><dt>Button</dt><dd>Open balances (admin)</dd></dl></details>
+    </div>
+  </section>
+
+  <section class="rules">
+    <h2>Rules for all emails</h2>
+    <ul>
+      <li>Not sent: an email when the client opens a quote. The agent sees views inside Apolles.</li>
+      <li>Automatic cancellation happens 24 hours before the free cancellation ends (hotel time), only for bookings without a voucher, and only when the cancellation charge is USD 0.00.</li>
+      <li>Agent emails are in English. Client emails follow the quote language (English or Hebrew).</li>
+      <li>Client emails never show Apolles, the supplier, or net prices.</li>
+      <li>Client domain: emails to clients are sent from a neutral domain without the word "apolles" (placeholder: (client domain)), with the agency name as the sender and the agent's email as reply-to. The technical return address (bounces) is on the same domain. Client quote links and voucher files use the same domain.</li>
+      <li>Times of events (sent, booked, paid) in the agent's time zone. Cancellation deadlines and automatic cancellation times in hotel time with the time zone, as on the booking pages. 24-hour format.</li>
+      <li>Every email has a plain-text version and works on mobile.</li>
+    </ul>
+  </section>
+</main>
+<script>
+document.querySelectorAll('.email summary').forEach(s=>{
+  const c=document.createElement('span');c.className='chev';c.textContent='▾';c.style.color='#8a928e';s.appendChild(c);
+});
+</script>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

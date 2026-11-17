@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>Apolles | Hotel Booking Platform for Travel Professionals</title>
+<meta content="Apolles is a hotel booking platform for verified travel professionals. Search live rates, compare room options, create branded quotes and manage bookings." name="description"/>
+<style>
+:root{
+  --ink:#17211d;
+  --muted:#6d756f;
+  --green:#173f35;
+  --green-2:#245c4e;
+  --sage:#eef3f0;
+  --cream:#f7f4ed;
+  --paper:#fffdf8;
+  --line:#e7e2d8;
+  --gold:#b89155;
+  --shadow:0 20px 60px rgba(19,47,39,.10);
+  --radius:24px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  color:var(--ink);
+  background:var(--paper);
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  line-height:1.55;
+}
+h1,h2,h3,.brand{
+  font-family:Georgia,"Times New Roman",serif;
+  font-weight:500;
+}
+a{text-decoration:none;color:inherit}
+.container{width:min(1180px,calc(100% - 40px));margin:auto}
+
+/* Header */
+header{
+  position:sticky;top:0;z-index:30;
+  background:rgba(255,253,248,.94);
+  backdrop-filter:blur(14px);
+  border-bottom:1px solid rgba(231,226,216,.8);
+}
+.nav{height:78px;display:flex;align-items:center;gap:28px}
+.brand{font-size:29px;letter-spacing:.02em;margin-right:auto}
+.menu{display:flex;gap:28px;font-size:14px;color:#34423b}
+.menu a:hover{color:var(--green)}
+.actions{display:flex;gap:10px;margin-left:14px}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:46px;padding:0 19px;border-radius:999px;
+  border:1px solid var(--green);font-weight:650;font-size:14px;
+  transition:transform .2s cubic-bezier(.22,1,.36,1);
+}
+.btn:hover{transform:translateY(-1px)}
+.btn.primary{background:var(--green);color:#fffdf8}
+.btn.secondary{background:transparent;color:var(--green)}
+
+/* Hero */
+.hero{
+  padding:74px 0 70px;
+  background:
+    radial-gradient(circle at 88% 12%,rgba(184,145,85,.15),transparent 28%),
+    linear-gradient(180deg,#fbf8f0 0%,#fffdf8 100%);
+}
+.hero-grid{display:grid;grid-template-columns:1fr 1.05fr;gap:64px;align-items:center}
+.eyebrow{
+  color:var(--green-2);font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
+  margin-bottom:17px
+}
+h1{font-size:clamp(46px,6vw,76px);line-height:.98;letter-spacing:-.045em;margin:0 0 25px}
+.lead{font-size:19px;color:#59645f;max-width:560px;margin:0 0 30px}
+.hero-actions{display:flex;gap:12px;flex-wrap:wrap}
+.access{font-size:13px;color:#7c817e;margin-top:15px}
+.access strong{color:var(--green);font-weight:700}
+
+/* Hero product illustration */
+.product-shell{
+  border:1px solid rgba(23,63,53,.12);
+  border-radius:28px;padding:12px;background:#fffdf8;box-shadow:var(--shadow);
+  transform:rotate(1deg);
+  position:relative;
+}
+.browser{border-radius:18px;overflow:hidden;background:#f6f7f4;border:1px solid #e5e9e4}
+.browser-top{height:34px;background:#fffdf8;border-bottom:1px solid #e7ebe6;display:flex;align-items:center;padding:0 12px;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:#d9dcd6}
+.url{margin-left:12px;height:18px;flex:0 1 190px;border-radius:6px;background:#f1f2ee;color:#8a928e;font-size:8.5px;display:flex;align-items:center;padding:0 8px}
+.app-bar{height:40px;background:#fffdf8;border-bottom:1px solid #eceae3;display:flex;align-items:center;gap:16px;padding:0 14px}
+.app-logo{font-family:Georgia,serif;font-size:14px;color:var(--ink)}
+.app-tabs{display:flex;gap:12px;font-size:9px;color:#7b857f;height:100%}
+.app-tabs span{display:flex;align-items:center;position:relative}
+.app-tabs span.on{color:var(--green);font-weight:700}
+.app-tabs span.on:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.app-avatar{margin-left:auto;width:20px;height:20px;border-radius:50%;background:#e2ece7;color:var(--green);font-size:7.5px;font-weight:800;display:grid;place-items:center}
+.screen{padding:12px 14px 14px}
+.mini-search{
+  background:#fffdf8;border:1px solid #e3e8e3;border-radius:11px;padding:8px;
+  display:grid;grid-template-columns:1.5fr 1fr .9fr auto;gap:6px;
+}
+.mini-field{border:1px solid #e3e8e4;border-radius:7px;padding:4px 7px;min-height:30px}
+.mini-field small{display:block;font-size:6.5px;color:#8f9793;font-weight:700;letter-spacing:.02em}
+.mini-field b{display:block;font-size:8.5px;color:#2d3a34;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini-go{border-radius:7px;background:var(--green);color:#fffdf8;font-size:8.5px;font-weight:700;display:flex;align-items:center;padding:0 11px}
+.mini-meta{display:flex;justify-content:space-between;align-items:center;margin:10px 2px 8px;font-size:8.5px;color:#7f8883}
+.mini-meta b{color:var(--ink);font-size:9.5px}
+.mini-toggle{display:flex;align-items:center;gap:5px}
+.mini-toggle i{width:18px;height:10px;border-radius:99px;background:var(--green);position:relative}
+.mini-toggle i:after{content:"";position:absolute;right:1.5px;top:1.5px;width:7px;height:7px;border-radius:50%;background:#fffdf8}
+.mini-list{display:grid;gap:7px}
+.mini-hotel{
+  background:#fffdf8;border:1px solid #e3e8e3;border-radius:11px;padding:7px;
+  display:grid;grid-template-columns:62px minmax(0,1fr) auto;gap:9px;align-items:center;
+}
+.mini-hotel.added{border-color:#b9cdc3;background:#fbfdfb}
+.mini-photo{height:52px;border-radius:8px}
+.p1{background:linear-gradient(160deg,#7fb0bd 0%,#cfe3e6 48%,#d8c29c 100%)}
+.p2{background:linear-gradient(160deg,#a9c4b3 0%,#e9dcc0 55%,#9c8567 100%)}
+.p3{background:linear-gradient(160deg,#94afc6 0%,#e6d3c1 55%,#8b7a6b 100%)}
+.mini-name{font-family:Georgia,serif;font-size:11px;line-height:1.15;color:var(--ink)}
+.mini-sub{font-size:7.5px;color:#7f8883;margin-top:2px}
+.mini-stars{color:#c29a45;font-size:7px;letter-spacing:.5px;margin-left:3px}
+.mini-badges{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
+.mini-badge{font-size:6.8px;font-weight:700;padding:2px 6px;border-radius:99px;background:var(--sage);color:var(--green)}
+.mini-badge.gold{background:#f6efe2;color:#8a6a2f}
+.mini-price{text-align:right;min-width:78px}
+.mini-price small{display:block;font-size:6.5px;color:#8f9793}
+.mini-price b{display:block;font-size:11px;color:var(--ink);letter-spacing:-.01em}
+.mini-price span{display:block;font-size:6.5px;color:#8f9793;margin-bottom:5px}
+.mini-add{display:inline-block;font-size:7px;font-weight:700;padding:4px 7px;border-radius:6px;border:1px solid #cfdad4;color:var(--green);background:#fffdf8}
+.mini-add.in{background:var(--sage);border-color:#cfe0d7}
+.quote-chip{
+  position:absolute;right:-22px;bottom:-26px;
+  background:var(--green);color:#fffdf8;border-radius:14px;padding:10px 13px;
+  box-shadow:0 16px 36px rgba(19,47,39,.25);transform:rotate(-1deg);
+  min-width:168px;
+}
+.quote-chip small{display:block;font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:#bcd0c7;font-weight:700}
+.quote-chip b{display:block;font-family:Georgia,serif;font-weight:500;font-size:15px;margin-top:3px}
+.quote-chip span{display:block;font-size:9px;color:#d7e3de;margin-top:2px}
+
+/* Sections */
+.section{padding:92px 0}
+.section.alt{background:var(--cream)}
+.section-head{max-width:760px;margin-bottom:42px}
+.section h2{font-size:44px;line-height:1.05;letter-spacing:-.025em;margin:0 0 13px}
+.section-head p{color:var(--muted);font-size:17px;margin:0;max-width:640px}
+.pills{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.pill{padding:22px 18px;border:1px solid var(--line);background:#fffdf8;border-radius:18px}
+.icon{
+  width:39px;height:39px;border-radius:12px;background:#eaf1ee;display:grid;place-items:center;
+  color:var(--green);font-weight:800;margin-bottom:15px
+}
+.pill h3{font-family:inherit;font-size:15px;font-weight:750;margin:0 0 7px}
+.pill p{font-size:13px;color:var(--muted);margin:0}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.step{padding:32px;border:1px solid var(--line);border-radius:var(--radius);background:#fffdf8}
+.num{font-size:12px;font-weight:800;color:var(--gold);letter-spacing:.12em}
+.step h3{font-size:27px;margin:35px 0 11px}
+.step p{color:var(--muted);margin:0}
+
+/* Feature row */
+.feature-row{display:grid;grid-template-columns:.9fr 1.1fr;gap:60px;align-items:center}
+.feature-copy h3{font-size:37px;line-height:1.08;margin:0 0 13px}
+.feature-copy p{color:var(--muted);font-size:16px;max-width:460px}
+.feature-copy ul{padding-left:20px;color:#46534d;margin:18px 0 0}
+.feature-copy li{margin:6px 0}
+
+/* Client quote illustration */
+.quote-mock{
+  border-radius:26px;background:#fffdf8;border:1px solid var(--line);
+  box-shadow:var(--shadow);overflow:hidden;
+}
+.qm-top{height:48px;padding:0 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #ece8df}
+.qm-agency{display:flex;align-items:center;gap:9px}
+.qm-logo{width:26px;height:26px;border-radius:8px;background:#e9e1d1;color:#7a5f30;font-family:Georgia,serif;font-size:11px;display:grid;place-items:center}
+.qm-agency b{font-size:11px;display:block}
+.qm-agency span{font-size:9px;color:#8a928e;display:block}
+.qm-valid{font-size:9px;color:#8a928e}
+.qm-hero{margin:14px 16px 0;padding:16px 18px;border-radius:16px;background:var(--green);color:#fffdf8}
+.qm-hero small{font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:#bcd0c7;font-weight:700}
+.qm-hero h4{margin:5px 0 4px;font-family:Georgia,serif;font-weight:500;font-size:24px;letter-spacing:-.01em}
+.qm-hero p{margin:0;font-size:10px;color:#d7e3de}
+.qm-body{padding:14px 16px 16px;display:grid;gap:8px}
+.qm-dest{display:flex;justify-content:space-between;align-items:baseline;margin:4px 2px 0}
+.qm-dest b{font-size:11.5px}
+.qm-dest span{font-size:9px;color:#8a928e}
+.qm-option{
+  display:grid;grid-template-columns:14px 58px minmax(0,1fr) auto;gap:10px;align-items:center;
+  padding:8px 10px;border:1px solid #e3e8e3;border-radius:12px;background:#fffdf8;
+}
+.qm-option.sel{border:1.5px solid #7fa493;background:#f7fbf8}
+.qm-radio{width:12px;height:12px;border-radius:50%;border:1.5px solid #b9c6c0}
+.qm-option.sel .qm-radio{border-color:var(--green);box-shadow:inset 0 0 0 2.5px #fffdf8;background:var(--green)}
+.qm-photo{height:42px;border-radius:8px}
+.qm-name{font-family:Georgia,serif;font-size:12px}
+.qm-room{font-size:8.5px;color:#7f8883;margin-top:2px}
+.qm-cancel{display:inline-block;margin-top:4px;font-size:7.5px;font-weight:700;color:var(--green);background:var(--sage);padding:2px 6px;border-radius:99px}
+.qm-price{text-align:right;font-size:12px;font-weight:800}
+.qm-price small{display:block;font-size:7.5px;color:#8f9793;font-weight:600}
+.qm-foot{
+  margin:4px 16px 16px;padding:11px 12px;border-radius:14px;border:1px solid #d9e3de;
+  display:flex;justify-content:space-between;align-items:center;gap:10px;
+}
+.qm-foot small{display:block;font-size:8.5px;color:#8a928e}
+.qm-foot b{font-size:14px}
+.qm-send{font-size:10px;font-weight:700;background:var(--green);color:#fffdf8;border-radius:9px;padding:8px 12px}
+
+/* FAQ */
+.faq{max-width:880px;margin:auto}
+details{border-top:1px solid var(--line);padding:20px 0}
+details:last-child{border-bottom:1px solid var(--line)}
+summary{cursor:pointer;font-weight:700;list-style:none;display:flex;justify-content:space-between;gap:20px}
+summary::-webkit-details-marker{display:none}
+summary:after{content:"+";font-size:21px;color:var(--green);line-height:1}
+details[open] summary:after{content:"−"}
+details p{color:var(--muted);margin:13px 0 0;max-width:720px}
+
+/* Final CTA */
+.final{
+  margin:0 auto 90px;width:min(1180px,calc(100% - 40px));
+  background:#eee7d8;border-radius:34px;text-align:center;padding:68px 24px
+}
+.final h2{font-size:50px;margin:0 0 15px}
+.final p{color:#62675f;margin:0 auto 26px;max-width:600px}
+
+/* Footer */
+footer{background:#102d26;color:#d9e2de;padding:54px 0 26px}
+.footer-grid{display:grid;grid-template-columns:1.5fr repeat(3,1fr);gap:35px}
+footer h4{color:#fffdf8;margin:0 0 15px;font-size:13px}
+footer a,footer p{font-size:13px;color:#aebdb7;display:block;margin:8px 0}
+footer a:hover{color:#fffdf8}
+.legal{border-top:1px solid rgba(255,253,248,.12);margin-top:38px;padding-top:20px;font-size:12px;color:#91a59d}
+
+@media(max-width:900px){
+  .menu{display:none}
+  .hero-grid,.feature-row{grid-template-columns:1fr}
+  .product-shell{transform:none}
+  .quote-chip{right:10px;bottom:-22px}
+  .pills{grid-template-columns:repeat(2,1fr)}
+  .steps{grid-template-columns:1fr}
+  .footer-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:600px){
+  .container{width:min(100% - 26px,1180px)}
+  header .btn.secondary{display:none}
+  .nav{height:68px}
+  .brand{font-size:25px}
+  .hero{padding:50px 0 64px}
+  h1{font-size:48px}
+  .lead{font-size:17px}
+  .mini-search{grid-template-columns:1fr 1fr}
+  .mini-go{justify-content:center;padding:8px}
+  .mini-hotel{grid-template-columns:52px minmax(0,1fr) auto}
+  .mini-photo{height:46px}
+  .section{padding:68px 0}
+  .section h2{font-size:36px}
+  .pills{grid-template-columns:1fr}
+  .qm-option{grid-template-columns:14px 44px minmax(0,1fr) auto;gap:8px}
+  .final{width:calc(100% - 26px);padding:50px 20px}
+  .final h2{font-size:39px}
+  .footer-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<header>
+<div class="container nav">
+<a class="brand" href="#">Apolles</a>
+<nav class="menu">
+<a href="#platform">Platform</a>
+<a href="#features">Features</a>
+<a href="#how">How It Works</a>
+<a href="#faq">FAQ</a>
+</nav>
+<div class="actions">
+<a class="btn secondary" href="#">Agent Login</a>
+<a class="btn primary" href="#">Join Apolles</a>
+</div>
+</div>
+</header>
+
+<main>
+<section class="hero" id="platform">
+<div class="container hero-grid">
+<div>
+<div class="eyebrow">Built for travel professionals</div>
+<h1>Hotel booking, built for travel agents</h1>
+<p class="lead">Search live rates, compare rooms, create client quotes and manage bookings in one place.</p>
+<div class="hero-actions">
+<a class="btn primary" href="#">Join as a Travel Agent</a>
+<a class="btn secondary" href="#">Agent Login</a>
+</div>
+<div class="access"><strong>Free to join.</strong> Available exclusively to verified travel professionals.</div>
+</div>
+
+<div aria-label="Apolles platform preview" class="product-shell">
+<div class="browser">
+<div class="browser-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">apolles.com/search</span></div>
+<div class="app-bar">
+<span class="app-logo">Apolles</span>
+<div class="app-tabs"><span class="on">Search</span><span>Quotes</span><span>Bookings</span><span>Reporting</span></div>
+<span class="app-avatar">TA</span>
+</div>
+<div class="screen">
+<div class="mini-search">
+<div class="mini-field"><small>DESTINATION</small><b>Cancún, Mexico</b></div>
+<div class="mini-field"><small>DATES</small><b>Oct 12 to Oct 17</b></div>
+<div class="mini-field"><small>GUESTS</small><b>2 adults · 1 room</b></div>
+<div class="mini-go">Search</div>
+</div>
+<div class="mini-meta"><span><b>214 hotels</b> · 5 nights</span><span class="mini-toggle"><i></i>Free cancellation</span></div>
+<div class="mini-list">
+<div class="mini-hotel added">
+<div class="mini-photo p1"></div>
+<div>
+<div class="mini-name">Costa Serena Resort<span class="mini-stars">★★★★★</span></div>
+<div class="mini-sub">Hotel Zone · Junior Suite Ocean View</div>
+<div class="mini-badges"><span class="mini-badge">All inclusive</span><span class="mini-badge">Free cancellation</span></div>
+</div>
+<div class="mini-price"><small>from</small><b>USD 1,840</b><span>5 nights</span><span class="mini-add in">✓ In quote</span></div>
+</div>
+<div class="mini-hotel">
+<div class="mini-photo p2"></div>
+<div>
+<div class="mini-name">Palma Blanca Suites<span class="mini-stars">★★★★★</span></div>
+<div class="mini-sub">Playa Mujeres · King Suite Plunge Pool</div>
+<div class="mini-badges"><span class="mini-badge">All inclusive</span><span class="mini-badge gold">Adults only</span></div>
+</div>
+<div class="mini-price"><small>from</small><b>USD 2,215</b><span>5 nights</span><span class="mini-add">+ Add to quote</span></div>
+</div>
+<div class="mini-hotel">
+<div class="mini-photo p3"></div>
+<div>
+<div class="mini-name">Hotel Marea Cancún<span class="mini-stars">★★★★</span></div>
+<div class="mini-sub">Hotel Zone · Deluxe Ocean View</div>
+<div class="mini-badges"><span class="mini-badge">Breakfast included</span></div>
+</div>
+<div class="mini-price"><small>from</small><b>USD 1,120</b><span>5 nights</span><span class="mini-add">+ Add to quote</span></div>
+</div>
+</div>
+</div>
+</div>
+<div class="quote-chip"><small>Active quote</small><b>Mexico Honeymoon</b><span>3 options · 2 destinations</span></div>
+</div>
+</div>
+</section>
+
+<section class="section" id="features">
+<div class="container">
+<div class="section-head">
+<div class="eyebrow">One professional workspace</div>
+<h2>The core tools agents need</h2>
+<p>Everything from the first search to the confirmed booking, without switching between supplier sites and spreadsheets.</p>
+</div>
+<div class="pills">
+<div class="pill"><div class="icon">01</div><h3>Live Hotel Rates</h3><p>Search current hotel availability and professional rates.</p></div>
+<div class="pill"><div class="icon">02</div><h3>Compare Rooms &amp; Conditions</h3><p>Compare room types, meal plans and cancellation terms.</p></div>
+<div class="pill"><div class="icon">03</div><h3>Create Client Quotes</h3><p>Build clear client-facing hotel proposals from selected options.</p></div>
+<div class="pill"><div class="icon">04</div><h3>Manage Bookings</h3><p>Keep quotes and bookings organized in one agent workspace.</p></div>
+</div>
+</div>
+</section>
+
+<section class="section alt" id="how">
+<div class="container">
+<div class="section-head">
+<div class="eyebrow">How it works</div>
+<h2>Apply. Get approved. Start booking.</h2>
+<p>Access is available to verified travel professionals.</p>
+</div>
+<div class="steps">
+<div class="step"><div class="num">STEP 01</div><h3>Apply</h3><p>Send your agency details.</p></div>
+<div class="step"><div class="num">STEP 02</div><h3>Get approved</h3><p>We verify your travel business.</p></div>
+<div class="step"><div class="num">STEP 03</div><h3>Start booking</h3><p>Access hotel search, quotes and bookings.</p></div>
+</div>
+</div>
+</section>
+
+<section class="section">
+<div class="container">
+<div class="feature-row">
+<div class="feature-copy">
+<div class="eyebrow">Client quotes</div>
+<h3>Send options. Let your client choose.</h3>
+<p>Collect hotels while you search, set your selling price, and send one clean link. Your client picks a hotel and room for each destination and sends the choice back to you.</p>
+<ul>
+<li>Several destinations in one proposal</li>
+<li>Your selling price, never the net rate</li>
+<li>Cancellation terms shown for every room</li>
+<li>You see when the client opens the quote</li>
+</ul>
+</div>
+
+<div class="quote-mock" aria-label="Client quote preview">
+<div class="qm-top">
+<div class="qm-agency"><span class="qm-logo">TA</span><div><b>Your Travel Agency</b><span>Prepared by your travel advisor</span></div></div>
+<span class="qm-valid">Valid for 3 days</span>
+</div>
+<div class="qm-hero">
+<small>Your travel proposal</small>
+<h4>Mexico Honeymoon</h4>
+<p>Oct 12 to Oct 20 · 2 adults · 2 destinations</p>
+</div>
+<div class="qm-body">
+<div class="qm-dest"><b>Cancún</b><span>Oct 12 to Oct 17 · 5 nights</span></div>
+<div class="qm-option sel">
+<span class="qm-radio"></span><span class="qm-photo p1"></span>
+<div><div class="qm-name">Costa Serena Resort</div><div class="qm-room">Junior Suite Ocean View · All inclusive</div><span class="qm-cancel">Free cancellation until Oct 5</span></div>
+<div class="qm-price">USD 2,050<small>5 nights</small></div>
+</div>
+<div class="qm-option">
+<span class="qm-radio"></span><span class="qm-photo p2"></span>
+<div><div class="qm-name">Palma Blanca Suites</div><div class="qm-room">King Suite Plunge Pool · All inclusive</div></div>
+<div class="qm-price">USD 2,460<small>5 nights</small></div>
+</div>
+<div class="qm-dest"><b>Tulum</b><span>Oct 17 to Oct 20 · 3 nights</span></div>
+<div class="qm-option">
+<span class="qm-radio"></span><span class="qm-photo p3"></span>
+<div><div class="qm-name">Selva Tulum Hotel</div><div class="qm-room">Jungle Suite · Breakfast included</div></div>
+<div class="qm-price">USD 1,180<small>3 nights</small></div>
+</div>
+</div>
+<div class="qm-foot">
+<div><small>1 of 2 destinations selected</small><b>USD 2,050</b></div>
+<span class="qm-send">Send my selections</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<section class="section alt" id="faq">
+<div class="container faq">
+<div class="section-head">
+<div class="eyebrow">Agent FAQ</div>
+<h2>Before you apply</h2>
+</div>
+<details open><summary>Who can join Apolles?</summary><p>Verified travel professionals and travel businesses. Applications are reviewed before platform access is activated. Joining is free.</p></details>
+<details><summary>Can public visitors search hotel prices?</summary><p>No. Hotel search, availability and professional pricing are available only after agent login.</p></details>
+<details><summary>Which destinations and hotels are available?</summary><p>Hotels worldwide, with live availability and current rates. You search by city, area or hotel name, the same way you would on any booking site.</p></details>
+<details><summary>Can I send branded hotel quotes to clients?</summary><p>Yes. Select hotel options, set your selling price and send your client a link to a clean proposal they can choose from.</p></details>
+<details><summary>What does my client see?</summary><p>Your client sees the hotel and room options with your selling price, the meal plan and the cancellation terms. Net rates, your profit and supplier details are never shown to the client.</p></details>
+</div>
+</section>
+
+<section class="final">
+<div class="eyebrow">Apolles for travel professionals</div>
+<h2>Ready to access Apolles?</h2>
+<p>Apply for agent access. It's free, and once your agency is verified you can start searching and booking.</p>
+<div class="hero-actions" style="justify-content:center">
+<a class="btn primary" href="#">Apply for Access</a>
+<a class="btn secondary" href="#">Agent Login</a>
+</div>
+</section>
+</main>
+
+<footer>
+<div class="container">
+<div class="footer-grid">
+<div>
+<div class="brand" style="color:#fffdf8">Apolles</div>
+<p>Hotel booking tools for verified travel professionals.</p>
+</div>
+<div><h4>PLATFORM</h4><a href="#features">Features</a><a href="#how">How It Works</a><a href="#">Agent Login</a></div>
+<div><h4>SUPPORT</h4><a href="#">Apply for Access</a><a href="#">Contact Support</a><a href="#faq">FAQ</a></div>
+<div><h4>LEGAL</h4><a href="#">Terms</a><a href="#">Privacy</a><a href="#">Cancellation Policy</a></div>
+</div>
+<div class="legal">© 2026 Apolles. All rights reserved.</div>
+</div>
+</footer>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>
