@@ -47,8 +47,48 @@ model Agency {
   ledgerEntries LedgerEntry[]
   logo          AgencyLogo?
   bookings      Booking[]
+  clients       Client[]
 
   @@index([createdAt, id])
+}
+
+// A client of one agency (mockup 18, plan 5a). Personal data: only the agency that owns the row
+// ever reads it (src/server/clients.ts scopes every query by agencyId), and the audit log records
+// which fields changed, never their values.
+model Client {
+  id          String   @id @default(cuid())
+  agencyId    String
+  firstName   String
+  lastName    String
+  email       String? // stored lowercase
+  phone       String // the WhatsApp number as typed
+  phoneDigits String // the same number as digits only, without a leading 00 or 0, for search
+  nationality String // ISO 3166-1 alpha-2
+  notes       String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  agency     Agency            @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  companions ClientCompanion[]
+
+  @@index([agencyId, updatedAt])
+}
+
+// Someone who travels with a client. The client is always the lead traveler and is not stored
+// here. childAge is null for an adult.
+model ClientCompanion {
+  id        String   @id @default(cuid())
+  clientId  String
+  firstName String
+  lastName  String
+  relation  String   @default("")
+  childAge  Int?
+  position  Int
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, position])
 }
 
 // The agency's logo, one per agency (src/server/agency-profile.ts). The bytes are PNG or JPEG,
