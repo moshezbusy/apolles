@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { MockSupplierAdapter, type MockHotel } from './adapters/mock/mock-adapter.js';
 import { OtaAdapter } from './adapters/ota/ota-adapter.js';
 import { TboAdapter } from './adapters/tbo/tbo-adapter.js';
+import { HotelbedsAdapter } from './adapters/hotelbeds/hotelbeds-adapter.js';
 import type { OtaVendorProfile } from './adapters/ota/profile.js';
 import { OTA_PROFILES } from './adapters/profiles.js';
 import { JsonlFileAuditSink, type AuditSink } from './audit/audit.js';
@@ -50,6 +51,21 @@ export type SupplierConfig =
       agencyEmail: string;
       agencyPhone: string;
       searchTimeoutMs?: number;
+    }
+  | {
+      id: string;
+      type: 'hotelbeds';
+      enabled: boolean;
+      environment: 'test' | 'production';
+      /** Not secret: test https://api.test.hotelbeds.com/hotel-api/1.0 */
+      baseUrl: string;
+      /** Set true only after Hotelbeds signs off certification. */
+      certified: boolean;
+      /** Env var NAMES of the API key and secret. */
+      secrets: { apiKey: string; secret: string };
+      /** Evaluation keys allow very few requests per day; keep this low. */
+      rateLimitPerSecond?: number;
+      searchTimeoutMs?: number;
     };
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
@@ -88,6 +104,17 @@ export async function createSupplierService(opts: BootstrapOptions): Promise<Sup
           secretNames: s.secrets, secrets, agencyEmail: s.agencyEmail, agencyPhone: s.agencyPhone,
         }),
         { enabled: true, searchTimeoutMs: s.searchTimeoutMs ?? 25_000 },
+      );
+      continue;
+    }
+    if (s.type === 'hotelbeds') {
+      const transport = new HttpTransport({ supplierId: s.id, audit, rateLimitPerSecond: s.rateLimitPerSecond ?? 4, maxAttempts: 2 });
+      registry.register(
+        new HotelbedsAdapter({
+          id: s.id, baseUrl: s.baseUrl, environment: s.environment, certified: s.certified, transport,
+          secretNames: s.secrets, secrets,
+        }),
+        { enabled: true, searchTimeoutMs: s.searchTimeoutMs ?? 22_000 },
       );
       continue;
     }

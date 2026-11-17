@@ -37,6 +37,20 @@
       "searchTimeoutMs": 25000
     },
     {
+      "id": "hotelbeds",
+      "type": "hotelbeds",
+      "enabled": false,
+      "environment": "test",
+      "baseUrl": "https://api.test.hotelbeds.com/hotel-api/1.0",
+      "certified": false,
+      "secrets": {
+        "apiKey": "HOTELBEDS_API_KEY",
+        "secret": "HOTELBEDS_SECRET"
+      },
+      "rateLimitPerSecond": 2,
+      "searchTimeoutMs": 22000
+    },
+    {
       "id": "omnibees",
       "type": "ota",
       "profile": "omnibees",

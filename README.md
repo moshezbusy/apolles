@@ -1,7 +1,7 @@
 # Apolles supplier layer
 
 One internal booking model and one adapter per hotel supplier. Apolles
-(CRM, quotes, vouchers) talks only to this layer. Omnibees, Dingus, SynXis,
+(CRM, quotes, vouchers) talks only to this layer. Hotelbeds, TBO, Omnibees, Dingus, SynXis,
 DerbySoft, a hotel chain's own API: each one is an adapter behind the same
 interface.
 
@@ -97,3 +97,14 @@ See [docs/adding-a-supplier.md](docs/adding-a-supplier.md).
 - [ ] Alert (email/WhatsApp) when a booking reaches `NEEDS_REVIEW`
 - [ ] Static content (photos, descriptions) import per supplier
 - [ ] Hotel mapping data for each supplier
+
+## Hotelbeds (test)
+
+1. Put the key and secret from developer.hotelbeds.com (Dashboard > My API keys)
+   in `HOTELBEDS_API_KEY` / `HOTELBEDS_SECRET`.
+2. `npm run build && node dist/tools/hotelbeds-smoke.js` (add `--book` for a test booking + cancel).
+3. Set `"enabled": true` for `hotelbeds` in `config/suppliers.json` and map hotels in
+   `config/mappings/hotelbeds.json`.
+
+Evaluation keys allow about 50 requests a day. Production stays blocked until
+Hotelbeds certifies the integration (`certified: true`).

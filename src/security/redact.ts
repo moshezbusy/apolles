@@ -24,7 +24,7 @@ const JSON_KV = new RegExp(`("(?:${NAMES_RE})"\\s*:\\s*)("(?:[^"\\\\]|\\\\.)*"|-
 // Query string: ?password=x&
 const QUERY_KV = new RegExp(`([?&](?:${NAMES_RE})=)([^&#\\s]*)`, 'gi');
 
-const SENSITIVE_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key', 'api-key', 'apikey']);
+const SENSITIVE_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key', 'api-key', 'apikey', 'x-signature']);
 
 export function redactText(text: string): string {
   if (!text) return text;

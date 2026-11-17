@@ -1,0 +1,14 @@
+{
+  "supplierId": "hotelbeds",
+  "hotels": {},
+  "boards": {
+    "RO": "RO",
+    "SC": "RO",
+    "BB": "BB",
+    "CB": "BB",
+    "AB": "BB",
+    "HB": "HB",
+    "FB": "FB",
+    "AI": "AI"
+  }
+}
