@@ -71,7 +71,7 @@ model Client {
   agency     Agency            @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   companions ClientCompanion[]
 
-  @@index([agencyId, updatedAt])
+  @@index([agencyId, updatedAt(sort: Desc), id(sort: Desc)])
 }
 
 // Someone who travels with a client. The client is always the lead traveler and is not stored

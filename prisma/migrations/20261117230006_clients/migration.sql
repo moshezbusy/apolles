@@ -30,7 +30,7 @@ CREATE TABLE "ClientCompanion" (
 );
 
 -- CreateIndex
-CREATE INDEX "Client_agencyId_updatedAt_idx" ON "Client"("agencyId", "updatedAt");
+CREATE INDEX "Client_agencyId_updatedAt_id_idx" ON "Client"("agencyId", "updatedAt" DESC, "id" DESC);
 
 -- CreateIndex
 CREATE INDEX "ClientCompanion_clientId_position_idx" ON "ClientCompanion"("clientId", "position");

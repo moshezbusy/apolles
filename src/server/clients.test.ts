@@ -63,6 +63,13 @@ describe("createClient", () => {
     expect(JSON.stringify(log)).not.toContain("4567");
   });
 
+  it("accepts notes on several lines as the browser sends them (CRLF), stored with LF", async () => {
+    const result = await createClient(agentA, agencyA, { ...DANIEL, notes: "Anniversary\r\nSea view" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect((await db.client.findUniqueOrThrow({ where: { id: result.id } })).notes).toBe("Anniversary\nSea view");
+  });
+
   it("email is optional", async () => {
     const result = await createClient(agentA, agencyA, { ...DANIEL, email: "" });
     expect(result.ok).toBe(true);
@@ -111,6 +118,12 @@ describe("listClients", () => {
     expect((await listClients(agencyA, { q: "0524441180" })).clients.map((c) => c.firstName)).toEqual(["Maya"]);
     expect((await listClients(agencyA, { q: "50 123 45" })).clients.map((c) => c.firstName)).toEqual(["Daniel"]);
     expect((await listClients(agencyA, { q: "Secret" })).clients).toEqual([]);
+  });
+
+  it("a cursor from another agency is ignored (starts from the first page)", async () => {
+    const other = await db.client.findFirstOrThrow({ where: { agencyId: agencyB } });
+    const page = await listClients(agencyA, { cursor: other.id });
+    expect(page.clients.map((c) => c.firstName)).toEqual(["Maya", "Daniel"]);
   });
 
   it("pages 50 at a time with a cursor", async () => {
@@ -165,6 +178,13 @@ describe("getClient, updateClient and companions", () => {
     expect((await removeCompanion(agentB, agencyB, noa)).ok).toBe(false);
     expect((await removeCompanion(agentA, agencyA, noa)).ok).toBe(true);
     expect((await getClient(agencyA, clientId))?.companions.map((c) => c.firstName)).toEqual(["Maya"]);
+  });
+
+  it("allows at most 20 companions per client", async () => {
+    for (let i = 0; i < 20; i++) {
+      expect((await addCompanion(agentA, agencyA, clientId, { firstName: `P${i}`, lastName: "Levy", relation: "", childAge: "" })).ok).toBe(true);
+    }
+    expect((await addCompanion(agentA, agencyA, clientId, { firstName: "One", lastName: "Toomany", relation: "", childAge: "" })).ok).toBe(false);
   });
 
   it("refuses a child age outside 0 to 17", async () => {

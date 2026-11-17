@@ -43,10 +43,12 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
   const openId = one(params.id) || page.clients[0]?.id || "";
   const open = openId && !adding ? await getClient(agencyId, openId) : null;
 
+  // Links keep the search and the page the agent is on (a "cursor" value replaces it).
   const hrefFor = (values: { id?: string; cursor?: string; extra?: string }) => {
     const p = new URLSearchParams();
     if (q) p.set("q", q);
-    if (values.cursor) p.set("cursor", values.cursor);
+    const pageCursor = values.cursor ?? cursor;
+    if (pageCursor) p.set("cursor", pageCursor);
     if (values.id) p.set("id", values.id);
     if (values.extra) p.set(values.extra, "1");
     const s = p.toString();
@@ -236,7 +238,8 @@ function ClientPanel({ client, editHref }: { client: ClientDetail; editHref: str
             </li>
           ))}
         </ul>
-        <CompanionForm action={addCompanionAction} clientId={client.id} />
+        {/* key: a new client gets a fresh form, never the last client's message or typed values. */}
+        <CompanionForm key={client.id} action={addCompanionAction} clientId={client.id} />
         <p className="mt-2 text-xs text-muted">Check children&apos;s ages for each trip.</p>
       </section>
     </div>

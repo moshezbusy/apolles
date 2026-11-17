@@ -41,12 +41,18 @@ export const clientInput = z
     phone,
     email: z.union([z.literal(""), z.string().trim().max(254).pipe(z.email())]),
     nationality: z.string().trim().refine(isCountryCode),
-    // Line breaks are allowed in notes; other control characters are not.
+    // Line breaks are allowed in notes; other control characters are not. A browser sends a
+    // line break as CRLF, so CR is turned into LF first.
     notes: z
       .string()
-      .trim()
-      .max(1000)
-      .refine((value) => !/[\p{Cf}\u0000-\u0009\u000B-\u001F\u007F]/u.test(value)),
+      .transform((value) => value.replace(/\r\n?/g, "\n"))
+      .pipe(
+        z
+          .string()
+          .trim()
+          .max(1000)
+          .refine((value) => !/[\p{Cf}\u0000-\u0009\u000B-\u001F\u007F]/u.test(value)),
+      ),
   })
   .strict();
 
@@ -65,6 +71,9 @@ export const companionInput = z
 export type CompanionInput = z.input<typeof companionInput>;
 
 export type Result = { ok: true; id: string } | { ok: false };
+
+// A client's travel companions; the details panel always shows all of them.
+export const MAX_COMPANIONS = 20;
 
 // Digits only, without a leading "00" or "0", so "050-123 4567" and "+972 50 1234567" can both be
 // found by typing part of the number.
@@ -94,12 +103,16 @@ export async function listClients(
   options: { q?: string | undefined; cursor?: string | undefined },
 ): Promise<ClientPage> {
   const where = searchWhere(agencyId, options.q ?? "");
+  // The cursor must be one of the agency's own clients; any other id starts from the first page.
+  const cursor = options.cursor
+    ? ((await db.client.findFirst({ where: { id: options.cursor, agencyId }, select: { id: true } }))?.id ?? null)
+    : null;
   const [rows, total] = await Promise.all([
     db.client.findMany({
       where,
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
       take: CLIENT_PAGE_SIZE + 1,
-      ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: {
         id: true,
         firstName: true,
@@ -242,6 +255,7 @@ export async function addCompanion(
     const rows = await tx.$queryRaw<{ id: string }[]>`
       SELECT id FROM "Client" WHERE id = ${clientId} AND "agencyId" = ${agencyId} FOR UPDATE`;
     if (rows.length === 0) return { ok: false } as const;
+    if ((await tx.clientCompanion.count({ where: { clientId } })) >= MAX_COMPANIONS) return { ok: false } as const;
     const last = await tx.clientCompanion.findFirst({ where: { clientId }, orderBy: { position: "desc" }, select: { position: true } });
     const created = await tx.clientCompanion.create({
       data: { clientId, ...rest, childAge: childAge === "" ? null : childAge, position: (last?.position ?? -1) + 1 },
