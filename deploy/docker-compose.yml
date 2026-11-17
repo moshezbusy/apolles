@@ -1,0 +1,23 @@
+# Apolles supplier layer on the VPS. Only the CRM (same Docker network) can reach it; no port is published.
+#   cd /home/ubuntu/apolles-suppliers && docker compose -f deploy/docker-compose.yml up -d --build
+# Secrets: deploy/.env (APOLLES_API_KEY, HOTELBEDS_API_KEY, HOTELBEDS_SECRET). Never in git.
+services:
+  suppliers:
+    build: ..
+    container_name: apolles-suppliers
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - SUPPLIERS_CONFIG=/app/config/suppliers.server.json
+      - AUDIT_DIR=/data/audit-logs
+    volumes:
+      - ./suppliers.server.json:/app/config/suppliers.server.json:ro
+      - ./data:/data
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks:
+      - n8n_default
+networks:
+  n8n_default:
+    external: true

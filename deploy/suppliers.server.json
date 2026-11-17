@@ -1,0 +1,21 @@
+{
+  "service": {
+    "maxPriceIncreasePercent": 0,
+    "offerTtlMs": 1200000,
+    "quoteTtlMs": 600000,
+    "maxReconcileAttempts": 10
+  },
+  "suppliers": [
+    {
+      "id": "hotelbeds",
+      "type": "hotelbeds",
+      "enabled": true,
+      "environment": "test",
+      "baseUrl": "https://api.test.hotelbeds.com/hotel-api/1.0",
+      "certified": false,
+      "secrets": { "apiKey": "HOTELBEDS_API_KEY", "secret": "HOTELBEDS_SECRET" },
+      "rateLimitPerSecond": 2,
+      "searchTimeoutMs": 22000
+    }
+  ]
+}
