@@ -4,6 +4,7 @@ import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import { sendEmail } from "@/server/email/port";
 import { createSession, getSession } from "@/server/auth/session";
+import { isTrustedDevice, trustDevice } from "@/server/auth/signin-code";
 import { credit, getBalance, getBalances, placeHold, releaseHold } from "@/server/wallet/ledger";
 import { audit } from "@/server/audit";
 import { createAgency, listAgencies, setAgencyStatus } from "@/server/admin/agencies";
@@ -115,16 +116,19 @@ describe("admin agencies", () => {
   });
 
   describe("setAgencyStatus", () => {
-    it("suspend → agent session is gone + audit row with before/after status", async () => {
+    it("suspend → agent session and known devices are gone + audit row with before/after status", async () => {
       const { agencyId, userId } = await createAgency(adminId, input);
       await db.user.update({ where: { id: userId }, data: { passwordHash: "x" } });
-      const token = await createSession(userId);
+      const token = await createSession(userId, { verified: true });
+      const device = await trustDevice(userId);
       expect(await getSession(token)).not.toBeNull();
 
       const res = await setAgencyStatus(adminId, agencyId, "SUSPENDED");
       expect(res.changed).toBe(true);
       expect(await getSession(token)).toBeNull();
       expect(await db.session.count({ where: { userId } })).toBe(0);
+      // After reactivation the agent must enter an email code again.
+      expect(await isTrustedDevice(userId, device)).toBe(false);
       expect((await db.agency.findUniqueOrThrow({ where: { id: agencyId } })).status).toBe(
         "SUSPENDED",
       );

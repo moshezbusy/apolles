@@ -55,7 +55,7 @@ describe("unlockUser", () => {
     expect(row.totpConfirmedAt).not.toBeNull();
 
     expect(await login(admin.email, GOOD)).toEqual({ ok: true, userId: admin.id, needsTotp: true });
-    const session = await getSession(await createSession(admin.id));
+    const session = await getSession(await createSession(admin.id, { verified: true }));
     if (!session) throw new Error("no session");
     expect(await checkTotpForSession(session.sessionId, await generate({ secret }))).toBe("OK");
   });

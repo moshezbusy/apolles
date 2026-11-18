@@ -45,7 +45,7 @@ async function signInAdmin(verified = true) {
     where: { id: admin.id },
     data: { totpSecret: generateSecret(), totpConfirmedAt: new Date() },
   });
-  const token = await createSession(admin.id);
+  const token = await createSession(admin.id, { verified: true });
   if (verified) {
     await db.session.updateMany({ where: { userId: admin.id }, data: { totpVerifiedAt: new Date() } });
   }
@@ -75,7 +75,7 @@ describe("agency server actions", () => {
   it("an agent cannot call the actions", async () => {
     const agency = await db.agency.create({ data: { name: "A", country: "IL", bankReference: "APL-9" } });
     const agent = await createUser({ email: "ag@example.com", name: "Ag", role: "AGENT", agencyId: agency.id });
-    jar.set(SESSION_COOKIE, await createSession(agent.id));
+    jar.set(SESSION_COOKIE, await createSession(agent.id, { verified: true }));
     await expect(createAgencyAction(null, form(good))).rejects.toThrow("NEXT_REDIRECT:/login");
     await expect(
       setAgencyStatusAction(form({ agencyId: agency.id, status: "SUSPENDED" })),

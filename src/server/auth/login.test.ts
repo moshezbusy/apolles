@@ -5,6 +5,7 @@ import { resetTestDb } from "@/test/db";
 import { notifyAdminLockout } from "@/server/auth/notifications";
 import * as password from "@/server/auth/password";
 import { LOGIN_ERROR_COPY, login } from "@/server/auth/login";
+import { completeSignIn } from "@/server/auth/lockout";
 
 vi.mock("@/server/auth/notifications", () => ({ notifyAdminLockout: vi.fn() }));
 
@@ -138,13 +139,15 @@ describe("login", () => {
     expect(notifyAdminLockout).not.toHaveBeenCalled();
   });
 
-  it("success resets failedLogins", async () => {
+  it("agent: a correct password keeps the count; finishing the sign-in (code or known device) resets it", async () => {
     const agent = await createAgent();
     await login(agent.email, BAD);
     await login(agent.email, BAD);
     expect((await db.user.findUniqueOrThrow({ where: { id: agent.id } })).failedLogins).toBe(2);
 
     expect(await login(agent.email, GOOD)).toMatchObject({ ok: true });
+    expect((await db.user.findUniqueOrThrow({ where: { id: agent.id } })).failedLogins).toBe(2);
+    expect(await completeSignIn(agent.id)).toBe(true);
     const row = await db.user.findUniqueOrThrow({ where: { id: agent.id } });
     expect(row.failedLogins).toBe(0);
     expect(row.lockedUntil).toBeNull();

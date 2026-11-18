@@ -26,7 +26,17 @@ export async function requireAgent(): Promise<{ userId: string; agencyId: string
   const session = await currentSession();
   if (!session) redirect(await signInPath());
   if (session.user.role !== "AGENT" || !session.agency) redirect("/login");
+  // Plan 8e: a new device must enter the email sign-in code first.
+  if (!session.emailVerifiedAt) redirect("/login/verify");
   return { userId: session.user.id, agencyId: session.agency.id };
+}
+
+// Only for /login/verify and its actions: an agent session still waiting for its sign-in code.
+export async function requireAgentPendingCode(): Promise<{ userId: string; sessionId: string; email: string }> {
+  const session = await currentSession();
+  if (!session || session.user.role !== "AGENT" || !session.agency) redirect("/login");
+  if (session.emailVerifiedAt) redirect("/search");
+  return { userId: session.user.id, sessionId: session.sessionId, email: session.user.email };
 }
 
 // For every admin page and server action (each one calls it itself; the /admin layout

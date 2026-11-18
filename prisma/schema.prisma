@@ -154,18 +154,27 @@ model User {
   quotes               Quote[]
   reviewedApplications AgencyApplication[]
   recentSearches       RecentSearch[]
+  trustedDevices       TrustedDevice[]
 
   @@index([agencyId])
 }
 
 model Session {
-  id             String    @id @default(cuid())
-  tokenHash      String    @unique
-  userId         String
-  expiresAt      DateTime
+  id              String    @id @default(cuid())
+  tokenHash       String    @unique
+  userId          String
+  expiresAt       DateTime
   // Admin sessions only: when the TOTP code was entered for this session. Null = not yet.
-  totpVerifiedAt DateTime?
-  createdAt      DateTime  @default(now())
+  totpVerifiedAt  DateTime?
+  // Agent sessions (plan 8e): when the email code was entered, or the device was already known.
+  // Null = not yet: requireAgent sends it to /login/verify.
+  emailVerifiedAt DateTime?
+  // The pending code (hash only), when it expires, wrong tries and resends.
+  codeHash        String?
+  codeExpiresAt   DateTime?
+  codeAttempts    Int       @default(0)
+  codeSends       Int       @default(0)
+  createdAt       DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -707,4 +716,18 @@ model RecentSearch {
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([agencyId])
+}
+
+// A browser where the agent entered a sign-in code (plan 8e): not asked again for 90 days. Only
+// the hash of the cookie's token is stored. Forgotten on a password change.
+model TrustedDevice {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

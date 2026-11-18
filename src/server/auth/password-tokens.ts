@@ -5,6 +5,7 @@ import { sendEmail, type EmailMessage } from "@/server/email/port";
 import { normalizeEmail } from "@/server/users";
 import { hashPassword, isValidPassword } from "@/server/auth/password";
 import { destroyUserSessions } from "@/server/auth/session";
+import { forgetDevices } from "@/server/auth/signin-code";
 import { MAX_RAW_TOKEN_LENGTH, generateRawToken, hashToken } from "@/server/auth/token";
 import { RATE_LIMITS, emailKey, hitIpRateLimit, hitRateLimit } from "@/server/rate-limit";
 
@@ -135,6 +136,8 @@ export async function consumePasswordToken(
       data: { usedAt: now },
     });
     await destroyUserSessions(userId, tx);
+    // Plan 8e: every device is forgotten too; the next sign-in asks for an email code.
+    await forgetDevices(userId, tx);
     return "OK";
   });
 }

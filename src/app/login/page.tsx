@@ -11,13 +11,18 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { reset, expired } = await searchParams;
+  const { reset, expired, code } = await searchParams;
 
   return (
     <AuthShell eyebrow="Agent portal" title="Welcome back" subtitle="Sign in to your Apolles account." headerLink={{ href: "/join", label: "Join Apolles" }}>
       {reset === "1" ? (
         <p role="status" className={`mb-4 ${alertSuccess}`}>
           Your password is set. For your security, other devices signed in to your account were signed out. Sign in.
+        </p>
+      ) : null}
+      {code === "locked" ? (
+        <p role="alert" className={`mb-4 ${alertInfo}`}>
+          Too many wrong codes. For your security, sign in again to get a new code.
         </p>
       ) : null}
       {expired === "1" ? (

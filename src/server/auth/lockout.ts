@@ -165,6 +165,13 @@ export async function releaseAttempt(userId: string, mode: SlotRelease): Promise
   return isUnlockedNow(userId);
 }
 
+// The whole sign-in is done (agent: right code or a known device): the run of failures is over.
+// Only while unlocked: a lock set meanwhile stays. Returns false if the account is locked.
+export async function completeSignIn(userId: string): Promise<boolean> {
+  const reset = await db.user.updateMany({ where: { id: userId, ...notLockedAt(new Date()) }, data: { failedLogins: 0, lockedUntil: null } });
+  return reset.count === 1;
+}
+
 // Is the account unlocked right now (a fresh read, for checks after a slow step)?
 // Does not change the counter.
 export async function isUnlockedNow(userId: string): Promise<boolean> {
