@@ -57,13 +57,14 @@ model Agency {
   lowBalanceAlerted       Boolean       @default(false)
   createdAt               DateTime      @default(now())
 
-  users         User[]
-  ledgerEntries LedgerEntry[]
-  logo          AgencyLogo?
-  bookings      Booking[]
-  clients       Client[]
-  quotes        Quote[]
-  application   AgencyApplication?
+  users          User[]
+  ledgerEntries  LedgerEntry[]
+  logo           AgencyLogo?
+  bookings       Booking[]
+  clients        Client[]
+  quotes         Quote[]
+  application    AgencyApplication?
+  recentSearches RecentSearch[]
 
   @@index([createdAt, id])
 }
@@ -152,6 +153,7 @@ model User {
   bookingEvents        BookingEvent[]
   quotes               Quote[]
   reviewedApplications AgencyApplication[]
+  recentSearches       RecentSearch[]
 
   @@index([agencyId])
 }
@@ -684,4 +686,25 @@ model AgencyApplication {
 
   @@index([status, createdAt(sort: Desc), id(sort: Desc)])
   @@index([email, status])
+}
+
+// "Recent searches" on screen 07 (plan 8d): the agent's last searches (destination, dates and
+// guests only), at most 5 per user. "Clear all" removes them.
+model RecentSearch {
+  id              String   @id @default(cuid())
+  agencyId        String
+  userId          String
+  destinationId   String
+  destinationName String
+  checkin         String // YYYY-MM-DD
+  checkout        String
+  adults          Int
+  childAges       Int[]
+  createdAt       DateTime @default(now())
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([agencyId])
 }

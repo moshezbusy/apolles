@@ -1,3 +1,4 @@
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requireAgent } from "@/server/auth/guards";
 import { db } from "@/server/db";
@@ -65,7 +66,33 @@ describe("search action and destinations (screen 07)", () => {
     expect(await db.searchHotel.count({ where: { snapshotId: snapshot.id } })).toBe(2);
   });
 
-  it("an agencyId in the form is never read: the search belongs to the session's agency", async () => {
+  it("recent searches: listed with Search again (which fills the form), Clear all; Needs attention shows a client's choice", async () => {
+    await db.user.create({ data: { id: "user-1", email: "a@t.local", name: "A", role: "AGENT", agencyId: "A" } });
+    signInAs("A");
+    const { startSearchAction, clearRecentAction } = await import("./(agent)/search/actions");
+    const fields = { destinationId: "paris", destinationLabel: "Paris, France", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "3", childCount: "0" };
+    await expect(startSearchAction(null, form(fields))).rejects.toThrow(/NEXT_REDIRECT/);
+    const recent = await db.recentSearch.findFirstOrThrow();
+    await db.quote.create({ data: { agencyId: "A", createdById: "user-1", title: "Paris Spring", status: "SELECTED", selectedAt: new Date() } });
+    const { default: SearchPage } = await import("./(agent)/search/page");
+    const html = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("Recent searches");
+    expect(html).toContain(`href="/search?again=${recent.id}"`);
+    expect(html).toContain("Client selected an option");
+    expect(html).toContain("Paris Spring");
+    const again = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({ again: recent.id }) }));
+    expect(again).toContain('value="Paris, Ile-de-France, France"'); // the name read on the server, not the form's label
+    // Another user's id is ignored; dates already past fall back to the defaults.
+    const other = await db.recentSearch.create({ data: { agencyId: "B", userId: "user-1", destinationId: "paris", destinationName: "Not mine", checkin: "2020-01-01", checkout: "2020-01-03", adults: 1, childAges: [] } });
+    expect(renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({ again: other.id }) }))).not.toContain("Not mine");
+    await db.recentSearch.update({ where: { id: recent.id }, data: { checkin: "2020-01-01", checkout: "2020-01-03" } });
+    expect(renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({ again: recent.id }) }))).not.toContain('value="2020-01-01"');
+    await expect(clearRecentAction()).rejects.toThrow("NEXT_REDIRECT:/search");
+    expect(await db.recentSearch.count({ where: { agencyId: "A" } })).toBe(0);
+    expect(await db.recentSearch.count({ where: { agencyId: "B" } })).toBe(1); // only the session agency's are cleared
+  });
+
+    it("an agencyId in the form is never read: the search belongs to the session's agency", async () => {
     signInAs("B");
     const { startSearchAction } = await import("./(agent)/search/actions");
     const fields = { agencyId: "A", destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "2" };

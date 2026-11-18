@@ -4,6 +4,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "@/server/search/errors";
+import { destinationById } from "@/server/search/destinations";
+import { clearRecentSearches, rememberSearch } from "@/server/search/recent";
 import { startSearch } from "@/server/search/search";
 import { supplierContextFrom } from "@/server/supplier-context";
 import { childAgesComplete, readSearchForm, toSearchInput, type SearchFormState } from "./form-state";
@@ -34,6 +36,24 @@ export async function startSearchAction(_previous: SearchFormState, formData: Fo
     console.error(`search failed: ${error instanceof Error ? error.name : "Error"}`);
     return { status: "error", message: UNAVAILABLE, values };
   }
+  // "Recent searches" (best effort: the search goes on even if this cannot be saved).
+  try {
+    const input = toSearchInput(values);
+    await rememberSearch(
+      { agencyId, userId },
+      // The name is read on the server, never taken from the form.
+      { destinationId: input.destinationId, destinationName: (await destinationById(input.destinationId))?.label ?? input.destinationId, checkin: input.checkin, checkout: input.checkout, adults: input.adults, childAges: input.childAges },
+    );
+  } catch (error) {
+    console.error("recent search not saved", { error: error instanceof Error ? error.name : "Error" });
+  }
   const quoteId = quoteParam(formData.get("quote"));
   redirect(`/search/${snapshotId}${quoteId ? `?quote=${quoteId}` : ""}`);
+}
+
+// "Clear all" under Recent searches.
+export async function clearRecentAction(): Promise<void> {
+  const { userId, agencyId } = await requireAgent();
+  await clearRecentSearches({ agencyId, userId });
+  redirect("/search");
 }
