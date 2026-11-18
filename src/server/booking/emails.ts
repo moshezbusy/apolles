@@ -3,7 +3,6 @@ import { type StoredGuest, guestLines } from "@/lib/guests";
 import { formatUsd } from "@/lib/money";
 import { db } from "@/server/db";
 import { sendEmail } from "@/server/email/port";
-import { lowBalanceCheck } from "@/server/wallet/notifications";
 import { getBalance } from "@/server/wallet/ledger";
 
 // Booking emails (spec section 3 row 15). Phase 1: to the agent who booked, never to the
@@ -66,8 +65,7 @@ export async function sendBookingEmail(bookingId: string, event: BookingEmailEve
         `${hello}Your booking is confirmed.\n\nApolles reference: ${b.reference}\nHotel confirmation: ${b.hotelConfirmationId ?? "sent by the hotel later; it will show on the booking page"}\n\n` +
         `${stay}\n${lead}\n${requests}\n${free}\n\nPaid from your balance: ${paid}\nYour balance now: ${formatUsd(balanceCents)}\n\nBooking details, voucher and cancellation:\n${link}\n`,
     });
-    // Email #19: once per drop under USD 500.
-    await lowBalanceCheck(b.agencyId);
+
   } else if (event === "failed") {
     await sendEmail({
       to: b.user.email,
@@ -99,13 +97,21 @@ export async function sendFreeCancelReminders(now: Date = new Date()): Promise<n
     const claimed = await db.booking.updateMany({ where: { id, freeCancelReminderAt: null, status: "CONFIRMED" }, data: { freeCancelReminderAt: now } });
     if (claimed.count === 0) continue;
     const b = await db.booking.findUniqueOrThrow({ where: { id }, include: { user: { select: { email: true, name: true } } } });
-    await sendEmail({
+    // Booked already inside the 72 hours: the confirmation gave the deadline; no reminder.
+    if (b.confirmedAt && b.freeCancelEndsAt && b.freeCancelEndsAt.getTime() - b.confirmedAt.getTime() <= 72 * 3_600_000) continue;
+    try {
+      await sendEmail({
       to: b.user.email,
       subject: `Free cancellation ends in 72 hours: ${b.reference}`,
       text:
         `Hello ${b.user.name},\n\nFree cancellation for booking ${b.reference} ends on ${deadline(b.freeCancelEndsAt!)}. After that, cancelling costs a charge (see the booking).\n\n` +
         `${b.hotelName}, ${b.hotelCity}\n${longDate(b.checkin)} to ${longDate(b.checkout)}\nLead guest: ${b.leadGivenName} ${b.leadFamilyName}\n\nView the booking:\n${appUrl()}/bookings/${b.id}\n`,
-    });
+      });
+    } catch (error) {
+      // Not sent: the claim is undone, so the next hourly run tries again.
+      await db.booking.updateMany({ where: { id, freeCancelReminderAt: now }, data: { freeCancelReminderAt: null } });
+      throw error;
+    }
     sent += 1;
   }
   return sent;

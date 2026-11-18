@@ -97,10 +97,13 @@ export function requestHasPersonalDetails(text: string): boolean {
 
 // When free cancellation ends: the start of the first charge (an instant, from the hotel's time
 // with its offset). null: non-refundable, or no charge listed.
-export function freeCancelEnds(offer: { refundable: boolean; cancelPenalties: CancelPenalty[] }): Date | null {
-  if (!offer.refundable) return null;
-  const starts = offer.cancelPenalties.map((p) => Date.parse(p.start)).filter((t) => Number.isFinite(t));
-  return starts.length ? new Date(Math.min(...starts)) : null;
+// Same as the cancel screen: nights that cannot be refunded, or a date that cannot be read, mean
+// no free-cancellation promise at all.
+export function freeCancelEnds(offer: { refundable: boolean; cancelPenalties: CancelPenalty[]; nonrefundableDateRanges?: unknown[] }): Date | null {
+  if (!offer.refundable || (offer.nonrefundableDateRanges?.length ?? 0) > 0) return null;
+  const starts = offer.cancelPenalties.map((p) => Date.parse(p.start));
+  if (starts.length === 0 || starts.some((t) => !Number.isFinite(t))) return null;
+  return new Date(Math.min(...starts));
 }
 
 export function specialRequestText(input: z.infer<typeof specialRequestsSchema> | undefined): string {
@@ -394,6 +397,9 @@ async function confirmBooking(
     // Plan 5d: from a quote, the quote is booked once all its picked destinations are.
     await syncQuoteOfBooking(tx, bookingId);
     await queueEmail(tx, bookingId, "confirmed");
+    // Email #19, its own job (a failure there never repeats the confirmation email).
+    const charged = await tx.booking.findUniqueOrThrow({ where: { id: bookingId }, select: { agencyId: true } });
+    await enqueue("email.low-balance", { agencyId: charged.agencyId }, { dedupeKey: `email.low-balance:${bookingId}` }, tx);
   });
 }
 

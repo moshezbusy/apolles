@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { cleanupSupplierLog } from "@/server/admin/bookings";
 import { BOOKING_EMAIL_EVENTS, sendBookingEmail, sendFreeCancelReminders } from "@/server/booking/emails";
-import { sendTopupEmail } from "@/server/wallet/notifications";
+import { lowBalanceCheck, sendTopupEmail } from "@/server/wallet/notifications";
 import { reconcile } from "@/server/booking/service";
 import { syncCatalog } from "@/server/content/catalog-sync";
 import { syncInactive } from "@/server/content/inactive-sync";
@@ -37,6 +37,11 @@ export const HANDLERS: Handlers = {
   "email.topup": async (payload) => {
     const { entryId } = z.object({ entryId: z.string().min(1).max(64) }).strict().parse(payload);
     await sendTopupEmail(entryId);
+  },
+  // "Your Apolles balance is low" (email #19), after a booking is paid.
+  "email.low-balance": async (payload) => {
+    const { agencyId } = z.object({ agencyId: z.string().min(1).max(64) }).strict().parse(payload);
+    await lowBalanceCheck(agencyId);
   },
   // "Free cancellation ends in 72 hours" (email #14), every hour.
   "booking.cancel-reminders": async () => {
