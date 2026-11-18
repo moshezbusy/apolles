@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
 import { audit } from "@/server/audit";
+import { STAY_BOOKED, stayHasActiveBooking, syncQuoteBooked } from "@/server/quotes/quote-booking";
 import { db } from "@/server/db";
 import { findOffer } from "@/server/search/search";
 import { clientDateAllowed, defaultClientDate, lastFreeDay, parseMarkup, sellingMinor } from "@/server/quotes/pricing";
@@ -47,13 +48,28 @@ export async function createQuote(
   const id = await db.$transaction(async (tx) => {
     const agency = await tx.agency.findUniqueOrThrow({ where: { id: agencyId }, select: { id: true } });
     const quote = await tx.quote.create({
-      data: { agencyId: agency.id, createdById: actorUserId, clientId },
+      data: { agencyId: agency.id, createdById: actorUserId, clientId, ...(await newQuoteDefaults(tx, agencyId)) },
       select: { id: true },
     });
     await audit(actorUserId, "quote.create", "Quote", quote.id, undefined, undefined, tx);
     return quote.id;
   });
   return { ok: true, id };
+}
+
+// A new quote starts with the agency's defaults (screen 20: language, message, markup, cancellation).
+async function newQuoteDefaults(tx: Prisma.TransactionClient, agencyId: string) {
+  const a = await tx.agency.findUniqueOrThrow({
+    where: { id: agencyId },
+    select: { defaultQuoteLanguage: true, defaultQuoteMessage: true, defaultMarkupType: true, defaultMarkupValue: true, defaultShowCancellation: true },
+  });
+  return {
+    language: a.defaultQuoteLanguage,
+    message: a.defaultQuoteMessage,
+    markupType: a.defaultMarkupType,
+    markupValue: a.defaultMarkupValue,
+    showCancellation: a.defaultShowCancellation,
+  };
 }
 
 async function ownClientId(agencyId: string, clientId: string): Promise<string | null> {
@@ -79,6 +95,8 @@ export type QuoteListItem = {
   viewedAt: Date | null;
   selectedAt: Date | null;
   updatedAt: Date;
+  // The latest confirmed booking made from the quote (plan 5d).
+  booking: { id: string; reference: string; hotelName: string; confirmedAt: Date | null } | null;
 };
 
 export type QuotePage = { quotes: QuoteListItem[]; nextCursor: string | null };
@@ -127,6 +145,12 @@ export async function listQuotes(
         orderBy: { position: "asc" },
         select: { destinationName: true, checkin: true, checkout: true, hotels: { select: { _count: { select: { rooms: true } } } } },
       },
+      bookings: {
+        where: { agencyId, status: "CONFIRMED" },
+        orderBy: [{ confirmedAt: "desc" }, { id: "desc" }],
+        take: 1,
+        select: { id: true, reference: true, hotelName: true, confirmedAt: true },
+      },
     },
   });
   const page = rows.slice(0, QUOTE_PAGE_SIZE);
@@ -152,6 +176,7 @@ export async function listQuotes(
         viewedAt: row.viewedAt,
         selectedAt: row.selectedAt,
         updatedAt: row.updatedAt,
+        booking: row.bookings[0] ?? null,
       };
     }),
     nextCursor: rows.length > QUOTE_PAGE_SIZE ? (page.at(-1)?.id ?? null) : null,
@@ -355,12 +380,14 @@ async function touch(tx: Prisma.TransactionClient, quoteId: string): Promise<voi
 // After a room, hotel or destination is removed: a pick on a removed room is gone (the database
 // clears the room id), so its stored price goes too, and a quote with no pick left is no longer
 // "Selected".
-async function afterRemoval(tx: Prisma.TransactionClient, quoteId: string): Promise<void> {
+async function afterRemoval(tx: Prisma.TransactionClient, quoteId: string, actorUserId: string): Promise<void> {
   await tx.quoteStay.updateMany({ where: { quoteId, selectedRoomId: null }, data: { selectedSellMinor: null, selectedCurrency: null } });
-  const quote = await tx.quote.findUniqueOrThrow({ where: { id: quoteId }, select: { status: true, viewedAt: true } });
+  const quote = await tx.quote.findUniqueOrThrow({ where: { id: quoteId }, select: { status: true, viewedAt: true, agencyId: true } });
   if (quote.status !== "SELECTED") return;
   const picks = await tx.quoteStay.count({ where: { quoteId, selectedRoomId: { not: null } } });
   if (picks === 0) await tx.quote.update({ where: { id: quoteId }, data: { status: quote.viewedAt ? "VIEWED" : "SENT" } });
+  // The only picks left may all be booked already: the quote is then booked.
+  else await syncQuoteBooked(tx, quoteId, quote.agencyId, actorUserId);
 }
 
 // ---------- destinations ----------
@@ -435,8 +462,9 @@ export async function removeStay(actorUserId: string, agencyId: string, stayId: 
     const quote = await lockForEdit(tx, agencyId, stay.quoteId);
     if (!quote) return fail(NOT_FOUND);
     if (quote === "booked") return fail(BOOKED);
+    if (await stayHasActiveBooking(tx, stay.id)) return fail(STAY_BOOKED);
     await tx.quoteStay.delete({ where: { id: stay.id } });
-    await afterRemoval(tx, stay.quoteId);
+    await afterRemoval(tx, stay.quoteId, actorUserId);
     await touch(tx, stay.quoteId);
     await audit(actorUserId, "quote.stay.remove", "Quote", stay.quoteId, { stayId: stay.id }, undefined, tx);
     return { ok: true, id: stay.quoteId } as const;
@@ -501,8 +529,9 @@ export async function removeHotel(actorUserId: string, agencyId: string, hotelId
   return db.$transaction(async (tx) => {
     const hotel = await lockedHotel(tx, agencyId, hotelId);
     if (isResult(hotel)) return hotel;
+    if (await stayHasActiveBooking(tx, hotel.stayId)) return fail(STAY_BOOKED);
     await tx.quoteHotel.delete({ where: { id: hotel.id } });
-    await afterRemoval(tx, hotel.stay.quoteId);
+    await afterRemoval(tx, hotel.stay.quoteId, actorUserId);
     await touch(tx, hotel.stay.quoteId);
     await audit(actorUserId, "quote.hotel.remove", "Quote", hotel.stay.quoteId, { hotelId: hotel.id }, undefined, tx);
     return { ok: true, id: hotel.stay.quoteId } as const;
@@ -515,7 +544,7 @@ async function ownRoom(tx: Prisma.TransactionClient, agencyId: string, roomId: s
   if (typeof roomId !== "string" || roomId.length > 64) return null;
   return tx.quoteRoom.findFirst({
     where: { id: roomId, hotel: { stay: { quote: { agencyId } } } },
-    select: { id: true, freeCancelUntil: true, hotel: { select: { stay: { select: { quoteId: true } } } } },
+    select: { id: true, freeCancelUntil: true, hotel: { select: { stayId: true, stay: { select: { quoteId: true } } } } },
   });
 }
 
@@ -576,8 +605,9 @@ export async function removeRoom(actorUserId: string, agencyId: string, roomId: 
     const quote = await lockForEdit(tx, agencyId, quoteId);
     if (!quote) return fail(NOT_FOUND);
     if (quote === "booked") return fail(BOOKED);
+    if (await stayHasActiveBooking(tx, room.hotel.stayId)) return fail(STAY_BOOKED);
     await tx.quoteRoom.delete({ where: { id: room.id } });
-    await afterRemoval(tx, quoteId);
+    await afterRemoval(tx, quoteId, actorUserId);
     await touch(tx, quoteId);
     await audit(actorUserId, "quote.room.remove", "Quote", quoteId, { roomId: room.id }, undefined, tx);
     return { ok: true, id: quoteId } as const;
@@ -620,7 +650,7 @@ export async function addFromSearch(
       if (quoteId === "new") {
         // A new quote is created in the same transaction, so a refusal below leaves nothing behind.
         const created = await tx.quote.create({
-          data: { agencyId, createdById: actorUserId, adults: query.adults, childAges: query.childAges },
+          data: { agencyId, createdById: actorUserId, adults: query.adults, childAges: query.childAges, ...(await newQuoteDefaults(tx, agencyId)) },
           select: { id: true },
         });
         await audit(actorUserId, "quote.create", "Quote", created.id, undefined, undefined, tx);

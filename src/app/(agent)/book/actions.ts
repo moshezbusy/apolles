@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
+import { createClientFromGuest } from "@/server/clients";
 import { BookingInputInvalid, BookingNotFound, BookingRateExpired, book, createDraft } from "@/server/booking/service";
 import { formatUsd } from "@/lib/money";
 import { supplierContextFrom } from "@/server/supplier-context";
@@ -22,6 +23,21 @@ export async function createDraftAction(_previous: BookFormState, formData: Form
   } catch (error) {
     if (error instanceof BookingInputInvalid || error instanceof BookingRateExpired) return { status: "error", message: error.message, values };
     throw error;
+  }
+  // "Save the lead guest to Clients" (screen 10), only when no client was chosen. Best effort: the
+  // booking goes on even if the client card cannot be made.
+  if (values.saveClient === "on" && !values.clientId) {
+    try {
+      await createClientFromGuest(userId, agencyId, {
+        givenName: values.given_0 ?? "",
+        familyName: values.family_0 ?? "",
+        email: values.leadEmail ?? "",
+        phoneCountry: values.phoneCountry ?? "",
+        phoneNumber: values.phoneNumber ?? "",
+      });
+    } catch (error) {
+      console.error(`save lead guest to clients failed: ${error instanceof Error ? error.name : "Error"}`);
+    }
   }
   redirect(`/book/${bookingId}`);
 }

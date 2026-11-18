@@ -13,7 +13,9 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/server/auth/guards", () => ({ requireAgent: vi.fn() }));
+vi.mock("@/server/auth/password-tokens", () => ({ requestResetWithinLimits: vi.fn(async () => {}) }));
 
 function png(width: number, height: number): Uint8Array {
   const b = new Uint8Array(33);
@@ -155,6 +157,60 @@ describe("agency settings", () => {
       expect(current.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
       const stale = await GET(new Request("http://x/settings/logo?v=000000000000"));
       expect(stale.headers.get("cache-control")).toBe("private, no-cache");
+    });
+  });
+
+  describe("tabs (screen 20)", () => {
+    async function tab(name: string): Promise<string> {
+      const { default: Page } = await import("./(agent)/settings/page");
+      return renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tab: name }) }));
+    }
+
+    it("shows the five tabs; an unknown tab shows the profile", async () => {
+      const html = await tab("nope");
+      for (const label of ["Agency profile", "Quote branding", "Preferences", "Balance &amp; top-ups", "Account"]) expect(html).toContain(label);
+      expect(html).toContain('value="Sunrise Travel"');
+    });
+
+    it("quote branding saves for the session's agency, and the preview uses it", async () => {
+      const { updateBrandingAction } = await import("./(agent)/settings/actions");
+      const result = await updateBrandingAction(null, form({ displayName: "Sunrise Trips", advisorName: "Dana Cohen", contactPhone: "", advisorEmail: "", defaultLanguage: "HE", brandColor: "#21436b", defaultMessage: "Hi!", agencyId: agencyB }));
+      expect(result).toEqual({ status: "success", message: "Changes saved." });
+      expect(await db.agency.findUniqueOrThrow({ where: { id: agencyA } })).toMatchObject({ quoteDisplayName: "Sunrise Trips", quoteBrandColor: "#21436b", defaultQuoteLanguage: "HE" });
+      expect(await db.agency.findUniqueOrThrow({ where: { id: agencyB } })).toMatchObject({ quoteDisplayName: null });
+      const html = await tab("branding");
+      expect(html).toContain('value="Sunrise Trips"');
+      expect(html).toContain("background-color:#21436b");
+      const bad = await updateBrandingAction(null, form({ displayName: "x", advisorName: "", contactPhone: "", advisorEmail: "", defaultLanguage: "EN", brandColor: "red", defaultMessage: "" }));
+      expect(bad).toMatchObject({ status: "error", values: { brandColor: "red" } });
+    });
+
+    it("preferences: the default markup and cancellation terms", async () => {
+      const { updateDefaultsAction } = await import("./(agent)/settings/actions");
+      expect(await updateDefaultsAction(null, form({ markupType: "FIXED", markupValue: "35.5" }))).toEqual({ status: "success", message: "Changes saved." });
+      expect(await db.agency.findUniqueOrThrow({ where: { id: agencyA } })).toMatchObject({ defaultMarkupType: "FIXED", defaultMarkupValue: 3550, defaultShowCancellation: false });
+      expect(await tab("preferences")).toContain('value="35.5"');
+    });
+
+    it("balance: the balance, the bank details and the agency's reference; no card payment", async () => {
+      vi.stubEnv("BANK_DETAILS_BENEFICIARY", "Apolles Ltd");
+      const html = await tab("balance");
+      vi.unstubAllEnvs();
+      expect(html).toContain("USD 0.00");
+      expect(html).toContain("APL-0001");
+      expect(html).toContain('href="/balance"');
+      expect(html).not.toMatch(/card/i);
+    });
+
+    it("account: the agent's name and login email, change password and sign out", async () => {
+      const html = await tab("account");
+      expect(html).toContain("a@sunrise.example");
+      expect(html).toContain("Change password");
+      expect(html).toContain('action="/logout"');
+      const { changePasswordAction } = await import("./(agent)/settings/actions");
+      const { requestResetWithinLimits } = await import("@/server/auth/password-tokens");
+      expect(await changePasswordAction()).toMatchObject({ status: "success" });
+      expect(vi.mocked(requestResetWithinLimits)).toHaveBeenCalledWith("a@sunrise.example", expect.any(String));
     });
   });
 

@@ -36,7 +36,7 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
   const staysWithHotels = quote.stays.filter((s) => s.hotels.length > 0);
 
   function toggle(stayId: string, roomId: string) {
-    if (locked) return;
+    if (locked || quote.stays.find((s) => s.id === stayId)?.booked) return;
     setPicks((p) => {
       const next = { ...p };
       if (next[stayId] === roomId) delete next[stayId];
@@ -54,7 +54,7 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
         setMessage({ kind: "ok", text: t.sent });
         setSentOnce(true);
       }
-      else setMessage({ kind: "error", text: result.error === "limited" ? t.limited : t.failed });
+      else setMessage({ kind: "error", text: result.error === "limited" ? t.limited : result.error === "locked" ? t.lockedText : t.failed });
     });
   }
 
@@ -92,7 +92,7 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
                   {day(stay.checkin, lang)} {t.to} {day(stay.checkout, lang)} · {t.nights(n)}
                 </p>
               </div>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${pick ? "bg-brand-soft text-brand" : "bg-[#f1efe9] text-[#5f6863]"}`}>{pick ? t.selected : t.noSelection}</span>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${pick ? "bg-brand-soft text-brand" : "bg-[#f1efe9] text-[#5f6863]"}`}>{stay.booked ? t.bookedStay : pick ? t.selected : t.noSelection}</span>
             </header>
             <div className="flex flex-col gap-3 p-3">
               {stay.hotels.map((hotel) => {
@@ -140,7 +140,7 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
                                 type="button"
                                 onClick={() => toggle(stay.id, room.id)}
                                 aria-pressed={on}
-                                disabled={locked}
+                                disabled={locked || stay.booked}
                                 className={`flex w-full flex-wrap items-center justify-between gap-2 rounded-[12px] border bg-white p-3 text-start ${on ? "border-brand ring-2 ring-brand/30" : "border-line hover:border-[#bcd0c6]"}`}
                               >
                                 <span className="min-w-0">

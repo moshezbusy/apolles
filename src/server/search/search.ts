@@ -224,7 +224,41 @@ export async function startSearch(ctx: SearchContext, rawInput: unknown, deps: D
     ORDER BY p."rank" ASC NULLS LAST, p."id" ASC
     LIMIT ${MAX_CANDIDATES}`;
 
-  const query = { ...input, countryCode: agency.country };
+  return createSnapshot(ctx, { ...input, countryCode: agency.country }, candidates.map((c) => c.id), now, deps);
+}
+
+// Plan 5d, "Book this room" on a quote: a search of the one hotel the quote names, for the quote's
+// destination, dates and guests, so the room's rate can be found and its price checked again. Same
+// checks and the same rate limit as a destination search.
+export async function searchOneHotel(
+  ctx: SearchContext,
+  rawInput: { destinationId: string; propertyId: string; checkin: string; checkout: string; adults: number; childAges: number[] },
+  deps: Deps = {},
+): Promise<{ snapshotId: string }> {
+  const now = deps.now ?? new Date();
+  const { propertyId, ...rest } = rawInput;
+  const parsed = searchInputSchema(now).safeParse(rest);
+  if (!parsed.success || typeof propertyId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(propertyId)) {
+    throw new SearchInputInvalid("Check the destination, dates and guests.");
+  }
+  await rateLimit(ctx.agencyId);
+  const [agency, property] = await Promise.all([
+    db.agency.findUnique({ where: { id: ctx.agencyId }, select: { country: true } }),
+    db.property.findFirst({ where: { id: propertyId, active: true, expediaCollect: true }, select: { id: true } }),
+  ]);
+  if (!agency) throw new Error("searchOneHotel: agency not found");
+  if (!property) throw new SearchInputInvalid("This hotel can no longer be booked. Choose another hotel.");
+  return createSnapshot(ctx, { ...parsed.data, countryCode: agency.country }, [property.id], now, deps);
+}
+
+async function createSnapshot(
+  ctx: SearchContext,
+  query: z.infer<typeof storedQuery>,
+  candidateIds: string[],
+  now: Date,
+  deps: Deps,
+): Promise<{ snapshotId: string }> {
+  const candidates = candidateIds.map((id) => ({ id }));
   const snapshot = await db.searchSnapshot.create({
     data: {
       agencyId: ctx.agencyId,
@@ -457,6 +491,16 @@ export async function findOffer(
   const bedGroup = offer?.bedGroups.find((b) => b.id === ref.bedGroupId);
   if (!offer || !bedGroup) return null;
   return { offer, bedGroup, hotel: { name: hotel.name, city: hotel.city }, query: query.data };
+}
+
+// Every rate of one hotel of the agency's own, unexpired search (no rate limit, no content): for
+// finding the quoted room again when booking from a quote (plan 5d).
+export async function snapshotOffers(agencyId: string, snapshotId: string, propertyId: string, now: Date = new Date()): Promise<Offer[]> {
+  const snapshot = await ownSnapshot(agencyId, snapshotId);
+  if (!snapshot || snapshot.expiresAt <= now) return [];
+  const hotel = await db.searchHotel.findUnique({ where: { snapshotId_propertyId: { snapshotId: snapshot.id, propertyId } } });
+  const offers = storedOffers.safeParse(hotel?.offers);
+  return offers.success ? offers.data : [];
 }
 
 // Deletes searches whose expiry passed more than an hour ago (their hotels go with them).

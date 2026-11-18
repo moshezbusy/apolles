@@ -36,7 +36,13 @@ export function Proposal({ quote, token, logoSrc, photos }: { quote: ClientQuote
   const greeting = quote.message || (lang === "HE" ? `היי${quote.clientFirstName ? ` ${quote.clientFirstName}` : ""}, בחרתי עבורך את אפשרויות המלונות האלה. בחרו את המלון והחדר שאתם מעדיפים בכל יעד.` : `Hi${quote.clientFirstName ? ` ${quote.clientFirstName}` : ""}, I selected these hotel options for your trip. Choose the hotel and room you prefer in each destination.`);
 
   return (
-    <div dir={lang === "HE" ? "rtl" : "ltr"} lang={lang === "HE" ? "he" : "en"} className="flex min-h-full flex-1 flex-col bg-canvas">
+    <div
+      dir={lang === "HE" ? "rtl" : "ltr"}
+      lang={lang === "HE" ? "he" : "en"}
+      className="flex min-h-full flex-1 flex-col bg-canvas"
+      // The agency's brand color (screen 20, only #rrggbb) replaces the green on this page.
+      style={quote.agency.brandColor ? ({ "--color-brand": quote.agency.brandColor, "--color-brand-dark": quote.agency.brandColor } as React.CSSProperties) : undefined}
+    >
       <header className="border-b border-line bg-white">
         <div className="mx-auto flex w-[min(1040px,calc(100%-32px))] items-center gap-3 py-3">
           {quote.agency.logoSha256 ? (

@@ -6,7 +6,7 @@ import { SupplierRateLimited } from "@/server/supplier/expedia/client";
 import type { AvailabilityQuery, Offer, PropertyOffers, SupplierAdapter } from "@/server/supplier/types";
 import { suggestDestinations } from "./destinations";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
-import { cleanupSnapshots, findOffer, getHotelOffers, listResults, loadMore, searchSummary, startSearch } from "./search";
+import { cleanupSnapshots, findOffer, getHotelOffers, listResults, loadMore, searchOneHotel, searchSummary, snapshotOffers, startSearch } from "./search";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 const input = { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [] as number[] };
@@ -288,6 +288,23 @@ describe("search service", () => {
     await db.rateLimitBucket.deleteMany({ where: { key: "search:agency:A" } });
     await seedRateLimit("search:agency:A", 30, 60_000);
     await expect(startSearch(ctx(), input, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchRateLimited);
+  });
+
+  it("one hotel (booking from a quote): only that hotel is asked; bad input, an inactive hotel and the rate limit refuse", async () => {
+    await hotels(3);
+    const { adapter, searchAvailability } = fakeAdapter(everyone);
+    const { snapshotId } = await searchOneHotel(ctx(), { ...input, propertyId: "2" }, { adapter, now: NOW });
+    expect(searchAvailability).toHaveBeenCalledTimes(1);
+    expect(searchAvailability.mock.calls[0]?.[0]).toMatchObject({ propertyIds: ["2"], checkin: "2027-04-10", countryCode: "IL" });
+    expect((await snapshotOffers("A", snapshotId, "2", NOW)).map((o) => o.propertyId)).toEqual(["2"]);
+    expect(await snapshotOffers("B", snapshotId, "2", NOW)).toEqual([]);
+    await expect(searchOneHotel(ctx(), { ...input, propertyId: "../x" }, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchInputInvalid);
+    await expect(searchOneHotel(ctx(), { ...input, checkin: "2020-01-01", propertyId: "2" }, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchInputInvalid);
+    await db.property.update({ where: { id: "3" }, data: { active: false } });
+    await expect(searchOneHotel(ctx(), { ...input, propertyId: "3" }, { adapter, now: NOW })).rejects.toThrow(/can no longer be booked/);
+    await db.rateLimitBucket.deleteMany({ where: { key: "search:agency:A" } });
+    await seedRateLimit("search:agency:A", 30, 60_000);
+    await expect(searchOneHotel(ctx(), { ...input, propertyId: "2" }, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchRateLimited);
   });
 
   it("the 30th search in a minute is still allowed", async () => {

@@ -149,9 +149,19 @@ function QuoteCard({ quote, now }: { quote: QuoteListItem; now: Date }) {
           <p className="text-xs text-muted">{ago(quote.updatedAt, now)}</p>
         </div>
         <StatusPill status={quote.status} />
-        <Link href={`/quotes/${quote.id}`} className={btnSecondary}>
-          Open
-        </Link>
+        {quote.status === "SELECTED" ? (
+          <Link href={`/quotes/${quote.id}#selections`} className={btnPrimary}>
+            Book selected option
+          </Link>
+        ) : quote.status === "BOOKED" && quote.booking ? (
+          <Link href={`/bookings/${quote.booking.id}`} className={btnSecondary}>
+            View booking
+          </Link>
+        ) : (
+          <Link href={`/quotes/${quote.id}`} className={btnSecondary}>
+            Open
+          </Link>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-line bg-[#faf9f6] px-4 py-2.5 text-xs text-muted">
         {quote.firstCheckin && quote.lastCheckout ? (
@@ -162,7 +172,9 @@ function QuoteCard({ quote, now }: { quote: QuoteListItem; now: Date }) {
         <span>{guestsText(quote.adults, quote.childAges)}</span>
         <span>{quote.sentAt ? `Sent ${dayMonth.format(quote.sentAt)}` : "Not sent yet"}</span>
         <span className="ml-auto">
-          {quote.selectedAt ? `Client sent selections ${ago(quote.selectedAt, now).toLowerCase()}` : quote.viewedAt ? `Viewed ${ago(quote.viewedAt, now).toLowerCase()}` : quote.sentAt ? "Waiting for client" : ""}
+          {quote.status === "BOOKED" && quote.booking
+            ? `Booked ${quote.booking.confirmedAt ? dayMonth.format(quote.booking.confirmedAt) : ""} · ${quote.booking.hotelName} · ${quote.booking.reference}`
+            : quote.selectedAt ? `Client sent selections ${ago(quote.selectedAt, now).toLowerCase()}` : quote.viewedAt ? `Viewed ${ago(quote.viewedAt, now).toLowerCase()}` : quote.sentAt ? "Waiting for client" : ""}
         </span>
       </div>
     </li>

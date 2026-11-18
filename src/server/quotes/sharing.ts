@@ -6,6 +6,7 @@ import { sendEmail } from "@/server/email/port";
 import { formatMinor } from "@/lib/supplier-money";
 import { sellingMinor } from "@/server/quotes/pricing";
 import { quoteCode } from "@/server/quotes/quotes";
+import { ACTIVE_BOOKING, syncQuoteBooked } from "@/server/quotes/quote-booking";
 import { hitRateLimit } from "@/server/rate-limit";
 import type { PriceBreakdown } from "@/server/supplier/types";
 
@@ -50,16 +51,24 @@ async function ownQuote(agencyId: string, quoteId: string) {
       message: true,
       shareToken: true,
       client: { select: { firstName: true, email: true, phone: true } },
-      agency: { select: { name: true, email: true } },
+      agency: { select: { name: true, email: true, quoteDisplayName: true, quoteAdvisorName: true, quoteAdvisorEmail: true } },
       createdBy: { select: { name: true, email: true } },
     },
   });
 }
 
-// Who the client sees as the sender: the agency's name and the agent's name. Replies go to the
-// agency's business email, or else the agent's login email.
-function quoteBrand(quote: { agency: { name: string; email: string | null }; createdBy: { name: string; email: string } }) {
-  return { displayName: quote.agency.name, advisorName: quote.createdBy.name, replyTo: quote.agency.email ?? quote.createdBy.email };
+// Who the client sees as the sender: the quote branding of screen 20, else the agency's name and
+// the agent's name. Replies go to the advisor email, else the agency's business email, else the
+// agent's login email.
+function quoteBrand(quote: {
+  agency: { name: string; email: string | null; quoteDisplayName: string | null; quoteAdvisorName: string | null; quoteAdvisorEmail: string | null };
+  createdBy: { name: string; email: string };
+}) {
+  return {
+    displayName: quote.agency.quoteDisplayName ?? quote.agency.name,
+    advisorName: quote.agency.quoteAdvisorName ?? quote.createdBy.name,
+    replyTo: quote.agency.quoteAdvisorEmail ?? quote.agency.email ?? quote.createdBy.email,
+  };
 }
 
 // The client link of the agency's quote, made on first use. Sharing marks a draft as sent.
@@ -136,11 +145,11 @@ export async function emailQuote(actorUserId: string, agencyId: string, quoteId:
   if (!allowed) return { ok: false, error: "Too many emails this hour. Try again later, or send by WhatsApp." };
   const shared = await shareLink(actorUserId, agencyId, quoteId, "email", { markSent: false });
   if (!shared.ok) return shared;
+  const brand = quoteBrand(quote);
   const subject =
     quote.language === "HE"
-      ? `${quote.title || "הצעת נסיעה"} · ${quote.agency.name}`
-      : `${quote.title || "Your travel proposal"} · ${quote.agency.name}`;
-  const brand = quoteBrand(quote);
+      ? `${quote.title || "הצעת נסיעה"} · ${brand.displayName}`
+      : `${quote.title || "Your travel proposal"} · ${brand.displayName}`;
   const signature = `${brand.advisorName}\n${brand.displayName}`;
   try {
     await sendEmail({
@@ -187,7 +196,8 @@ export type ClientQuote = {
   childAges: number[];
   clientFirstName: string | null;
   clientNote: string;
-  agency: { name: string; phone: string | null; logoSha256: string | null };
+  // Screen 20 branding: the display name, contact number and color, else the agency's own.
+  agency: { name: string; phone: string | null; logoSha256: string | null; brandColor: string | null };
   agentName: string;
   stays: {
     id: string;
@@ -195,6 +205,7 @@ export type ClientQuote = {
     checkin: string;
     checkout: string;
     selectedRoomId: string | null;
+    booked: boolean; // booked from the quote: the pick no longer changes
     hotels: { id: string; name: string; city: string; starRating: string | null; agencyPick: boolean; rooms: ClientRoom[] }[];
   }[];
 };
@@ -243,7 +254,18 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
       markupType: true,
       markupValue: true,
       client: { select: { firstName: true } },
-      agency: { select: { name: true, phone: true, email: true, status: true, logo: { select: { sha256: true } } } },
+      agency: {
+        select: {
+          name: true,
+          phone: true,
+          status: true,
+          quoteDisplayName: true,
+          quoteContactPhone: true,
+          quoteAdvisorName: true,
+          quoteBrandColor: true,
+          logo: { select: { sha256: true } },
+        },
+      },
       createdBy: { select: { name: true } },
       stays: {
         orderBy: { position: "asc" },
@@ -253,6 +275,7 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
           checkin: true,
           checkout: true,
           selectedRoomId: true,
+          bookings: { where: { status: { in: ACTIVE_BOOKING } }, select: { id: true }, take: 1 },
           hotels: {
             orderBy: { position: "asc" },
             select: {
@@ -287,14 +310,21 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
     childAges: q.childAges,
     clientFirstName: q.client?.firstName ?? null,
     clientNote: q.clientNote,
-    agency: { name: q.agency.name, phone: q.agency.phone, logoSha256: q.agency.logo?.sha256 ?? null },
-    agentName: q.createdBy.name,
+    agency: {
+      name: q.agency.quoteDisplayName ?? q.agency.name,
+      phone: q.agency.quoteContactPhone ?? q.agency.phone,
+      logoSha256: q.agency.logo?.sha256 ?? null,
+      // Stored only as #rrggbb (checked on save); checked again before it reaches a style.
+      brandColor: q.agency.quoteBrandColor && /^#[0-9a-f]{6}$/.test(q.agency.quoteBrandColor) ? q.agency.quoteBrandColor : null,
+    },
+    agentName: q.agency.quoteAdvisorName ?? q.createdBy.name,
     stays: q.stays.map((stay) => ({
       id: stay.id,
       destinationName: stay.destinationName,
       checkin: stay.checkin,
       checkout: stay.checkout,
       selectedRoomId: stay.selectedRoomId,
+      booked: stay.bookings.length > 0,
       hotels: stay.hotels
         .filter((h) => h.rooms.length > 0)
         .map((h) => ({
@@ -377,13 +407,19 @@ export async function submitSelection(token: string, raw: { picks: Record<string
       where: { id: found.id },
       select: {
         id: true,
+        agencyId: true,
         status: true,
         createdById: true,
         clientNote: true,
         markupType: true,
         markupValue: true,
         stays: {
-          select: { id: true, selectedRoomId: true, hotels: { select: { rooms: { select: { id: true, netMinor: true, sellMinor: true, currency: true } } } } },
+          select: {
+            id: true,
+            selectedRoomId: true,
+            hotels: { select: { rooms: { select: { id: true, netMinor: true, sellMinor: true, currency: true } } } },
+            bookings: { where: { status: { in: ACTIVE_BOOKING } }, select: { id: true }, take: 1 },
+          },
         },
       },
     });
@@ -391,6 +427,10 @@ export async function submitSelection(token: string, raw: { picks: Record<string
     const stays = new Map(quote.stays.map((s) => [s.id, new Map(s.hotels.flatMap((h) => h.rooms.map((r) => [r.id, r] as const)))]));
     for (const [stayId, roomId] of Object.entries(parsed.data.picks)) {
       if (roomId && !stays.get(stayId)?.has(roomId)) return { ok: false, error: "invalid" } as const;
+    }
+    // A destination already booked keeps its pick (plan 5d): the client cannot change it.
+    for (const stay of quote.stays) {
+      if (stay.bookings.length > 0 && (parsed.data.picks[stay.id] || null) !== stay.selectedRoomId) return { ok: false, error: "locked" } as const;
     }
     const changed =
       quote.clientNote !== parsed.data.note || quote.stays.some((s) => (s.selectedRoomId ?? "") !== (parsed.data.picks[s.id] ?? ""));
@@ -408,6 +448,8 @@ export async function submitSelection(token: string, raw: { picks: Record<string
       where: { id: quote.id },
       data: { clientNote: parsed.data.note, selectedAt: new Date(), status: anyPick ? "SELECTED" : quote.status === "SELECTED" ? "VIEWED" : quote.status === "DRAFT" ? "DRAFT" : "VIEWED" },
     });
+    // The picks left may all be booked already: the quote is then booked.
+    await syncQuoteBooked(tx, quote.id, quote.agencyId, quote.createdById);
     // The client is not a user: the quote's creator is recorded as the actor, with the reason.
     await audit(quote.createdById, "quote.client-selection", "Quote", quote.id, undefined, { picks: Object.values(parsed.data.picks).filter(Boolean).length }, tx);
     return { ok: true, quoteId: quote.id, changed } as const;
