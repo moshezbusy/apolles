@@ -18,7 +18,7 @@ function pdfText(pdf: Buffer): string {
   return out;
 }
 
-async function seed(status: "CONFIRMED" | "CANCELLED" | "DRAFT") {
+async function seed(status: "CONFIRMED" | "CANCELLED" | "DRAFT" | "CANCELLED_BY_SUPPLIER" | "CANCEL_PENDING") {
   for (const id of ["A", "B"]) {
     await db.agency.create({ data: { id, name: `Agency ${id}`, country: "IL", bankReference: `APL-000${id === "A" ? 1 : 2}` } });
     await db.user.create({ data: { id: `u-${id}`, email: `${id}@t.local`, name: id, role: "AGENT", agencyId: id } });
@@ -51,6 +51,16 @@ describe("booking statement (22, not a tax invoice)", () => {
     await seed("CANCELLED");
     const text = pdfText(await renderStatement("A", "bk1"));
     for (const t of ["Cancellation statement", "CS-STMT0001", "Cancellation charge: USD 83.75", "Refunded to your balance: USD 400.00"]) expect(text, t).toContain(t);
+  });
+
+  it("cancelled by the hotel without refund figures: no made-up amounts; cancel pending: a note", async () => {
+    await seed("CANCELLED_BY_SUPPLIER");
+    let text = pdfText(await renderStatement("A", "bk1"));
+    expect(text).toContain("Cancelled by the hotel. Apolles support handles the refund");
+    expect(text).not.toContain("Refunded to your balance");
+    await db.booking.update({ where: { id: "bk1" }, data: { status: "CANCEL_PENDING" } });
+    text = pdfText(await renderStatement("A", "bk1"));
+    expect(text).toContain("A cancellation is waiting for the hotel to confirm.");
   });
 
   it("nothing for a booking that was never paid", async () => {

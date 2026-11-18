@@ -75,9 +75,12 @@ export async function renderStatement(agencyId: string, bookingId: string): Prom
   heading("Payment");
   const paid = b.chargedMinor ?? b.totalMinor;
   line(`Paid from your Apolles balance: ${formatUsd(paid)}${b.confirmedAt ? ` on ${day(b.confirmedAt)}` : ""}`, { bold: true });
-  if (cancelled) {
-    line(`Cancellation charge: ${formatUsd(b.cancelChargeMinor ?? 0)}`);
-    line(`Refunded to your balance: ${formatUsd(b.refundMinor ?? 0)}${b.cancelledAt ? ` on ${day(b.cancelledAt)}` : ""}`, { bold: true });
+  if (cancelled && b.refundMinor !== null) {
+    // The charge is what was kept, so the lines always add up to what was paid.
+    line(`Cancellation charge: ${formatUsd(paid - b.refundMinor)}`);
+    line(`Refunded to your balance: ${formatUsd(b.refundMinor)}${b.cancelledAt ? ` on ${day(b.cancelledAt)}` : ""}`, { bold: true });
+  } else if (cancelled) {
+    line("Cancelled by the hotel. Apolles support handles the refund; it shows in your balance once done.", { muted: true });
   } else if (b.status === "CANCEL_PENDING") {
     line("A cancellation is waiting for the hotel to confirm. The refund follows.", { muted: true });
   }
