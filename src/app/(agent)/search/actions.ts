@@ -7,6 +7,7 @@ import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "@/serv
 import { startSearch } from "@/server/search/search";
 import { supplierContextFrom } from "@/server/supplier-context";
 import { childAgesComplete, readSearchForm, toSearchInput, type SearchFormState } from "./form-state";
+import { quoteParam } from "./quote-param";
 
 // Starts a search (screen 07) and opens its results. The agencyId comes only from the
 // session; the agency's country (point of sale) is read on the server. Expedia gets the
@@ -33,5 +34,6 @@ export async function startSearchAction(_previous: SearchFormState, formData: Fo
     console.error(`search failed: ${error instanceof Error ? error.name : "Error"}`);
     return { status: "error", message: UNAVAILABLE, values };
   }
-  redirect(`/search/${snapshotId}`);
+  const quoteId = quoteParam(formData.get("quote"));
+  redirect(`/search/${snapshotId}${quoteId ? `?quote=${quoteId}` : ""}`);
 }

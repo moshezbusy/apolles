@@ -27,12 +27,14 @@ export function SearchForm({
   minDate,
   maxDate,
   compact = false,
+  quoteId = null,
 }: {
   action: Action;
   values: SearchFormValues;
   minDate: string;
   maxDate: string;
   compact?: boolean;
+  quoteId?: string | null;
 }) {
   const [state, formAction, pending] = useActionState<SearchFormState, FormData>(action, null);
   const shown = state?.values ?? values;
@@ -43,6 +45,7 @@ export function SearchForm({
           {state.message}
         </p>
       ) : null}
+      {quoteId ? <input type="hidden" name="quote" value={quoteId} /> : null}
       <Fields shown={shown} minDate={minDate} maxDate={maxDate} pending={pending} compact={compact} />
     </form>
   );

@@ -2,10 +2,10 @@ import Link from "next/link";
 import { SignOutButton } from "@/components/SignOutButton";
 import { formatUsd } from "@/lib/money";
 
-// Agent header (mockup 07). Quotes and Reporting are phase 2: shown, but not links. The agency
-// menu is a plain <details> element, so it needs no client
+// Agent header (mockup 07). Quotes is a menu (All quotes, Clients; plan 5b). Reporting comes
+// later: shown, but not a link. The menus are plain <details> elements, so they need no client
 // JavaScript.
-const COMING_SOON = ["Quotes", "Reporting"] as const;
+const COMING_SOON = ["Reporting"] as const;
 
 // "Test Travel" → "TT", "Caryotrip" → "CA". Shown in the avatar circle.
 export function initials(name: string): string {
@@ -24,9 +24,20 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
 
         <nav aria-label="Main" className="hidden h-full items-center gap-6 text-[13px] lg:flex">
           <Link href="/search" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">Search</Link>
+          <details className="relative">
+            <summary className="flex cursor-pointer list-none items-center gap-1 font-semibold text-[#4d5a54] hover:text-brand">
+              Quotes <span aria-hidden="true" className="text-[11px] text-[#8a938e]">▾</span>
+            </summary>
+            <div className="absolute left-0 z-40 mt-2.5 flex w-[170px] flex-col rounded-[11px] border border-[#e1e6e3] bg-white p-[7px] shadow-[0_15px_38px_rgba(19,47,39,0.14)]">
+              <Link href="/quotes" className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
+                All quotes
+              </Link>
+              <Link href="/clients" className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
+                Clients
+              </Link>
+            </div>
+          </details>
           <Link href="/bookings" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">Bookings</Link>
-          {/* Plan 5a: Clients is its own link until Quotes exists; then it moves under the Quotes menu (mockup 07). */}
-          <Link href="/clients" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">Clients</Link>
           {COMING_SOON.map((item) => (
             <span
               key={item}

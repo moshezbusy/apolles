@@ -9,18 +9,36 @@ import type { Offer } from "@/server/supplier/types";
 import { HotelPhoto, Stars, shortDate, stayText } from "../../../parts";
 import { CancellationPolicy, Policies, PriceDetails, SupplierText } from "../../../../_components/hotel-info";
 import { cancellationLabel } from "../../../../_components/rate-text";
+import { addToQuoteAction } from "../../../../quotes/actions";
+import { AddToQuote } from "../../../../quotes/add-to-quote";
+import { openQuotes, quoteCode } from "@/server/quotes/quotes";
+import { quoteParam } from "../../../quote-param";
+
+type QuoteChoice = { id: string; label: string };
 
 export const metadata: Metadata = { title: "Hotel | Apolles", robots: { index: false, follow: false } };
 
 type Params = Promise<{ id: string; propertyId: string }>;
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-const KEEP = ["sort", "name", "room", "min", "max", "stars", "free", "cursor"];
+const KEEP = ["sort", "name", "room", "min", "max", "stars", "free", "cursor", "quote"];
 
 // "Book room" opens guest details (screen 10) with the rate and the chosen bed type only; the
 // price and the price-check token stay on the server. The bed choice sits in another cell, so
 // its radios belong to the row's form through the `form` attribute.
-function RateRow({ offer, stay, snapshotId }: { offer: Offer; stay: string; snapshotId: string }) {
+function RateRow({
+  offer,
+  stay,
+  snapshotId,
+  quotes,
+  quoteId,
+}: {
+  offer: Offer;
+  stay: string;
+  snapshotId: string;
+  quotes: QuoteChoice[];
+  quoteId: string | null;
+}) {
   const cancel = cancellationLabel(offer);
   const formId = `book-${offer.roomId}-${offer.rateId}`.replace(/[^A-Za-z0-9_-]/g, "_");
   return (
@@ -64,6 +82,7 @@ function RateRow({ offer, stay, snapshotId }: { offer: Offer; stay: string; snap
             Book room
           </button>
         </form>
+        <AddToQuote formId={formId} quotes={quotes} defaultQuoteId={quoteId} action={addToQuoteAction} />
       </td>
     </tr>
   );
@@ -115,6 +134,9 @@ export default async function HotelPage({ params, searchParams }: { params: Para
   const stay = stayText(summary);
   const address = content ? [content.address.line1, content.address.city, content.address.countryCode].filter(Boolean).join(", ") : hotel.city;
   const sorted = [...offers].sort((a, b) => a.price.total.minor - b.price.total.minor);
+  // Plan 5b: "Add to quote" lists the agency's open quotes; one opened from a quote is preselected.
+  const quotes = (await openQuotes(agencyId)).map((q) => ({ id: q.id, label: `${quoteCode(q.number)} · ${q.title || "Untitled quote"}` }));
+  const quoteId = quoteParam(query.quote);
 
   return (
     <main className="mx-auto flex w-[min(1260px,calc(100%-40px))] flex-col gap-6 py-6">
@@ -153,7 +175,7 @@ export default async function HotelPage({ params, searchParams }: { params: Para
             </thead>
             <tbody className="divide-y divide-[#f0ece4]">
               {sorted.map((offer) => (
-                <RateRow key={`${offer.roomId}-${offer.rateId}`} offer={offer} stay={stay} snapshotId={id} />
+                <RateRow key={`${offer.roomId}-${offer.rateId}`} offer={offer} stay={stay} snapshotId={id} quotes={quotes} quoteId={quoteId} />
               ))}
             </tbody>
           </table>

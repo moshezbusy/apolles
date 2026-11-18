@@ -6,6 +6,9 @@ import { countryName, countryOptions } from "@/lib/countries";
 import { getAgencyProfile } from "@/server/agency-profile";
 import { requireAgent } from "@/server/auth/guards";
 import { getClient, listClients, type ClientDetail } from "@/server/clients";
+import { quoteCode } from "@/server/quotes/quotes";
+import { createQuoteAction } from "../quotes/actions";
+import { StatusPill } from "../quotes/parts";
 import { addCompanionAction, createClientAction, removeCompanionAction, updateClientAction } from "./actions";
 import { ClientForm } from "./client-form";
 import { CompanionForm } from "./companion-form";
@@ -97,6 +100,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
                     <th className={th}>Client</th>
                     <th className={th}>Contact</th>
                     <th className={th}>Travelers</th>
+                    <th className={th}>Quotes</th>
                     <th className={th}>Last activity</th>
                   </tr>
                 </thead>
@@ -114,6 +118,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
                         <span className="block text-xs text-muted">{c.phone}</span>
                       </td>
                       <td className={`${td} tabular-nums`}>{c.travelers}</td>
+                      <td className={`${td} tabular-nums`}>{c.quotes}</td>
                       <td className={td}>
                         {dayMonth.format(c.updatedAt)}
                         <span className="block text-xs text-muted">Client updated</span>
@@ -190,6 +195,13 @@ function ClientPanel({ client, editHref }: { client: ClientDetail; editHref: str
         </Link>
       </div>
 
+      <form action={createQuoteAction}>
+        <input type="hidden" name="clientId" value={client.id} />
+        <button type="submit" className={`${btnPrimary} w-full`} title="Opens a new quote with this client already chosen">
+          New quote
+        </button>
+      </form>
+
       <section className="border-t border-line pt-4">
         <h3 className="mb-2 text-sm font-bold text-ink">Details</h3>
         <dl className="flex flex-col gap-2 text-[13px]">
@@ -241,6 +253,27 @@ function ClientPanel({ client, editHref }: { client: ClientDetail; editHref: str
         {/* key: a new client gets a fresh form, never the last client's message or typed values. */}
         <CompanionForm key={client.id} action={addCompanionAction} clientId={client.id} />
         <p className="mt-2 text-xs text-muted">Check children&apos;s ages for each trip.</p>
+      </section>
+
+      <section className="border-t border-line pt-4">
+        <h3 className="mb-2 text-sm font-bold text-ink">Quotes</h3>
+        {client.quotes.length === 0 ? (
+          <p className="text-[13px] text-muted">No quotes yet.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {client.quotes.map((q) => (
+              <li key={q.id}>
+                <Link href={`/quotes/${q.id}`} className="flex items-center justify-between gap-3 rounded-[10px] border border-line px-3 py-2 hover:border-[#bcd0c6]">
+                  <span className="min-w-0">
+                    <strong className="block truncate text-[13px] text-ink">{q.title || "Untitled quote"}</strong>
+                    <span className="text-xs text-muted">{quoteCode(q.number)}</span>
+                  </span>
+                  <StatusPill status={q.status} />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

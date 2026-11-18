@@ -115,7 +115,7 @@ describe("search action and destinations (screen 07)", () => {
     signInAs("A");
     const { renderToStaticMarkup } = await import("react-dom/server");
     const { default: SearchPage } = await import("./(agent)/search/page");
-    const html = renderToStaticMarkup(await SearchPage());
+    const html = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({}) }));
     expect(html).toContain("Hotel search");
     expect(html).toContain('name="checkin"');
     expect(html).toContain('name="adults"');

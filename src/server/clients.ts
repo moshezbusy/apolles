@@ -92,6 +92,7 @@ export type ClientRow = {
   phone: string;
   nationality: string;
   travelers: number;
+  quotes: number;
   updatedAt: Date;
 };
 
@@ -121,14 +122,14 @@ export async function listClients(
         phone: true,
         nationality: true,
         updatedAt: true,
-        _count: { select: { companions: true } },
+        _count: { select: { companions: true, quotes: true } },
       },
     }),
     db.client.count({ where }),
   ]);
   const page = rows.slice(0, CLIENT_PAGE_SIZE);
   return {
-    clients: page.map(({ _count, ...row }) => ({ ...row, travelers: 1 + _count.companions })),
+    clients: page.map(({ _count, ...row }) => ({ ...row, travelers: 1 + _count.companions, quotes: _count.quotes })),
     total,
     nextCursor: rows.length > CLIENT_PAGE_SIZE ? (page.at(-1)?.id ?? null) : null,
   };
@@ -165,6 +166,7 @@ export type ClientDetail = {
   notes: string;
   createdAt: Date;
   companions: { id: string; firstName: string; lastName: string; relation: string; childAge: number | null }[];
+  quotes: { id: string; number: number; title: string; status: "DRAFT" | "SENT" | "VIEWED" | "SELECTED" | "BOOKED" }[];
 };
 
 export async function getClient(agencyId: string, clientId: string): Promise<ClientDetail | null> {
@@ -182,6 +184,13 @@ export async function getClient(agencyId: string, clientId: string): Promise<Cli
       companions: {
         orderBy: { position: "asc" },
         select: { id: true, firstName: true, lastName: true, relation: true, childAge: true },
+      },
+      // The client's latest quotes (plan 5b); the quote list has them all.
+      quotes: {
+        where: { agencyId },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        take: 10,
+        select: { id: true, number: true, title: true, status: true },
       },
     },
   });
@@ -279,5 +288,15 @@ export async function removeCompanion(actorUserId: string, agencyId: string, com
     await tx.client.update({ where: { id: companion.clientId }, data: { updatedAt: new Date() } });
     await audit(actorUserId, "client.companion.remove", "Client", companion.clientId, { companionId: companion.id }, undefined, tx);
     return { ok: true, id: companion.clientId } as const;
+  });
+}
+
+// The agency's clients for a picker (the quote's "Client" field): name order, at most 500.
+export async function clientOptions(agencyId: string): Promise<{ id: string; firstName: string; lastName: string }[]> {
+  return db.client.findMany({
+    where: { agencyId },
+    orderBy: [{ firstName: "asc" }, { lastName: "asc" }, { id: "asc" }],
+    take: 500,
+    select: { id: true, firstName: true, lastName: true },
   });
 }
