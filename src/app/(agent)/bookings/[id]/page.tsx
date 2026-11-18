@@ -26,6 +26,8 @@ const NOTICES: Record<string, { tone: "ok" | "info" | "error"; text: string }> =
   cancel_not_allowed: { tone: "error", text: "This booking cannot be cancelled online right now. Contact Apolles support." },
 };
 
+const PAID_DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+
 const STATUS_TONE: Record<string, string> = {
   CONFIRMED: "bg-brand-soft text-brand",
   PENDING_CONFIRMATION: "bg-[#fff2c7] text-[#6f5a20]",
@@ -157,7 +159,7 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
             {b.chargedMinor !== null && b.status !== "FAILED" ? (
               <p className="mt-3 border-t border-line pt-3 text-[13px] text-[#37413d]">
                 Payment · Paid from balance{" "}
-                {b.status === "PENDING_CONFIRMATION" ? "(held until the hotel confirms)" : b.confirmedAt ? `· Deducted on ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(b.confirmedAt)}` : ""}
+                {b.status === "PENDING_CONFIRMATION" ? "(held until the hotel confirms)" : b.confirmedAt ? `· Deducted on ${PAID_DAY.format(b.confirmedAt)}` : ""}
               </p>
             ) : null}
             {b.status === "CANCELLED" && b.refundMinor !== null ? (
