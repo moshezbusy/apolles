@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { btnPrimary, btnSecondary, cell, emptyState, input, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
+import { bookingSale } from "@/server/booking/selling";
 import { requireAgent } from "@/server/auth/guards";
 import { BOOKING_TABS, STATUS_LABEL, listBookings, type BookingTab } from "@/server/booking/list";
 import { shortDate } from "../search/parts";
@@ -95,7 +96,13 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
                   <td className={td}>
                     {shortDate(r.checkin)} to {shortDate(r.checkout)}
                   </td>
-                  <td className={`${td} tabular-nums`}>{formatUsd(r.totalMinor)}</td>
+                  <td className={`${td} tabular-nums`}>
+                    {formatUsd(r.totalMinor)}
+                    {(() => {
+                      const sale = bookingSale(r);
+                      return sale.priced && sale.saleMinor > 0 ? <span className="block text-xs text-muted">Paid · profit {formatUsd(sale.profitMinor)}</span> : null;
+                    })()}
+                  </td>
                   <td className={td}>{STATUS_LABEL[r.status]}</td>
                 </tr>
               ))}

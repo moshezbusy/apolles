@@ -112,7 +112,7 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
     throw new BookingInputInvalid("Enter a name for every guest.");
   }
   const lead = input.guests[0]!;
-  let fromQuote: { quoteId: string; quoteStayId: string } | null = null;
+  let fromQuote: { quoteId: string; quoteStayId: string; sellMarkup: { markupType: "PERCENT" | "FIXED"; markupValue: number } | null } | null = null;
   if (input.quoteStayId) {
     const stay = await stayForDraft(ctx.agencyId, input.quoteStayId, { propertyId: offer.propertyId, ...query });
     if (stay === "not_found") throw new BookingInputInvalid("This quote was not found, or it is already booked.");
@@ -123,6 +123,8 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
     agencyId: ctx.agencyId,
     quoteId: fromQuote?.quoteId ?? null,
     quoteStayId: fromQuote?.quoteStayId ?? null,
+    sellMarkupType: fromQuote?.sellMarkup?.markupType ?? null,
+    sellMarkupValue: fromQuote?.sellMarkup?.markupValue ?? null,
     userId: ctx.userId,
     snapshotId: input.snapshotId,
     propertyId: offer.propertyId,

@@ -126,12 +126,21 @@ describe("book the client's selection from a quote", () => {
     await pick(stay!.id, stay!.rooms[0]!.id);
     const { bookingId, outcome } = await bookStay(stay!.id);
     expect(outcome.kind).toBe("confirmed");
-    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ quoteId, quoteStayId: stay!.id, status: "CONFIRMED" });
+    // The quote's 10% markup goes with the booking, as its selling price (reports only).
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ quoteId, quoteStayId: stay!.id, status: "CONFIRMED", sellMarkupType: "PERCENT", sellMarkupValue: 1000 });
     expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "BOOKED" });
     expect((await stayBookings("A", quoteId)).get(stay!.id)).toMatchObject({ id: bookingId, status: "CONFIRMED" });
     expect((await stayBookings("B", quoteId)).size).toBe(0);
     const audit = await db.auditLog.findFirst({ where: { action: "quote.booked", targetId: quoteId } });
     expect(audit).not.toBeNull();
+  });
+
+  it("a quote with no markup and no typed price gives a booking with no selling price", async () => {
+    await db.quote.update({ where: { id: quoteId }, data: { markupValue: 0 } });
+    const [stay] = await quoteStays();
+    await pick(stay!.id, stay!.rooms[0]!.id);
+    const { bookingId } = await bookStay(stay!.id);
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ sellMarkupType: null, sellMarkupValue: null });
   });
 
   it("two destinations: the quote is booked only when both are", async () => {

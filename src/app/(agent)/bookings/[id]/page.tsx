@@ -11,7 +11,8 @@ import type { CancelPenalty, PriceBreakdown } from "@/server/supplier/types";
 import { guestLines } from "../../_components/guests";
 import { CancellationPolicy, PriceDetails } from "../../_components/hotel-info";
 import { shortDate, stayText } from "../../search/parts";
-import { cancelAction } from "./actions";
+import { SellingPrice } from "../../_components/selling-price";
+import { cancelAction, sellingPriceAction } from "./actions";
 
 export const metadata: Metadata = { title: "Booking | Apolles", robots: { index: false, follow: false } };
 
@@ -157,6 +158,17 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
               <p className="mt-3 border-t border-line pt-3 text-[13px]">
                 Cancellation charge {formatUsd(b.cancelChargeMinor ?? 0)} · Refunded {formatUsd(b.refundMinor)}
               </p>
+            ) : null}
+            {b.status !== "FAILED" ? (
+              <div className="mt-4 border-t border-line pt-4">
+                <SellingPrice
+                  action={sellingPriceAction}
+                  bookingId={b.id}
+                  netMinor={b.chargedMinor ?? b.totalMinor}
+                  saved={b.sellMarkupType && b.sellMarkupValue !== null ? { markupType: b.sellMarkupType, markupValue: b.sellMarkupValue } : null}
+                  title="Your selling price"
+                />
+              </div>
             ) : null}
           </section>
 

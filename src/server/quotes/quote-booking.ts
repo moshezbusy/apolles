@@ -4,6 +4,7 @@ import { db } from "@/server/db";
 import { SearchError } from "@/server/search/errors";
 import { type SearchContext, searchOneHotel, snapshotOffers } from "@/server/search/search";
 import type { Offer, SupplierAdapter } from "@/server/supplier/types";
+import type { Markup } from "./pricing";
 
 // Plan 5d: booking the client's choice from a quote. The quote never sets the price: the hotel is
 // searched again and the normal booking pages check the rate with the supplier, as for any booking.
@@ -81,7 +82,7 @@ export async function stayForDraft(
   agencyId: string,
   stayId: string,
   rate: { propertyId: string; checkin: string; checkout: string; adults: number; childAges: number[] },
-): Promise<{ quoteId: string; quoteStayId: string } | "not_found" | "mismatch"> {
+): Promise<{ quoteId: string; quoteStayId: string; sellMarkup: Markup | null } | "not_found" | "mismatch"> {
   const stay = await db.quoteStay.findFirst({
     where: { id: stayId, quote: { agencyId, status: { not: "BOOKED" } } },
     select: {
@@ -89,8 +90,8 @@ export async function stayForDraft(
       quoteId: true,
       checkin: true,
       checkout: true,
-      quote: { select: { adults: true, childAges: true } },
-      selectedRoom: { select: { hotel: { select: { propertyId: true } } } },
+      quote: { select: { adults: true, childAges: true, markupType: true, markupValue: true } },
+      selectedRoom: { select: { netMinor: true, sellMinor: true, hotel: { select: { propertyId: true } } } },
     },
   });
   if (!stay) return "not_found";
@@ -101,7 +102,18 @@ export async function stayForDraft(
     stay.quote.adults === rate.adults &&
     stay.quote.childAges.join(",") === rate.childAges.join(",") &&
     stay.selectedRoom?.hotel.propertyId === rate.propertyId;
-  return same ? { quoteId: stay.quoteId, quoteStayId: stay.id } : "mismatch";
+  if (!same || !stay.selectedRoom) return "mismatch";
+  // The booking keeps the client's selling price as a markup (plan 6, reports only): a price the
+  // agent typed on the room becomes the same fixed difference (below the net: a loss, kept as
+  // is); else the quote's markup. A 0 markup with no typed price is "no selling price".
+  const room = stay.selectedRoom;
+  const sellMarkup: Markup | null =
+    room.sellMinor !== null
+      ? { markupType: "FIXED", markupValue: room.sellMinor - room.netMinor }
+      : stay.quote.markupValue > 0
+        ? { markupType: stay.quote.markupType, markupValue: stay.quote.markupValue }
+        : null;
+  return { quoteId: stay.quoteId, quoteStayId: stay.id, sellMarkup };
 }
 
 export class QuoteStayAlreadyBooked extends Error {

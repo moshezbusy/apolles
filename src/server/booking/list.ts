@@ -58,6 +58,9 @@ const SELECT = {
   checkin: true,
   checkout: true,
   totalMinor: true,
+  chargedMinor: true,
+  sellMarkupType: true,
+  sellMarkupValue: true,
   currency: true,
   createdAt: true,
 } satisfies Prisma.BookingSelect;
@@ -83,7 +86,7 @@ export async function listBookings(agencyId: string, opts: Options, now: Date = 
   return { rows: rows.slice(0, take), nextCursor: rows.length > take ? (rows[take - 1]?.id ?? null) : null };
 }
 
-function decimal(minor: number, currency: string): string {
+export function decimal(minor: number, currency: string): string {
   const exponent = currencyExponent(currency);
   const digits = String(Math.abs(minor)).padStart(exponent + 1, "0");
   const whole = digits.slice(0, digits.length - exponent);
@@ -91,7 +94,7 @@ function decimal(minor: number, currency: string): string {
 }
 
 // A cell that a spreadsheet could run as a formula gets a leading apostrophe; every cell is quoted.
-function cell(value: string): string {
+export function cell(value: string): string {
   const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
   return `"${safe.replace(/"/g, '""')}"`;
 }

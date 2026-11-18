@@ -66,20 +66,17 @@ describe("Header", () => {
     expect(html).toContain("Apolles");
   });
 
-  it("shows Search as a link, Quotes as a menu (All quotes, Clients), and Reporting disabled with 'Coming soon'", () => {
-    // The text right after each disabled <span> tag, and right after each <a> tag.
-    const disabledTexts = [...html.matchAll(/<span[^>]*aria-disabled="true"[^>]*>([^<]*)/g)].map((m) => m[1] ?? "");
-    const linkTexts = [...html.matchAll(/<a[^>]*>([^<]*)/g)].map((m) => m[1] ?? "");
+  it("shows Search as a link, and Quotes and Reporting as menus", () => {
     expect(html).toMatch(/<a[^>]*href="\/search"[^>]*>Search<\/a>/);
     expect(html).toMatch(/<a[^>]*href="\/quotes"[^>]*>All quotes<\/a>/);
     expect(html).toMatch(/<a[^>]*href="\/clients"[^>]*>Clients<\/a>/);
-    expect(disabledTexts.some((text) => text.startsWith("Reporting")), "Reporting disabled").toBe(true);
-    expect(linkTexts.some((text) => text.startsWith("Reporting")), "Reporting not a link").toBe(false);
-    expect(html.match(/>Coming soon</g)?.length).toBe(1);
+    expect(html).toMatch(/<a[^>]*href="\/reporting"[^>]*>Overview<\/a>/);
+    expect(html).toMatch(/<a[^>]*href="\/balance"[^>]*>Balance history<\/a>/);
+    expect(html).not.toContain("Coming soon");
   });
 
   it("shows the balance chip of the mockup: the amount with a small 'Balance' label", () => {
-    const chip = html.match(/<a[^>]*href="\/balance"[^>]*>[\s\S]*?<\/a>/)?.[0] ?? "";
+    const chip = [...html.matchAll(/<a[^>]*href="\/balance"[^>]*>[\s\S]*?<\/a>/g)].map((m) => m[0]).find((a) => a.includes("USD")) ?? "";
     expect(chip).toContain("USD 1,000.00");
     expect(chip).toMatch(/>Balance</);
   });

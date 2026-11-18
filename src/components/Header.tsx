@@ -2,10 +2,8 @@ import Link from "next/link";
 import { SignOutButton } from "@/components/SignOutButton";
 import { formatUsd } from "@/lib/money";
 
-// Agent header (mockup 07). Quotes is a menu (All quotes, Clients; plan 5b). Reporting comes
-// later: shown, but not a link. The menus are plain <details> elements, so they need no client
-// JavaScript.
-const COMING_SOON = ["Reporting"] as const;
+// Agent header (mockup 07). Quotes (All quotes, Clients; plan 5b) and Reporting (Overview,
+// Balance history; plan 6) are menus: plain <details> elements, so they need no client JavaScript.
 
 // "Test Travel" → "TT", "Caryotrip" → "CA". Shown in the avatar circle.
 export function initials(name: string): string {
@@ -38,16 +36,19 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
             </div>
           </details>
           <Link href="/bookings" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">Bookings</Link>
-          {COMING_SOON.map((item) => (
-            <span
-              key={item}
-              aria-disabled="true"
-              title="Coming soon"
-              className="flex cursor-not-allowed items-center gap-1.5 text-[#9aa29e]"
-            >
-              {item} <span className="rounded-full bg-[#f1efe9] px-1.5 py-0.5 text-[10px] font-semibold text-[#8a938e]">Coming soon</span>
-            </span>
-          ))}
+          <details className="relative">
+            <summary className="flex cursor-pointer list-none items-center gap-1 font-semibold text-[#4d5a54] hover:text-brand">
+              Reporting <span aria-hidden="true" className="text-[11px] text-[#8a938e]">▾</span>
+            </summary>
+            <div className="absolute left-0 z-40 mt-2.5 flex w-[170px] flex-col rounded-[11px] border border-[#e1e6e3] bg-white p-[7px] shadow-[0_15px_38px_rgba(19,47,39,0.14)]">
+              <Link href="/reporting" className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
+                Overview
+              </Link>
+              <Link href="/balance" className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
+                Balance history
+              </Link>
+            </div>
+          </details>
         </nav>
 
         <div className="ml-auto flex items-center gap-3.5">
