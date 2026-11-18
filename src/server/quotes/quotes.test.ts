@@ -8,6 +8,7 @@ import {
   getQuote,
   listQuotes,
   moveHotel,
+  openQuotes,
   quoteNumbers,
   removeHotel,
   removeRoom,
@@ -273,5 +274,52 @@ describe("listQuotes", () => {
     expect((await listQuotes(agencyA, { tab: "sent" })).quotes).toHaveLength(0);
     const theirs = await db.quote.findFirstOrThrow({ where: { agencyId: agencyB } });
     expect((await listQuotes(agencyA, { cursor: theirs.id })).quotes).toHaveLength(2);
+  });
+});
+
+describe("booked quotes and the quote list for Add to quote", () => {
+  it("a booked quote can no longer change", async () => {
+    const quoteId = await quoteWithRoom();
+    const quote = await getQuote(agencyA, quoteId);
+    const hotel = quote?.stays[0]?.hotels[0];
+    const room = hotel?.rooms[0];
+    if (!quote || !hotel || !room) throw new Error("setup");
+    await db.quote.update({ where: { id: quoteId }, data: { status: "BOOKED" } });
+    for (const result of [
+      await updateQuoteSettings(agentA, agencyA, quoteId, SETTINGS),
+      await setRoomPrice(agentA, agencyA, room.id, "1500"),
+      await removeRoom(agentA, agencyA, room.id),
+      await toggleAgencyPick(agentA, agencyA, hotel.id),
+      await removeHotel(agentA, agencyA, hotel.id),
+      await removeStay(agentA, agencyA, quote.stays[0]?.id ?? ""),
+      await addStay(agentA, agencyA, quoteId, { destinationId: "cancun", checkin: "2027-04-10", checkout: "2027-04-12" }, NOW),
+      await addFromSearch(agentA, agencyA, rate(await search(agencyA, agentA), quoteId), NOW),
+    ]) {
+      expect(result.ok).toBe(false);
+    }
+    expect((await getQuote(agencyA, quoteId))?.stays[0]?.hotels[0]?.rooms).toHaveLength(1);
+  });
+
+  it("two quick Move up clicks are applied one after the other (no two hotels share a position)", async () => {
+    const quoteId = await quoteWithRoom();
+    const snap = await search(agencyA, agentA);
+    await addFromSearch(agentA, agencyA, rate(snap, quoteId, "p2"), NOW);
+    const hotels = (await getQuote(agencyA, quoteId))?.stays[0]?.hotels ?? [];
+    const last = hotels.at(-1);
+    if (!last) throw new Error("setup");
+    await Promise.all([moveHotel(agentA, agencyA, last.id, "up"), moveHotel(agentA, agencyA, last.id, "up")]);
+    const positions = (await db.quoteHotel.findMany({ where: { stay: { quoteId } }, select: { position: true } })).map((h) => h.position);
+    expect(new Set(positions).size).toBe(positions.length);
+  });
+
+  it("openQuotes lists the latest 30 and always the quote asked for, if it is the agency's own and open", async () => {
+    const old = await createQuote(agentA, agencyA);
+    if (!old.ok) throw new Error("setup");
+    for (let i = 0; i < 31; i++) await createQuote(agentA, agencyA);
+    const theirs = await createQuote(agentB, agencyB);
+    if (!theirs.ok) throw new Error("setup");
+    expect((await openQuotes(agencyA)).map((q) => q.id)).not.toContain(old.id);
+    expect((await openQuotes(agencyA, old.id)).map((q) => q.id)).toContain(old.id);
+    expect((await openQuotes(agencyA, theirs.id)).map((q) => q.id)).not.toContain(theirs.id);
   });
 });

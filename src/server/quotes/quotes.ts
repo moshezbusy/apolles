@@ -210,13 +210,19 @@ export async function getQuote(agencyId: string, quoteId: string): Promise<Quote
 }
 
 // The agency's quotes that can still take rooms (not booked), newest first, for "Add to quote".
-export async function openQuotes(agencyId: string): Promise<{ id: string; number: number; title: string }[]> {
-  return db.quote.findMany({
+// `include`: one more quote that must be in the list even if it is older (the quote the agent came
+// from, "+ Add hotel"), if it is the agency's own and not booked.
+export async function openQuotes(agencyId: string, include?: string | null): Promise<{ id: string; number: number; title: string }[]> {
+  const select = { id: true, number: true, title: true } as const;
+  const latest = await db.quote.findMany({
     where: { agencyId, status: { not: "BOOKED" } },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take: 30,
-    select: { id: true, number: true, title: true },
+    select,
   });
+  if (!include || latest.some((q) => q.id === include)) return latest;
+  const extra = await db.quote.findFirst({ where: { id: include, agencyId, status: { not: "BOOKED" } }, select });
+  return extra ? [extra, ...latest] : latest;
 }
 
 // ---------- settings ----------
@@ -269,8 +275,9 @@ export async function updateQuoteSettings(
   if (input.clientId && !clientId) return fail("This client was not found.");
 
   return db.$transaction(async (tx) => {
-    const quote = await lockQuote(tx, agencyId, quoteId);
+    const quote = await lockForEdit(tx, agencyId, quoteId);
     if (!quote) return fail(NOT_FOUND);
+    if (quote === "booked") return fail(BOOKED);
     const guestsChanged = quote.adults !== input.adults || quote.childAges.join(",") !== input.childAges.join(",");
     if (guestsChanged && (await roomCount(tx, quoteId)) > 0) {
       return fail("The guests cannot change once the quote has rooms: the prices are for these guests. Remove the rooms first.");
@@ -300,6 +307,15 @@ async function lockQuote(tx: Prisma.TransactionClient, agencyId: string, quoteId
     SELECT id FROM "Quote" WHERE id = ${quoteId} AND "agencyId" = ${agencyId} FOR UPDATE`;
   if (rows.length === 0) return null;
   return tx.quote.findUniqueOrThrow({ where: { id: quoteId }, select: { id: true, status: true, adults: true, childAges: true } });
+}
+
+const BOOKED = "This quote is booked and can no longer change.";
+
+// Locks the quote for an edit. null: not the agency's quote; "booked": it can no longer change.
+async function lockForEdit(tx: Prisma.TransactionClient, agencyId: string, quoteId: string) {
+  const quote = await lockQuote(tx, agencyId, quoteId);
+  if (!quote) return null;
+  return quote.status === "BOOKED" ? ("booked" as const) : quote;
 }
 
 async function roomCount(tx: Prisma.TransactionClient, quoteId: string): Promise<number> {
@@ -347,8 +363,9 @@ export async function addStay(
   const destination = await db.destination.findFirst({ where: { id: parsed.data.destinationId, active: true }, select: { id: true, nameFull: true } });
   if (!destination) return fail("Choose a destination from the list.");
   return db.$transaction(async (tx) => {
-    const quote = await lockQuote(tx, agencyId, quoteId);
+    const quote = await lockForEdit(tx, agencyId, quoteId);
     if (!quote) return fail(NOT_FOUND);
+    if (quote === "booked") return fail(BOOKED);
     const stay = await createStay(tx, quoteId, destination, parsed.data.checkin, parsed.data.checkout);
     if (!stay) return fail(`A quote can have up to ${MAX_STAYS} destinations.`);
     await audit(actorUserId, "quote.stay.add", "Quote", quoteId, undefined, { stayId: stay }, tx);
@@ -378,7 +395,9 @@ export async function removeStay(actorUserId: string, agencyId: string, stayId: 
   return db.$transaction(async (tx) => {
     const stay = await tx.quoteStay.findFirst({ where: { id: stayId, quote: { agencyId } }, select: { id: true, quoteId: true } });
     if (!stay) return fail(NOT_FOUND);
-    if (!(await lockQuote(tx, agencyId, stay.quoteId))) return fail(NOT_FOUND);
+    const quote = await lockForEdit(tx, agencyId, stay.quoteId);
+    if (!quote) return fail(NOT_FOUND);
+    if (quote === "booked") return fail(BOOKED);
     await tx.quoteStay.delete({ where: { id: stay.id } });
     await touch(tx, stay.quoteId);
     await audit(actorUserId, "quote.stay.remove", "Quote", stay.quoteId, { stayId: stay.id }, undefined, tx);
@@ -388,18 +407,33 @@ export async function removeStay(actorUserId: string, agencyId: string, stayId: 
 
 // ---------- hotels ----------
 
-async function ownHotel(tx: Prisma.TransactionClient, agencyId: string, hotelId: string) {
-  if (typeof hotelId !== "string" || hotelId.length > 64) return null;
-  return tx.quoteHotel.findFirst({
-    where: { id: hotelId, stay: { quote: { agencyId } } },
+// Finds the agency's hotel, locks its quote, then reads the hotel again: positions and the pick
+// are always read after the lock, so two quick clicks are applied one after the other.
+async function lockedHotel(tx: Prisma.TransactionClient, agencyId: string, hotelId: string): Promise<Result | Awaited<ReturnType<typeof readHotel>>> {
+  if (typeof hotelId !== "string" || hotelId.length > 64) return fail(NOT_FOUND);
+  const found = await tx.quoteHotel.findFirst({ where: { id: hotelId, stay: { quote: { agencyId } } }, select: { stay: { select: { quoteId: true } } } });
+  if (!found) return fail(NOT_FOUND);
+  const quote = await lockForEdit(tx, agencyId, found.stay.quoteId);
+  if (!quote) return fail(NOT_FOUND);
+  if (quote === "booked") return fail(BOOKED);
+  return readHotel(tx, hotelId);
+}
+
+function readHotel(tx: Prisma.TransactionClient, hotelId: string) {
+  return tx.quoteHotel.findUniqueOrThrow({
+    where: { id: hotelId },
     select: { id: true, stayId: true, position: true, agencyPick: true, stay: { select: { quoteId: true } } },
   });
 }
 
+function isResult(value: unknown): value is Result {
+  return typeof value === "object" && value !== null && "ok" in value;
+}
+
 export async function moveHotel(actorUserId: string, agencyId: string, hotelId: string, direction: "up" | "down"): Promise<Result> {
   return db.$transaction(async (tx) => {
-    const hotel = await ownHotel(tx, agencyId, hotelId);
-    if (!hotel || !(await lockQuote(tx, agencyId, hotel.stay.quoteId))) return fail(NOT_FOUND);
+    const hotel = await lockedHotel(tx, agencyId, hotelId);
+    if (isResult(hotel)) return hotel;
     const neighbour = await tx.quoteHotel.findFirst({
       where: { stayId: hotel.stayId, position: direction === "up" ? { lt: hotel.position } : { gt: hotel.position } },
       orderBy: { position: direction === "up" ? "desc" : "asc" },
@@ -416,8 +450,8 @@ export async function moveHotel(actorUserId: string, agencyId: string, hotelId: 
 
 export async function toggleAgencyPick(actorUserId: string, agencyId: string, hotelId: string): Promise<Result> {
   return db.$transaction(async (tx) => {
-    const hotel = await ownHotel(tx, agencyId, hotelId);
-    if (!hotel || !(await lockQuote(tx, agencyId, hotel.stay.quoteId))) return fail(NOT_FOUND);
+    const hotel = await lockedHotel(tx, agencyId, hotelId);
+    if (isResult(hotel)) return hotel;
     await tx.quoteHotel.update({ where: { id: hotel.id }, data: { agencyPick: !hotel.agencyPick } });
     await touch(tx, hotel.stay.quoteId);
     await audit(actorUserId, "quote.hotel.pick", "Quote", hotel.stay.quoteId, undefined, { hotelId: hotel.id, agencyPick: !hotel.agencyPick }, tx);
@@ -427,8 +461,8 @@ export async function toggleAgencyPick(actorUserId: string, agencyId: string, ho
 
 export async function removeHotel(actorUserId: string, agencyId: string, hotelId: string): Promise<Result> {
   return db.$transaction(async (tx) => {
-    const hotel = await ownHotel(tx, agencyId, hotelId);
-    if (!hotel || !(await lockQuote(tx, agencyId, hotel.stay.quoteId))) return fail(NOT_FOUND);
+    const hotel = await lockedHotel(tx, agencyId, hotelId);
+    if (isResult(hotel)) return hotel;
     await tx.quoteHotel.delete({ where: { id: hotel.id } });
     await touch(tx, hotel.stay.quoteId);
     await audit(actorUserId, "quote.hotel.remove", "Quote", hotel.stay.quoteId, { hotelId: hotel.id }, undefined, tx);
@@ -459,7 +493,10 @@ export async function setRoomPrice(actorUserId: string, agencyId: string, roomId
   return db.$transaction(async (tx) => {
     const room = await ownRoom(tx, agencyId, roomId);
     const quoteId = room?.hotel.stay.quoteId;
-    if (!room || !quoteId || !(await lockQuote(tx, agencyId, quoteId))) return fail(NOT_FOUND);
+    if (!room || !quoteId) return fail(NOT_FOUND);
+    const quote = await lockForEdit(tx, agencyId, quoteId);
+    if (!quote) return fail(NOT_FOUND);
+    if (quote === "booked") return fail(BOOKED);
     await tx.quoteRoom.update({ where: { id: room.id }, data: { sellMinor } });
     await touch(tx, quoteId);
     await audit(actorUserId, "quote.room.price", "Quote", quoteId, undefined, { roomId: room.id, sellMinor }, tx);
@@ -477,7 +514,10 @@ export async function setClientCancelDate(
   return db.$transaction(async (tx) => {
     const room = await ownRoom(tx, agencyId, roomId);
     const quoteId = room?.hotel.stay.quoteId;
-    if (!room || !quoteId || !(await lockQuote(tx, agencyId, quoteId))) return fail(NOT_FOUND);
+    if (!room || !quoteId) return fail(NOT_FOUND);
+    const quote = await lockForEdit(tx, agencyId, quoteId);
+    if (!quote) return fail(NOT_FOUND);
+    if (quote === "booked") return fail(BOOKED);
     if (!room.freeCancelUntil) return fail("This room has no free cancellation.");
     if (!clientDateAllowed(date, room.freeCancelUntil, todayIso(now))) {
       return fail("Choose a date from today up to the supplier's deadline, never later.");
@@ -493,7 +533,10 @@ export async function removeRoom(actorUserId: string, agencyId: string, roomId: 
   return db.$transaction(async (tx) => {
     const room = await ownRoom(tx, agencyId, roomId);
     const quoteId = room?.hotel.stay.quoteId;
-    if (!room || !quoteId || !(await lockQuote(tx, agencyId, quoteId))) return fail(NOT_FOUND);
+    if (!room || !quoteId) return fail(NOT_FOUND);
+    const quote = await lockForEdit(tx, agencyId, quoteId);
+    if (!quote) return fail(NOT_FOUND);
+    if (quote === "booked") return fail(BOOKED);
     await tx.quoteRoom.delete({ where: { id: room.id } });
     await touch(tx, quoteId);
     await audit(actorUserId, "quote.room.remove", "Quote", quoteId, { roomId: room.id }, undefined, tx);
@@ -618,8 +661,14 @@ export async function addFromSearch(
       return { ok: true, id: quoteId } as const;
     });
   } catch (error) {
-    // Two clicks at the same moment: the unique index keeps one copy of the rate.
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return { ok: true, id: quoteId };
+    // Two clicks at the same moment on an existing quote: the unique index on the room keeps one
+    // copy of the rate. Anything else (or a new quote, whose id was rolled back) is a real error.
+    const roomIndex =
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      JSON.stringify(error.meta ?? {}).includes("rateId") &&
+      input.quoteId !== "new";
+    if (roomIndex) return { ok: true, id: input.quoteId };
     throw error;
   }
 }

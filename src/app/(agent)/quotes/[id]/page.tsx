@@ -40,7 +40,9 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
   const { id } = await params;
   const quote = await getQuote(agencyId, id);
   if (!quote) notFound();
-  const clients = await clientOptions(agencyId);
+  const options = await clientOptions(agencyId);
+  // The quote's own client is always in the list, so "Save changes" never drops it silently.
+  const clients = quote.client && !options.some((c) => c.id === quote.client?.id) ? [quote.client, ...options] : options;
   const totals = quoteNumbers(quote);
   const roomCount = totals.options;
   const { minDate, maxDate } = dateRange(new Date());

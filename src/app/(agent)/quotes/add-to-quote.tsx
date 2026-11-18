@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useActionState, useEffect } from "react";
 import { alertError, alertSuccess, btnSecondary, input } from "@/components/ui";
 import type { ActionState } from "./action-state";
 
@@ -22,12 +23,28 @@ export function AddToQuote({
   action: Action;
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(action, null);
-  const known = defaultQuoteId && quotes.some((q) => q.id === defaultQuoteId) ? defaultQuoteId : "new";
+  // After an add, the quote it went to stays chosen (also a quote just made by "New quote"), so the
+  // next room goes to the same quote. React resets the row's form after the action: the select is
+  // remounted (key) with that quote as its default, so the reset keeps it.
+  const added = state?.status === "success" ? (state.quoteId ?? null) : null;
+  // Every rate row of the page then offers that quote: the page URL gets ?quote= (as when the
+  // agent came from the quote's "+ Add hotel").
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  useEffect(() => {
+    if (!added || params.get("quote") === added) return;
+    const next = new URLSearchParams(params.toString());
+    next.set("quote", added);
+    router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+  }, [added, params, pathname, router]);
+  const list = added && !quotes.some((q) => q.id === added) ? [{ id: added, label: "The quote you just started" }, ...quotes] : quotes;
+  const chosen = added ?? (defaultQuoteId && quotes.some((q) => q.id === defaultQuoteId) ? defaultQuoteId : "new");
   return (
     <div className="mt-2 flex flex-col gap-1.5">
-      <select form={formId} name="quoteId" defaultValue={known} aria-label="Quote" className={`${input} text-xs`}>
+      <select key={chosen} form={formId} name="quoteId" defaultValue={chosen} aria-label="Quote" className={`${input} text-xs`}>
         <option value="new">New quote</option>
-        {quotes.map((q) => (
+        {list.map((q) => (
           <option key={q.id} value={q.id}>
             {q.label}
           </option>

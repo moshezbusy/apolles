@@ -85,7 +85,7 @@ CREATE UNIQUE INDEX "Quote_number_key" ON "Quote"("number");
 CREATE INDEX "Quote_agencyId_updatedAt_id_idx" ON "Quote"("agencyId", "updatedAt" DESC, "id" DESC);
 
 -- CreateIndex
-CREATE INDEX "Quote_agencyId_status_updatedAt_idx" ON "Quote"("agencyId", "status", "updatedAt" DESC);
+CREATE INDEX "Quote_agencyId_status_updatedAt_id_idx" ON "Quote"("agencyId", "status", "updatedAt" DESC, "id" DESC);
 
 -- CreateIndex
 CREATE INDEX "Quote_clientId_idx" ON "Quote"("clientId");

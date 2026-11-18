@@ -10,6 +10,10 @@ vi.mock("next/navigation", () => ({
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
+  // "Add to quote" on the hotel page reads and updates the page URL.
+  useRouter: () => ({ replace: vi.fn() }),
+  usePathname: () => "/search/x/hotels/p1",
+  useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("next/headers", () => ({
   headers: vi.fn(async () => new Headers({ "user-agent": "TestBrowser/1.0", "x-forwarded-for": "203.0.113.9" })),

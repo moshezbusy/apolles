@@ -135,8 +135,8 @@ export default async function HotelPage({ params, searchParams }: { params: Para
   const address = content ? [content.address.line1, content.address.city, content.address.countryCode].filter(Boolean).join(", ") : hotel.city;
   const sorted = [...offers].sort((a, b) => a.price.total.minor - b.price.total.minor);
   // Plan 5b: "Add to quote" lists the agency's open quotes; one opened from a quote is preselected.
-  const quotes = (await openQuotes(agencyId)).map((q) => ({ id: q.id, label: `${quoteCode(q.number)} · ${q.title || "Untitled quote"}` }));
   const quoteId = quoteParam(query.quote);
+  const quotes = (await openQuotes(agencyId, quoteId)).map((q) => ({ id: q.id, label: `${quoteCode(q.number)} · ${q.title || "Untitled quote"}` }));
 
   return (
     <main className="mx-auto flex w-[min(1260px,calc(100%-40px))] flex-col gap-6 py-6">

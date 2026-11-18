@@ -537,7 +537,7 @@ model Quote {
   stays     QuoteStay[]
 
   @@index([agencyId, updatedAt(sort: Desc), id(sort: Desc)])
-  @@index([agencyId, status, updatedAt(sort: Desc)])
+  @@index([agencyId, status, updatedAt(sort: Desc), id(sort: Desc)])
   @@index([clientId])
 }
 
