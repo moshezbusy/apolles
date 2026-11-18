@@ -17,7 +17,7 @@ import {
   updateQuoteSettings,
   type Result,
 } from "@/server/quotes/quotes";
-import { emailQuote, shareLink, whatsappLink } from "@/server/quotes/sharing";
+import { emailQuote, renewLink, shareLink, whatsappLink } from "@/server/quotes/sharing";
 import type { ActionState } from "./action-state";
 
 // Quote actions (screens 09, 14, 15). Each one checks the agent session itself and passes the
@@ -146,4 +146,13 @@ export async function emailAction(quoteId: string): Promise<SendState> {
   revalidatePath(`/quotes/${quoteId}`);
   revalidatePath("/quotes");
   return { ok: true, message: "Email sent to the client." };
+}
+
+// A new client link: the old one stops working at once (a link sent to the wrong person).
+export async function renewLinkAction(quoteId: string): Promise<SendState> {
+  const { userId, agencyId } = await requireAgent();
+  const result = await renewLink(userId, agencyId, String(quoteId).slice(0, 64));
+  if (!result.ok) return result;
+  revalidatePath(`/quotes/${quoteId}`);
+  return { ok: true, url: result.url };
 }

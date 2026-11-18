@@ -11,7 +11,7 @@ type Params = Promise<{ token: string }>;
 // the agency's selling prices in USD only (owner, 17.11.2026), never the net.
 export default async function ClientQuotePage({ params }: { params: Params }) {
   const { token } = await params;
-  const quote = await clientQuote(token);
-  if (!quote) return <Gone />;
-  return <Proposal quote={quote} token={token} logoSrc={`/q/${token}/logo`} photos={await proposalPhotos(quote)} />;
+  const data = await clientQuote(token);
+  if (!data) return <Gone />;
+  return <Proposal quote={data.view} token={token} logoSrc={`/q/${token}/logo`} photos={await proposalPhotos(data)} />;
 }

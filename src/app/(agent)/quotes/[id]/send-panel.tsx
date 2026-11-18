@@ -21,9 +21,16 @@ export function SendPanel({
   shareUrl: string | null;
   hasClient: boolean;
   hasEmail: boolean;
-  actions: { copy: Action; whatsapp: Action; email: Action };
+  actions: { copy: Action; whatsapp: Action; email: Action; renew: Action };
 }) {
   const [url, setUrl] = useState(shareUrl);
+  // The server's link wins when it changes (a new link, or withdrawn after another client was set),
+  // so a dead link is never left on screen; the message stays.
+  const [serverUrl, setServerUrl] = useState(shareUrl);
+  if (shareUrl !== serverUrl) {
+    setServerUrl(shareUrl);
+    setUrl(shareUrl);
+  }
   const [state, setState] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [pending, start] = useTransition();
 
@@ -62,6 +69,19 @@ export function SendPanel({
     });
   }
 
+  function renew() {
+    if (!window.confirm("Make a new client link? The old link stops working at once.")) return;
+    start(async () => {
+      const result = await actions.renew(quoteId);
+      if (!result.ok || !result.url) {
+        setState({ kind: "error", text: result.ok ? "Could not make a new link." : result.error });
+        return;
+      }
+      setUrl(result.url);
+      setState({ kind: "ok", text: "New link ready. The old link no longer works." });
+    });
+  }
+
   function email() {
     start(async () => {
       const result = await actions.email(quoteId);
@@ -85,7 +105,14 @@ export function SendPanel({
           Preview
         </Link>
       </div>
-      {url ? <input readOnly value={url} aria-label="Client link" className={`${input} text-xs`} onFocus={(e) => e.currentTarget.select()} /> : null}
+      {url ? (
+        <div className="flex gap-2">
+          <input readOnly value={url} aria-label="Client link" className={`${input} min-w-0 flex-1 text-xs`} onFocus={(e) => e.currentTarget.select()} />
+          <button type="button" onClick={renew} disabled={pending} className={btnSecondary}>
+            New link
+          </button>
+        </div>
+      ) : null}
       {state ? (
         <p role={state.kind === "error" ? "alert" : "status"} className={state.kind === "error" ? alertError : alertSuccess}>
           {state.text}

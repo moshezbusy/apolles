@@ -1,21 +1,23 @@
 import { initials } from "@/components/Header";
 import { safeImageUrl } from "@/lib/supplier-image";
 import { getContent } from "@/server/content/content-cache";
-import type { ClientQuote } from "@/server/quotes/sharing";
-import { Selection } from "./selection";
+import type { ClientQuote, ClientQuoteData } from "@/server/quotes/sharing";
+import { Selection, ViewPing } from "./selection";
 import { day, texts, type Lang } from "./texts";
 
 // The proposal as the client sees it. The agent's Preview (/quotes/[id]/preview) draws the same
 // page with `token` null: nothing is counted and nothing can be sent from it.
 // Hotel photos for the proposal, best effort: the page still works without them.
-export async function proposalPhotos(quote: ClientQuote): Promise<Record<string, string>> {
+// Hotel photos for the proposal, by our own hotel id (the supplier's id stays on the server).
+// Best effort: the page still works without them.
+export async function proposalPhotos(data: ClientQuoteData): Promise<Record<string, string>> {
   const photos: Record<string, string> = {};
   try {
-    const ids = quote.stays.flatMap((s) => s.hotels.map((h) => h.propertyId));
+    const ids = [...new Set(Object.values(data.propertyByHotel))];
     const content = ids.length ? await getContent(ids) : new Map();
-    for (const [id, c] of content) {
-      const url = safeImageUrl(c.heroImage?.url);
-      if (url) photos[id] = url;
+    for (const [hotelId, propertyId] of Object.entries(data.propertyByHotel)) {
+      const url = safeImageUrl(content.get(propertyId)?.heroImage?.url);
+      if (url) photos[hotelId] = url;
     }
   } catch (error) {
     console.error(`client quote content failed: ${error instanceof Error ? error.name : "Error"}`);
@@ -87,6 +89,7 @@ export function Proposal({ quote, token, logoSrc, photos }: { quote: ClientQuote
           <Selection token={token} quote={quote} photos={photos} lang={lang} />
         ) : (
           <div className="rounded-[18px] border border-line bg-white p-6 text-center">
+            <ViewPing token={token} />
             <strong className="block text-ink">{t.emptyTitle}</strong>
             <span className="text-[14px] text-muted">{t.emptyText}</span>
           </div>

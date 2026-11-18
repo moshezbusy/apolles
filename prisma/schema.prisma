@@ -560,8 +560,11 @@ model QuoteStay {
   checkout        String
   position        Int
 
-  // The room the client chose here (plan 5c); cleared when that room is removed.
-  selectedRoomId  String?      @unique
+  // The room the client chose here (plan 5c); cleared when that room is removed. The selling
+  // price the client saw is kept with it, so a later price change shows as a difference.
+  selectedRoomId    String?    @unique
+  selectedSellMinor Int?
+  selectedCurrency  String?
 
   quote        Quote        @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   hotels       QuoteHotel[]

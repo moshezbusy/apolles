@@ -21,6 +21,10 @@ const TOKEN = /^[A-Za-z0-9_-]{32}$/;
 const EMAIL_LIMIT = { limit: 30, windowMs: 60 * 60_000 }; // per agency
 const VIEW_LIMIT = { limit: 120, windowMs: 60_000 }; // per IP
 const SELECT_LIMIT = { limit: 20, windowMs: 60 * 60_000 }; // per IP and quote
+const SELECT_QUOTE_LIMIT = { limit: 40, windowMs: 24 * 60 * 60_000 }; // per quote, whatever the IP
+// Emails to the agent per quote: one for each real change, up to 6 an hour (the editor always shows
+// the latest choice, and the email says so).
+const NOTIFY_LIMIT = { limit: 6, windowMs: 60 * 60_000 };
 
 export function appUrl(): string {
   const parsed = z.url({ protocol: /^https?$/ }).safeParse(process.env.APP_URL);
@@ -46,25 +50,49 @@ async function ownQuote(agencyId: string, quoteId: string) {
       message: true,
       shareToken: true,
       client: { select: { firstName: true, email: true, phone: true } },
-      agency: { select: { name: true } },
-      createdBy: { select: { name: true } },
+      agency: { select: { name: true, email: true } },
+      createdBy: { select: { name: true, email: true } },
     },
   });
 }
 
+// Who the client sees as the sender: the agency's name and the agent's name. Replies go to the
+// agency's business email, or else the agent's login email.
+function quoteBrand(quote: { agency: { name: string; email: string | null }; createdBy: { name: string; email: string } }) {
+  return { displayName: quote.agency.name, advisorName: quote.createdBy.name, replyTo: quote.agency.email ?? quote.createdBy.email };
+}
+
 // The client link of the agency's quote, made on first use. Sharing marks a draft as sent.
-export async function shareLink(actorUserId: string, agencyId: string, quoteId: string, channel: "link" | "whatsapp"): Promise<ShareResult> {
+export async function shareLink(
+  actorUserId: string,
+  agencyId: string,
+  quoteId: string,
+  channel: "link" | "whatsapp" | "email",
+  options: { markSent?: boolean } = {},
+): Promise<ShareResult> {
   const quote = await ownQuote(agencyId, quoteId);
   if (!quote) return { ok: false, error: "This quote was not found." };
   const token = quote.shareToken ?? randomBytes(24).toString("base64url");
   await db.$transaction(async (tx) => {
     // updateMany with the old token: two clicks at once never make two different links.
     await tx.quote.updateMany({ where: { id: quote.id, agencyId, shareToken: null }, data: { shareToken: token } });
-    await markSent(tx, quote.id);
+    if (options.markSent !== false) await markSent(tx, quote.id);
     await audit(actorUserId, "quote.share", "Quote", quote.id, undefined, { channel }, tx);
   });
   const saved = await db.quote.findUniqueOrThrow({ where: { id: quote.id }, select: { shareToken: true } });
   return { ok: true, url: shareUrl(saved.shareToken ?? token) };
+}
+
+// "New link": the old client link stops working at once (a link sent to the wrong person, say).
+export async function renewLink(actorUserId: string, agencyId: string, quoteId: string): Promise<ShareResult> {
+  const quote = await ownQuote(agencyId, quoteId);
+  if (!quote) return { ok: false, error: "This quote was not found." };
+  const token = randomBytes(24).toString("base64url");
+  await db.$transaction(async (tx) => {
+    await tx.quote.updateMany({ where: { id: quote.id, agencyId }, data: { shareToken: token } });
+    await audit(actorUserId, "quote.share.renew", "Quote", quote.id, undefined, undefined, tx);
+  });
+  return { ok: true, url: shareUrl(token) };
 }
 
 type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
@@ -106,15 +134,31 @@ export async function emailQuote(actorUserId: string, agencyId: string, quoteId:
   if (!quote.client?.email) return { ok: false, error: "The client has no email. Add one on the client's card, or send by WhatsApp." };
   const { allowed } = await hitRateLimit(`quote-email:agency:${agencyId}`, EMAIL_LIMIT.limit, EMAIL_LIMIT.windowMs);
   if (!allowed) return { ok: false, error: "Too many emails this hour. Try again later, or send by WhatsApp." };
-  const shared = await shareLink(actorUserId, agencyId, quoteId, "link");
+  const shared = await shareLink(actorUserId, agencyId, quoteId, "email", { markSent: false });
   if (!shared.ok) return shared;
   const subject =
     quote.language === "HE"
       ? `${quote.title || "הצעת נסיעה"} · ${quote.agency.name}`
       : `${quote.title || "Your travel proposal"} · ${quote.agency.name}`;
-  const signature = `${quote.createdBy.name}\n${quote.agency.name}`;
-  await sendEmail({ to: quote.client.email, subject, text: `${shareText(quote, shared.url)}\n\n${signature}` });
-  await audit(actorUserId, "quote.email", "Quote", quote.id, undefined, { channel: "email" });
+  const brand = quoteBrand(quote);
+  const signature = `${brand.advisorName}\n${brand.displayName}`;
+  try {
+    await sendEmail({
+      to: quote.client.email,
+      subject,
+      text: `${shareText(quote, shared.url)}\n\n${signature}`,
+      fromName: brand.displayName,
+      ...(brand.replyTo ? { replyTo: brand.replyTo } : {}),
+    });
+  } catch (error) {
+    // Logged by name only (never the address or the body); the quote stays as it was.
+    console.error(`quote email failed: ${error instanceof Error ? error.name : "Error"}`);
+    return { ok: false, error: "The email could not be sent right now. Try again in a few minutes, or send by WhatsApp." };
+  }
+  await db.$transaction(async (tx) => {
+    await markSent(tx, quote.id);
+    await audit(actorUserId, "quote.email", "Quote", quote.id, undefined, { channel: "email" }, tx);
+  });
   return { ok: true };
 }
 
@@ -143,7 +187,7 @@ export type ClientQuote = {
   childAges: number[];
   clientFirstName: string | null;
   clientNote: string;
-  agency: { name: string; phone: string | null; email: string | null; logoSha256: string | null };
+  agency: { name: string; phone: string | null; logoSha256: string | null };
   agentName: string;
   stays: {
     id: string;
@@ -151,7 +195,7 @@ export type ClientQuote = {
     checkin: string;
     checkout: string;
     selectedRoomId: string | null;
-    hotels: { id: string; propertyId: string; name: string; city: string; starRating: string | null; agencyPick: boolean; rooms: ClientRoom[] }[];
+    hotels: { id: string; name: string; city: string; starRating: string | null; agencyPick: boolean; rooms: ClientRoom[] }[];
   }[];
 };
 
@@ -168,18 +212,22 @@ export function validToken(token: unknown): token is string {
   return typeof token === "string" && TOKEN.test(token);
 }
 
-export async function clientQuote(token: string): Promise<ClientQuote | null> {
+// What the client page needs: the view (safe to send to the browser) and, for the server only,
+// which supplier hotel each quote hotel is (to load photos). Supplier ids never reach the browser.
+export type ClientQuoteData = { view: ClientQuote; propertyByHotel: Record<string, string> };
+
+export async function clientQuote(token: string): Promise<ClientQuoteData | null> {
   if (!validToken(token)) return null;
   return loadClientQuote({ shareToken: token });
 }
 
 // The same view for the agent's Preview: the agency's own quote, by id (no link needed).
-export async function clientQuoteForAgency(agencyId: string, quoteId: string): Promise<ClientQuote | null> {
+export async function clientQuoteForAgency(agencyId: string, quoteId: string): Promise<ClientQuoteData | null> {
   if (typeof quoteId !== "string" || quoteId.length > 64) return null;
   return loadClientQuote({ id: quoteId, agencyId });
 }
 
-async function loadClientQuote(where: { shareToken: string } | { id: string; agencyId: string }): Promise<ClientQuote | null> {
+async function loadClientQuote(where: { shareToken: string } | { id: string; agencyId: string }): Promise<ClientQuoteData | null> {
   const q = await db.quote.findFirst({
     where,
     select: {
@@ -226,7 +274,8 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
   });
   // A suspended agency's links stop working.
   if (!q || q.agency.status !== "ACTIVE") return null;
-  return {
+  const propertyByHotel = Object.fromEntries(q.stays.flatMap((s) => s.hotels.map((h) => [h.id, h.propertyId])));
+  const view: ClientQuote = {
     number: q.number,
     code: quoteCode(q.number),
     title: q.title,
@@ -238,7 +287,7 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
     childAges: q.childAges,
     clientFirstName: q.client?.firstName ?? null,
     clientNote: q.clientNote,
-    agency: { name: q.agency.name, phone: q.agency.phone, email: q.agency.email, logoSha256: q.agency.logo?.sha256 ?? null },
+    agency: { name: q.agency.name, phone: q.agency.phone, logoSha256: q.agency.logo?.sha256 ?? null },
     agentName: q.createdBy.name,
     stays: q.stays.map((stay) => ({
       id: stay.id,
@@ -250,7 +299,6 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
         .filter((h) => h.rooms.length > 0)
         .map((h) => ({
           id: h.id,
-          propertyId: h.propertyId,
           name: h.name,
           city: h.city,
           starRating: h.starRating?.toString() ?? null,
@@ -268,6 +316,7 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
         })),
     })),
   };
+  return { view, propertyByHotel };
 }
 
 // The agency logo for the client page, by the quote's token.
@@ -283,7 +332,8 @@ export async function recordView(token: string, ip: string): Promise<void> {
   const { allowed } = await hitRateLimit(`quote-view:ip:${ip}`, VIEW_LIMIT.limit, VIEW_LIMIT.windowMs);
   if (!allowed) return;
   await db.$transaction(async (tx) => {
-    const q = await tx.quote.findUnique({ where: { shareToken: token }, select: { id: true } });
+    // Locked by the token itself: a link withdrawn meanwhile (new link, other client) finds nothing.
+    const [q] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "Quote" WHERE "shareToken" = ${token} FOR UPDATE`;
     if (!q) return;
     await tx.quote.update({ where: { id: q.id }, data: { viewCount: { increment: 1 }, viewedAt: new Date() } });
     await tx.quote.updateMany({ where: { id: q.id, status: "SENT" }, data: { status: "VIEWED" } });
@@ -308,25 +358,50 @@ export async function submitSelection(token: string, raw: { picks: Record<string
   if (!validToken(token)) return { ok: false, error: "gone" };
   const parsed = selectionInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "invalid" };
-  const { allowed } = await hitRateLimit(`quote-select:${ip}:${token.slice(0, 12)}`, SELECT_LIMIT.limit, SELECT_LIMIT.windowMs);
-  if (!allowed) return { ok: false, error: "limited" };
+  // Per IP (when known) and per quote, so neither a changing IP nor a shared one gets around it.
+  if (ip !== "unknown") {
+    const perIp = await hitRateLimit(`quote-select:${ip}:${token.slice(0, 12)}`, SELECT_LIMIT.limit, SELECT_LIMIT.windowMs);
+    if (!perIp.allowed) return { ok: false, error: "limited" };
+  }
+  const perQuote = await hitRateLimit(`quote-select:quote:${token.slice(0, 16)}`, SELECT_QUOTE_LIMIT.limit, SELECT_QUOTE_LIMIT.windowMs);
+  if (!perQuote.allowed) return { ok: false, error: "limited" };
 
   const result = await db.$transaction(async (tx) => {
-    const found = await tx.quote.findUnique({ where: { shareToken: token }, select: { id: true, agency: { select: { status: true } } } });
-    if (!found || found.agency.status !== "ACTIVE") return { ok: false, error: "gone" } as const;
-    await tx.$queryRaw`SELECT id FROM "Quote" WHERE id = ${found.id} FOR UPDATE`;
+    // Locked by the token itself, so a link withdrawn while this waited (new link, other client)
+    // finds nothing: Postgres checks the token again once the lock is free.
+    const [found] = await tx.$queryRaw<{ id: string }[]>`
+      SELECT q.id FROM "Quote" q JOIN "Agency" a ON a.id = q."agencyId"
+      WHERE q."shareToken" = ${token} AND a.status = 'ACTIVE' FOR UPDATE OF q`;
+    if (!found) return { ok: false, error: "gone" } as const;
     const quote = await tx.quote.findUniqueOrThrow({
       where: { id: found.id },
-      select: { id: true, status: true, createdById: true, stays: { select: { id: true, hotels: { select: { rooms: { select: { id: true } } } } } } },
+      select: {
+        id: true,
+        status: true,
+        createdById: true,
+        clientNote: true,
+        markupType: true,
+        markupValue: true,
+        stays: {
+          select: { id: true, selectedRoomId: true, hotels: { select: { rooms: { select: { id: true, netMinor: true, sellMinor: true, currency: true } } } } },
+        },
+      },
     });
     if (quote.status === "BOOKED") return { ok: false, error: "locked" } as const;
-    const stays = new Map(quote.stays.map((s) => [s.id, new Set(s.hotels.flatMap((h) => h.rooms.map((r) => r.id)))]));
+    const stays = new Map(quote.stays.map((s) => [s.id, new Map(s.hotels.flatMap((h) => h.rooms.map((r) => [r.id, r] as const)))]));
     for (const [stayId, roomId] of Object.entries(parsed.data.picks)) {
       if (roomId && !stays.get(stayId)?.has(roomId)) return { ok: false, error: "invalid" } as const;
     }
-    for (const stayId of stays.keys()) {
+    const changed =
+      quote.clientNote !== parsed.data.note || quote.stays.some((s) => (s.selectedRoomId ?? "") !== (parsed.data.picks[s.id] ?? ""));
+    for (const [stayId, rooms] of stays) {
       const roomId = parsed.data.picks[stayId] || null;
-      await tx.quoteStay.update({ where: { id: stayId }, data: { selectedRoomId: roomId } });
+      const room = roomId ? rooms.get(roomId) : undefined;
+      // The selling price the client saw, kept with the choice.
+      await tx.quoteStay.update({
+        where: { id: stayId },
+        data: { selectedRoomId: roomId, selectedSellMinor: room ? sellingMinor(room, quote) : null, selectedCurrency: room?.currency ?? null },
+      });
     }
     const anyPick = Object.values(parsed.data.picks).some(Boolean);
     await tx.quote.update({
@@ -335,12 +410,18 @@ export async function submitSelection(token: string, raw: { picks: Record<string
     });
     // The client is not a user: the quote's creator is recorded as the actor, with the reason.
     await audit(quote.createdById, "quote.client-selection", "Quote", quote.id, undefined, { picks: Object.values(parsed.data.picks).filter(Boolean).length }, tx);
-    return { ok: true, quoteId: quote.id } as const;
+    return { ok: true, quoteId: quote.id, changed } as const;
   });
   if (!result.ok) return result;
-  await notifyAgent(result.quoteId).catch((error: unknown) => {
-    console.error(`quote selection email failed: ${error instanceof Error ? error.name : "Error"}`);
-  });
+  // An email to the agent only when something changed, within the hourly cap.
+  if (result.changed) {
+    const { allowed } = await hitRateLimit(`quote-notify:${result.quoteId}`, NOTIFY_LIMIT.limit, NOTIFY_LIMIT.windowMs);
+    if (allowed) {
+      await notifyAgent(result.quoteId).catch((error: unknown) => {
+        console.error(`quote selection email failed: ${error instanceof Error ? error.name : "Error"}`);
+      });
+    }
+  }
   return { ok: true };
 }
 
@@ -361,7 +442,8 @@ async function notifyAgent(quoteId: string): Promise<void> {
     },
   });
   if (!q) return;
-  const who = q.client ? `${q.client.firstName} ${q.client.lastName}` : "The client";
+  // First name only: the subject line shows up in logs and notifications.
+  const who = q.client ? q.client.firstName : "The client";
   const lines = q.stays.map((s) =>
     s.selectedRoom
       ? `${s.destinationName}: ${s.selectedRoom.hotel.name}, ${s.selectedRoom.roomName}, ${formatMinor(sellingMinor(s.selectedRoom, q), s.selectedRoom.currency)}`
@@ -370,6 +452,6 @@ async function notifyAgent(quoteId: string): Promise<void> {
   await sendEmail({
     to: q.createdBy.email,
     subject: `${who} sent selections for ${quoteCode(q.number)}${q.title ? ` · ${q.title}` : ""}`,
-    text: `${who} sent selections:\n\n${lines.join("\n")}${q.clientNote ? `\n\nNote: ${q.clientNote}` : ""}\n\nOpen the quote: ${appUrl()}/quotes/${q.id}`,
+    text: `${who} sent selections:\n\n${lines.join("\n")}${q.clientNote ? `\n\nNote: ${q.clientNote}` : ""}\n\nThe quote always shows the latest choice: ${appUrl()}/quotes/${q.id}`,
   });
 }

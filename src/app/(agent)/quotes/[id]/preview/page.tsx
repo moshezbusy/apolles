@@ -15,8 +15,8 @@ type Params = Promise<{ id: string }>;
 export default async function QuotePreviewPage({ params }: { params: Params }) {
   const { agencyId } = await requireAgent();
   const { id } = await params;
-  const quote = await clientQuoteForAgency(agencyId, id);
-  if (!quote) notFound();
+  const data = await clientQuoteForAgency(agencyId, id);
+  if (!data) notFound();
   return (
     <>
       <div className="mx-auto w-[min(1000px,calc(100%-32px))] pt-4">
@@ -24,7 +24,7 @@ export default async function QuotePreviewPage({ params }: { params: Params }) {
           Preview: this is what your client sees. <Link href={`/quotes/${id}`} className={link}>Back to the quote</Link>
         </p>
       </div>
-      <Proposal quote={quote} token={null} logoSrc="/settings/logo" photos={await proposalPhotos(quote)} />
+      <Proposal quote={data.view} token={null} logoSrc="/settings/logo" photos={await proposalPhotos(data)} />
     </>
   );
 }

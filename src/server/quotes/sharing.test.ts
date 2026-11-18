@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/server/clients";
 import { db } from "@/server/db";
 import { addFromSearch, getQuote, removeRoom, updateQuoteSettings } from "@/server/quotes/quotes";
-import { clientQuote, emailQuote, recordView, shareLink, shareText, submitSelection, whatsappLink, whatsappUrl } from "@/server/quotes/sharing";
+import { sendEmail } from "@/server/email/port";
+import { clientQuote, emailQuote, recordView, renewLink, shareLink, shareText, submitSelection, whatsappLink, whatsappUrl } from "@/server/quotes/sharing";
 import type { Offer } from "@/server/supplier/types";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
@@ -32,9 +33,9 @@ const OFFER = (rateId: string, total: number): Offer => ({
   },
 });
 
-const sent: { to: string; subject: string; text: string }[] = [];
+const sent: { to: string; subject: string; text: string; fromName?: string; replyTo?: string }[] = [];
 vi.mock("@/server/email/port", () => ({
-  sendEmail: vi.fn(async (m: { to: string; subject: string; text: string }) => {
+  sendEmail: vi.fn(async (m: { to: string; subject: string; text: string; fromName?: string; replyTo?: string }) => {
     sent.push(m);
   }),
 }));
@@ -109,24 +110,73 @@ describe("sharing", () => {
     expect((await emailQuote(agentA, agencyA, quoteId)).ok).toBe(false);
     expect((await emailQuote(agentB, agencyB, quoteId)).ok).toBe(false);
   });
+
+  it("the email is in the agency's name, replies go to the agent", async () => {
+    await emailQuote(agentA, agencyA, quoteId);
+    expect(sent[0]).toMatchObject({ to: "daniel@example.com", fromName: "Sunrise Travel", replyTo: "a@sunrise.example" });
+  });
+
+  it("an email that fails is not marked sent, and says so", async () => {
+    vi.mocked(sendEmail).mockRejectedValueOnce(new Error("provider down"));
+    const result = await emailQuote(agentA, agencyA, quoteId);
+    expect(result.ok).toBe(false);
+    expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "DRAFT", sentAt: null });
+  });
+
+  it("a new link stops the old one; another agency cannot renew", async () => {
+    const old = await token();
+    expect((await renewLink(agentB, agencyB, quoteId)).ok).toBe(false);
+    const renewed = await renewLink(agentA, agencyA, quoteId);
+    const fresh = renewed.ok ? (renewed.url.split("/q/")[1] ?? "") : "";
+    expect(fresh).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(fresh).not.toBe(old);
+    expect(await clientQuote(old)).toBeNull();
+    expect((await clientQuote(fresh))?.view.title).toBe("Mexico Honeymoon");
+  });
+
+  it("adding the first client keeps the link", async () => {
+    await db.quote.update({ where: { id: quoteId }, data: { clientId: null } });
+    const t = await token();
+    const client = await db.client.findFirstOrThrow({ where: { agencyId: agencyA } });
+    await updateQuoteSettings(agentA, agencyA, quoteId, {
+      title: "Mexico Honeymoon", clientId: client.id, language: "EN", message: "", showCancellation: true, markupType: "PERCENT", markupValue: "10", adults: "2", childAges: "",
+    });
+    expect((await clientQuote(t))?.view.title).toBe("Mexico Honeymoon");
+  });
+
+  it("another client on the quote withdraws the link, the picks and the note", async () => {
+    const t = await token();
+    const stay = (await getQuote(agencyA, quoteId))?.stays[0];
+    const room = stay?.hotels[0]?.rooms[0];
+    if (!stay || !room) throw new Error("setup");
+    await submitSelection(t, { picks: { [stay.id]: room.id }, note: "Private note" }, "203.0.113.9");
+    const other = await createClient(agentA, agencyA, { firstName: "Noa", lastName: "Bar", phone: "+972 50 765 4321", email: "", nationality: "IL", notes: "" });
+    if (!other.ok) throw new Error("setup");
+    await updateQuoteSettings(agentA, agencyA, quoteId, {
+      title: "Mexico Honeymoon", clientId: other.id, language: "EN", message: "", showCancellation: true, markupType: "PERCENT", markupValue: "10", adults: "2", childAges: "",
+    });
+    expect(await clientQuote(t)).toBeNull();
+    expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "DRAFT", shareToken: null, clientNote: "", selectedAt: null });
+    expect(await db.quoteStay.findUniqueOrThrow({ where: { id: stay.id } })).toMatchObject({ selectedRoomId: null, selectedSellMinor: null });
+  });
 });
 
 describe("the client page", () => {
   it("shows selling prices only: never the net, the token of the supplier or ids of the supplier", async () => {
-    const view = await clientQuote(await token());
+    const view = (await clientQuote(await token()))?.view;
     expect(view?.title).toBe("Mexico Honeymoon");
     expect(view?.agency).toMatchObject({ name: "Sunrise Travel", phone: "+972 50 555 0100" });
     const rooms = view?.stays[0]?.hotels[0]?.rooms ?? [];
     expect(rooms.map((r) => r.sellMinor)).toEqual([110_000, 132_000]);
     expect(rooms[0]).toMatchObject({ freeUntil: "2099-04-01", dueAtHotel: { minor: 1200, currency: "USD", localMinor: 21000, localCurrency: "MXN" } });
     const json = JSON.stringify(view);
-    for (const hidden of ["100000", "netMinor", "secret-token", "rateId", "markup", "room-r1", "Levy"]) expect(json).not.toContain(hidden);
+    for (const hidden of ["100000", "netMinor", "secret-token", "rateId", "markup", "room-r1", "Levy", '"p1"', "a@sunrise.example"]) expect(json).not.toContain(hidden);
   });
 
   it("hides the cancellation dates when the quote says so; an unknown or bad token shows nothing", async () => {
     const t = await token();
     await db.quote.update({ where: { id: quoteId }, data: { showCancellation: false } });
-    expect((await clientQuote(t))?.stays[0]?.hotels[0]?.rooms[0]?.freeUntil).toBeNull();
+    expect((await clientQuote(t))?.view.stays[0]?.hotels[0]?.rooms[0]?.freeUntil).toBeNull();
     expect(await clientQuote("x".repeat(32))).toBeNull();
     expect(await clientQuote("../../etc")).toBeNull();
   });
@@ -154,11 +204,28 @@ describe("the client page", () => {
     expect(await submitSelection(t, { picks: { [stay.id]: "someone-elses-room" }, note: "" }, "203.0.113.9")).toEqual({ ok: false, error: "invalid" });
     expect(await submitSelection(t, { picks: { [stay.id]: r2.id }, note: "High floor,\r\nplease" }, "203.0.113.9")).toEqual({ ok: true });
     expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "SELECTED", clientNote: "High floor,\nplease" });
-    expect((await clientQuote(t))?.stays[0]?.selectedRoomId).toBe(r2.id);
+    expect((await clientQuote(t))?.view.stays[0]?.selectedRoomId).toBe(r2.id);
     expect(emailSink()).toContain("sent selections");
 
     await removeRoom(agentA, agencyA, r2.id);
-    expect((await clientQuote(t))?.stays[0]?.selectedRoomId).toBeNull();
+    expect((await clientQuote(t))?.view.stays[0]?.selectedRoomId).toBeNull();
+    expect(await db.quoteStay.findUniqueOrThrow({ where: { id: stay.id } })).toMatchObject({ selectedSellMinor: null, selectedCurrency: null });
+    expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "SENT" });
+  });
+
+  it("keeps the price the client saw; the agent is told once per change, not on every click", async () => {
+    const t = await token();
+    const stay = (await getQuote(agencyA, quoteId))?.stays[0];
+    const [r1, r2] = stay?.hotels[0]?.rooms ?? [];
+    if (!stay || !r1 || !r2) throw new Error("setup");
+    await submitSelection(t, { picks: { [stay.id]: r1.id }, note: "" }, "203.0.113.9");
+    expect(await db.quoteStay.findUniqueOrThrow({ where: { id: stay.id } })).toMatchObject({ selectedSellMinor: 110_000, selectedCurrency: "USD" });
+    await submitSelection(t, { picks: { [stay.id]: r1.id }, note: "" }, "203.0.113.9");
+    await submitSelection(t, { picks: { [stay.id]: r2.id }, note: "" }, "203.0.113.9");
+    // r1, then r1 again (nothing changed: no email), then r2: two emails.
+    expect(sent.filter((m) => m.to === "a@sunrise.example")).toHaveLength(2);
+    expect(sent[0]?.subject).toContain("Daniel");
+    expect(sent[0]?.subject).not.toContain("Levy");
   });
 
   it("a booked quote cannot change its selections", async () => {

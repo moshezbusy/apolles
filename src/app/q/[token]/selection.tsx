@@ -23,10 +23,8 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(quote.status === "SELECTED" ? { kind: "ok", text: t.lastSent } : null);
   const [pending, start] = useTransition();
-
-  useEffect(() => {
-    if (token) void recordViewAction(token);
-  }, [token]);
+  // After a send in this visit, the client may also clear every pick and send again.
+  const [sentOnce, setSentOnce] = useState(quote.status === "SELECTED");
 
   const rooms = useMemo(() => {
     const map = new Map<string, ClientRoom>();
@@ -52,13 +50,17 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
     if (!token) return;
     start(async () => {
       const result = await submitSelectionAction(token, picks, note);
-      if (result.ok) setMessage({ kind: "ok", text: t.sent });
+      if (result.ok) {
+        setMessage({ kind: "ok", text: t.sent });
+        setSentOnce(true);
+      }
       else setMessage({ kind: "error", text: result.error === "limited" ? t.limited : t.failed });
     });
   }
 
   return (
     <>
+      <ViewPing token={token} />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="max-w-[620px]">
           <h2 className="text-[20px] font-bold text-ink">{t.choose}</h2>
@@ -96,7 +98,7 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
               {stay.hotels.map((hotel) => {
                 const lowest = Math.min(...hotel.rooms.map((r) => r.sellMinor));
                 const isOpen = open[hotel.id] ?? hotel.rooms.some((r) => r.id === pick);
-                const photo = photos[hotel.propertyId];
+                const photo = photos[hotel.id];
                 return (
                   <article key={hotel.id} className={`rounded-[14px] border ${hotel.rooms.some((r) => r.id === pick) ? "border-brand" : "border-line"}`}>
                     <button
@@ -210,14 +212,23 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
             <button
               type="button"
               onClick={send}
-              disabled={!token || pending || (chosen.length === 0 && quote.status !== "SELECTED")}
+              disabled={!token || pending || (chosen.length === 0 && !sentOnce)}
               className="min-h-[44px] rounded-[12px] bg-brand px-5 text-[14px] font-bold text-paper hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {pending ? t.sending : quote.status === "SELECTED" ? t.update : t.send}
+              {pending ? t.sending : sentOnce ? t.update : t.send}
             </button>
           </div>
         </div>
       ) : null}
     </>
   );
+}
+
+// Counts the client's view from the browser (link previews and bots never run it). Nothing for
+// the agent's preview (no token).
+export function ViewPing({ token }: { token: string | null }) {
+  useEffect(() => {
+    if (token) void recordViewAction(token);
+  }, [token]);
+  return null;
 }

@@ -7,7 +7,9 @@ ADD COLUMN     "viewCount" INTEGER NOT NULL DEFAULT 0,
 ADD COLUMN     "viewedAt" TIMESTAMP(3);
 
 -- AlterTable
-ALTER TABLE "QuoteStay" ADD COLUMN     "selectedRoomId" TEXT;
+ALTER TABLE "QuoteStay" ADD COLUMN     "selectedCurrency" TEXT,
+ADD COLUMN     "selectedRoomId" TEXT,
+ADD COLUMN     "selectedSellMinor" INTEGER;
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Quote_shareToken_key" ON "Quote"("shareToken");

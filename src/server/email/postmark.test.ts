@@ -50,6 +50,14 @@ describe("postmark email adapter", () => {
     expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("a quote email: the agency's name on the platform's address, replies to the agency", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    await sendPostmarkEmail({ ...msg, fromName: 'Sunrise "Travel" <x>', replyTo: "office@sunrise.example" });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]?.body as string) as Record<string, unknown>;
+    expect(body.From).toBe('"Sunrise Travel x" <no-reply@apolles.test>');
+    expect(body.ReplyTo).toBe("office@sunrise.example");
+  });
+
   it("sends no HtmlBody when there is no html", async () => {
     fetchMock.mockResolvedValue(okResponse());
     await sendPostmarkEmail(msg);

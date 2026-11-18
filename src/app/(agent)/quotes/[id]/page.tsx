@@ -12,7 +12,7 @@ import { dateRange } from "../../search/dates";
 import { DestinationPicker } from "../../search/destination-picker";
 import { Stars, shortDate } from "../../search/parts";
 import { ActionForm } from "../action-form";
-import { addStayAction, copyLinkAction, emailAction, hotelAction, removeRoomAction, removeStayAction, roomDateAction, roomPriceAction, saveSettingsAction, whatsappAction } from "../actions";
+import { addStayAction, copyLinkAction, emailAction, hotelAction, removeRoomAction, removeStayAction, renewLinkAction, roomDateAction, roomPriceAction, saveSettingsAction, whatsappAction } from "../actions";
 import { shareUrl } from "@/server/quotes/sharing";
 import { SendPanel } from "./send-panel";
 import { StatusPill, guestsText } from "../parts";
@@ -227,7 +227,7 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
           shareUrl={quote.shareToken ? shareUrl(quote.shareToken) : null}
           hasClient={!!quote.client}
           hasEmail={!!quote.client?.email}
-          actions={{ copy: copyLinkAction, whatsapp: whatsappAction, email: emailAction }}
+          actions={{ copy: copyLinkAction, whatsapp: whatsappAction, email: emailAction, renew: renewLinkAction }}
         />
       </section>
 
@@ -478,6 +478,11 @@ function ClientSelections({ quote }: { quote: QuoteDetail }) {
                   {shortDate(stay.checkin)} to {shortDate(stay.checkout)}
                 </p>
                 <p className="mt-2 text-[14px] font-bold text-ink">{money(sellingMinor(room, quote), room.currency)}</p>
+                {stay.selectedSellMinor !== null && stay.selectedSellMinor !== sellingMinor(room, quote) ? (
+                  <p role="note" className="mt-1 text-xs font-semibold text-[#9b3b2e]">
+                    The client chose this at {money(stay.selectedSellMinor, stay.selectedCurrency ?? room.currency)}. The price changed since.
+                  </p>
+                ) : null}
               </>
             ) : (
               <p className="mt-1 text-[13px] text-muted">No hotel selected</p>
