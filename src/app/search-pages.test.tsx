@@ -256,7 +256,23 @@ describe("hotel page (screen 09)", () => {
     expect(html).toContain(`href="/search/${id}?sort=price_asc"`); // back to the same results
   });
 
-  it("shows the policies together (AP3), as plain text, never the supplier's HTML", async () => {
+  it("room filters: room name, free cancellation only, and price order", async () => {
+    const { id } = await searchAndRender("A");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { default: HotelPage } = await import("./(agent)/search/[id]/hotels/[propertyId]/page");
+    const render = async (q: Record<string, string>) =>
+      renderToStaticMarkup(await HotelPage({ params: Promise.resolve({ id, propertyId: "11" }), searchParams: Promise.resolve({ sort: "price_asc", ...q }) }));
+    const all = await render({});
+    expect(all).toContain('name="rq"');
+    const free = await render({ rf: "1" });
+    expect(free).not.toContain(">Non-refundable<");
+    expect(free).toContain("Clear filters");
+    const none = await render({ rq: "no such room" });
+    expect(none).toContain("No room matches these filters.");
+    expect(none).toContain('name="sort" value="price_asc"'); // the results filters are kept for "Back to hotels"
+  });
+
+    it("shows the policies together (AP3), as plain text, never the supplier's HTML", async () => {
     const { html } = await searchAndRender("A");
     const policies = html.slice(html.indexOf('id="policies"'));
     for (const text of ["Check-in", "3:00 PM", "Check-out", "11:00 AM", "Special instructions", "Front desk staff", "Fees", "Resort fee", "Know before you go", "No pets allowed"]) {
