@@ -14,6 +14,9 @@ vi.mock("next/navigation", () => ({
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
+  useRouter: vi.fn(() => ({ replace: vi.fn() })),
+  usePathname: vi.fn(() => "/book/new"),
+  useSearchParams: vi.fn(() => new URLSearchParams()),
 }));
 vi.mock("next/headers", () => ({
   headers: vi.fn(async () => new Headers({ "user-agent": "TestBrowser/1.0" })),
@@ -111,6 +114,32 @@ describe("booking screens", () => {
     const { createDraftAction } = await import("./(agent)/book/actions");
     const state = await createDraftAction(null, form({ s: snapshotId, p: "11", r: offers[0]!.rateId, b: offers[0]!.bedGroups[0]!.id, ...guestFields, given_2: "" }));
     expect(state).toMatchObject({ status: "error", values: { given_0: "Dana" } });
+  });
+
+  it("guest details: 'Choose from clients' fills the guests from the agency's own client only", async () => {
+    signInAs("A");
+    const { snapshotId, offers } = await seed();
+    const mine = await db.client.create({ data: { agencyId: "A", firstName: "Daniel", lastName: "Levy", phone: "+972 50 123 4567", phoneDigits: "972501234567", email: "daniel@example.com", nationality: "IL" } });
+    const theirs = await db.client.create({ data: { agencyId: "B", firstName: "Other", lastName: "Person", phone: "+1 212 555 0100", phoneDigits: "12125550100", nationality: "US" } });
+    const { default: GuestPage } = await import("./(agent)/book/new/page");
+    const rate = { s: snapshotId, p: "11", r: offers[0]!.rateId, b: offers[0]!.bedGroups[0]!.id };
+    const html = renderToStaticMarkup(await GuestPage({ searchParams: Promise.resolve({ ...rate, client: mine.id }) }));
+    expect(html).toContain("Choose from clients");
+    expect(html).toContain('value="Daniel"');
+    expect(html).toContain('value="daniel@example.com"');
+    expect(html).toContain('value="501234567"');
+    expect(html).not.toContain("Save the lead guest to Clients");
+    const other = renderToStaticMarkup(await GuestPage({ searchParams: Promise.resolve({ ...rate, client: theirs.id }) }));
+    expect(other).not.toContain("Other");
+    expect(other).toContain("Save the lead guest to Clients");
+  });
+
+  it("'Save the lead guest to Clients' makes a client card", async () => {
+    signInAs("A");
+    const { snapshotId, offers } = await seed();
+    const { createDraftAction } = await import("./(agent)/book/actions");
+    await redirectOf(createDraftAction(null, form({ s: snapshotId, p: "11", r: offers[0]!.rateId, b: offers[0]!.bedGroups[0]!.id, ...guestFields, saveClient: "on" })));
+    expect(await db.client.findFirst({ where: { agencyId: "A" } })).toMatchObject({ firstName: "Dana", lastName: "Levi", email: "dana@example.com", phoneDigits: "972501234567", nationality: "IL" });
   });
 
   it("review & book (11): price checked, breakdown, policies, guests with ages, balance and the terms box", async () => {

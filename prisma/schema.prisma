@@ -33,15 +33,27 @@ enum LedgerEntryType {
 }
 
 model Agency {
-  id            String        @id @default(cuid())
-  name          String
-  country       String // ISO 3166-1 alpha-2
-  status        AccountStatus @default(ACTIVE)
-  bankRefNo     Int           @unique @default(autoincrement())
-  bankReference String        @unique // e.g. "APL-1042"
-  phone         String? // business phone, set by the agent on /settings (shown on vouchers)
-  email         String? // business email, set by the agent on /settings (not a login email)
-  createdAt     DateTime      @default(now())
+  id                      String        @id @default(cuid())
+  name                    String
+  country                 String // ISO 3166-1 alpha-2
+  status                  AccountStatus @default(ACTIVE)
+  bankRefNo               Int           @unique @default(autoincrement())
+  bankReference           String        @unique // e.g. "APL-1042"
+  phone                   String? // business phone, set by the agent on /settings (shown on vouchers)
+  email                   String? // business email, set by the agent on /settings (not a login email)
+  // Client quote branding and defaults (mockup 20, plan 5d). Empty = the agency's own name,
+  // phone and the quote creator's name.
+  quoteDisplayName        String?
+  quoteAdvisorName        String?
+  quoteContactPhone       String?
+  quoteAdvisorEmail       String?
+  quoteBrandColor         String? // "#rrggbb"
+  defaultQuoteLanguage    QuoteLanguage @default(EN)
+  defaultQuoteMessage     String        @default("")
+  defaultMarkupType       MarkupType    @default(PERCENT)
+  defaultMarkupValue      Int           @default(0)
+  defaultShowCancellation Boolean       @default(true)
+  createdAt               DateTime      @default(now())
 
   users         User[]
   ledgerEntries LedgerEntry[]
@@ -464,11 +476,20 @@ model Booking {
   confirmedAt             DateTime?
   cancelledAt             DateTime?
 
-  agency Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
-  user   User           @relation(fields: [userId], references: [id], onDelete: Restrict)
-  events BookingEvent[]
+  // The quote and destination this booking was made from (plan 5d). When every destination with
+  // a client pick has a confirmed booking, the quote is booked.
+  quoteId     String?
+  quoteStayId String?
+
+  agency    Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  quote     Quote?         @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  quoteStay QuoteStay?     @relation(fields: [quoteStayId], references: [id], onDelete: SetNull)
+  events    BookingEvent[]
 
   @@index([agencyId, createdAt])
+  @@index([quoteId])
+  @@index([quoteStayId, status])
   @@index([agencyId, status, checkin])
   @@index([status, updatedAt])
   @@index([needsAttention])
@@ -544,6 +565,7 @@ model Quote {
   createdBy User        @relation(fields: [createdById], references: [id], onDelete: Restrict)
   client    Client?     @relation(fields: [clientId], references: [id], onDelete: SetNull)
   stays     QuoteStay[]
+  bookings  Booking[]
 
   @@index([agencyId, updatedAt(sort: Desc), id(sort: Desc)])
   @@index([agencyId, status, updatedAt(sort: Desc), id(sort: Desc)])
@@ -552,7 +574,7 @@ model Quote {
 
 // One destination of a quote, with its own dates.
 model QuoteStay {
-  id              String       @id @default(cuid())
+  id              String @id @default(cuid())
   quoteId         String
   destinationId   String // the region the agent searched (Destination.id)
   destinationName String
@@ -562,13 +584,14 @@ model QuoteStay {
 
   // The room the client chose here (plan 5c); cleared when that room is removed. The selling
   // price the client saw is kept with it, so a later price change shows as a difference.
-  selectedRoomId    String?    @unique
+  selectedRoomId    String? @unique
   selectedSellMinor Int?
   selectedCurrency  String?
 
   quote        Quote        @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   hotels       QuoteHotel[]
   selectedRoom QuoteRoom?   @relation("StaySelection", fields: [selectedRoomId], references: [id], onDelete: SetNull)
+  bookings     Booking[]
 
   @@index([quoteId, position])
 }

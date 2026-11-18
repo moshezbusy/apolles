@@ -291,6 +291,32 @@ export async function removeCompanion(actorUserId: string, agencyId: string, com
   });
 }
 
+// "Save the lead guest to Clients" (screen 10): a client card from the booking's lead guest.
+// Nationality starts as the agency's country; the agent can change it on the card.
+export async function createClientFromGuest(
+  actorUserId: string,
+  agencyId: string,
+  guest: { givenName: string; familyName: string; email: string; phoneCountry: string; phoneNumber: string },
+): Promise<Result> {
+  const agency = await db.agency.findUnique({ where: { id: agencyId }, select: { country: true } });
+  if (!agency) return { ok: false };
+  // The same guest saved again (a second booking) is not a second client.
+  const digits = phoneDigits(`+${guest.phoneCountry} ${guest.phoneNumber}`);
+  const same = await db.client.findFirst({
+    where: { agencyId, phoneDigits: digits, firstName: { equals: guest.givenName.trim(), mode: "insensitive" }, lastName: { equals: guest.familyName.trim(), mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (same) return { ok: true, id: same.id };
+  return createClient(actorUserId, agencyId, {
+    firstName: guest.givenName,
+    lastName: guest.familyName,
+    phone: `+${guest.phoneCountry.replace(/\D/g, "")} ${guest.phoneNumber}`,
+    email: guest.email,
+    nationality: agency.country,
+    notes: "",
+  });
+}
+
 // The agency's clients for a picker (the quote's "Client" field): name order, at most 500.
 export async function clientOptions(agencyId: string): Promise<{ id: string; firstName: string; lastName: string }[]> {
   return db.client.findMany({

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Booking, Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import { enqueue } from "@/server/jobs/queue";
+import { QuoteStayAlreadyBooked, QuoteStayChanged, claimQuoteStay, lockQuoteOfBooking, stayForDraft, syncQuoteOfBooking } from "@/server/quotes/quote-booking";
 import { findOffer } from "@/server/search/search";
 import { bookingSupplier } from "@/server/supplier";
 import { SupplierAuthError, SupplierError, SupplierRateLimited, SupplierRequestRejected } from "@/server/supplier/expedia/client";
@@ -72,6 +73,8 @@ export const draftInputSchema = z
     guests: z.array(guestSchema).min(1).max(14),
     leadEmail: z.string().trim().toLowerCase().max(254).email(),
     leadPhone: z.object({ countryCode: z.string().regex(/^\d{1,3}$/), number: z.string().regex(/^\d{4,14}$/) }).strict(),
+    // Plan 5d: the quote's destination this booking comes from (the agency's own, not yet booked).
+    quoteStayId: z.string().regex(/^[a-z0-9]{20,40}$/).optional(),
   })
   .strict();
 export type DraftInput = z.infer<typeof draftInputSchema>;
@@ -109,8 +112,17 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
     throw new BookingInputInvalid("Enter a name for every guest.");
   }
   const lead = input.guests[0]!;
+  let fromQuote: { quoteId: string; quoteStayId: string } | null = null;
+  if (input.quoteStayId) {
+    const stay = await stayForDraft(ctx.agencyId, input.quoteStayId, { propertyId: offer.propertyId, ...query });
+    if (stay === "not_found") throw new BookingInputInvalid("This quote was not found, or it is already booked.");
+    if (stay === "mismatch") throw new BookingInputInvalid("This rate is not the dates or hotel of this quote. Open the quote and choose Book again.");
+    fromQuote = stay;
+  }
   const data = {
     agencyId: ctx.agencyId,
+    quoteId: fromQuote?.quoteId ?? null,
+    quoteStayId: fromQuote?.quoteStayId ?? null,
     userId: ctx.userId,
     snapshotId: input.snapshotId,
     propertyId: offer.propertyId,
@@ -238,6 +250,7 @@ export async function book(
   let holdId: string;
   try {
     holdId = await withLedgerTransaction(async (tx) => {
+      await claimQuoteStay(tx, booking.id);
       const hold = await placeHoldInTx(tx, { agencyId: booking.agencyId, amountCents: booking.totalMinor, bookingRef: booking.reference, idempotencyKey: holdKey(booking.id, "hold") });
       await transition(tx, {
         bookingId: booking.id,
@@ -253,6 +266,7 @@ export async function book(
   } catch (error) {
     // Another click got here first: it books. Nothing of this attempt was written.
     if (error instanceof BookingStateConflict) return { kind: "already", bookingId: booking.id };
+    if (error instanceof QuoteStayAlreadyBooked || error instanceof QuoteStayChanged) return { kind: "review_again", message: error.message };
     if (error instanceof InsufficientFunds) {
       const { balanceCents } = await getBalance(booking.agencyId);
       return { kind: "insufficient", shortfallMinor: Math.max(0, booking.totalMinor - balanceCents) };
@@ -300,6 +314,7 @@ async function confirmBooking(
   // and finishes the move.
   await captureHold(holdId, holdKey(bookingId, "capture"));
   await db.$transaction(async (tx) => {
+    await lockQuoteOfBooking(tx, bookingId);
     await transition(tx, {
       bookingId,
       from: "PENDING_CONFIRMATION",
@@ -315,6 +330,8 @@ async function confirmBooking(
         bookToken: null,
       },
     });
+    // Plan 5d: from a quote, the quote is booked once all its picked destinations are.
+    await syncQuoteOfBooking(tx, bookingId);
     await queueEmail(tx, bookingId, "confirmed");
   });
 }
@@ -450,7 +467,10 @@ async function finishCancel(booking: Booking, actorUserId: string | null, reason
     await credit({ agencyId: booking.agencyId, type: "REFUND", amountCents: refund, reason: `Refund for cancelled booking ${booking.reference}`, idempotencyKey: holdKey(booking.id, "refund"), bookingRef: booking.reference });
   }
   await db.$transaction(async (tx) => {
+    await lockQuoteOfBooking(tx, booking.id);
     await transition(tx, { bookingId: booking.id, from: "CANCEL_PENDING", to: "CANCELLED", actorUserId, reason, data: { refundMinor: refund, cancelledAt: new Date() } });
+    // Plan 5d: a cancelled booking from a quote reopens the quote, so it can be booked again.
+    await syncQuoteOfBooking(tx, booking.id);
     await queueEmail(tx, booking.id, "cancelled");
   });
 }

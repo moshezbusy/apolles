@@ -1,8 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
+import { prepareQuoteBooking } from "@/server/quotes/quote-booking";
+import { supplierContextFrom } from "@/server/supplier-context";
 import {
   addFromSearch,
   addStay,
@@ -155,4 +158,17 @@ export async function renewLinkAction(quoteId: string): Promise<SendState> {
   if (!result.ok) return result;
   revalidatePath(`/quotes/${quoteId}`);
   return { ok: true, url: result.url };
+}
+
+// ---------- booking from the quote (plan 5d) ----------
+
+// "Book this room": the hotel is searched again and the guest details page opens for that rate,
+// with this destination, so the booking is linked to the quote. The price is checked as usual.
+export async function bookFromQuoteAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const { userId, agencyId } = await requireAgent();
+  const stayId = text(formData, "stayId", 64);
+  const result = await prepareQuoteBooking({ agencyId, userId, supplierContext: supplierContextFrom(await headers()) }, stayId);
+  if (!result.ok) return { status: "error", message: result.error };
+  const query = new URLSearchParams({ ...result.rate, stay: stayId });
+  redirect(`/book/new?${query.toString()}`);
 }

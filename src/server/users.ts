@@ -30,3 +30,8 @@ export async function createUser(
     },
   });
 }
+
+// The signed-in agent's own login (screen 20, "Account"): scoped by agency too.
+export async function getAccount(userId: string, agencyId: string): Promise<{ name: string; email: string } | null> {
+  return db.user.findFirst({ where: { id: userId, agencyId }, select: { name: true, email: true } });
+}

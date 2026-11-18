@@ -21,6 +21,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/server/auth/guards", () => ({ requireAgent: vi.fn() }));
 
 let agencyA: string;
@@ -156,4 +157,57 @@ it("the hotel page offers Add to quote with the agency's open quotes", async () 
   expect(html).toContain("Add to quote");
   expect(html.match(/<option value="([a-z0-9]+)" selected="">/)?.[1]).toBe(mine.id);
   expect(html.match(/<option value="c[a-z0-9]+"/g)?.length).toBe(1);
+});
+
+describe("booking from a quote (plan 5d)", () => {
+  async function pickedQuote() {
+    const added = await addFromSearch(agentA, agencyA, { quoteId: "new", snapshotId, propertyId: "p1", rateId: "rate1", bedGroupId: "bed1" });
+    if (!added.ok) throw new Error(added.error);
+    const stay = await db.quoteStay.findFirstOrThrow({ where: { quoteId: added.id }, include: { hotels: { include: { rooms: true } } } });
+    await db.quoteStay.update({ where: { id: stay.id }, data: { selectedRoomId: stay.hotels[0]!.rooms[0]!.id } });
+    await db.quote.update({ where: { id: added.id }, data: { status: "SELECTED", selectedAt: new Date() } });
+    return { quoteId: added.id, stayId: stay.id };
+  }
+
+  function confirmedBooking(quoteId: string, stayId: string) {
+    return db.booking.create({
+      data: {
+        reference: "APL-QUOTE001", agencyId: agencyA, userId: agentA, status: "CONFIRMED", confirmedAt: new Date("2099-01-05T10:00:00Z"), quoteId, quoteStayId: stayId,
+        propertyId: "p1", hotelName: "Secrets The Vine", hotelCity: "Cancun", roomId: "room1", roomName: "Ocean View King", rateId: "rate1", bedGroupId: "bed1", bedDescription: "1 King Bed",
+        checkin: "2099-04-10", checkout: "2099-04-12", adults: 2, childAges: [], leadGivenName: "Dana", leadFamilyName: "Levi", leadEmail: "dana@example.com", leadPhone: "+972501234567",
+        guests: [], refundable: true, totalMinor: 100_000, currency: "USD", price: {}, cancelPenalties: [], nonrefundableDateRanges: [], priceCheckToken: "tok",
+      },
+    });
+  }
+
+  it("the editor offers 'Book this room' on the client's pick, then shows the booking", async () => {
+    const { quoteId, stayId } = await pickedQuote();
+    const { default: Editor } = await import("./(agent)/quotes/[id]/page");
+    let html = renderToStaticMarkup(await Editor({ params: Promise.resolve({ id: quoteId }) }));
+    expect(html).toContain("Book this room");
+    await confirmedBooking(quoteId, stayId);
+    html = renderToStaticMarkup(await Editor({ params: Promise.resolve({ id: quoteId }) }));
+    expect(html).not.toContain("Book this room");
+    expect(html).toContain("APL-QUOTE001");
+  });
+
+  it("the list: 'Book selected option' on a selected quote, 'View booking' on a booked one", async () => {
+    const { quoteId, stayId } = await pickedQuote();
+    const { default: List } = await import("./(agent)/quotes/page");
+    let html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain(`href="/quotes/${quoteId}#selections"`);
+    expect(html).toContain("Book selected option");
+    const booking = await confirmedBooking(quoteId, stayId);
+    await db.quote.update({ where: { id: quoteId }, data: { status: "BOOKED" } });
+    html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain(`href="/bookings/${booking.id}"`);
+    expect(html).toContain("Secrets The Vine · APL-QUOTE001");
+  });
+
+  it("'Book this room' for another agency's quote finds nothing", async () => {
+    const { stayId } = await pickedQuote();
+    const { bookFromQuoteAction } = await import("./(agent)/quotes/actions");
+    signInAs(agencyB, agentB);
+    expect(await bookFromQuoteAction(null, form({ stayId }))).toEqual({ status: "error", message: "This quote was not found." });
+  });
 });

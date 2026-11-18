@@ -12,7 +12,8 @@ import { dateRange } from "../../search/dates";
 import { DestinationPicker } from "../../search/destination-picker";
 import { Stars, shortDate } from "../../search/parts";
 import { ActionForm } from "../action-form";
-import { addStayAction, copyLinkAction, emailAction, hotelAction, removeRoomAction, removeStayAction, renewLinkAction, roomDateAction, roomPriceAction, saveSettingsAction, whatsappAction } from "../actions";
+import { addStayAction, bookFromQuoteAction, copyLinkAction, emailAction, hotelAction, removeRoomAction, removeStayAction, renewLinkAction, roomDateAction, roomPriceAction, saveSettingsAction, whatsappAction } from "../actions";
+import { type StayBooking, stayBookings } from "@/server/quotes/quote-booking";
 import { shareUrl } from "@/server/quotes/sharing";
 import { SendPanel } from "./send-panel";
 import { StatusPill, guestsText } from "../parts";
@@ -42,7 +43,7 @@ function money(minor: number | null, currency = "USD"): string {
 export default async function QuoteEditorPage({ params }: { params: Params }) {
   const { agencyId } = await requireAgent();
   const { id } = await params;
-  const quote = await getQuote(agencyId, id);
+  const [quote, bookings] = await Promise.all([getQuote(agencyId, id), stayBookings(agencyId, id)]);
   if (!quote) notFound();
   const options = await clientOptions(agencyId);
   // The quote's own client is always in the list, so "Save changes" never drops it silently.
@@ -231,7 +232,7 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
         />
       </section>
 
-      <ClientSelections quote={quote} />
+      <ClientSelections quote={quote} bookings={bookings} />
 
       <section aria-labelledby="options-title" className="flex flex-col gap-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -444,7 +445,7 @@ function RoomBlock({ quote, room }: { quote: QuoteDetail; room: Room }) {
 }
 
 // "Client selections" (mockup 15): what the client sent from the client page, per destination.
-function ClientSelections({ quote }: { quote: QuoteDetail }) {
+function ClientSelections({ quote, bookings }: { quote: QuoteDetail; bookings: Map<string, StayBooking> }) {
   if (!quote.selectedAt) return null;
   const rows = quote.stays.map((stay) => {
     const hotel = stay.hotels.find((h) => h.rooms.some((r) => r.id === stay.selectedRoomId));
@@ -454,7 +455,7 @@ function ClientSelections({ quote }: { quote: QuoteDetail }) {
   const picked = rows.filter((r) => r.room);
   const total = picked.reduce((n, r) => n + (r.room ? sellingMinor(r.room, quote) : 0), 0);
   return (
-    <section aria-labelledby="selections-title" className="overflow-hidden rounded-[18px] border border-brand bg-white">
+    <section id="selections" aria-labelledby="selections-title" className="scroll-mt-24 overflow-hidden rounded-[18px] border border-brand bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 bg-brand px-5 py-3 text-paper">
         <div>
           <h2 id="selections-title" className="text-base font-bold">
@@ -483,6 +484,7 @@ function ClientSelections({ quote }: { quote: QuoteDetail }) {
                     The client chose this at {money(stay.selectedSellMinor, stay.selectedCurrency ?? room.currency)}. The price changed since.
                   </p>
                 ) : null}
+                <StayBookingLine booking={bookings.get(stay.id)} stayId={stay.id} canBook={quote.status !== "BOOKED"} />
               </>
             ) : (
               <p className="mt-1 text-[13px] text-muted">No hotel selected</p>
@@ -495,5 +497,29 @@ function ClientSelections({ quote }: { quote: QuoteDetail }) {
         <strong className="text-[16px] text-ink">{money(total)}</strong>
       </div>
     </section>
+  );
+}
+
+// Under a picked room: its booking, or "Book this room" (searches the hotel again, then the normal
+// guest details and review pages check the price).
+function StayBookingLine({ booking, stayId, canBook }: { booking: StayBooking | undefined; stayId: string; canBook: boolean }) {
+  if (booking) {
+    return (
+      <p className="mt-2 text-xs font-semibold text-brand">
+        {booking.status === "CONFIRMED" ? "Booked" : "Booking pending"} ·{" "}
+        <Link href={`/bookings/${booking.id}`} className="underline">
+          {booking.reference}
+        </Link>
+      </p>
+    );
+  }
+  if (!canBook) return null;
+  return (
+    <ActionForm action={bookFromQuoteAction} className="mt-2 flex flex-wrap gap-2">
+      <input type="hidden" name="stayId" value={stayId} />
+      <button type="submit" className={`${btnPrimary} min-h-9 px-3 text-xs`}>
+        Book this room
+      </button>
+    </ActionForm>
   );
 }

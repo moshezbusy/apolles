@@ -228,6 +228,21 @@ describe("the client page", () => {
     expect(sent[0]?.subject).not.toContain("Levy");
   });
 
+  it("the agency's quote branding (screen 20) is what the client sees and who the email is from", async () => {
+    await db.agency.update({
+      where: { id: agencyA },
+      data: { quoteDisplayName: "Sunrise Trips", quoteAdvisorName: "Dana C.", quoteContactPhone: "+972 52 000 1111", quoteAdvisorEmail: "dana@trips.example", quoteBrandColor: "#21436b" },
+    });
+    const view = (await clientQuote(await token()))?.view;
+    expect(view?.agency).toMatchObject({ name: "Sunrise Trips", phone: "+972 52 000 1111", brandColor: "#21436b" });
+    expect(view?.agentName).toBe("Dana C.");
+    await emailQuote(agentA, agencyA, quoteId);
+    expect(sent.at(-1)).toMatchObject({ fromName: "Sunrise Trips", replyTo: "dana@trips.example", subject: "Mexico Honeymoon · Sunrise Trips" });
+    // A color stored by any other way than the settings form never reaches the page's style.
+    await db.agency.update({ where: { id: agencyA }, data: { quoteBrandColor: "red;x:url(y)" } });
+    expect((await clientQuote(await token()))?.view.agency.brandColor).toBeNull();
+  });
+
   it("a booked quote cannot change its selections", async () => {
     const t = await token();
     await db.quote.update({ where: { id: quoteId }, data: { status: "BOOKED" } });

@@ -11,7 +11,7 @@ function text(value: FormDataEntryValue | null, max = 100): string {
 // Only the known fields are read (the form also carries Next.js internals).
 export function readGuestForm(formData: FormData): Record<string, string> {
   const values: Record<string, string> = {};
-  for (const key of ["s", "p", "r", "b", "leadEmail", "phoneCountry", "phoneNumber"]) values[key] = text(formData.get(key), 254);
+  for (const key of ["s", "p", "r", "b", "stay", "saveClient", "clientId", "leadEmail", "phoneCountry", "phoneNumber"]) values[key] = text(formData.get(key), 254);
   for (let i = 0; i < MAX_GUESTS; i++) {
     if (!formData.has(`given_${i}`) && !formData.has(`family_${i}`)) break;
     values[`given_${i}`] = text(formData.get(`given_${i}`), 60);
@@ -30,6 +30,8 @@ export function toDraftInput(values: Record<string, string>) {
     bedGroupId: values.b ?? "",
     guests,
     leadEmail: values.leadEmail ?? "",
+    // Plan 5d: only sent when the agent books from a quote.
+    ...(values.stay ? { quoteStayId: values.stay } : {}),
     // Spaces, dashes and brackets are allowed in what the agent types; only digits are kept.
     leadPhone: { countryCode: (values.phoneCountry ?? "").replace(/\D/g, ""), number: (values.phoneNumber ?? "").replace(/[\s().-]/g, "") },
   };

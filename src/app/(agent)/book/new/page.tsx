@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { alertInfo, card, link, pageTitle } from "@/components/ui";
 import { requireAgent } from "@/server/auth/guards";
+import { clientOptions } from "@/server/clients";
+import { bookingPrefill } from "@/server/quotes/quote-booking";
 import { findOffer } from "@/server/search/search";
 import { PriceDetails } from "../../_components/hotel-info";
 import { cancellationLabel } from "../../_components/rate-text";
 import { shortDate, stayText } from "../../search/parts";
 import { createDraftAction } from "../actions";
-import { GuestForm } from "./guest-form";
+import { ClientChooser, GuestForm } from "./guest-form";
 
 export const metadata: Metadata = { title: "Guest details | Apolles", robots: { index: false, follow: false } };
 
@@ -17,7 +19,8 @@ function one(v: string | string[] | undefined): string {
   return (Array.isArray(v) ? v[0] : v)?.slice(0, 128) ?? "";
 }
 
-// Screen 10: guest details for one rate of the agency's own search.
+// Screen 10: guest details for one rate of the agency's own search. From a quote (?stay=) the
+// quote's client fills the guests; "Choose from clients" (?client=) fills them from another client.
 export default async function GuestDetailsPage({ searchParams }: { searchParams: SearchParams }) {
   const { agencyId } = await requireAgent();
   const q = await searchParams;
@@ -34,6 +37,13 @@ export default async function GuestDetailsPage({ searchParams }: { searchParams:
     );
   }
   const { offer, bedGroup, hotel, query } = found;
+  const stayId = /^[a-z0-9]{20,40}$/.test(one(q.stay)) ? one(q.stay) : "";
+  const chosen = one(q.client);
+  const [prefill, clients] = await Promise.all([
+    // "none": the agent chose "New guest", so nothing is filled (not even the quote's client).
+    chosen === "none" ? Promise.resolve(null) : bookingPrefill(agencyId, chosen ? { clientId: chosen } : stayId ? { stayId } : {}),
+    clientOptions(agencyId),
+  ]);
   const stay = stayText({ nights: offer.price.nights, adults: query.adults, childAges: query.childAges });
   const guests = [
     ...Array.from({ length: query.adults }, (_, i) => `Adult ${i + 1}`),
@@ -44,7 +54,8 @@ export default async function GuestDetailsPage({ searchParams }: { searchParams:
       <section className={`${card} bg-white p-6`}>
         <h1 className={pageTitle}>Guest details</h1>
         <p className="mb-5 mt-1 text-sm text-muted">Enter every guest as on their passport.</p>
-        <GuestForm action={createDraftAction} rate={rate} guests={guests} />
+        {clients.length > 0 ? <ClientChooser clients={clients} selected={prefill?.clientId ?? ""} /> : null}
+        <GuestForm action={createDraftAction} rate={{ ...rate, ...(stayId ? { stay: stayId } : {}) }} guests={guests} prefill={prefill} />
       </section>
       <aside className={`${card} h-fit bg-white p-5`}>
         <h2 className="font-serif text-[22px] text-ink">{hotel.name}</h2>
