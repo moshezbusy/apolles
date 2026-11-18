@@ -15,6 +15,8 @@ export async function cancelAction(formData: FormData): Promise<void> {
   const bookingId = formData.get("bookingId");
   const expected = formData.get("expectedCharge");
   if (typeof bookingId !== "string" || typeof expected !== "string" || !/^\d{1,10}$/.test(expected)) notFound();
+  // Cancelling is final: the agent must tick "I understand" (screen 12).
+  if (formData.get("confirmFinal") !== "on") redirect(`/bookings/${bookingId.slice(0, 64)}?notice=cancel_confirm`);
   let outcome;
   try {
     outcome = await cancel({ agencyId, userId, supplierContext: supplierContextFrom(await headers()) }, bookingId, { expectedChargeMinor: Number(expected) });

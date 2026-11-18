@@ -7,9 +7,10 @@ import { supportContact } from "@/server/app-info";
 import { requireAgent } from "@/server/auth/guards";
 import { STATUS_LABEL } from "@/server/booking/list";
 import { cancelQuote, getBooking } from "@/server/booking/service";
-import type { CancelPenalty, PriceBreakdown } from "@/server/supplier/types";
-import { guestLines } from "../../_components/guests";
-import { CancellationPolicy, PriceDetails } from "../../_components/hotel-info";
+import { getContent } from "@/server/content/content-cache";
+import type { CancelPenalty, PriceBreakdown, PropertyContent } from "@/server/supplier/types";
+import { type StoredGuest, guestLines } from "../../_components/guests";
+import { CancellationPolicy, Policies, PriceDetails } from "../../_components/hotel-info";
 import { shortDate, stayText } from "../../search/parts";
 import { SellingPrice } from "../../_components/selling-price";
 import { cancelAction, sellingPriceAction } from "./actions";
@@ -24,6 +25,7 @@ const NOTICES: Record<string, { tone: "ok" | "info" | "error"; text: string }> =
   cancel_pending: { tone: "info", text: "The cancellation was sent. We are waiting for the hotel to confirm it; the refund follows." },
   cancel_refused: { tone: "error", text: "The hotel did not accept the cancellation. Contact Apolles support." },
   cancel_not_allowed: { tone: "error", text: "This booking cannot be cancelled online right now. Contact Apolles support." },
+  cancel_confirm: { tone: "info", text: "Nothing was cancelled. Tick \"I understand\" to confirm the cancellation." },
 };
 
 const PAID_DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -50,6 +52,13 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
   const stay = stayText({ nights: price.nights, adults: b.adults, childAges: b.childAges });
   const quote = cancelQuote(b, new Date());
   const support = supportContact();
+  // Hotel policies after booking too (EXP), best effort: the booking page works without them.
+  let content: PropertyContent | null = null;
+  try {
+    content = (await getContent([b.propertyId])).get(b.propertyId) ?? null;
+  } catch {
+    content = null;
+  }
 
   return (
     <main className="mx-auto w-[min(1100px,calc(100%-40px))] py-8">
@@ -112,12 +121,20 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
                 <dt className="font-semibold text-ink">Guests</dt>
                 <dd>
                   <ul>
-                    {guestLines(b.guests as { givenName: string; familyName: string }[], b.adults, b.childAges).map((g) => (
+                    {guestLines(b.guests as StoredGuest[], b.adults, b.childAges).map((g) => (
                       <li key={g}>{g}</li>
                     ))}
                   </ul>
                 </dd>
               </div>
+              {b.specialRequest ? (
+                <div className="sm:col-span-2">
+                  <dt className="font-semibold text-ink">Special requests</dt>
+                  <dd>
+                    {b.specialRequest} <span className="block text-xs text-muted">Sent to the hotel. Requests are not guaranteed.</span>
+                  </dd>
+                </div>
+              ) : null}
               <div>
                 <dt className="font-semibold text-ink">Lead guest contact</dt>
                 <dd>
@@ -146,6 +163,7 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
               <CancellationPolicy refundable={b.refundable} penalties={b.cancelPenalties as unknown as CancelPenalty[]} nonrefundableDateRanges={b.nonrefundableDateRanges as unknown as { start: string; end: string }[]} />
             </div>
           </section>
+          {content ? <Policies content={content} /> : null}
         </div>
 
         <aside className="flex flex-col gap-5">
@@ -187,14 +205,25 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
               </h2>
               {quote.allowed ? (
                 <form action={cancelAction} className="mt-2 flex flex-col gap-3 text-[13px]">
-                  <p>
-                    Cancelling today costs <strong>{formatUsd(quote.chargeMinor)}</strong>. {formatUsd(quote.refundMinor)} goes back to your balance once the hotel confirms the cancellation.
-                  </p>
+                  <dl className="grid grid-cols-[1fr_auto] gap-y-1.5 rounded-[12px] bg-[#f7f5f0] p-3">
+                    <dt className="text-muted">Paid</dt>
+                    <dd className="text-right font-semibold tabular-nums">{formatUsd(quote.chargeMinor + quote.refundMinor)}</dd>
+                    <dt className="text-muted">Charge if you cancel now</dt>
+                    <dd className="text-right font-semibold tabular-nums text-[#9b3b2e]">{formatUsd(quote.chargeMinor)}</dd>
+                    <dt className="text-muted">Returned to your balance</dt>
+                    <dd className="text-right font-bold tabular-nums text-brand">{formatUsd(quote.refundMinor)}</dd>
+                  </dl>
+                  <p className="text-muted">The refund is added once the hotel confirms the cancellation.</p>
                   <input type="hidden" name="bookingId" value={b.id} />
                   <input type="hidden" name="expectedCharge" value={quote.chargeMinor} />
+                  <label className="flex items-start gap-2">
+                    <input type="checkbox" name="confirmFinal" required className="mt-0.5 h-4 w-4 accent-[#9b3b2e]" />
+                    <span>I understand that cancelling is final and cannot be undone.</span>
+                  </label>
                   <button type="submit" className={btnDanger}>
-                    Confirm cancellation
+                    Cancel this booking
                   </button>
+                  <p className="text-xs text-muted">Changed your mind? Do nothing: the booking stays as it is.</p>
                 </form>
               ) : (
                 <p className="mt-2 text-[13px] text-muted">{quote.reason}</p>

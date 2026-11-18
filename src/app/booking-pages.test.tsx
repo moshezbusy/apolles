@@ -134,6 +134,24 @@ describe("booking screens", () => {
     expect(other).toContain("Save the lead guest to Clients");
   });
 
+  it("guest details (10): steps, titles and special requests reach the booking", async () => {
+    signInAs("A");
+    const { snapshotId, offers } = await seed();
+    const { default: GuestPage } = await import("./(agent)/book/new/page");
+    const rate = { s: snapshotId, p: "11", r: offers[0]!.rateId, b: offers[0]!.bedGroups[0]!.id };
+    const html = renderToStaticMarkup(await GuestPage({ searchParams: Promise.resolve(rate) }));
+    for (const t of ["Guest details", "Review &amp; book", 'name="title_0"', 'value="LATE_CHECKOUT"', 'name="requestText"']) expect(html).toContain(t);
+    const { createDraftAction } = await import("./(agent)/book/actions");
+    const data = form({ ...rate, ...guestFields, title_0: "MRS", requestText: "Quiet room" });
+    data.append("requests", "HIGH_FLOOR");
+    const id = (await redirectOf(createDraftAction(null, data))).replace("/book/", "");
+    expect(await db.booking.findUniqueOrThrow({ where: { id } })).toMatchObject({ specialRequest: "High floor. Quiet room" });
+    const { default: ReviewPage } = await import("./(agent)/book/[id]/page");
+    const review = renderToStaticMarkup(await ReviewPage({ params: Promise.resolve({ id }) }));
+    expect(review).toContain("Mrs Dana Levi");
+    expect(review).toContain("High floor. Quiet room");
+  });
+
   it("'Save the lead guest to Clients' makes a client card", async () => {
     signInAs("A");
     const { snapshotId, offers } = await seed();
@@ -214,7 +232,10 @@ describe("booking screens", () => {
     expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString()).toBe("%PDF-");
 
     const { cancelAction } = await import("./(agent)/bookings/[id]/actions");
-    expect(await redirectOf(cancelAction(form({ bookingId: id, expectedCharge: "0" })))).toBe(`/bookings/${id}?notice=cancelled`);
+    // Without "I understand" nothing is cancelled.
+    expect(await redirectOf(cancelAction(form({ bookingId: id, expectedCharge: "0" })))).toBe(`/bookings/${id}?notice=cancel_confirm`);
+    expect((await db.booking.findUniqueOrThrow({ where: { id } })).status).toBe("CONFIRMED");
+    expect(await redirectOf(cancelAction(form({ bookingId: id, expectedCharge: "0", confirmFinal: "on" })))).toBe(`/bookings/${id}?notice=cancelled`);
     expect((await db.booking.findUniqueOrThrow({ where: { id } })).status).toBe("CANCELLED");
     expect(await getBalance("A")).toEqual({ balanceCents: 500_000, heldCents: 0 });
   });

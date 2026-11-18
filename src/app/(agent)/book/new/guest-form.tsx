@@ -8,6 +8,13 @@ import type { BookFormState } from "../form-state";
 
 type Action = (previous: BookFormState, formData: FormData) => Promise<BookFormState>;
 
+const REQUESTS = [
+  { id: "EARLY_CHECKIN", label: "Early check-in" },
+  { id: "LATE_CHECKOUT", label: "Late check-out" },
+  { id: "HIGH_FLOOR", label: "High floor" },
+  { id: "HONEYMOON", label: "Honeymoon" },
+];
+
 // Screen 10: a given and family name for every guest (lead guest first), and the lead guest's
 // email and phone (TR4, TR5). The rate is passed on as ids only.
 export function GuestForm({
@@ -40,6 +47,15 @@ export function GuestForm({
             {title}
             {i === 0 ? <span className="ml-2 text-xs font-normal text-muted">Lead guest: the booking is in this name</span> : null}
           </legend>
+          <label className={`${label} sm:col-span-2 sm:max-w-[140px]`}>
+            Title
+            <select name={`title_${i}`} defaultValue={v[`title_${i}`] ?? ""} className={input}>
+              <option value="">—</option>
+              <option value="MR">Mr</option>
+              <option value="MRS">Mrs</option>
+              <option value="MS">Ms</option>
+            </select>
+          </label>
           <label className={label}>
             Given name
             <input type="text" name={`given_${i}`} required maxLength={60} autoComplete="off" defaultValue={v[`given_${i}`] ?? ""} className={input} />
@@ -64,6 +80,24 @@ export function GuestForm({
           Phone number
           <input type="tel" name="phoneNumber" required maxLength={20} placeholder="50 123 4567" defaultValue={v.phoneNumber ?? ""} className={input} />
         </label>
+      </fieldset>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-2 text-sm font-bold text-ink">
+          Special requests <span className="ml-1 text-xs font-normal text-muted">Optional. Sent to the hotel and not guaranteed.</span>
+        </legend>
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {REQUESTS.map((r) => (
+            <label key={r.id} className="flex items-center gap-2 text-sm text-ink">
+              <input type="checkbox" name="requests" value={r.id} defaultChecked={(v.requests ?? "").split(",").includes(r.id)} className="h-4 w-4 accent-brand" />
+              {r.label}
+            </label>
+          ))}
+        </div>
+        <label className={label}>
+          Additional request
+          <input type="text" name="requestText" maxLength={300} defaultValue={v.requestText ?? ""} placeholder="e.g. Quiet room, twin beds if possible" className={input} />
+        </label>
+        <p className="text-xs text-muted">Do not write personal, ID, card or phone details here.</p>
       </fieldset>
       {prefill ? (
         <input type="hidden" name="clientId" value={prefill.clientId} />

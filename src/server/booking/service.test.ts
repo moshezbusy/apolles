@@ -87,6 +87,34 @@ describe("booking: draft and review", () => {
     await resetTestDb();
   });
 
+  it("guest titles and special requests are kept; requests go to the hotel; numbers that may be IDs or cards are refused", async () => {
+    const { snapshotId, offers } = await setup();
+    const offer = offers[0]!;
+    const base = { snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, leadEmail: "d@example.com", leadPhone: { countryCode: "972", number: "501234567" } };
+    const titled = [{ ...guests[0]!, title: "MRS" as const }, guests[1]!, guests[2]!];
+    const { bookingId } = await createDraft(ctx(), { ...base, guests: titled, specialRequests: { options: ["LATE_CHECKOUT", "HIGH_FLOOR"], text: "Celebrating an anniversary" } }, { now: NOW });
+    const b = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
+    expect(b.specialRequest).toBe("Late check-out. High floor. Celebrating an anniversary");
+    expect((b.guests as { title?: string }[])[0]).toMatchObject({ title: "MRS", givenName: "Dana" });
+    for (const bad of ["Passport 12345678", "4111.1111.1111.1111", "4111/1111/1111/1111", "+972.50.123.4567", "050_123_4567", "１２３４５６７８", "٠٥٠١٢٣٤٥٦٧", "mail me a@b.com"]) {
+      await expect(createDraft(ctx(), { ...base, guests, specialRequests: { options: [], text: bad } }, { now: NOW }), bad).rejects.toThrow(/no ID, card or phone numbers/i);
+    }
+    // Characters Rapid re-encodes are left out, not refused; the whole text has one limit.
+    const ok = await createDraft(ctx(), { ...base, guests, specialRequests: { options: [], text: "Twin beds (if possible) & quiet" } }, { now: NOW });
+    expect((await db.booking.findUniqueOrThrow({ where: { id: ok.bookingId } })).specialRequest).toBe("Twin beds if possible quiet");
+    await expect(
+      createDraft(ctx(), { ...base, guests, specialRequests: { options: ["EARLY_CHECKIN", "LATE_CHECKOUT", "HIGH_FLOOR", "HONEYMOON"], text: "x".repeat(290) } }, { now: NOW }),
+    ).rejects.toThrow(/up to 300 characters/);
+    await expect(createDraft(ctx(), { ...base, guests, specialRequests: { options: ["FREE_UPGRADE"], text: "" } }, { now: NOW })).rejects.toThrow(/Check the guest names/);
+    // Sent with the booking.
+    let sentRequest: string | undefined;
+    const s = supplier({ book: async (i) => { sentRequest = i.specialRequest; return new FakeSupplierAdapter().book(i); } });
+    const review = await prepareReview(ctx(), bookingId, { supplier: s, now: later(1) });
+    if (review.kind !== "ready") throw new Error("not ready");
+    await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: review.booking.totalMinor }, { supplier: s, now: later(2) });
+    expect(sentRequest).toBe("Late check-out. High floor. Celebrating an anniversary");
+  });
+
   it("a draft takes the rate and price from the agency's own search, never from the browser", async () => {
     const { snapshotId, offers } = await setup();
     const offer = offers[0]!;
