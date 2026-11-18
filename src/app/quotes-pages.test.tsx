@@ -154,6 +154,6 @@ it("the hotel page offers Add to quote with the agency's open quotes", async () 
     await HotelPage({ params: Promise.resolve({ id: snapshotId, propertyId: "p1" }), searchParams: Promise.resolve({ quote: mine.id }) }),
   );
   expect(html).toContain("Add to quote");
-  expect(html).toContain(`<option value="${mine.id}" selected="">`);
+  expect(html.match(/<option value="([a-z0-9]+)" selected="">/)?.[1]).toBe(mine.id);
   expect(html.match(/<option value="c[a-z0-9]+"/g)?.length).toBe(1);
 });
