@@ -50,7 +50,7 @@ async function createAdmin(email = "admin@example.com") {
 }
 
 async function sessionIdFor(userId: string): Promise<string> {
-  const session = await getSession(await createSession(userId));
+  const session = await getSession(await createSession(userId, { verified: true }));
   if (!session) throw new Error("no session");
   return session.sessionId;
 }

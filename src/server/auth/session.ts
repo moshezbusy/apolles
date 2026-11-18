@@ -42,7 +42,7 @@ export type SessionContext = {
 // Returns the raw token for the cookie. The raw token is never stored or logged.
 // `verified`: an agent on a known device (or not an agent). Otherwise the session waits for the
 // email sign-in code (plan 8e).
-export async function createSession(userId: string, opts: { verified?: boolean } = { verified: true }): Promise<string> {
+export async function createSession(userId: string, opts: { verified: boolean }): Promise<string> {
   const rawToken = generateRawToken();
   const createdAt = new Date();
   await db.session.create({
@@ -50,7 +50,7 @@ export async function createSession(userId: string, opts: { verified?: boolean }
       tokenHash: hashToken(rawToken),
       userId,
       createdAt,
-      emailVerifiedAt: opts.verified === false ? null : createdAt,
+      emailVerifiedAt: opts.verified ? createdAt : null,
       expiresAt: new Date(createdAt.getTime() + SESSION_TTL_MS),
     },
   });

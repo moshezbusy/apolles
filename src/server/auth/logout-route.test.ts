@@ -19,8 +19,8 @@ describe("POST /logout", () => {
   beforeEach(async () => {
     await resetTestDb();
     const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN" });
-    token = await createSession(admin.id);
-    other = await createSession(admin.id);
+    token = await createSession(admin.id, { verified: true });
+    other = await createSession(admin.id, { verified: true });
   });
 
   it("same origin → deletes this session only, clears the cookie, 303 to /login", async () => {

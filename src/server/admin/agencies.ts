@@ -144,6 +144,8 @@ export async function setAgencyStatus(
     await tx.agency.update({ where: { id: agencyId }, data: { status } });
     if (status === "SUSPENDED") {
       await tx.session.deleteMany({ where: { user: { agencyId } } });
+      // Plan 8e: and every remembered device, so a reactivation asks for a sign-in code again.
+      await tx.trustedDevice.deleteMany({ where: { user: { agencyId } } });
     }
     await audit(
       actor,

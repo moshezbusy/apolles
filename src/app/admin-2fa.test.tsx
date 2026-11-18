@@ -70,7 +70,7 @@ async function signedInAdmin({ confirmed }: { confirmed: boolean }) {
       data: { totpSecret: SECRET, totpConfirmedAt: new Date() },
     });
   }
-  jar.set(SESSION_COOKIE, await createSession(admin.id));
+  jar.set(SESSION_COOKIE, await createSession(admin.id, { verified: true }));
   return admin;
 }
 

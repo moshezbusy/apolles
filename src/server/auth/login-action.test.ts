@@ -94,6 +94,21 @@ describe("loginAction", () => {
     expect(session?.user.id).toBe(agent.id);
   });
 
+  it("known device: the sign-in is complete, so earlier wrong passwords stop counting", async () => {
+    const agent = await createAgent();
+    await db.user.update({ where: { id: agent.id }, data: { failedLogins: 2 } });
+    jar.set(DEVICE_COOKIE, await trustDevice(agent.id));
+    await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/search");
+    expect((await db.user.findUniqueOrThrow({ where: { id: agent.id } })).failedLogins).toBe(0);
+  });
+
+  it("new device: a correct password alone does not clear earlier wrong tries (the code does)", async () => {
+    const agent = await createAgent();
+    await db.user.update({ where: { id: agent.id }, data: { failedLogins: 2 } });
+    await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/login/verify");
+    expect((await db.user.findUniqueOrThrow({ where: { id: agent.id } })).failedLogins).toBe(2);
+  });
+
   it("admin success → redirects to /admin", async () => {
     await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN", passwordHash });
     await expect(
@@ -207,7 +222,7 @@ describe("loginAction", () => {
       await expect(
         loginAction(null, form({ email: "agent@example.com", password: GOOD })),
       ).rejects.toThrow("NEXT_REDIRECT");
-      const rows = await db.rateLimitBucket.findMany();
+      const rows = await db.rateLimitBucket.findMany({ where: { key: { startsWith: "signin:ip:" } } });
       expect(rows.map((r) => [r.key, r.count])).toEqual([["signin:ip:203.0.113.7", 2]]);
     });
 

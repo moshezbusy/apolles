@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import { createSession, getSession } from "./session";
-import { MAX_CODE_ATTEMPTS, forgetDevices, isTrustedDevice, sendSignInCode, trustDevice, verifySignInCode } from "./signin-code";
+import { MAX_FAILED_LOGINS } from "./lockout-policy";
+import { forgetDevices, isTrustedDevice, sendSignInCode, trustDevice, verifySignInCode } from "./signin-code";
 
 const sent: { to: string; subject: string; text: string }[] = [];
 vi.mock("@/server/email/port", () => ({
@@ -40,7 +41,7 @@ describe("sign-in code on a new device (plan 8e)", () => {
     expect((await db.session.findUniqueOrThrow({ where: { id: sessionId } })).codeHash).toBeNull();
   });
 
-  it("expires after 10 minutes; 5 wrong codes end the session; at most 3 codes per sign-in", async () => {
+  it("expires after 10 minutes (no strike); 3 wrong codes lock the account and end the session; at most 3 codes per sign-in", async () => {
     const { sessionId, token } = await agentSession();
     const now = new Date();
     await sendSignInCode(sessionId, now);
@@ -50,10 +51,40 @@ describe("sign-in code on a new device (plan 8e)", () => {
     expect(await sendSignInCode(sessionId)).toBe("limited");
     const right = codeOf();
     const wrong = right === "000000" ? "111111" : "000000";
-    for (let i = 1; i < MAX_CODE_ATTEMPTS; i++) expect(await verifySignInCode(sessionId, wrong)).toBe("wrong");
+    for (let i = 1; i < MAX_FAILED_LOGINS; i++) expect(await verifySignInCode(sessionId, wrong)).toBe("wrong");
     expect(await verifySignInCode(sessionId, wrong)).toBe("locked");
     expect(await getSession(token)).toBeNull();
     expect(await verifySignInCode(sessionId, right)).toBe("locked");
+  });
+
+  it("wrong codes count against the account: signing in again gives no fresh guesses (3 lock it, sessions end)", async () => {
+    const { sessionId } = await agentSession();
+    await sendSignInCode(sessionId);
+    const right = codeOf();
+    const wrong = right === "000000" ? "111111" : "000000";
+    expect(await verifySignInCode(sessionId, wrong)).toBe("wrong");
+    // "Signing in again": a new unverified session for the same user.
+    const s2 = (await getSession(await createSession("u1", { verified: false })))!.sessionId;
+    await sendSignInCode(s2);
+    expect(await verifySignInCode(s2, wrong)).toBe("wrong");
+    expect(await verifySignInCode(s2, wrong)).toBe("locked");
+    const user = await db.user.findUniqueOrThrow({ where: { id: "u1" } });
+    expect(user.lockedUntil).not.toBeNull();
+    expect(await db.session.count({ where: { userId: "u1" } })).toBe(0);
+  });
+
+  it("a resend keeps the wrong tries of the sign-in; at most 6 code emails per user per hour", async () => {
+    const { sessionId } = await agentSession();
+    await sendSignInCode(sessionId);
+    const wrong = codeOf() === "000000" ? "111111" : "000000";
+    expect(await verifySignInCode(sessionId, wrong)).toBe("wrong");
+    await sendSignInCode(sessionId);
+    expect((await db.session.findUniqueOrThrow({ where: { id: sessionId } })).codeAttempts).toBe(1);
+    // The right code resets the account's run of failures.
+    expect(await verifySignInCode(sessionId, codeOf())).toBe("ok");
+    expect((await db.user.findUniqueOrThrow({ where: { id: "u1" } })).failedLogins).toBe(0);
+    for (let i = 0; i < 5; i++) await sendSignInCode((await getSession(await createSession("u1", { verified: false })))!.sessionId);
+    expect(await sendSignInCode((await getSession(await createSession("u1", { verified: false })))!.sessionId)).toBe("limited");
   });
 
   it("a known device is the user's own, not expired, and forgotten on a password change", async () => {

@@ -138,7 +138,7 @@ describe("attempt slot reserved before the secret is checked", () => {
       const url = new URL((await startTotpEnrollment(admin.id)).otpauthUrl);
       const secret = url.searchParams.get("secret") ?? "";
       await db.user.update({ where: { id: admin.id }, data: { totpConfirmedAt: new Date(), failedLogins } });
-      const session = await getSession(await createSession(admin.id));
+      const session = await getSession(await createSession(admin.id, { verified: true }));
       if (!session) throw new Error("no session");
       return { admin, secret, sessionId: session.sessionId };
     }
@@ -353,7 +353,7 @@ describe("attempt slot reserved before the secret is checked", () => {
       });
     }
 
-    it("agent with 2 strikes, correct password: one slot is taken while it is checked, then the counter is reset to 0", async () => {
+    it("agent with 2 strikes, correct password: one slot is taken while it is checked, then given back (the sign-in code resets it)", async () => {
       const user = await agent(2);
       let duringCheck: number | undefined;
       gatePassword({ enter: async () => {} }, async () => {
@@ -363,7 +363,7 @@ describe("attempt slot reserved before the secret is checked", () => {
       expect(await login(user.email, GOOD)).toMatchObject({ ok: true, needsTotp: false });
       expect(duringCheck).toBe(3);
       const row = await userRow(user.id);
-      expect(row.failedLogins).toBe(0);
+      expect(row.failedLogins).toBe(2);
       expect(row.lockedUntil).toBeNull();
     });
   });
@@ -395,7 +395,7 @@ describe("attempt slot reserved before the secret is checked", () => {
         where: { id: admin.id },
         data: { failedLogins, ...(confirmed ? { totpConfirmedAt: new Date() } : {}) },
       });
-      const session = await getSession(await createSession(admin.id));
+      const session = await getSession(await createSession(admin.id, { verified: true }));
       if (!session) throw new Error("no session");
       return { admin, secret, sessionId: session.sessionId };
     }
@@ -508,7 +508,7 @@ describe("attempt slot reserved before the secret is checked", () => {
         where: { id: admin.id },
         data: { totpConfirmedAt: new Date(), failedLogins: 3, lockedUntil: null, attemptReservedAt },
       });
-      const session = await getSession(await createSession(admin.id));
+      const session = await getSession(await createSession(admin.id, { verified: true }));
       if (!session) throw new Error("no session");
       return { admin, secret, sessionId: session.sessionId };
     }
@@ -528,7 +528,7 @@ describe("attempt slot reserved before the secret is checked", () => {
       it(`login, stuck at 3 with a reservation ${label} → LOCKED unchecked, a 15-minute lock, one alert, sessions ended; the correct password works after 15 minutes`, async () => {
         const start = fakeDateFromNow();
         const user = await stuckAgent(age === null ? null : new Date(start - age));
-        await createSession(user.id);
+        await createSession(user.id, { verified: true });
         const verifySpy = vi.spyOn(password, "verifyPassword");
 
         expect(await login(user.email, GOOD)).toEqual({ ok: false, reason: "LOCKED" });
@@ -549,7 +549,7 @@ describe("attempt slot reserved before the secret is checked", () => {
     it("TOTP, stuck at 3 with an old reservation → LOCKED unchecked, a 15-minute lock, one alert, every session ended; a code works after 15 minutes", async () => {
       const start = fakeDateFromNow();
       const { admin, secret, sessionId } = await stuckAdmin(new Date(start - THREE_MIN));
-      const otherDevice = await createSession(admin.id);
+      const otherDevice = await createSession(admin.id, { verified: true });
       await db.session.updateMany({ where: { userId: admin.id }, data: { totpVerifiedAt: new Date() } });
       vi.mocked(verify).mockClear();
 
@@ -564,7 +564,7 @@ describe("attempt slot reserved before the secret is checked", () => {
       expect(await getSession(otherDevice)).toBeNull();
 
       vi.setSystemTime(start + FIFTEEN_MIN);
-      const fresh = await getSession(await createSession(admin.id));
+      const fresh = await getSession(await createSession(admin.id, { verified: true }));
       const later = await generate({ secret, epoch: Math.floor(Date.now() / 1000) });
       expect(await checkTotpForSession(fresh!.sessionId, later)).toBe("OK");
     });
@@ -579,7 +579,7 @@ describe("attempt slot reserved before the secret is checked", () => {
 
     it("login, at 3 with a fresh reservation (slot 3 still in flight) → LOCKED, no lock written, no alert, sessions kept", async () => {
       const user = await stuckAgent(new Date(Date.now() - 10_000));
-      await createSession(user.id);
+      await createSession(user.id, { verified: true });
       expect(await login(user.email, GOOD)).toEqual({ ok: false, reason: "LOCKED" });
       const row = await userRow(user.id);
       expect(row.lockedUntil).toBeNull();

@@ -115,9 +115,9 @@ describe("password tokens", () => {
   it("consume OK → all sessions of user deleted, lockout cleared", async () => {
     const agent = await createAgent();
     const other = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN" });
-    await createSession(agent.id);
-    await createSession(agent.id);
-    await createSession(other.id);
+    await createSession(agent.id, { verified: true });
+    await createSession(agent.id, { verified: true });
+    await createSession(other.id, { verified: true });
     await db.user.update({
       where: { id: agent.id },
       data: { failedLogins: 2, lockedUntil: new Date(Date.now() + 10 * 60 * 1000) },
@@ -143,7 +143,7 @@ describe("password tokens", () => {
       role: "ADMIN",
       passwordHash: await hashPassword(OLD),
     });
-    await createSession(admin.id);
+    await createSession(admin.id, { verified: true });
     const lockedUntil = new Date(Date.now() + 10 * 60 * 1000);
     await db.user.update({ where: { id: admin.id }, data: { failedLogins: 2, lockedUntil } });
     const raw = await issuePasswordToken(admin.id, "RESET");

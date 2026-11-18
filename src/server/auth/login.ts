@@ -64,7 +64,9 @@ export async function login(email: string, password: string): Promise<LoginResul
       return (await recordFailedAttempt(user, slot)) === "LOCKED" ? LOCKED : INVALID;
     }
     // The password is right: give the slot back (how and why: below).
-    stillUnlocked = await releaseAttempt(user.id, user.role === "ADMIN" ? "RETURN" : "RESET");
+    // Both roles have a second step (admin TOTP, agent email code on a new device), so a right
+    // password only hands its own slot back; the second step resets the counter (R36, plan 8e).
+    stillUnlocked = await releaseAttempt(user.id, "RETURN");
   } catch (error) {
     // Fail closed: an error after the slot was taken (argon2, a DB timeout) counts as a failed
     // attempt, so the slot is never left used for good. At the last slot this is a normal

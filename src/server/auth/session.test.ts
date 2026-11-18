@@ -31,7 +31,7 @@ describe("sessions", () => {
 
   it("stores only the sha256 of a 32-byte random token, expiring 12h after creation", async () => {
     const agent = await createAgent();
-    const raw = await createSession(agent.id);
+    const raw = await createSession(agent.id, { verified: true });
 
     expect(Buffer.from(raw, "base64url")).toHaveLength(32);
     const rows = await db.session.findMany();
@@ -45,7 +45,7 @@ describe("sessions", () => {
 
   it("valid agent session → user and agency, without secrets", async () => {
     const agent = await createAgent();
-    const raw = await createSession(agent.id);
+    const raw = await createSession(agent.id, { verified: true });
 
     const session = await getSession(raw);
     expect(session).not.toBeNull();
@@ -58,7 +58,7 @@ describe("sessions", () => {
 
   it("valid admin session → user without agency", async () => {
     const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN" });
-    const session = await getSession(await createSession(admin.id));
+    const session = await getSession(await createSession(admin.id, { verified: true }));
     expect(session?.user.role).toBe("ADMIN");
     expect(session).not.toHaveProperty("agency");
   });
@@ -73,7 +73,7 @@ describe("sessions", () => {
     const start = new Date("2026-11-08T10:00:00Z");
     vi.setSystemTime(start);
     const agent = await createAgent();
-    const raw = await createSession(agent.id);
+    const raw = await createSession(agent.id, { verified: true });
 
     vi.setSystemTime(start.getTime() + SESSION_TTL_MS - 1000);
     expect(await getSession(raw)).not.toBeNull();
@@ -86,27 +86,27 @@ describe("sessions", () => {
 
   it("suspended agency → getSession null", async () => {
     const agent = await createAgent();
-    const raw = await createSession(agent.id);
+    const raw = await createSession(agent.id, { verified: true });
     await db.agency.update({ where: { id: agent.agencyId! }, data: { status: "SUSPENDED" } });
     expect(await getSession(raw)).toBeNull();
   });
 
   it("suspended user → getSession null", async () => {
     const agent = await createAgent();
-    const raw = await createSession(agent.id);
+    const raw = await createSession(agent.id, { verified: true });
     await db.user.update({ where: { id: agent.id }, data: { status: "SUSPENDED" } });
     expect(await getSession(raw)).toBeNull();
   });
 
   it("AGENT without an agency → getSession null", async () => {
     const agent = await createUser({ email: "orphan@example.com", name: "A", role: "AGENT" });
-    expect(await getSession(await createSession(agent.id))).toBeNull();
+    expect(await getSession(await createSession(agent.id, { verified: true }))).toBeNull();
   });
 
   it("destroySession deletes only that session", async () => {
     const agent = await createAgent();
-    const a = await createSession(agent.id);
-    const b = await createSession(agent.id);
+    const a = await createSession(agent.id, { verified: true });
+    const b = await createSession(agent.id, { verified: true });
     await destroySession(a);
     expect(await getSession(a)).toBeNull();
     expect(await getSession(b)).not.toBeNull();
@@ -116,9 +116,9 @@ describe("sessions", () => {
     const agency = await createAgency();
     const one = await createAgent("one@example.com", agency.id);
     const two = await createAgent("two@example.com", agency.id);
-    await createSession(one.id);
-    await createSession(one.id);
-    const other = await createSession(two.id);
+    await createSession(one.id, { verified: true });
+    await createSession(one.id, { verified: true });
+    const other = await createSession(two.id, { verified: true });
 
     await destroyUserSessions(one.id);
     expect(await db.session.count({ where: { userId: one.id } })).toBe(0);

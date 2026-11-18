@@ -45,7 +45,7 @@ async function signInAdmin() {
     where: { id: admin.id },
     data: { totpSecret: generateSecret(), totpConfirmedAt: new Date() },
   });
-  const token = await createSession(admin.id);
+  const token = await createSession(admin.id, { verified: true });
   await db.session.updateMany({ where: { userId: admin.id }, data: { totpVerifiedAt: new Date() } });
   jar.set(SESSION_COOKIE, token);
   return admin;
@@ -71,7 +71,7 @@ describe("wallet server actions", () => {
     await expect(recordAdjustmentAction(null, adjustForm())).rejects.toThrow("NEXT_REDIRECT:/login");
 
     const agent = await createUser({ email: "ag@example.com", name: "Ag", role: "AGENT", agencyId });
-    jar.set(SESSION_COOKIE, await createSession(agent.id));
+    jar.set(SESSION_COOKIE, await createSession(agent.id, { verified: true }));
     await expect(confirmTopupAction(null, topupForm())).rejects.toThrow("NEXT_REDIRECT:/login");
     await expect(recordPayoutAction(null, payoutForm())).rejects.toThrow("NEXT_REDIRECT:/login");
     await expect(recordAdjustmentAction(null, adjustForm())).rejects.toThrow("NEXT_REDIRECT:/login");
@@ -85,7 +85,7 @@ describe("wallet server actions", () => {
       where: { id: admin.id },
       data: { totpSecret: generateSecret(), totpConfirmedAt: new Date() },
     });
-    jar.set(SESSION_COOKIE, await createSession(admin.id));
+    jar.set(SESSION_COOKIE, await createSession(admin.id, { verified: true }));
     await expect(confirmTopupAction(null, topupForm())).rejects.toThrow("NEXT_REDIRECT:/admin/2fa");
     expect(await db.ledgerEntry.count()).toBe(0);
   });

@@ -29,7 +29,7 @@ async function agentSession() {
     data: { name: "Agency", country: "IL", bankReference: "APL-0001" },
   });
   const agent = await createUser({ email: "agent@example.com", name: "A", role: "AGENT", agencyId: agency.id });
-  cookieJar.set(SESSION_COOKIE, await createSession(agent.id));
+  cookieJar.set(SESSION_COOKIE, await createSession(agent.id, { verified: true }));
   return { agent, agency };
 }
 
@@ -44,7 +44,7 @@ async function adminSession({ confirmed = false, verified = false }: AdminState 
       data: { totpSecret: generateSecret(), totpConfirmedAt: new Date() },
     });
   }
-  const token = await createSession(admin.id);
+  const token = await createSession(admin.id, { verified: true });
   if (verified) {
     await db.session.updateMany({ where: { userId: admin.id }, data: { totpVerifiedAt: new Date() } });
   }
@@ -64,7 +64,7 @@ describe("auth guards", () => {
     cookieJar.set(SESSION_COOKIE, await createSession(agent.id, { verified: false }));
     await expect(requireAgent()).rejects.toThrow(/^NEXT_REDIRECT:\/login\/verify$/);
     expect(await requireAgentPendingCode()).toMatchObject({ userId: agent.id, email: "agent@example.com" });
-    cookieJar.set(SESSION_COOKIE, await createSession(agent.id));
+    cookieJar.set(SESSION_COOKIE, await createSession(agent.id, { verified: true }));
     await expect(requireAgentPendingCode()).rejects.toThrow("NEXT_REDIRECT:/search");
   });
 
@@ -116,7 +116,7 @@ describe("auth guards", () => {
 
   it("verification belongs to one session: a new session of the same admin is not verified", async () => {
     const { admin } = await adminSession({ confirmed: true, verified: true });
-    cookieJar.set(SESSION_COOKIE, await createSession(admin.id));
+    cookieJar.set(SESSION_COOKIE, await createSession(admin.id, { verified: true }));
     await expect(requireAdmin()).rejects.toThrow(/^NEXT_REDIRECT:\/admin\/2fa$/);
   });
 
