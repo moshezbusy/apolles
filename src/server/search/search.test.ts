@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
+import { seedRateLimit } from "@/test/rate-limit";
 import { SupplierRateLimited } from "@/server/supplier/expedia/client";
 import type { AvailabilityQuery, Offer, PropertyOffers, SupplierAdapter } from "@/server/supplier/types";
 import { suggestDestinations } from "./destinations";
@@ -282,8 +283,18 @@ describe("search service", () => {
     });
     await expect(startSearch(ctx(), input, { adapter: failing.adapter, now: NOW })).rejects.toBeInstanceOf(SearchUnavailable);
     const { adapter } = fakeAdapter(everyone);
-    for (let i = 0; i < 29; i++) await startSearch(ctx(), input, { adapter, now: NOW });
+    // 30 searches already made this minute, in this window and the next (seedRateLimit), so the
+    // result does not depend on a minute boundary passing during the test (it once did on CI).
+    await db.rateLimitBucket.deleteMany({ where: { key: "search:agency:A" } });
+    await seedRateLimit("search:agency:A", 30, 60_000);
     await expect(startSearch(ctx(), input, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchRateLimited);
+  });
+
+  it("the 30th search in a minute is still allowed", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    await seedRateLimit("search:agency:A", 29, 60_000);
+    await expect(startSearch(ctx(), input, { adapter, now: NOW })).resolves.toMatchObject({ snapshotId: expect.any(String) });
   });
 
   it("a search older than 30 minutes is expired and shows nothing", async () => {

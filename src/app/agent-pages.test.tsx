@@ -66,16 +66,16 @@ describe("Header", () => {
     expect(html).toContain("Apolles");
   });
 
-  it("shows Search as a link; Quotes and Reporting disabled with 'Coming soon', not as links", () => {
+  it("shows Search as a link, Quotes as a menu (All quotes, Clients), and Reporting disabled with 'Coming soon'", () => {
     // The text right after each disabled <span> tag, and right after each <a> tag.
     const disabledTexts = [...html.matchAll(/<span[^>]*aria-disabled="true"[^>]*>([^<]*)/g)].map((m) => m[1] ?? "");
     const linkTexts = [...html.matchAll(/<a[^>]*>([^<]*)/g)].map((m) => m[1] ?? "");
     expect(html).toMatch(/<a[^>]*href="\/search"[^>]*>Search<\/a>/);
-    for (const item of ["Quotes", "Reporting"]) {
-      expect(disabledTexts.some((text) => text.startsWith(item)), `${item} disabled`).toBe(true);
-      expect(linkTexts.some((text) => text.startsWith(item)), `${item} not a link`).toBe(false);
-    }
-    expect(html.match(/>Coming soon</g)?.length).toBe(2);
+    expect(html).toMatch(/<a[^>]*href="\/quotes"[^>]*>All quotes<\/a>/);
+    expect(html).toMatch(/<a[^>]*href="\/clients"[^>]*>Clients<\/a>/);
+    expect(disabledTexts.some((text) => text.startsWith("Reporting")), "Reporting disabled").toBe(true);
+    expect(linkTexts.some((text) => text.startsWith("Reporting")), "Reporting not a link").toBe(false);
+    expect(html.match(/>Coming soon</g)?.length).toBe(1);
   });
 
   it("shows the balance chip of the mockup: the amount with a small 'Balance' label", () => {
@@ -89,7 +89,8 @@ describe("Header", () => {
   });
 
   it("keeps the agency name readable by screen readers on phones (sr-only, not display:none)", () => {
-    const summary = html.match(/<summary[^>]*>[\s\S]*?<\/summary>/)?.[0] ?? "";
+    // The agency menu (the header also has the Quotes menu).
+    const summary = [...html.matchAll(/<summary[^>]*>[\s\S]*?<\/summary>/g)].map((m) => m[0]).find((s) => s.includes("Test Travel")) ?? "";
     expect(summary).toMatch(/<span class="[^"]*sr-only[^"]*">Test Travel<\/span>/);
     expect(summary).not.toMatch(/class="hidden[^"]*">Test Travel</);
   });

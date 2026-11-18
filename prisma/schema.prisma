@@ -48,6 +48,7 @@ model Agency {
   logo          AgencyLogo?
   bookings      Booking[]
   clients       Client[]
+  quotes        Quote[]
 
   @@index([createdAt, id])
 }
@@ -70,6 +71,7 @@ model Client {
 
   agency     Agency            @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   companions ClientCompanion[]
+  quotes     Quote[]
 
   @@index([agencyId, updatedAt(sort: Desc), id(sort: Desc)])
 }
@@ -133,6 +135,7 @@ model User {
   auditLogs      AuditLog[]
   bookings       Booking[]
   bookingEvents  BookingEvent[]
+  quotes         Quote[]
 
   @@index([agencyId])
 }
@@ -485,4 +488,114 @@ model BookingEvent {
   actor   User?   @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
 
   @@index([bookingId, createdAt])
+}
+
+// Quotes (screens 14, 15; plan 5b). A quote is the agency's offer to one client: destinations,
+// hotels and room options copied from the agency's own searches. One room per quote, like a
+// booking in phase 1. Prices are the supplier's net total (what the agency would pay) and the
+// agency's own selling price to its client. Every query is scoped by agencyId
+// (src/server/quotes/quotes.ts).
+enum QuoteStatus {
+  DRAFT
+  SENT
+  VIEWED
+  SELECTED
+  BOOKED
+}
+
+enum QuoteLanguage {
+  EN
+  HE
+}
+
+enum MarkupType {
+  PERCENT // markupValue in basis points: 1000 = 10%
+  FIXED // markupValue in cents, per room
+}
+
+model Quote {
+  id               String        @id @default(cuid())
+  number           Int           @unique @default(autoincrement()) // shown as "Q-" + number
+  agencyId         String
+  createdById      String
+  clientId         String?
+  title            String        @default("")
+  language         QuoteLanguage @default(EN)
+  message          String        @default("")
+  showCancellation Boolean       @default(true)
+  markupType       MarkupType    @default(PERCENT)
+  markupValue      Int           @default(0)
+  adults           Int           @default(2)
+  childAges        Int[]         @default([])
+  status           QuoteStatus   @default(DRAFT)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  agency    Agency      @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  createdBy User        @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  client    Client?     @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  stays     QuoteStay[]
+
+  @@index([agencyId, updatedAt(sort: Desc), id(sort: Desc)])
+  @@index([agencyId, status, updatedAt(sort: Desc), id(sort: Desc)])
+  @@index([clientId])
+}
+
+// One destination of a quote, with its own dates.
+model QuoteStay {
+  id              String       @id @default(cuid())
+  quoteId         String
+  destinationId   String // the region the agent searched (Destination.id)
+  destinationName String
+  checkin         String // YYYY-MM-DD
+  checkout        String
+  position        Int
+
+  quote  Quote        @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  hotels QuoteHotel[]
+
+  @@index([quoteId, position])
+}
+
+model QuoteHotel {
+  id         String   @id @default(cuid())
+  stayId     String
+  propertyId String
+  name       String
+  city       String
+  starRating Decimal? @db.Decimal(2, 1)
+  agencyPick Boolean  @default(false) // "Agency pick" star
+  position   Int
+
+  stay  QuoteStay   @relation(fields: [stayId], references: [id], onDelete: Cascade)
+  rooms QuoteRoom[]
+
+  @@unique([stayId, propertyId])
+  @@index([stayId, position])
+}
+
+// One room option: a copy of one rate of a search. The price-check token is never stored: a
+// booking from a quote searches and checks the price again (plan 5d).
+model QuoteRoom {
+  id                String   @id @default(cuid())
+  hotelId           String
+  roomId            String
+  rateId            String
+  bedGroupId        String
+  roomName          String
+  bedDescription    String
+  refundable        Boolean
+  freeCancelUntil   String? // the supplier's last free-cancellation day, YYYY-MM-DD (hotel's calendar)
+  clientCancelUntil String? // the date the client sees; never later than freeCancelUntil
+  netMinor          Int // the supplier's inclusive total for the stay (BP5), never recomputed
+  currency          String
+  price             Json // PriceBreakdown as copied from the search (fees paid at the hotel, BP4)
+  sellMinor         Int? // a price the agent typed; null = from the quote's markup
+  position          Int
+  createdAt         DateTime @default(now())
+
+  hotel QuoteHotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@unique([hotelId, rateId, bedGroupId])
+  @@index([hotelId, position])
 }

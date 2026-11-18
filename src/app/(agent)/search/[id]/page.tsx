@@ -11,6 +11,7 @@ import { dateRange } from "../dates";
 import { HotelPhoto, Stars, formValuesOf, shortDate, stayText } from "../parts";
 import { SearchForm } from "../search-form";
 import { loadMoreAction } from "./actions";
+import { quoteParam } from "../quote-param";
 
 export const metadata: Metadata = { title: "Search results | Apolles", robots: { index: false, follow: false } };
 
@@ -56,6 +57,9 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
   const result = await listResults(agencyId, id, options, now);
   if (!result) notFound();
   const kept = filterParams(options);
+  // Plan 5b: the quote this search adds to ("+ Add hotel" on a quote) stays on every link.
+  const quoteId = quoteParam(query.quote);
+  if (quoteId) kept.set("quote", quoteId);
   const pageHref = (cursor: string | null) => {
     const p = new URLSearchParams(kept);
     if (cursor) p.set("cursor", cursor);
@@ -72,7 +76,7 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
   return (
     <main className="mx-auto w-[min(1260px,calc(100%-40px))] py-6">
       <section className={`${card} p-4`}>
-        <SearchForm action={startSearchAction} values={formValuesOf(summary)} minDate={minDate} maxDate={maxDate} compact />
+        <SearchForm action={startSearchAction} values={formValuesOf(summary)} minDate={minDate} maxDate={maxDate} compact quoteId={quoteId} />
       </section>
 
       {summary.expired ? (

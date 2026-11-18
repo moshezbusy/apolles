@@ -13,3 +13,11 @@ export async function suggestDestinations(q: string, limit = 10): Promise<{ id: 
     ORDER BY "propertyCount" DESC, "name" ASC
     LIMIT ${take}`;
 }
+
+// One active destination by id, with the label the search box shows (plan 5b: Search opened from
+// a quote is filled with the quote's destination). null when it is gone or not active.
+export async function destinationById(id: string): Promise<{ id: string; label: string } | null> {
+  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
+  const row = await db.destination.findFirst({ where: { id, active: true }, select: { id: true, nameFull: true } });
+  return row ? { id: row.id, label: row.nameFull } : null;
+}
