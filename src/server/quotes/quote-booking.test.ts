@@ -135,6 +135,14 @@ describe("book the client's selection from a quote", () => {
     expect(audit).not.toBeNull();
   });
 
+  it("a quote with no markup and no typed price gives a booking with no selling price", async () => {
+    await db.quote.update({ where: { id: quoteId }, data: { markupValue: 0 } });
+    const [stay] = await quoteStays();
+    await pick(stay!.id, stay!.rooms[0]!.id);
+    const { bookingId } = await bookStay(stay!.id);
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ sellMarkupType: null, sellMarkupValue: null });
+  });
+
   it("two destinations: the quote is booked only when both are", async () => {
     await addStay("2027-04-12", "2027-04-15");
     const [first, second] = await quoteStays();

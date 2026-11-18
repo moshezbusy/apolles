@@ -158,13 +158,13 @@ export default async function ReportingPage({
           note={
             t.changeBp === null
               ? "No sales in the period before"
-              : `${t.changeBp >= 0 ? "+" : ""}${percent(t.changeBp)} vs the period before`
+              : `${t.changeBp >= 0 ? "+" : ""}${percent(t.changeBp)} vs the same days before`
           }
         />
         <Kpi
           title="Paid from balance"
           value={formatUsd(t.paidMinor)}
-          note="Net cost of the bookings"
+          note="Confirmed bookings and cancellation charges"
         />
         <Kpi
           title="Your profit"

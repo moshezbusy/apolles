@@ -8,7 +8,8 @@ import { parseMarkup, sellingMinor } from "@/server/quotes/pricing";
 // It never changes what Apolles charges and is never on the voucher. It is a markup on the
 // charged total (the supplier's price, checked at booking), so it follows a price change.
 
-const CANCELLED: BookingStatus[] = ["CANCELLED", "CANCELLED_BY_SUPPLIER"];
+// No sale: cancelled (the refund comes back), failed or expired (nothing was booked).
+const NO_SALE: BookingStatus[] = ["CANCELLED", "CANCELLED_BY_SUPPLIER", "FAILED", "EXPIRED"];
 
 export type Sale = { netMinor: number; saleMinor: number; profitMinor: number; priced: boolean };
 
@@ -20,7 +21,7 @@ export function bookingSale(b: {
   sellMarkupValue: number | null;
 }): Sale {
   const priced = b.sellMarkupType !== null && b.sellMarkupValue !== null;
-  if (CANCELLED.includes(b.status)) return { netMinor: 0, saleMinor: 0, profitMinor: 0, priced };
+  if (NO_SALE.includes(b.status)) return { netMinor: 0, saleMinor: 0, profitMinor: 0, priced };
   const netMinor = b.chargedMinor ?? b.totalMinor;
   if (!priced) return { netMinor, saleMinor: netMinor, profitMinor: 0, priced };
   const saleMinor = sellingMinor({ netMinor, sellMinor: null }, { markupType: b.sellMarkupType!, markupValue: b.sellMarkupValue! });

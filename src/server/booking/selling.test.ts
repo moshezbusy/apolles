@@ -58,6 +58,10 @@ describe("selling price of a booking (screens 11, 12)", () => {
     expect(bookingSale({ ...base, status: "DRAFT", chargedMinor: null, sellMarkupType: "FIXED", sellMarkupValue: 100 })).toMatchObject({ netMinor: 100_001, saleMinor: 100_101 });
     // Cancelled: no sale and no profit.
     expect(bookingSale({ ...base, status: "CANCELLED", sellMarkupType: "FIXED", sellMarkupValue: 100 })).toEqual({ netMinor: 0, saleMinor: 0, profitMinor: 0, priced: true });
+    // Failed: nothing was booked or paid.
+    expect(bookingSale({ ...base, status: "FAILED", sellMarkupType: "FIXED", sellMarkupValue: 100 })).toMatchObject({ saleMinor: 0, profitMinor: 0 });
+    // A price below the net (typed on a quote) is a loss, not hidden.
+    expect(bookingSale({ ...base, sellMarkupType: "FIXED", sellMarkupValue: -1_000 })).toMatchObject({ saleMinor: 98_999, profitMinor: -1_000 });
   });
 
   it("is set and cleared for the agency's own booking only, with an audit row, never changing the charge", async () => {

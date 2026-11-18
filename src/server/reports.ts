@@ -6,7 +6,8 @@ import { getBalance, listEntriesWithBalance } from "@/server/wallet/ledger";
 
 // Reporting (screen 19, plan 6): the agency's own bookings of a period, by booking date (UTC),
 // in USD. Sales use the agency's selling price (reports only, never charged); a booking without
-// one counts its net, with no profit. Cancelled bookings count as no sale. Every sum is done in
+// one counts its net, with no profit. Cancelled bookings count as no sale. "Paid from balance" is
+// what was really deducted: confirmed bookings and cancellation charges (not amounts only held). Every sum is done in
 // SQL, scoped by agencyId, over the (agencyId, createdAt) index.
 
 export type ReportRange = "month" | "7d" | "last_month" | "year" | "custom";
@@ -48,7 +49,7 @@ export function reportPeriod(q: { range?: string | undefined; from?: string | un
       return { range: "last_month", ...cur, prevFrom: prev.from, prevTo: prev.to };
     }
     case "year":
-      return { range: "year", from: `${y}-01-01`, to: `${y}-12-31`, prevFrom: `${y - 1}-01-01`, prevTo: `${y - 1}-12-31` };
+      return { range: "year", from: `${y}-01-01`, to: `${y}-12-31`, prevFrom: `${y - 1}-01-01`, prevTo: sameDays(`${y}-01-01`, today, `${y - 1}-01-01`, `${y - 1}-12-31`) };
     case "custom":
       if (realDay(q.from) && realDay(q.to) && q.from <= q.to && (ms(q.to) - ms(q.from)) / DAY + 1 <= MAX_DAYS) {
         return { range: "custom", from: q.from, to: q.to, ...sameLength(q.from, q.to) };
@@ -57,7 +58,14 @@ export function reportPeriod(q: { range?: string | undefined; from?: string | un
   }
   const cur = month(y, m);
   const prev = month(y, m - 1);
-  return { range: "month", ...cur, prevFrom: prev.from, prevTo: prev.to };
+  return { range: "month", ...cur, prevFrom: prev.from, prevTo: sameDays(cur.from, today, prev.from, prev.to) };
+}
+
+// A period still running is compared with the same number of days of the period before (1 to 18
+// November with 1 to 18 October), never with a whole period.
+function sameDays(from: string, today: string, prevFrom: string, prevTo: string): string {
+  const elapsed = (ms(today) - ms(from)) / DAY;
+  return iso(Math.min(ms(prevTo), ms(prevFrom) + elapsed * DAY));
 }
 
 export type Report = {
@@ -91,6 +99,7 @@ function periodRows(agencyId: string, from: string, to: string): Prisma.Sql {
     FROM (
       SELECT "status"::text AS status, "checkin", "checkout", "hotelName", "hotelCity", "propertyId", "createdAt",
         COALESCE("chargedMinor", "totalMinor")::bigint AS net,
+        COALESCE("cancelChargeMinor", 0)::bigint AS cancel_charge,
         "sellMarkupType"::text AS mt, "sellMarkupValue"::bigint AS mv
       FROM "Booking"
       WHERE "agencyId" = ${agencyId}
@@ -108,7 +117,7 @@ async function totals(agencyId: string, from: string, to: string): Promise<Total
     WITH r AS (${periodRows(agencyId, from, to)})
     SELECT count(*) AS bookings,
       sum(sale) FILTER (WHERE ${LIVE}) AS sales,
-      sum(net) FILTER (WHERE ${LIVE}) AS paid,
+      (COALESCE(sum(net) FILTER (WHERE status = 'CONFIRMED'), 0) + COALESCE(sum(cancel_charge) FILTER (WHERE status = 'CANCELLED'), 0)) AS paid,
       sum(sale - net) FILTER (WHERE ${LIVE}) AS profit,
       count(*) FILTER (WHERE ${LIVE} AND mt IS NULL) AS unpriced,
       count(*) FILTER (WHERE ${LIVE}) AS live,
