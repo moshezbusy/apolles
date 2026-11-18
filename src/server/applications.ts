@@ -115,7 +115,7 @@ export async function submitApplication(raw: ApplicationInput | Record<string, s
 
   // Best effort: nothing here changes the answer (logged by name only).
   const base = appUrl();
-  const fail = (what: string) => (error: unknown) => console.error(`${what} failed: ${error instanceof Error ? error.name : "Error"}`);
+  const fail = (what: string) => (error: unknown) => console.error("join email failed", { what, error: error instanceof Error ? error.name : "Error" });
   if (outcome === "user") {
     await sendEmail({
       to: email,
