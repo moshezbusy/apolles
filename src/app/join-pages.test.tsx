@@ -43,14 +43,14 @@ describe("join (02, 03)", () => {
     expect(html).not.toMatch(/USD|expedia/i);
   });
 
-  it("apply → application received; a second time with the same email says it exists", async () => {
+  it("apply → application received; the same answer the second time (no one learns who applied)", async () => {
     const { joinAction } = await import("./join/actions");
     await expect(joinAction(null, form(FIELDS))).rejects.toThrow("NEXT_REDIRECT:/join/received");
+    await expect(joinAction(null, form(FIELDS))).rejects.toThrow("NEXT_REDIRECT:/join/received");
     expect(await db.agencyApplication.count()).toBe(1);
-    const again = await joinAction(null, form(FIELDS));
-    expect(again?.error).toBe("An application with this email already exists. Sign in or contact support.");
-    expect(again?.values).toMatchObject({ agencyName: "Sunrise Travel" });
-    expect(again?.values).not.toHaveProperty("company");
+    const bad = await joinAction(null, form({ ...FIELDS, email: "nope", company: "x" }));
+    expect(bad?.values).toMatchObject({ agencyName: "Sunrise Travel" });
+    expect(bad?.values).not.toHaveProperty("company");
     const { default: Received } = await import("./join/received/page");
     const html = renderToStaticMarkup(<Received />);
     expect(html).toContain("Application received");

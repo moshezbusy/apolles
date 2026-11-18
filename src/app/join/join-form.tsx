@@ -14,17 +14,7 @@ export function JoinForm({ action, countries }: { action: Action; countries: { c
     <form key={JSON.stringify(v)} action={formAction} className="flex flex-col gap-4" noValidate>
       {state ? (
         <p role="alert" className={alertError}>
-          {state.error.startsWith("An application with this email") ? (
-            <>
-              An application with this email already exists.{" "}
-              <Link href="/login" className="font-bold underline">
-                Sign in
-              </Link>{" "}
-              or contact support.
-            </>
-          ) : (
-            state.error
-          )}
+          {state.error}
         </p>
       ) : null}
       <div className="grid gap-4 sm:grid-cols-2">

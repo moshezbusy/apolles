@@ -20,11 +20,9 @@ export async function joinAction(_previous: JoinState, formData: FormData): Prom
   const result = await submitApplication(values, getClientIp(await headers()));
   if (result.ok) redirect("/join/received");
   const error =
-    result.error === "duplicate"
-      ? "An application with this email already exists. Sign in or contact support."
-      : result.error === "limited"
-        ? "Too many applications from your network. Try again later."
-        : "Check the form: agency and contact name, a valid business email, a phone with 7 to 15 digits, a country, a website or social page, and the terms.";
+    result.error === "limited"
+      ? "Too many applications from your network. Try again later."
+      : "Check the form: agency and contact name, a valid business email, a phone with 7 to 15 digits, a country, a website or social page, and the terms.";
   // What the agent typed comes back to the form (the hidden bot field never does).
   return { error, values: Object.fromEntries(Object.entries(values).filter(([key]) => key !== "company")) };
 }

@@ -49,12 +49,14 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
           <div className="mt-6 border-t border-line pt-5">
             {a.status === "PENDING" ? (
               <ReviewForms id={a.id} approve={approveAction} reject={rejectAction} />
+            ) : a.status === "REJECTED" ? (
+              <p className="text-sm text-muted">This application was rejected.</p>
             ) : a.agencyId ? (
               <Link href={`/admin/agencies/${a.agencyId}/wallet`} className={link}>
                 Open the agency
               </Link>
             ) : (
-              <p className="text-sm text-muted">This application was rejected.</p>
+              <p className="text-sm text-muted">Approved. The agency is in the agencies list (it could not be linked here).</p>
             )}
           </div>
         </section>

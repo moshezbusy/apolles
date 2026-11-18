@@ -11,10 +11,13 @@ Owner decision 2026-11-17 (`docs/decisions/2026-11-17-build-all-mockup-screens.m
 - **Join** (`/join`, public): agency name, contact name, business email, phone, country, website or
   social page, IATA / TIDS / license (optional), notes (optional), terms box.
   - Zod strict; plain text without control characters; email checked and stored lowercase.
-  - Limits: 5 applications per IP per hour and 3 per email per day (hashed key); a hidden
-    honeypot field. Over a limit: a calm "Try again later".
-  - An email that already has a user, or a pending application: "An application with this email
-    already exists. Sign in or contact support." (as in the mockup).
+  - Limits: 5 applications per IP per hour (IPv6 per /64 network), 3 per email per day (hashed
+    key), 30 in total per hour; the admin alert at most once per 10 minutes; a hidden honeypot
+    field. Over a limit: a calm "Try again later". No text the applicant typed goes into an email.
+  - **Different from the mockup, for security (review 18.11):** the form never says "an application
+    with this email already exists". That message would let anyone find out who has an Apolles
+    login (admins too). The answer is always "Application received"; an email that already has
+    a login gets a short note by email ("you already have an account, sign in or reset").
   - Saved as `AgencyApplication` (status Pending). An email to the applicant ("Application
     received") and one to the admin alert address (no applicant details in it, only "a new
     application is waiting" and the link). Failures are logged by name only.

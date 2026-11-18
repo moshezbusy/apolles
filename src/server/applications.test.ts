@@ -45,6 +45,10 @@ describe("join (screen 02)", () => {
     expect(toAdmin.text).not.toContain("Sunrise");
     expect(toAdmin.text).not.toContain("dana@");
     expect(toAdmin.text).toContain("/admin/applications");
+    // Nothing the applicant typed goes into an email (it could be sent to anyone's address).
+    const toApplicant = sent.find((m) => m.to === "dana@sunrise.example")!;
+    expect(toApplicant.text).not.toContain("Dana");
+    expect(toApplicant.text.startsWith("Hello,")).toBe(true);
   });
 
   it("refuses bad input, unknown fields, no terms; a filled honeypot looks fine but saves nothing", async () => {
@@ -63,16 +67,24 @@ describe("join (screen 02)", () => {
     expect(sent).toHaveLength(0);
   });
 
-  it("an email that already has a user or a pending application is refused", async () => {
+  it("never tells who has a login: same answer; an existing user gets a note, a second application nothing", async () => {
     await createUser({ email: "taken@agency.example", name: "X", role: "ADMIN" });
-    expect(await submitApplication({ ...FORM, email: "Taken@agency.example" }, "203.0.113.9")).toEqual({ ok: false, error: "duplicate" });
+    expect(await submitApplication({ ...FORM, email: "Taken@agency.example" }, "203.0.113.9")).toEqual({ ok: true });
+    expect(await db.agencyApplication.count()).toBe(0);
+    expect(sent).toEqual([expect.objectContaining({ to: "taken@agency.example", subject: "You already have an Apolles account" })]);
+    sent.length = 0;
     await submitApplication(FORM, "203.0.113.9");
-    expect(await submitApplication(FORM, "203.0.113.10")).toEqual({ ok: false, error: "duplicate" });
+    sent.length = 0;
+    expect(await submitApplication(FORM, "203.0.113.10")).toEqual({ ok: true });
+    expect(await db.agencyApplication.count()).toBe(1);
+    expect(sent).toHaveLength(0);
   });
 
-  it("is limited per IP and per email", async () => {
-    for (let i = 0; i < 5; i++) await submitApplication({ ...FORM, email: `a${i}@x.example` }, "203.0.113.20");
-    expect(await submitApplication({ ...FORM, email: "a9@x.example" }, "203.0.113.20")).toEqual({ ok: false, error: "limited" });
+  it("is limited per IP (IPv6 per /64), per email, and the admin is alerted once per 10 minutes", async () => {
+    for (let i = 0; i < 5; i++) await submitApplication({ ...FORM, email: `a${i}@x.example` }, `2001:db8:1:2::${i + 1}`);
+    expect(await submitApplication({ ...FORM, email: "a9@x.example" }, "2001:db8:1:2:ffff::9")).toEqual({ ok: false, error: "limited" });
+    expect(await submitApplication({ ...FORM, email: "b1@x.example" }, "2001:db8:1:3::1")).toEqual({ ok: true });
+    expect(sent.filter((m) => m.to === "alerts@test.local")).toHaveLength(1);
   });
 });
 
