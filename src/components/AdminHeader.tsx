@@ -6,6 +6,7 @@ import { SignOutButton } from "@/components/SignOutButton";
 // it still check requireAdmin() themselves.
 const TABS = [
   { key: "agencies", label: "Agencies", href: "/admin/agencies" },
+  { key: "applications", label: "Applications", href: "/admin/applications" },
   { key: "bookings", label: "Bookings", href: "/admin/bookings" },
   { key: "supplier-log", label: "Supplier log", href: "/admin/supplier-log" },
 ] as const;

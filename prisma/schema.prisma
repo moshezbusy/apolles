@@ -61,6 +61,7 @@ model Agency {
   bookings      Booking[]
   clients       Client[]
   quotes        Quote[]
+  application   AgencyApplication?
 
   @@index([createdAt, id])
 }
@@ -140,14 +141,15 @@ model User {
   status            AccountStatus @default(ACTIVE)
   createdAt         DateTime      @default(now())
 
-  agency         Agency?         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
-  sessions       Session[]
-  passwordTokens PasswordToken[]
-  ledgerEntries  LedgerEntry[]
-  auditLogs      AuditLog[]
-  bookings       Booking[]
-  bookingEvents  BookingEvent[]
-  quotes         Quote[]
+  agency               Agency?             @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  sessions             Session[]
+  passwordTokens       PasswordToken[]
+  ledgerEntries        LedgerEntry[]
+  auditLogs            AuditLog[]
+  bookings             Booking[]
+  bookingEvents        BookingEvent[]
+  quotes               Quote[]
+  reviewedApplications AgencyApplication[]
 
   @@index([agencyId])
 }
@@ -642,4 +644,35 @@ model QuoteRoom {
 
   @@unique([hotelId, rateId, bedGroupId])
   @@index([hotelId, position])
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// "Join Apolles" (screen 02, plan 7): a travel business asks for access. Admin approves (creates
+// the agency and its agent user) or rejects. No documents or card details are ever stored.
+model AgencyApplication {
+  id           String            @id @default(cuid())
+  status       ApplicationStatus @default(PENDING)
+  agencyName   String
+  contactName  String
+  email        String // lowercase
+  phone        String
+  country      String // ISO 3166-1 alpha-2
+  website      String
+  license      String            @default("") // IATA / TIDS / travel license, optional
+  notes        String            @default("")
+  createdAt    DateTime          @default(now())
+  reviewedAt   DateTime?
+  reviewedById String?
+  agencyId     String?           @unique // set on approval
+
+  reviewedBy User?   @relation(fields: [reviewedById], references: [id], onDelete: Restrict)
+  agency     Agency? @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([email, status])
 }
