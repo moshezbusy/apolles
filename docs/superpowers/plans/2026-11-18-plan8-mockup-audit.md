@@ -44,8 +44,11 @@ TR2). The approved spec could not be read by the audit agent (guardrail): confir
 ## 8d — search and results (one PR)
 - Search (07): recent searches; "Needs attention" (client selected an option → Open quote).
 - Results (08): "Add to quote" on cards; the best room line; "View N more room options"; area.
-  (Not yet: the cards hold only the lowest price, not the rate behind it; the search query must
-  keep the best rate's ids first. Room filters on the hotel page (09) are done, plan 8d-2.)
+  Done (plan 8d-3): each card shows the rate behind its price (the cheapest that matches the
+  filters): room, cancellation, "View N more room options", "Book this room" (with a bed-type
+  choice when the rate has several) and "Add to quote". The server reads the rate from the stored
+  search; price-check tokens never reach the page. Area: not in our data yet. Room filters on the
+  hotel page (09) are done, plan 8d-2.
 - Hotel (09): room filters (name, free cancellation, sort); photo gallery; registration number.
 - Meal plan (08, 09, 10–13, 21): needs the rate's amenities from Rapid in the adapter (EXP: shown
   as the supplier gives it). Adapter change: own small plan.

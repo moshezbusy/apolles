@@ -41,7 +41,12 @@ export type HotelCard = {
   refundableAvailable: boolean;
   feesAtProperty: boolean; // the shown rate has something to pay at the hotel (BP4)
   heroImage: Image | null;
+  // The rate behind the shown price, for "Book this room" / "Add to quote" on the card (plan 8d-3).
+  // Without the price-check tokens: those stay on the server. Null if the stored offers do not read.
+  best: { offer: CardOffer; otherRates: number } | null;
 };
+
+export type CardOffer = Omit<Offer, "bedGroups"> & { bedGroups: { id: string; description: string }[] };
 
 export type ListOptions = {
   sort: "recommended" | "price_asc" | "price_desc" | "stars_desc";
@@ -327,6 +332,8 @@ type ResultRow = {
   currency: string;
   feesAtProperty: boolean;
   anyRefundable: boolean;
+  rateIndex: number;
+  rateCount: bigint;
 };
 
 export async function listResults(
@@ -360,7 +367,9 @@ export async function listResults(
   const matched = Prisma.sql`
     WITH m AS (
       SELECT r."propertyId", r."totalMinor", r."currency", r."feesAtProperty",
+             r."rateIndex",
              bool_or(r."refundable") OVER (PARTITION BY r."propertyId") AS "anyRefundable",
+             count(*) OVER (PARTITION BY r."propertyId") AS "rateCount",
              row_number() OVER (PARTITION BY r."propertyId" ORDER BY r."totalMinor" ASC, r."rateIndex" ASC) AS "rn"
       FROM "SearchRate" r
       WHERE ${Prisma.join(rateWhere, " AND ")}
@@ -370,7 +379,7 @@ export async function listResults(
   const [rows, counted] = await Promise.all([
     db.$queryRaw<ResultRow[]>`${matched}
       SELECT h."propertyId", h."name", h."city", h."starRating"::text AS "starRating",
-             m."totalMinor", m."currency", m."feesAtProperty", m."anyRefundable"
+             m."totalMinor", m."currency", m."feesAtProperty", m."anyRefundable", m."rateIndex", m."rateCount"
       ${from}
       ORDER BY ${orderSql(opts.sort)}
       OFFSET ${skip} LIMIT ${take + 1}`,
@@ -380,10 +389,21 @@ export async function listResults(
   const page = rows.slice(0, take);
 
   // Images from the content cache only: listing results never calls Expedia.
-  const cached = await db.propertyContentCache.findMany({
-    where: { propertyId: { in: page.map((r) => r.propertyId) } },
-    select: { propertyId: true, data: true },
-  });
+  const ids = page.map((r) => r.propertyId);
+  const [cached, stored] = await Promise.all([
+    db.propertyContentCache.findMany({ where: { propertyId: { in: ids } }, select: { propertyId: true, data: true } }),
+    db.searchHotel.findMany({ where: { snapshotId: snapshot.id, propertyId: { in: ids } }, select: { propertyId: true, offers: true } }),
+  ]);
+  const offersById = new Map(stored.map((h) => [h.propertyId, h.offers]));
+  const bestOf = (row: ResultRow): HotelCard["best"] => {
+    const offers = storedOffers.safeParse(offersById.get(row.propertyId));
+    const offer = offers.success ? offers.data[row.rateIndex] : undefined;
+    if (!offer) return null;
+    return {
+      offer: { ...offer, bedGroups: offer.bedGroups.map((b) => ({ id: b.id, description: b.description })) },
+      otherRates: Number(row.rateCount) - 1,
+    };
+  };
   const heroById = new Map(
     cached.map((c) => {
       const hero = (c.data as { heroImage?: unknown } | null)?.heroImage;
@@ -402,6 +422,7 @@ export async function listResults(
       refundableAvailable: row.anyRefundable,
       feesAtProperty: row.feesAtProperty,
       heroImage: heroById.get(row.propertyId) ?? null,
+      best: bestOf(row),
     })),
     total,
     nextCursor: rows.length > take ? String(skip + take) : null,

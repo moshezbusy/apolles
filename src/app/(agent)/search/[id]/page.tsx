@@ -12,6 +12,11 @@ import { HotelPhoto, Stars, formValuesOf, shortDate, stayText } from "../parts";
 import { SearchForm } from "../search-form";
 import { loadMoreAction } from "./actions";
 import { quoteParam } from "../quote-param";
+import { cancellationLabel } from "../../_components/rate-text";
+import { addToQuoteAction } from "../../quotes/actions";
+import { AddToQuote } from "../../quotes/add-to-quote";
+import { openQuotes, quoteCode } from "@/server/quotes/quotes";
+import type { HotelCard } from "@/server/search/search";
 
 export const metadata: Metadata = { title: "Search results | Apolles", robots: { index: false, follow: false } };
 
@@ -40,6 +45,64 @@ function filterParams(o: ListOptions): URLSearchParams {
 
 function priceField(minor: number | undefined): string {
   return minor === undefined ? "" : minorToUsdText(minor);
+}
+
+// The rate behind the card's price, as on the hotel page: "Book this room" opens guest details and
+// "Add to quote" adds it; the server reads the room and the price from the search (plan 8d-3).
+function CardRoom({ best, href }: { best: NonNullable<HotelCard["best"]>; href: string }) {
+  const cancel = cancellationLabel(best.offer);
+  return (
+    <>
+      <p className="text-[13px] text-ink">
+        <strong>Room:</strong> {best.offer.roomName}
+      </p>
+      <p className={`text-[13px] font-semibold ${cancel.refundable ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>{cancel.text}</p>
+      {best.otherRates > 0 ? (
+        <Link href={href} className={`${link} text-[13px]`}>
+          View {best.otherRates} more room {best.otherRates === 1 ? "option" : "options"} →
+        </Link>
+      ) : null}
+    </>
+  );
+}
+
+function CardActions({
+  best,
+  snapshotId,
+  quotes,
+  quoteId,
+}: {
+  best: NonNullable<HotelCard["best"]>;
+  snapshotId: string;
+  quotes: { id: string; label: string }[];
+  quoteId: string | null;
+}) {
+  const { offer } = best;
+  const formId = `card-${offer.propertyId}`.replace(/[^A-Za-z0-9_-]/g, "_");
+  return (
+    <div className="mt-2 w-full">
+      <form id={formId} method="get" action="/book/new">
+        <input type="hidden" name="s" value={snapshotId} />
+        <input type="hidden" name="p" value={offer.propertyId} />
+        <input type="hidden" name="r" value={offer.rateId} />
+        {offer.bedGroups.length === 1 ? (
+          <input type="hidden" name="b" value={offer.bedGroups[0]!.id} />
+        ) : (
+          <select name="b" aria-label="Bed type" defaultValue={offer.bedGroups[0]?.id} className={`${input} mb-1.5 w-full text-xs`}>
+            {offer.bedGroups.map((bed) => (
+              <option key={bed.id} value={bed.id}>
+                {bed.description}
+              </option>
+            ))}
+          </select>
+        )}
+        <button type="submit" className={`${btnPrimary} w-full`}>
+          Book this room
+        </button>
+      </form>
+      <AddToQuote formId={formId} quotes={quotes} defaultQuoteId={quoteId} action={addToQuoteAction} />
+    </div>
+  );
 }
 
 // Screen 08: the results of one search, read from its stored snapshot (filters, sorting and
@@ -72,6 +135,8 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
   const back = new URLSearchParams(kept);
   if (options.cursor) back.set("cursor", options.cursor);
   const backTo = back.toString();
+  // Plan 5b: "Add to quote" lists the agency's open quotes; one opened from a quote is preselected.
+  const quotes = summary.expired ? [] : (await openQuotes(agencyId, quoteId)).map((q) => ({ id: q.id, label: `${quoteCode(q.number)} · ${q.title || "Untitled quote"}` }));
 
   return (
     <main className="mx-auto w-[min(1260px,calc(100%-40px))] py-6">
@@ -179,6 +244,7 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                             <span className="inline-block rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand">Free cancellation available</span>
                           </p>
                         ) : null}
+                        {hotel.best ? <CardRoom best={hotel.best} href={href} /> : null}
                       </div>
                       <div className="flex flex-col items-end justify-center gap-1 border-t border-line pt-3 text-right sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
                         <span className="text-xs text-muted">from</span>
@@ -187,9 +253,13 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                         <span className="text-xs text-muted">
                           {hotel.feesAtProperty ? "Total, taxes included; more to pay at the property" : "Total, taxes and fees included"}
                         </span>
-                        <Link href={href} className={`${btnPrimary} mt-2 w-full`}>
-                          View rooms
-                        </Link>
+                        {hotel.best ? (
+                          <CardActions best={hotel.best} snapshotId={id} quotes={quotes} quoteId={quoteId} />
+                        ) : (
+                          <Link href={href} className={`${btnPrimary} mt-2 w-full`}>
+                            View rooms
+                          </Link>
+                        )}
                       </div>
                     </article>
                   );
