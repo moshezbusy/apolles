@@ -528,6 +528,15 @@ model Quote {
   adults           Int           @default(2)
   childAges        Int[]         @default([])
   status           QuoteStatus   @default(DRAFT)
+  // The client link (plan 5c): an unguessable capability, made the first time the agent shares
+  // the quote. It opens one quote read-only for the client (and lets them send selections);
+  // it never signs anyone in. Kept to show and copy the same link again.
+  shareToken       String?       @unique
+  sentAt           DateTime?
+  viewedAt         DateTime? // the client's last view
+  viewCount        Int           @default(0)
+  selectedAt       DateTime? // when the client last sent selections
+  clientNote       String        @default("") // the client's note with the selections
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
@@ -551,8 +560,12 @@ model QuoteStay {
   checkout        String
   position        Int
 
-  quote  Quote        @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  hotels QuoteHotel[]
+  // The room the client chose here (plan 5c); cleared when that room is removed.
+  selectedRoomId  String?      @unique
+
+  quote        Quote        @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  hotels       QuoteHotel[]
+  selectedRoom QuoteRoom?   @relation("StaySelection", fields: [selectedRoomId], references: [id], onDelete: SetNull)
 
   @@index([quoteId, position])
 }
@@ -594,7 +607,8 @@ model QuoteRoom {
   position          Int
   createdAt         DateTime @default(now())
 
-  hotel QuoteHotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  hotel      QuoteHotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  selectedIn QuoteStay? @relation("StaySelection")
 
   @@unique([hotelId, rateId, bedGroupId])
   @@index([hotelId, position])

@@ -75,6 +75,9 @@ export type QuoteListItem = {
   lastCheckout: string | null;
   adults: number;
   childAges: number[];
+  sentAt: Date | null;
+  viewedAt: Date | null;
+  selectedAt: Date | null;
   updatedAt: Date;
 };
 
@@ -115,6 +118,9 @@ export async function listQuotes(
       status: true,
       adults: true,
       childAges: true,
+      sentAt: true,
+      viewedAt: true,
+      selectedAt: true,
       updatedAt: true,
       client: { select: { firstName: true, lastName: true, email: true } },
       stays: {
@@ -142,6 +148,9 @@ export async function listQuotes(
         lastCheckout: checkouts.at(-1) ?? null,
         adults: row.adults,
         childAges: row.childAges,
+        sentAt: row.sentAt,
+        viewedAt: row.viewedAt,
+        selectedAt: row.selectedAt,
         updatedAt: row.updatedAt,
       };
     }),
@@ -161,6 +170,12 @@ const quoteDetailSelect = {
   markupValue: true,
   adults: true,
   childAges: true,
+  shareToken: true,
+  sentAt: true,
+  viewedAt: true,
+  viewCount: true,
+  selectedAt: true,
+  clientNote: true,
   createdAt: true,
   updatedAt: true,
   client: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
@@ -172,6 +187,7 @@ const quoteDetailSelect = {
       destinationName: true,
       checkin: true,
       checkout: true,
+      selectedRoomId: true,
       hotels: {
         orderBy: { position: "asc" },
         select: {

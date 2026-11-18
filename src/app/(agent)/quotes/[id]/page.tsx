@@ -12,7 +12,9 @@ import { dateRange } from "../../search/dates";
 import { DestinationPicker } from "../../search/destination-picker";
 import { Stars, shortDate } from "../../search/parts";
 import { ActionForm } from "../action-form";
-import { addStayAction, hotelAction, removeRoomAction, removeStayAction, roomDateAction, roomPriceAction, saveSettingsAction } from "../actions";
+import { addStayAction, copyLinkAction, emailAction, hotelAction, removeRoomAction, removeStayAction, roomDateAction, roomPriceAction, saveSettingsAction, whatsappAction } from "../actions";
+import { shareUrl } from "@/server/quotes/sharing";
+import { SendPanel } from "./send-panel";
 import { StatusPill, guestsText } from "../parts";
 
 export const metadata: Metadata = { title: "Quote | Apolles", robots: { index: false, follow: false } };
@@ -27,6 +29,8 @@ const iconBtn =
 function nights(checkin: string, checkout: string): number {
   return Math.round((Date.parse(`${checkout}T00:00:00Z`) - Date.parse(`${checkin}T00:00:00Z`)) / 86_400_000);
 }
+
+const dayMonth = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
 function money(minor: number | null, currency = "USD"): string {
   return minor === null ? "" : formatMinor(minor, currency);
@@ -71,7 +75,10 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
             />
             <p className="mt-2 text-[13px] text-muted">
               {quote.client ? `${quote.client.firstName} ${quote.client.lastName} · ` : ""}
-              {quoteCode(quote.number)} · <strong className="text-ink">1 room · {guestsText(quote.adults, quote.childAges)}</strong>
+              {quoteCode(quote.number)}
+              {quote.sentAt ? ` · Sent ${dayMonth.format(quote.sentAt)}` : ""}
+              {quote.viewCount ? ` · Viewed ${quote.viewCount} ${quote.viewCount === 1 ? "time" : "times"}` : ""} ·{" "}
+              <strong className="text-ink">1 room · {guestsText(quote.adults, quote.childAges)}</strong>
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -209,6 +216,22 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
           </section>
         </div>
       </ActionForm>
+
+      <section aria-labelledby="send-title" className={`${card} bg-white p-5`}>
+        <h2 id="send-title" className={sectionHead}>
+          Send quote
+        </h2>
+        <p className={`${sectionSub} mb-3`}>Share the client link without leaving this page.</p>
+        <SendPanel
+          quoteId={quote.id}
+          shareUrl={quote.shareToken ? shareUrl(quote.shareToken) : null}
+          hasClient={!!quote.client}
+          hasEmail={!!quote.client?.email}
+          actions={{ copy: copyLinkAction, whatsapp: whatsappAction, email: emailAction }}
+        />
+      </section>
+
+      <ClientSelections quote={quote} />
 
       <section aria-labelledby="options-title" className="flex flex-col gap-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -417,5 +440,55 @@ function RoomBlock({ quote, room }: { quote: QuoteDetail; room: Room }) {
         </ActionForm>
       </div>
     </div>
+  );
+}
+
+// "Client selections" (mockup 15): what the client sent from the client page, per destination.
+function ClientSelections({ quote }: { quote: QuoteDetail }) {
+  if (!quote.selectedAt) return null;
+  const rows = quote.stays.map((stay) => {
+    const hotel = stay.hotels.find((h) => h.rooms.some((r) => r.id === stay.selectedRoomId));
+    const room = hotel?.rooms.find((r) => r.id === stay.selectedRoomId);
+    return { stay, hotel, room };
+  });
+  const picked = rows.filter((r) => r.room);
+  const total = picked.reduce((n, r) => n + (r.room ? sellingMinor(r.room, quote) : 0), 0);
+  return (
+    <section aria-labelledby="selections-title" className="overflow-hidden rounded-[18px] border border-brand bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-brand px-5 py-3 text-paper">
+        <div>
+          <h2 id="selections-title" className="text-base font-bold">
+            Client selections
+          </h2>
+          <p className="text-xs text-[#cfe2d8]">Sent {dayMonth.format(quote.selectedAt)}. The client can change it until you book.</p>
+        </div>
+        <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
+          {picked.length} of {quote.stays.length} destinations selected
+        </span>
+      </div>
+      <div className="grid gap-3 p-4 md:grid-cols-3">
+        {rows.map(({ stay, hotel, room }) => (
+          <div key={stay.id} className={`rounded-[12px] border p-3 ${room ? "border-[#bcd0c6] bg-brand-soft" : "border-dashed border-line"}`}>
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#5f6863]">{stay.destinationName.split(",")[0]}</p>
+            {room && hotel ? (
+              <>
+                <p className="mt-1 text-[14px] font-bold text-ink">{hotel.name}</p>
+                <p className="text-[13px] text-[#37413d]">{room.roomName}</p>
+                <p className="text-xs text-muted">
+                  {shortDate(stay.checkin)} to {shortDate(stay.checkout)}
+                </p>
+                <p className="mt-2 text-[14px] font-bold text-ink">{money(sellingMinor(room, quote), room.currency)}</p>
+              </>
+            ) : (
+              <p className="mt-1 text-[13px] text-muted">No hotel selected</p>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3 text-[13px]">
+        <span className="text-muted">{quote.clientNote ? `Client note: ${quote.clientNote}` : "Selected trip total, complete destinations only. Hotel taxes are paid at the hotel."}</span>
+        <strong className="text-[16px] text-ink">{money(total)}</strong>
+      </div>
+    </section>
   );
 }

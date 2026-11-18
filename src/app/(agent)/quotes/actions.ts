@@ -17,6 +17,7 @@ import {
   updateQuoteSettings,
   type Result,
 } from "@/server/quotes/quotes";
+import { emailQuote, shareLink, whatsappLink } from "@/server/quotes/sharing";
 import type { ActionState } from "./action-state";
 
 // Quote actions (screens 09, 14, 15). Each one checks the agent session itself and passes the
@@ -114,4 +115,35 @@ export async function addToQuoteAction(_previous: ActionState, formData: FormDat
   revalidatePath(`/quotes/${result.id}`);
   revalidatePath("/quotes");
   return { status: "success", message: "Added to the quote.", quoteId: result.id };
+}
+
+// ---------- sending (plan 5c) ----------
+
+export type SendState = { ok: true; url?: string; message?: string } | { ok: false; error: string };
+
+export async function copyLinkAction(quoteId: string): Promise<SendState> {
+  const { userId, agencyId } = await requireAgent();
+  const result = await shareLink(userId, agencyId, String(quoteId).slice(0, 64), "link");
+  if (!result.ok) return result;
+  revalidatePath(`/quotes/${quoteId}`);
+  revalidatePath("/quotes");
+  return { ok: true, url: result.url };
+}
+
+export async function whatsappAction(quoteId: string): Promise<SendState> {
+  const { userId, agencyId } = await requireAgent();
+  const result = await whatsappLink(userId, agencyId, String(quoteId).slice(0, 64));
+  if (!result.ok) return result;
+  revalidatePath(`/quotes/${quoteId}`);
+  revalidatePath("/quotes");
+  return { ok: true, url: result.url };
+}
+
+export async function emailAction(quoteId: string): Promise<SendState> {
+  const { userId, agencyId } = await requireAgent();
+  const result = await emailQuote(userId, agencyId, String(quoteId).slice(0, 64));
+  if (!result.ok) return result;
+  revalidatePath(`/quotes/${quoteId}`);
+  revalidatePath("/quotes");
+  return { ok: true, message: "Email sent to the client." };
 }

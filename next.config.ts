@@ -28,6 +28,17 @@ const nextConfig: NextConfig = {
           { key: "X-Robots-Tag", value: "noindex, nofollow" },
         ],
       },
+      // Client quote pages (plan 5c): the URL holds the quote's link token. Never send it on in a
+      // Referer header (hotel photos come from another host), keep the pages out of search
+      // engines, and let no shared cache keep a client's proposal.
+      {
+        source: "/q/:token*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Cache-Control", value: "private, no-store" },
+        ],
+      },
       {
         source: "/forgot-password",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],

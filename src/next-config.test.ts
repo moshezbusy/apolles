@@ -30,6 +30,15 @@ describe("next.config headers", () => {
     expect(headersFor(list, "/admin/:path*")).toEqual({ "X-Robots-Tag": "noindex, nofollow" });
   });
 
+  // Client quote pages hold the quote's link token in the URL (plan 5c).
+  it("client quote pages: no Referer, no indexing, no shared cache", async () => {
+    expect(headersFor(await rules(), "/q/:token*")).toEqual({
+      "Referrer-Policy": "no-referrer",
+      "X-Robots-Tag": "noindex, nofollow",
+      "Cache-Control": "private, no-store",
+    });
+  });
+
   // The setup page shows a QR code that contains the TOTP secret: no cache may keep it.
   it("/admin/2fa/setup is never cached (the QR code holds the secret)", async () => {
     expect(headersFor(await rules(), "/admin/2fa/setup")).toEqual({ "Cache-Control": "no-store" });
