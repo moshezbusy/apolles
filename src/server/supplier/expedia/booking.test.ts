@@ -53,6 +53,14 @@ describe("ExpediaBooking", () => {
     });
   });
 
+  it("special requests go to the hotel in the room's special_request (not guaranteed)", async () => {
+    fetchMock.mockResolvedValue(json(201, fixture("book.response.json")));
+    await expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, specialRequest: "Late check-out. High floor." }, {});
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]?.body)).rooms).toEqual([
+      { given_name: "Dana", family_name: "Levi", smoking: false, special_request: "Late check-out. High floor." },
+    ]);
+  });
+
   it("without the billing contact set, nothing is sent", async () => {
     vi.stubEnv("EXPEDIA_BILLING_CITY", "");
     await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead }, {})).rejects.toBeInstanceOf(SupplierNotSent);

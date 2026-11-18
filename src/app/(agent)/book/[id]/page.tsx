@@ -11,13 +11,14 @@ import { getContent } from "@/server/content/content-cache";
 import { supplierContextFrom } from "@/server/supplier-context";
 import type { CancelPenalty, PriceBreakdown, PropertyContent } from "@/server/supplier/types";
 import { getBalance } from "@/server/wallet/ledger";
-import { guestLines } from "../../_components/guests";
+import { type StoredGuest, guestLines } from "../../_components/guests";
 import { CancellationPolicy, Policies, PriceDetails } from "../../_components/hotel-info";
 import { shortDate, stayText } from "../../search/parts";
 import { bookAction } from "../actions";
 import { SellingPrice } from "../../_components/selling-price";
 import { sellingPriceAction } from "../../bookings/[id]/actions";
 import { lastFreeDay } from "@/server/quotes/pricing";
+import { Steps } from "../../_components/steps";
 import { BookForm } from "./book-form";
 
 export const metadata: Metadata = { title: "Review and book | Apolles", robots: { index: false, follow: false } };
@@ -78,11 +79,16 @@ export default async function ReviewPage({ params }: { params: Params }) {
 
   return (
     <Shell>
+      <Steps current={4} />
       <h1 className={pageTitle}>Review and book</h1>
       <p className="mt-1 text-sm text-muted">The price below was checked with the hotel just now.</p>
       {changed ? (
         <p role="alert" className={`${alertInfo} mt-4`}>
-          The price changed since your search: was {formatUsd(b.previousTotalMinor!)}, now {formatUsd(b.totalMinor)}.
+          The price changed since your search: was {formatUsd(b.previousTotalMinor!)}, now {formatUsd(b.totalMinor)}. Book below to continue at {formatUsd(b.totalMinor)}, or{" "}
+          <Link href={b.snapshotId ? `/search/${b.snapshotId}/hotels/${b.propertyId}` : "/search"} className={link}>
+            go back to the room options
+          </Link>
+          .
         </p>
       ) : null}
 
@@ -114,12 +120,20 @@ export default async function ReviewPage({ params }: { params: Params }) {
                 <dt className="font-semibold text-ink">Guests</dt>
                 <dd>
                   <ul>
-                    {guestLines(b.guests as { givenName: string; familyName: string }[], b.adults, b.childAges).map((g) => (
+                    {guestLines(b.guests as StoredGuest[], b.adults, b.childAges).map((g) => (
                       <li key={g}>{g}</li>
                     ))}
                   </ul>
                 </dd>
               </div>
+              {b.specialRequest ? (
+                <div className="sm:col-span-2">
+                  <dt className="font-semibold text-ink">Special requests</dt>
+                  <dd>
+                    {b.specialRequest} <span className="block text-xs text-muted">Sent to the hotel. Requests are not guaranteed.</span>
+                  </dd>
+                </div>
+              ) : null}
             </dl>
           </section>
           <section aria-labelledby="cancel-title" className={`${card} bg-white p-5`}>

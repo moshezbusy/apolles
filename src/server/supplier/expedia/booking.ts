@@ -109,7 +109,14 @@ export class ExpediaBooking implements BookingSupplier {
       hold: false,
       email: input.lead.email,
       phone: { country_code: input.lead.phone.countryCode, number: input.lead.phone.number },
-      rooms: [{ given_name: input.lead.givenName, family_name: input.lead.familyName, smoking: false }],
+      rooms: [
+        {
+          given_name: input.lead.givenName,
+          family_name: input.lead.familyName,
+          smoking: false,
+          ...(input.specialRequest ? { special_request: input.specialRequest.slice(0, 300) } : {}),
+        },
+      ],
       payments: [{ type: "affiliate_collect", billing_contact: billingContact() }],
     };
     const { data, logId } = await expediaRequest({

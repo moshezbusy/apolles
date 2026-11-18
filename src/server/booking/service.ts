@@ -62,7 +62,35 @@ const name = z
   .min(1)
   .max(60)
   .regex(/^[\p{L}][\p{L}\p{M} '.-]*$/u); // letters, spaces, apostrophes, dots and hyphens
-const guestSchema = z.object({ givenName: name, familyName: name }).strict();
+// Title (Mr/Mrs/Ms) is for the agency's documents (voucher); Rapid takes no title.
+const guestSchema = z.object({ givenName: name, familyName: name, title: z.enum(["MR", "MRS", "MS"]).optional() }).strict();
+
+// Special requests (screen 10): sent to the hotel in Rapid's special_request (not guaranteed).
+// Rapid forbids personal or payment details there, so long digit runs (an ID, a card or a phone
+// number) are refused, and the text is plain, one line, without Rapid's re-encoded characters.
+export const SPECIAL_REQUESTS = {
+  EARLY_CHECKIN: "Early check-in",
+  LATE_CHECKOUT: "Late check-out",
+  HIGH_FLOOR: "High floor",
+  HONEYMOON: "Honeymoon",
+} as const;
+const specialRequestsSchema = z
+  .object({
+    options: z.array(z.enum(Object.keys(SPECIAL_REQUESTS) as [keyof typeof SPECIAL_REQUESTS, ...(keyof typeof SPECIAL_REQUESTS)[]])).max(4),
+    text: z
+      .string()
+      .trim()
+      .max(300)
+      .refine((v) => !/[\p{Cc}\p{Cf}<>()&]/u.test(v)),
+  })
+  .strict();
+
+export function specialRequestText(input: z.infer<typeof specialRequestsSchema> | undefined): string {
+  if (!input) return "";
+  const parts = [...new Set(input.options)].map((o) => `${SPECIAL_REQUESTS[o]}.`);
+  if (input.text) parts.push(input.text);
+  return parts.join(" ");
+}
 
 export const draftInputSchema = z
   .object({
@@ -75,6 +103,7 @@ export const draftInputSchema = z
     leadPhone: z.object({ countryCode: z.string().regex(/^\d{1,3}$/), number: z.string().regex(/^\d{4,14}$/) }).strict(),
     // Plan 5d: the quote's destination this booking comes from (the agency's own, not yet booked).
     quoteStayId: z.string().regex(/^[a-z0-9]{20,40}$/).optional(),
+    specialRequests: specialRequestsSchema.optional(),
   })
   .strict();
 export type DraftInput = z.infer<typeof draftInputSchema>;
@@ -105,6 +134,10 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
   const parsed = draftInputSchema.safeParse(rawInput);
   if (!parsed.success) throw new BookingInputInvalid("Check the guest names, email and phone.");
   const input = parsed.data;
+  const specialRequest = specialRequestText(input.specialRequests);
+  if (/\d{6,}/.test(specialRequest.replace(/[\s-]/g, ""))) {
+    throw new BookingInputInvalid("Special requests go to the hotel: write no ID, card or phone numbers there.");
+  }
   const found = await findOffer(ctx.agencyId, { snapshotId: input.snapshotId, propertyId: input.propertyId, rateId: input.rateId, bedGroupId: input.bedGroupId }, now);
   if (!found) throw new BookingRateExpired("These prices expired. Search again for current prices.");
   const { offer, bedGroup, hotel, query } = found;
@@ -143,6 +176,7 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
     leadFamilyName: lead.familyName,
     leadEmail: input.leadEmail,
     leadPhone: `+${input.leadPhone.countryCode} ${input.leadPhone.number}`,
+    specialRequest,
     guests: input.guests,
     refundable: offer.refundable,
     totalMinor: offer.price.total.minor,
@@ -280,7 +314,12 @@ export async function book(
   let result;
   try {
     result = await supplierOf(deps).book(
-      { bookToken: booking.bookToken, affiliateReferenceId: booking.reference, lead: { givenName: booking.leadGivenName, familyName: booking.leadFamilyName, email: booking.leadEmail, phone: { countryCode, number } } },
+      {
+        bookToken: booking.bookToken,
+        affiliateReferenceId: booking.reference,
+        lead: { givenName: booking.leadGivenName, familyName: booking.leadFamilyName, email: booking.leadEmail, phone: { countryCode, number } },
+        ...(booking.specialRequest ? { specialRequest: booking.specialRequest } : {}),
+      },
       ctx.supplierContext,
     );
   } catch (error) {

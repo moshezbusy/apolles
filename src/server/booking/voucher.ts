@@ -1,3 +1,4 @@
+import { type StoredGuest, guestLines } from "@/lib/guests";
 import PDFDocument from "pdfkit";
 import { formatMinor } from "@/lib/supplier-money";
 import { toBlocks } from "@/lib/supplier-text";
@@ -59,9 +60,7 @@ export async function renderVoucher(agencyId: string, bookingId: string): Promis
   const parsed = cached ? contentShape.safeParse(cached.data) : null;
   const content: PropertyContent | null = parsed?.success ? parsed.data : null;
   const price = b.price as unknown as PriceBreakdown;
-  const guests = (b.guests as { givenName: string; familyName: string }[]).map((g, i) =>
-    i < b.adults ? `${g.givenName} ${g.familyName}` : `${g.givenName} ${g.familyName} (child, age ${b.childAges[i - b.adults] ?? "?"})`,
-  );
+  const guests = guestLines(b.guests as StoredGuest[], b.adults, b.childAges);
 
   const doc = new PDFDocument({ size: "A4", margin: 48, info: { Title: `Voucher ${b.reference}`, Author: latin(agency.name) } });
   const chunks: Buffer[] = [];
@@ -118,6 +117,11 @@ export async function renderVoucher(agencyId: string, bookingId: string): Promis
   heading("Guests");
   for (const g of guests) line(g);
   line(`Lead guest contact: ${b.leadEmail}, ${b.leadPhone}`, { muted: true });
+  if (b.specialRequest) {
+    heading("Special requests");
+    line(b.specialRequest);
+    line("Sent to the hotel. Requests are not guaranteed.", { muted: true });
+  }
 
   if (price.dueAtProperty.length > 0) {
     heading("To pay at the property");

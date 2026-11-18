@@ -132,6 +132,7 @@ export type BookInput = {
   bookToken: string; // from the latest price check
   affiliateReferenceId: string; // the Apolles reference (TR1), unique per booking
   lead: { givenName: string; familyName: string; email: string; phone: Phone };
+  specialRequest?: string; // to the hotel, not guaranteed; never personal or payment details
 };
 
 export type SupplierLinks = { retrieve?: string; cancel?: string };

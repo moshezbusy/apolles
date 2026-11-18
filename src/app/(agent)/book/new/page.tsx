@@ -9,6 +9,7 @@ import { PriceDetails } from "../../_components/hotel-info";
 import { cancellationLabel } from "../../_components/rate-text";
 import { shortDate, stayText } from "../../search/parts";
 import { createDraftAction } from "../actions";
+import { Steps } from "../../_components/steps";
 import { ClientChooser, GuestForm } from "./guest-form";
 
 export const metadata: Metadata = { title: "Guest details | Apolles", robots: { index: false, follow: false } };
@@ -52,8 +53,9 @@ export default async function GuestDetailsPage({ searchParams }: { searchParams:
   return (
     <main className="mx-auto grid w-[min(1100px,calc(100%-40px))] gap-6 py-8 lg:grid-cols-[1fr_320px]">
       <section className={`${card} bg-white p-6`}>
+        <Steps current={3} />
         <h1 className={pageTitle}>Guest details</h1>
-        <p className="mb-5 mt-1 text-sm text-muted">Enter every guest as on their passport.</p>
+        <p className="mb-5 mt-1 text-sm text-muted">Enter the traveler names exactly as they appear on their travel documents.</p>
         {clients.length > 0 ? <ClientChooser clients={clients} selected={prefill?.clientId ?? ""} /> : null}
         <GuestForm action={createDraftAction} rate={{ ...rate, ...(stayId ? { stay: stayId } : {}) }} guests={guests} prefill={prefill} />
       </section>
@@ -75,3 +77,4 @@ export default async function GuestDetailsPage({ searchParams }: { searchParams:
     </main>
   );
 }
+

@@ -486,6 +486,8 @@ model Booking {
   // voucher. A markup on the charged total, as on quotes (percent in basis points, fixed in cents).
   sellMarkupType  MarkupType?
   sellMarkupValue Int?
+  // Requests sent to the hotel with the booking (not guaranteed; plan 8b). No personal details.
+  specialRequest  String      @default("")
 
   agency    Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   user      User           @relation(fields: [userId], references: [id], onDelete: Restrict)
