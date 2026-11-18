@@ -2,7 +2,16 @@ import { sendConsoleEmail } from "@/server/email/console";
 import { sendPostmarkEmail } from "@/server/email/postmark";
 import { sendStagingLogEmail } from "@/server/email/staging-log";
 
-export type EmailMessage = { to: string; subject: string; text: string; html?: string };
+export type EmailMessage = {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  // Plan 5c: a quote email goes out from the platform's address with the agency's name, and
+  // replies go to the agency (Reply-To), never to the platform's mailbox.
+  fromName?: string;
+  replyTo?: string;
+};
 
 // The single way the app sends email. The adapter is chosen by EMAIL_PROVIDER on every send:
 //   console  (default) - development and tests; refuses to run in production

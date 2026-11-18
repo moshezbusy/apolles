@@ -9,6 +9,17 @@ function requiredEnv(name: "POSTMARK_SERVER_TOKEN" | "EMAIL_FROM"): string {
   return value;
 }
 
+// A sender name that cannot break the From header: no quotes, angle brackets, backslashes or
+// control characters, at most 60 characters.
+export function displayName(name: string): string {
+  return name.replace(/[\p{Cc}\p{Cf}"<>\\]/gu, "").trim().slice(0, 60);
+}
+
+// EMAIL_FROM may be "Name <address>" or just the address.
+function senderAddress(from: string): string {
+  return /<([^<>\s]+)>\s*$/.exec(from)?.[1] ?? from.trim();
+}
+
 // Sends one email through Postmark's HTTP API (no SDK). Errors name only the HTTP status:
 // never the server token, the recipient's message or Postmark's response body.
 export async function sendPostmarkEmail(msg: EmailMessage): Promise<void> {
@@ -23,7 +34,8 @@ export async function sendPostmarkEmail(msg: EmailMessage): Promise<void> {
       "X-Postmark-Server-Token": token,
     },
     body: JSON.stringify({
-      From: from,
+      From: msg.fromName ? `"${displayName(msg.fromName)}" <${senderAddress(from)}>` : from,
+      ...(msg.replyTo ? { ReplyTo: msg.replyTo } : {}),
       To: msg.to,
       Subject: msg.subject,
       TextBody: msg.text,

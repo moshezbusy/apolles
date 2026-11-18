@@ -160,7 +160,10 @@ function QuoteCard({ quote, now }: { quote: QuoteListItem; now: Date }) {
           </span>
         ) : null}
         <span>{guestsText(quote.adults, quote.childAges)}</span>
-        <span>{quote.status === "DRAFT" ? "Not sent yet" : ""}</span>
+        <span>{quote.sentAt ? `Sent ${dayMonth.format(quote.sentAt)}` : "Not sent yet"}</span>
+        <span className="ml-auto">
+          {quote.selectedAt ? `Client sent selections ${ago(quote.selectedAt, now).toLowerCase()}` : quote.viewedAt ? `Viewed ${ago(quote.viewedAt, now).toLowerCase()}` : quote.sentAt ? "Waiting for client" : ""}
+        </span>
       </div>
     </li>
   );
