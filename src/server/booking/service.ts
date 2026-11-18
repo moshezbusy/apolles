@@ -77,13 +77,23 @@ export const SPECIAL_REQUESTS = {
 const specialRequestsSchema = z
   .object({
     options: z.array(z.enum(Object.keys(SPECIAL_REQUESTS) as [keyof typeof SPECIAL_REQUESTS, ...(keyof typeof SPECIAL_REQUESTS)[]])).max(4),
+    // Rapid re-encodes < > ( ) &: they are simply left out instead of refusing the request.
     text: z
       .string()
-      .trim()
-      .max(300)
-      .refine((v) => !/[\p{Cc}\p{Cf}<>()&]/u.test(v)),
+      .transform((v) => v.normalize("NFKC").replace(/[<>()&]/g, " ").replace(/\s+/g, " ").trim())
+      .pipe(z.string().max(300).refine((v) => !/[\p{Cc}\p{Cf}]/u.test(v))),
   })
   .strict();
+
+const REQUEST_MAX = 300;
+
+// What may not go to the hotel (Rapid: no personal or payment details): 6 or more digits in a
+// row once spaces, dots, slashes and other separators are removed (any script's digits), or an
+// email address.
+export function requestHasPersonalDetails(text: string): boolean {
+  const compact = text.normalize("NFKC").replace(/[^\p{L}\p{N}@]/gu, "");
+  return /\p{Nd}{6,}/u.test(compact) || text.includes("@");
+}
 
 export function specialRequestText(input: z.infer<typeof specialRequestsSchema> | undefined): string {
   if (!input) return "";
@@ -135,9 +145,10 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
   if (!parsed.success) throw new BookingInputInvalid("Check the guest names, email and phone.");
   const input = parsed.data;
   const specialRequest = specialRequestText(input.specialRequests);
-  if (/\d{6,}/.test(specialRequest.replace(/[\s-]/g, ""))) {
-    throw new BookingInputInvalid("Special requests go to the hotel: write no ID, card or phone numbers there.");
+  if (requestHasPersonalDetails(specialRequest)) {
+    throw new BookingInputInvalid("Special requests go to the hotel: write no ID, card or phone numbers or email addresses there.");
   }
+  if (specialRequest.length > REQUEST_MAX) throw new BookingInputInvalid(`Special requests can be up to ${REQUEST_MAX} characters in all. Shorten the additional request.`);
   const found = await findOffer(ctx.agencyId, { snapshotId: input.snapshotId, propertyId: input.propertyId, rateId: input.rateId, bedGroupId: input.bedGroupId }, now);
   if (!found) throw new BookingRateExpired("These prices expired. Search again for current prices.");
   const { offer, bedGroup, hotel, query } = found;

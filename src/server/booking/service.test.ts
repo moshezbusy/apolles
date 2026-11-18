@@ -96,7 +96,15 @@ describe("booking: draft and review", () => {
     const b = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
     expect(b.specialRequest).toBe("Late check-out. High floor. Celebrating an anniversary");
     expect((b.guests as { title?: string }[])[0]).toMatchObject({ title: "MRS", givenName: "Dana" });
-    await expect(createDraft(ctx(), { ...base, guests, specialRequests: { options: [], text: "Passport 12345678" } }, { now: NOW })).rejects.toThrow(/no ID, card or phone numbers/i);
+    for (const bad of ["Passport 12345678", "4111.1111.1111.1111", "4111/1111/1111/1111", "+972.50.123.4567", "050_123_4567", "１２３４５６７８", "٠٥٠١٢٣٤٥٦٧", "mail me a@b.com"]) {
+      await expect(createDraft(ctx(), { ...base, guests, specialRequests: { options: [], text: bad } }, { now: NOW }), bad).rejects.toThrow(/no ID, card or phone numbers/i);
+    }
+    // Characters Rapid re-encodes are left out, not refused; the whole text has one limit.
+    const ok = await createDraft(ctx(), { ...base, guests, specialRequests: { options: [], text: "Twin beds (if possible) & quiet" } }, { now: NOW });
+    expect((await db.booking.findUniqueOrThrow({ where: { id: ok.bookingId } })).specialRequest).toBe("Twin beds if possible quiet");
+    await expect(
+      createDraft(ctx(), { ...base, guests, specialRequests: { options: ["EARLY_CHECKIN", "LATE_CHECKOUT", "HIGH_FLOOR", "HONEYMOON"], text: "x".repeat(290) } }, { now: NOW }),
+    ).rejects.toThrow(/up to 300 characters/);
     await expect(createDraft(ctx(), { ...base, guests, specialRequests: { options: ["FREE_UPGRADE"], text: "" } }, { now: NOW })).rejects.toThrow(/Check the guest names/);
     // Sent with the booking.
     let sentRequest: string | undefined;
