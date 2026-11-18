@@ -2,9 +2,9 @@ import Link from "next/link";
 import { card, eyebrow as eyebrowClass } from "@/components/ui";
 import { supportContact } from "@/server/app-info";
 
-// Frame of the signed-out pages (mockups 04, 05, 06): wordmark header, a centered card under a
-// serif title, and the dark footer. No navigation and no links out: phase 1 has no public
-// pages, and the half-signed-in admin (2FA) must not see the admin menu.
+// Frame of the signed-out pages (mockups 04, 05, 06): wordmark header (with an optional link,
+// e.g. "Join Apolles" on sign-in), a centered card under a serif title, and the dark footer with
+// Support and Terms. No agent or admin menu: the half-signed-in admin (2FA) must not see it.
 export function AuthShell({
   eyebrow,
   title,

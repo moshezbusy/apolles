@@ -171,7 +171,9 @@ export default async function ReviewPage({ params }: { params: Params }) {
           <section className={`${card} bg-white p-5`}>
             <BookForm action={bookAction} bookingId={b.id} expectedTotal={b.totalMinor} terms={termsLinks()} canPay={shortfall === 0} />
             {(() => {
-              const free = lastFreeDay({ refundable: b.refundable, cancelPenalties: b.cancelPenalties as unknown as CancelPenalty[] });
+              // A free day already past (booking inside the penalty window) is not shown as free.
+              const last = lastFreeDay({ refundable: b.refundable, cancelPenalties: b.cancelPenalties as unknown as CancelPenalty[] });
+              const free = last && last >= new Date().toISOString().slice(0, 10) ? last : null;
               return (
                 <p className={`mt-3 text-center text-xs font-semibold ${free ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>
                   {free ? `Free cancellation until ${shortDate(free)} (hotel time)` : b.refundable ? "See the cancellation policy before booking" : "Non-refundable"}
