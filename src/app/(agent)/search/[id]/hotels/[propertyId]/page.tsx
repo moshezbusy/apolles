@@ -11,6 +11,7 @@ import { CancellationPolicy, Policies, PriceDetails, SupplierText } from "../../
 import { cancellationLabel } from "../../../../_components/rate-text";
 import { addToQuoteAction } from "../../../../quotes/actions";
 import { AddToQuote } from "../../../../quotes/add-to-quote";
+import { freeCancelEnds } from "@/server/booking/service";
 import { openQuotes, quoteCode } from "@/server/quotes/quotes";
 import { quoteParam } from "../../../quote-param";
 
@@ -141,7 +142,12 @@ export default async function HotelPage({ params, searchParams }: { params: Para
   const desc = one(query.rs) === "price_desc";
   const sorted = offers
     .filter((o) => !roomText || `${o.roomName} ${o.bedGroups.map((b) => b.description).join(" ")}`.toLowerCase().includes(roomText))
-    .filter((o) => !freeOnly || cancellationLabel(o).text.startsWith("Free cancellation"))
+    // Free cancellation still ahead (the same rule as the booking's deadline), never one already over.
+    .filter((o) => {
+      if (!freeOnly) return true;
+      const end = freeCancelEnds(o);
+      return end !== null && end > now;
+    })
     .sort((a, b) => (desc ? b.price.total.minor - a.price.total.minor : a.price.total.minor - b.price.total.minor));
   const filtered = roomText !== "" || freeOnly;
   // Plan 5b: "Add to quote" lists the agency's open quotes; one opened from a quote is preselected.
