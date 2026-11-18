@@ -53,6 +53,8 @@ model Agency {
   defaultMarkupType       MarkupType    @default(PERCENT)
   defaultMarkupValue      Int           @default(0)
   defaultShowCancellation Boolean       @default(true)
+  // "Your Apolles balance is low" was sent and the balance is still under USD 500 (email #19).
+  lowBalanceAlerted       Boolean       @default(false)
   createdAt               DateTime      @default(now())
 
   users         User[]
@@ -480,14 +482,18 @@ model Booking {
 
   // The quote and destination this booking was made from (plan 5d). When every destination with
   // a client pick has a confirmed booking, the quote is booked.
-  quoteId         String?
-  quoteStayId     String?
+  quoteId              String?
+  quoteStayId          String?
   // The agency's own selling price, for its reports only (plan 6): never charged, never on the
   // voucher. A markup on the charged total, as on quotes (percent in basis points, fixed in cents).
-  sellMarkupType  MarkupType?
-  sellMarkupValue Int?
+  sellMarkupType       MarkupType?
+  sellMarkupValue      Int?
   // Requests sent to the hotel with the booking (not guaranteed; plan 8b). No personal details.
-  specialRequest  String      @default("")
+  specialRequest       String      @default("")
+  // When free cancellation ends (the first charge starts), and when the 72-hour reminder went
+  // out (email #14, plan 8c).
+  freeCancelEndsAt     DateTime?
+  freeCancelReminderAt DateTime?
 
   agency    Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   user      User           @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -498,6 +504,7 @@ model Booking {
   @@index([agencyId, createdAt])
   @@index([quoteId])
   @@index([quoteStayId, status])
+  @@index([status, freeCancelEndsAt])
   @@index([agencyId, status, checkin])
   @@index([status, updatedAt])
   @@index([needsAttention])

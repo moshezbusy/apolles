@@ -258,7 +258,22 @@ async function writeCredit(tx: Tx, input: CreditInput): Promise<WriteResult> {
       ...(input.bookingRef !== undefined ? { bookingRef: input.bookingRef } : {}),
     },
   });
+  // Back at USD 500 or more (top-up, refund, adjustment): the next drop under it alerts again.
+  const { balanceCents } = await readBalance(tx, input.agencyId);
+  if (balanceCents >= LOW_BALANCE_CENTS) {
+    await tx.agency.updateMany({ where: { id: input.agencyId, lowBalanceAlerted: true }, data: { lowBalanceAlerted: false } });
+  }
   return { entry, created: true };
+}
+
+// Email #19 (mockup 23): the balance under which the agency is told it is low.
+export const LOW_BALANCE_CENTS = 50_000;
+
+// The available balance with the agency row locked for the rest of `tx`, so a decision based
+// on it (the low-balance alert) cannot race a credit or a debit.
+export async function balanceUnderLock(tx: Tx, agencyId: string): Promise<number> {
+  await lockAgency(tx, agencyId);
+  return (await readBalance(tx, agencyId)).balanceCents;
 }
 
 // The agency is already locked in `tx`.

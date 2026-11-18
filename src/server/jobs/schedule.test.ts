@@ -26,11 +26,16 @@ describe("ensureDailyJobs", () => {
     expect(await db.job.count({ where: { kind: { in: [...DAILY_KINDS] } } })).toBe(DAILY_KINDS.length * 2);
   });
 
-  it("search cleanup runs every hour, once per hour", async () => {
+  it("search cleanup and the free-cancellation reminders run every hour, once per hour", async () => {
     await ensureDailyJobs(new Date("2027-03-01T10:05:00.000Z"));
     await ensureDailyJobs(new Date("2027-03-01T10:55:00.000Z"));
     await ensureDailyJobs(new Date("2027-03-01T11:01:00.000Z"));
-    const cleanup = await db.job.findMany({ where: { kind: { in: [...HOURLY_KINDS] } }, orderBy: { runAt: "asc" } });
-    expect(cleanup.map((j) => j.dedupeKey)).toEqual(["search.cleanup:2027-03-01T10", "search.cleanup:2027-03-01T11"]);
+    const hourly = await db.job.findMany({ where: { kind: { in: [...HOURLY_KINDS] } }, orderBy: [{ runAt: "asc" }, { kind: "asc" }] });
+    expect(hourly.map((j) => j.dedupeKey)).toEqual([
+      "booking.cancel-reminders:2027-03-01T10",
+      "search.cleanup:2027-03-01T10",
+      "booking.cancel-reminders:2027-03-01T11",
+      "search.cleanup:2027-03-01T11",
+    ]);
   });
 });
