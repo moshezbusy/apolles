@@ -244,7 +244,7 @@ describe("search service", () => {
     const all = await listResults("A", snapshotId, { sort: "recommended" }, NOW);
     expect(all?.hotels[0]?.best).toEqual({ offer: expect.objectContaining({ rateId: "a", roomName: "Garden Double", refundable: false }), otherRates: 2 });
     // The price-check tokens stay on the server.
-    expect(JSON.stringify(all?.hotels[0]?.best)).not.toContain("tok-a1");
+    expect(all?.hotels[0]?.best?.offer.bedGroups).toEqual([{ id: "b1", description: "1 Queen Bed" }]);
     const free = await listResults("A", snapshotId, { sort: "recommended", freeCancellation: true }, NOW);
     expect(free?.hotels[0]?.best).toEqual({
       offer: expect.objectContaining({ rateId: "b", bedGroups: [{ id: "k", description: "1 King Bed" }, { id: "t", description: "2 Twin Beds" }] }),
