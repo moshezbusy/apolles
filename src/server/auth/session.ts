@@ -36,10 +36,13 @@ export type SessionContext = {
   user: SessionUser;
   agency?: SessionAgency; // present for AGENT sessions only
   totpVerifiedAt: Date | null; // admin sessions: when the TOTP code was entered; null = not yet
+  emailVerifiedAt: Date | null; // agent sessions: when the sign-in code was entered (or a known device)
 };
 
 // Returns the raw token for the cookie. The raw token is never stored or logged.
-export async function createSession(userId: string): Promise<string> {
+// `verified`: an agent on a known device (or not an agent). Otherwise the session waits for the
+// email sign-in code (plan 8e).
+export async function createSession(userId: string, opts: { verified?: boolean } = { verified: true }): Promise<string> {
   const rawToken = generateRawToken();
   const createdAt = new Date();
   await db.session.create({
@@ -47,6 +50,7 @@ export async function createSession(userId: string): Promise<string> {
       tokenHash: hashToken(rawToken),
       userId,
       createdAt,
+      emailVerifiedAt: opts.verified === false ? null : createdAt,
       expiresAt: new Date(createdAt.getTime() + SESSION_TTL_MS),
     },
   });
@@ -63,6 +67,7 @@ export async function getSession(rawToken: string): Promise<SessionContext | nul
       id: true,
       expiresAt: true,
       totpVerifiedAt: true,
+      emailVerifiedAt: true,
       user: { select: { ...userSelect, agency: { select: agencySelect } } },
     },
   });
@@ -78,9 +83,9 @@ export async function getSession(rawToken: string): Promise<SessionContext | nul
 
   if (user.role === "AGENT") {
     if (!agency || agency.status !== "ACTIVE") return null;
-    return { sessionId: row.id, user, agency, totpVerifiedAt: row.totpVerifiedAt };
+    return { sessionId: row.id, user, agency, totpVerifiedAt: row.totpVerifiedAt, emailVerifiedAt: row.emailVerifiedAt };
   }
-  return { sessionId: row.id, user, totpVerifiedAt: row.totpVerifiedAt };
+  return { sessionId: row.id, user, totpVerifiedAt: row.totpVerifiedAt, emailVerifiedAt: row.emailVerifiedAt };
 }
 
 // Sign-out: ends only the session that belongs to this token.

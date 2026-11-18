@@ -4,7 +4,7 @@ import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import { SESSION_COOKIE, createSession } from "@/server/auth/session";
-import { requireAdmin, requireAdminPendingTotp, requireAgent } from "@/server/auth/guards";
+import { requireAgentPendingCode, requireAdmin, requireAdminPendingTotp, requireAgent } from "@/server/auth/guards";
 
 const cookieJar = new Map<string, string>();
 
@@ -59,7 +59,16 @@ describe("auth guards", () => {
     cookieJar.clear();
   });
 
-  it("requireAgent with a valid agent session → userId and agencyId", async () => {
+  it("an agent session still waiting for its email code → /login/verify; the verify page's guard lets it in", async () => {
+    const { agent } = await agentSession();
+    cookieJar.set(SESSION_COOKIE, await createSession(agent.id, { verified: false }));
+    await expect(requireAgent()).rejects.toThrow(/^NEXT_REDIRECT:\/login\/verify$/);
+    expect(await requireAgentPendingCode()).toMatchObject({ userId: agent.id, email: "agent@example.com" });
+    cookieJar.set(SESSION_COOKIE, await createSession(agent.id));
+    await expect(requireAgentPendingCode()).rejects.toThrow("NEXT_REDIRECT:/search");
+  });
+
+    it("requireAgent with a valid agent session → userId and agencyId", async () => {
     const { agent, agency } = await agentSession();
     expect(await requireAgent()).toEqual({ userId: agent.id, agencyId: agency.id });
   });

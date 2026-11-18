@@ -12,7 +12,9 @@ import {
   SESSION_TTL_MS,
   createSession,
   destroySession,
+  getSession,
 } from "@/server/auth/session";
+import { DEVICE_COOKIE, isTrustedDevice, sendSignInCode } from "@/server/auth/signin-code";
 
 export type LoginFormState = { error: string } | null;
 
@@ -47,7 +49,9 @@ export async function loginAction(
   const previousToken = cookieStore.get(SESSION_COOKIE)?.value;
   if (previousToken) await destroySession(previousToken);
 
-  const token = await createSession(result.userId);
+  // Plan 8e: an agent on a device Apolles does not know must enter an email code first.
+  const knownDevice = result.needsTotp || (await isTrustedDevice(result.userId, cookieStore.get(DEVICE_COOKIE)?.value));
+  const token = await createSession(result.userId, { verified: knownDevice });
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: true,
@@ -56,6 +60,11 @@ export async function loginAction(
     maxAge: SESSION_TTL_MS / 1000,
   });
 
+  if (!knownDevice) {
+    const session = await getSession(token);
+    if (session) await sendSignInCode(session.sessionId);
+    redirect("/login/verify");
+  }
   // Admins continue to the admin area (TOTP step is added with admin TOTP).
   redirect(result.needsTotp ? "/admin" : "/search");
 }

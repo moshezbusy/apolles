@@ -1,3 +1,4 @@
+import { DEVICE_COOKIE, trustDevice } from "@/server/auth/signin-code";
 import { generateSecret } from "otplib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
@@ -63,8 +64,18 @@ describe("loginAction", () => {
     requestHeaders.set("x-forwarded-for", "203.0.113.7");
   });
 
-  it("agent success → sets a secure session cookie and redirects to /search", async () => {
+  it("agent on a new device → a session waiting for the email code, and /login/verify", async () => {
     const agent = await createAgent();
+    await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/login/verify");
+    const session = await getSession(setCalls[0]!.value);
+    expect(session?.user.id).toBe(agent.id);
+    expect(session?.emailVerifiedAt).toBeNull();
+    expect((await db.session.findUniqueOrThrow({ where: { id: session!.sessionId } })).codeHash).not.toBeNull();
+  });
+
+  it("agent success on a known device → sets a secure session cookie and redirects to /search", async () => {
+    const agent = await createAgent();
+    jar.set(DEVICE_COOKIE, await trustDevice(agent.id));
     await expect(
       loginAction(null, form({ email: "agent@example.com", password: GOOD })),
     ).rejects.toThrow("NEXT_REDIRECT:/search");
@@ -166,7 +177,7 @@ describe("loginAction", () => {
       await seedRateLimit("signin:ip:203.0.113.7", limit - 1, windowMs);
       await expect(
         loginAction(null, form({ email: "agent@example.com", password: GOOD })),
-      ).rejects.toThrow("NEXT_REDIRECT:/search");
+      ).rejects.toThrow("NEXT_REDIRECT:/login/verify");
     });
 
     it("the 11th is refused before the password is checked: failedLogins unchanged, no session", async () => {
@@ -206,7 +217,7 @@ describe("loginAction", () => {
       requestHeaders.set("x-forwarded-for", "198.51.100.20");
       await expect(
         loginAction(null, form({ email: "agent@example.com", password: GOOD })),
-      ).rejects.toThrow("NEXT_REDIRECT:/search");
+      ).rejects.toThrow("NEXT_REDIRECT:/login/verify");
     });
   });
 });
