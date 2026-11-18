@@ -20,7 +20,9 @@ const input = z
   .strict();
 
 const AGENCY_LIMIT = { limit: 30, windowMs: 60 * 60_000 };
+const AGENCY_DAY_LIMIT = { limit: 100, windowMs: 24 * 60 * 60_000 };
 const BOOKING_LIMIT = { limit: 5, windowMs: 24 * 60 * 60_000 };
+const LIMITED = "Too many client emails for now. Try again later.";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DUE_LABEL: Record<string, { en: string; he: string }> = {
@@ -63,12 +65,12 @@ export async function emailBookingToClient(actorUserId: string, agencyId: string
     },
   });
   if (!b) return { ok: false, error: NOT_AVAILABLE };
-  if (!(await hitRateLimit(`booking-email:agency:${agencyId}`, AGENCY_LIMIT.limit, AGENCY_LIMIT.windowMs)).allowed) {
-    return { ok: false, error: "Too many client emails this hour. Try again later." };
-  }
+  // The booking's own limit first, so a refused resend does not use the agency's slots.
   if (!(await hitRateLimit(`booking-email:booking:${b.id}`, BOOKING_LIMIT.limit, BOOKING_LIMIT.windowMs)).allowed) {
     return { ok: false, error: "This booking was emailed several times today. Try again later." };
   }
+  if (!(await hitRateLimit(`booking-email:agency:${agencyId}`, AGENCY_LIMIT.limit, AGENCY_LIMIT.windowMs)).allowed) return { ok: false, error: LIMITED };
+  if (!(await hitRateLimit(`booking-email:agency-day:${agencyId}`, AGENCY_DAY_LIMIT.limit, AGENCY_DAY_LIMIT.windowMs)).allowed) return { ok: false, error: LIMITED };
 
   const he = b.quote?.language === "HE";
   const displayName = b.agency.quoteDisplayName ?? b.agency.name;
@@ -81,7 +83,9 @@ export async function emailBookingToClient(actorUserId: string, agencyId: string
     return `- ${label}: ${formatMinor(d.amount.minor, d.amount.currency)}${local}`;
   });
   const dates = he ? `${heDay(b.checkin)} עד ${heDay(b.checkout)}` : `${enDay(b.checkin, false)} to ${enDay(b.checkout, true)}`;
-  const subject = he ? `ההזמנה שלכם במלון: ${b.hotelName}, ${dates}` : `Your hotel booking: ${b.hotelName}, ${dates}`;
+  // Supplier text in a header: one line, no control or invisible characters.
+  const hotel = b.hotelName.replace(/[\p{Cc}\p{Cf}]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+  const subject = he ? `ההזמנה שלכם במלון: ${hotel}, ${dates}` : `Your hotel booking: ${hotel}, ${dates}`;
   const lines = he
     ? [
         "שלום,",
@@ -139,6 +143,10 @@ export async function emailBookingToClient(actorUserId: string, agencyId: string
     console.error("client booking email failed", { error: error instanceof Error ? error.name : "Error", bookingId: b.id });
     return { ok: false, error: "The email could not be sent right now. Try again in a few minutes." };
   }
-  await audit(actorUserId, "booking.email-client", "Booking", b.id, undefined, { language: he ? "HE" : "EN" });
+  // The email went out: a failed audit write is logged, never reported as a failed send (the agent
+  // would send it again).
+  await audit(actorUserId, "booking.email-client", "Booking", b.id, undefined, { language: he ? "HE" : "EN" }).catch((error: unknown) =>
+    console.error("client booking email audit failed", { error: error instanceof Error ? error.name : "Error", bookingId: b.id }),
+  );
   return { ok: true };
 }

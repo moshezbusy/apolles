@@ -67,7 +67,7 @@ describe("email the booking to the client (plan 8g)", () => {
     expect(sent()).toHaveLength(0);
   });
 
-  it("at most 5 a day per booking and 30 an hour per agency", async () => {
+  it("at most 5 a day per booking, 30 an hour and 100 a day per agency; the subject is one clean line", async () => {
     await seed();
     for (let i = 0; i < 5; i++) expect((await emailBookingToClient("u-A", "A", { bookingId: "bk1", email: "c@example.com" })).ok).toBe(true);
     expect(await emailBookingToClient("u-A", "A", { bookingId: "bk1", email: "c@example.com" })).toEqual({ ok: false, error: expect.stringMatching(/later/) });
@@ -75,5 +75,15 @@ describe("email the booking to the client (plan 8g)", () => {
     await seed();
     await seedRateLimit("booking-email:agency:A", 30, 60 * 60_000);
     expect((await emailBookingToClient("u-A", "A", { bookingId: "bk1", email: "c@example.com" })).ok).toBe(false);
+    await resetTestDb();
+    await seed();
+    await seedRateLimit("booking-email:agency-day:A", 100, 24 * 60 * 60_000);
+    expect((await emailBookingToClient("u-A", "A", { bookingId: "bk1", email: "c@example.com" })).ok).toBe(false);
+    await resetTestDb();
+    await seed();
+    await db.booking.update({ where: { id: "bk1" }, data: { hotelName: "Hotel\r\nBcc: x@evil.example" } });
+    vi.mocked(sendEmail).mockClear();
+    await emailBookingToClient("u-A", "A", { bookingId: "bk1", email: "c@example.com" });
+    expect(sent()[0]!.subject).toBe("Your hotel booking: Hotel Bcc: x@evil.example, Apr 10 to Apr 12, 2027");
   });
 });
