@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>System states | Apolles</title>
+<style>
+*{box-sizing:border-box}
+:root{--ink:#17211d;--muted:#6d756f;--green:#173f35;--green2:#245c4e;--cream:#faf8f3;--sage:#eef3f0;--gold:#b89155;--line:#e7e2d8}
+body{margin:0;background:var(--cream);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.page{width:min(1040px,calc(100% - 32px));margin:0 auto;padding:34px 0 60px}
+h1{margin:0;font:500 34px Georgia,"Times New Roman",serif;letter-spacing:-.015em}
+.lead{margin:8px 0 0;font-size:14px;color:#4d5a54;line-height:1.6;max-width:720px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px}
+.frame{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+.frame-label{display:flex;justify-content:space-between;gap:10px;padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--line);background:#fbfaf7}
+.frame-label em{font-style:normal;text-transform:none;letter-spacing:0;font-weight:600}
+.screen{flex:1;display:grid;place-items:center;padding:34px 24px;text-align:center;min-height:300px}
+.icon{width:54px;height:54px;border-radius:50%;background:var(--sage);color:var(--green);display:grid;place-items:center;margin:0 auto 14px;font:500 22px Georgia,serif}
+.icon.warn{background:#fff4dd;color:#8a6a1f}
+.screen h2{margin:0 0 6px;font:500 22px Georgia,"Times New Roman",serif}
+.screen p{margin:0 auto 16px;max-width:340px;font-size:13px;line-height:1.6;color:#4d5a54}
+.btns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.btn{height:38px;padding:0 16px;border-radius:10px;border:1px solid #d7e0db;background:#fff;color:var(--green);font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;text-decoration:none}
+.btn.primary{background:var(--green);border-color:var(--green);color:#fff}
+.small{font-size:11.5px;color:var(--muted);margin-top:12px;line-height:1.5}
+.code{font-size:11px;color:#8a928e;margin-top:10px}
+.agency-mark{display:flex;align-items:center;justify-content:center;gap:9px;margin:0 auto 14px}
+.agency-mark .logo{width:38px;height:38px;border-radius:10px;background:#e9e1d1;color:#7a5f30;font:500 14px Georgia,"Times New Roman",serif;display:grid;place-items:center}
+.agency-mark strong{font-size:14px}
+
+/* loading skeleton */
+.skel{width:100%;display:grid;gap:10px}
+.sk-card{display:grid;grid-template-columns:90px 1fr 80px;gap:12px;align-items:center;padding:12px;border:1px solid #eeebe4;border-radius:12px;text-align:left}
+.sk{background:linear-gradient(90deg,#efede7 0%,#f7f6f2 50%,#efede7 100%);background-size:200% 100%;border-radius:7px;animation:sh 1.2s infinite linear}
+.sk.img{height:62px;border-radius:9px}
+.sk.l1{height:12px;width:70%}
+.sk.l2{height:10px;width:45%;margin-top:8px}
+.sk.p{height:18px}
+.sk-note{font-size:12px;color:var(--muted);text-align:center}
+@keyframes sh{from{background-position:200% 0}to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.sk{animation:none}}
+
+.rules{margin-top:24px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 20px}
+.rules h2{margin:0 0 10px;font:500 22px Georgia,"Times New Roman",serif}
+.rules ul{margin:0;padding-left:18px;font-size:13px;line-height:1.7;color:#3f4a45}
+@media(max-width:760px){.grid{grid-template-columns:1fr}h1{font-size:28px}.sk-card{grid-template-columns:64px 1fr 56px}}
+</style>
+</head>
+<body>
+<main class="page">
+  <h1>System states</h1>
+  <p class="lead">Shared screens for when something is missing, broken, loading or expired. Empty states inside each page (no bookings, no quotes, no results) are already in the page mockups.</p>
+
+  <div class="grid">
+    <section class="frame">
+      <div class="frame-label">Page not found <em>404</em></div>
+      <div class="screen"><div>
+        <div class="icon">?</div>
+        <h2>We couldn't find this page</h2>
+        <p>The link may be old or mistyped. Your bookings and quotes are safe.</p>
+        <div class="btns"><a class="btn primary" href="07-search.html">Go to search</a><a class="btn" href="13-bookings.html">My bookings</a></div>
+        <div class="small">Not signed in: the button goes to the homepage instead.</div>
+      </div></div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-label">Something went wrong <em>500</em></div>
+      <div class="screen"><div>
+        <div class="icon warn">!</div>
+        <h2>Something went wrong on our side</h2>
+        <p>Please try again in a minute. If you were booking, check My bookings before trying again, so you don't book twice.</p>
+        <div class="btns"><button class="btn primary" type="button" onclick="location.reload()">Try again</button><a class="btn" href="13-bookings.html">My bookings</a></div>
+        <div class="code">Error code: 7F3K-21 · give this code to support</div>
+        <div class="small">Agent version. Client pages use the client version (see Rules).</div>
+      </div></div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-label">Session ended <em>after 12 hours</em></div>
+      <div class="screen"><div>
+        <div class="icon">⏱</div>
+        <h2>You were signed out</h2>
+        <p>For your security, sessions end after 12 hours. Sign in again to continue where you left off.</p>
+        <div class="btns"><a class="btn primary" href="04-login.html">Sign in again</a></div>
+        <div class="small">After signing in, return the agent to the page they were on. Unsaved quote changes are kept only in this browser, and the agent sees "Restore your unsaved changes?". Nothing is saved to the quote until the agent clicks Save, because saving a sent quote updates the client link.</div>
+      </div></div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-label">Search unavailable <em>supplier not responding</em></div>
+      <div class="screen"><div>
+        <div class="icon warn">!</div>
+        <h2>Hotel search is not available right now</h2>
+        <p>We can't get prices at the moment. Please try again in a few minutes. Your quotes and bookings are not affected.</p>
+        <div class="btns"><button class="btn primary" type="button" onclick="location.reload()">Search again</button><a class="btn" href="14-quotes.html">My quotes</a></div>
+        <div class="small">Never show the supplier name in this message.</div>
+      </div></div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-label">Loading results <em>while searching</em></div>
+      <div class="screen"><div class="skel" aria-label="Loading hotels">
+        <div class="sk-card"><div class="sk img"></div><div><div class="sk l1"></div><div class="sk l2"></div></div><div class="sk p"></div></div>
+        <div class="sk-card"><div class="sk img"></div><div><div class="sk l1"></div><div class="sk l2"></div></div><div class="sk p"></div></div>
+        <div class="sk-card"><div class="sk img"></div><div><div class="sk l1"></div><div class="sk l2"></div></div><div class="sk p"></div></div>
+        <div class="sk-note">Finding the best prices in Cancún…</div>
+      </div></div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-label">Client link not available <em>quote deleted · 404</em></div>
+      <div class="screen"><div>
+        <div class="agency-mark"><span class="logo">MA</span><strong>My Agency</strong></div>
+        <h2>This proposal link is not available</h2>
+        <p>The link may be incomplete, or the proposal was removed. Please contact your travel advisor for a new link.</p>
+        <div class="btns"><a class="btn primary" href="https://wa.me/972505550198" target="_blank" rel="noopener">WhatsApp</a><a class="btn" href="tel:+972505550198">Call</a></div>
+        <div class="small">Client domain, agency brand only, no Apolles. Same screen as "Link not available" on 16 and 17. A deleted quote is hidden, not erased, so its link still knows the agency.</div>
+      </div></div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-label">Wrong client link <em>no agency found · 404</em></div>
+      <div class="screen"><div>
+        <div class="icon">?</div>
+        <h2>This link is not valid</h2>
+        <p>Please check the link, or contact your travel advisor for a new one.</p>
+        <div class="small">When the link matches no quote, the agency is unknown: no agency brand, no Apolles and no buttons. Client domain.</div>
+      </div></div>
+    </section>
+  </div>
+
+  <section class="rules">
+    <h2>Rules</h2>
+    <ul>
+      <li>Every error keeps the Apolles header (or the agency brand on client pages) so the user is never stuck.</li>
+      <li>Errors during booking: never book twice. Check the booking status first and show "My bookings".</li>
+      <li>Error messages never show technical details or the supplier name. Log the details with the error code.</li>
+      <li>Client pages (quote links on the client domain): every error, including a server error, uses a client version with the agency brand when it is known, no Apolles and no agent buttons such as "My bookings".</li>
+      <li>Loading: use grey placeholder cards, not a blank page. Buttons show a spinner and stay disabled while working.</li>
+    </ul>
+  </section>
+</main>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

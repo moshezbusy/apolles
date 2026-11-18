@@ -1,0 +1,2977 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SLS Playa Mujeres | Apolles</title>
+<style>
+:root{
+  --ink:#17211d;
+  --muted:#6d756f;
+  --green:#173f35;
+  --green-soft:#eef3f0;
+  --line:#e7e2d8;
+  --bg:#faf9f6;
+  --card:#fff;
+  --shadow:0 14px 36px rgba(19,47,39,.08);
+  --header-dark:#2f3542;
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  min-height:100%;
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--ink);
+  background:var(--bg);
+  scroll-behavior:smooth;
+}
+a{text-decoration:none;color:inherit}
+button,input,select{font:inherit}
+
+.topbar{
+  position:sticky;
+  top:0;
+  z-index:120;
+  height:68px;
+  background:#fff;
+  border-bottom:1px solid var(--line);
+}
+.topbar-inner{
+  width:min(1280px,calc(100% - 40px));
+  height:100%;
+  margin:auto;
+  display:flex;
+  align-items:center;
+  gap:28px;
+}
+.brand{
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:27px;
+  margin-right:10px;
+}
+.nav{display:flex;height:100%;align-items:center;gap:26px}
+.nav-link{height:100%;display:flex;align-items:center;position:relative;font-size:13px;color:#6c7671}
+.nav-link.active{color:var(--green);font-weight:700}
+.nav-link.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-group{position:relative;height:100%;display:flex;align-items:center}
+.nav-trigger{
+  height:100%;border:0;background:transparent;padding:0;cursor:pointer;
+  color:#6c7671;font-size:13px;display:flex;align-items:center;gap:5px;position:relative;
+}
+.nav-trigger.active{color:var(--green);font-weight:700}
+.nav-trigger.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-trigger span{font-size:11px;color:#8a938e}
+.nav-menu{
+  position:absolute;top:58px;left:-10px;z-index:180;
+  width:190px;padding:7px;background:#fff;border:1px solid #e1e6e3;
+  border-radius:11px;box-shadow:0 15px 38px rgba(19,47,39,.14);
+  opacity:0;visibility:hidden;transform:translateY(5px);transition:.14s ease;
+}
+.nav-group:hover>.nav-menu,.nav-group.menu-open>.nav-menu{opacity:1;visibility:visible;transform:translateY(0)}
+.nav-menu a{display:block;padding:8px 10px;border-radius:7px;color:#4d5a54;font-size:12.5px}
+.nav-menu a:hover{background:#f1f6f3;color:var(--green)}
+.nav-sep{height:1px;background:#eeeae5;margin:5px 2px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:14px;color:#647069;font-size:12px}
+.balance-chip{
+  display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;
+  padding:6px 11px;border:1px solid #dce6e0;border-radius:10px;background:#f7faf8;
+}
+.balance-chip small{font-size:11px;color:#7f8984;font-weight:600}
+.balance-chip b{font-size:12.5px;color:var(--green)}
+.balance-chip:hover{border-color:#bcd0c6}
+.account-group{height:auto}
+.account-trigger{border:0;background:transparent;display:flex;align-items:center;gap:8px;color:#4d5a54;font-size:12.5px;padding:0;cursor:pointer}
+.account-trigger b{font-size:11px;font-weight:500}
+.account-menu{left:auto;right:0;top:40px}
+.avatar{
+  width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#e5eee9;color:var(--green);
+  font-size:11px;font-weight:800;
+}
+
+.page{
+  width:min(1280px,calc(100% - 40px));
+  margin:auto;
+  padding:18px 0 50px;
+}
+
+.search-summary{
+  position:sticky;
+  top:68px;
+  z-index:90;
+  padding-bottom:14px;
+  background:rgba(250,249,246,.96);
+  backdrop-filter:blur(10px);
+}
+.search-box{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  padding:14px;
+}
+.search-row{
+  display:grid;
+  grid-template-columns:1.65fr .95fr .95fr 1.05fr .85fr auto;
+  gap:9px;
+  align-items:end;
+}
+.field-wrap label{
+  display:block;
+  margin:0 0 5px 2px;
+  font-size:11px;
+  font-weight:700;
+  color:#7b8580;
+}
+.field,.field-button{
+  width:100%;
+  height:40px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  background:#fff;
+  color:#324039;
+  font-size:13px;
+}
+.field{padding:0 11px}
+.field-button{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 11px;
+}
+.search-btn{
+  height:40px;
+  border:0;
+  border-radius:8px;
+  padding:0 20px;
+  background:var(--green);
+  color:#fff;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+
+.hotel-summary{
+  display:grid;
+  grid-template-columns:260px minmax(0,1fr) 205px;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:18px;
+  box-shadow:var(--shadow);
+  overflow:hidden;
+  margin-top:4px;
+}
+.hero-image{
+  min-height:220px;
+  margin:14px;
+  border-radius:12px;
+  background:
+    linear-gradient(135deg,rgba(23,63,53,.17),rgba(23,63,53,.03)),
+    linear-gradient(180deg,#8ab5c7,#d8e8ed 55%,#bea986);
+}
+.hotel-copy{
+  padding:18px 20px;
+}
+.hotel-title-row{
+  display:flex;
+  gap:18px;
+  justify-content:space-between;
+  align-items:start;
+}
+.hotel-copy h1{
+  margin:0 0 5px;
+  font-family:Georgia,"Times New Roman",serif;
+  font-weight:500;
+  font-size:34px;
+  line-height:1.05;
+  letter-spacing:-.025em;
+}
+.location{
+  font-size:12px;
+  color:#6f7974;
+}
+.stars{
+  color:#c59a2e;
+  font-size:15px;
+  letter-spacing:1px;
+  white-space:nowrap;
+}
+.badges{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin-top:15px;
+}
+.badge{
+  min-height:25px;
+  padding:5px 10px;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  background:var(--green-soft);
+  color:var(--green);
+  font-size:11px;
+  font-weight:600;
+}
+.hotel-actions{
+  border-left:1px solid #f0ece6;
+  padding:18px 16px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:10px;
+}
+.change-hotel,.jump-info{
+  height:38px;
+  border-radius:9px;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.change-hotel{
+  border:1px solid #d6dfda;
+  background:#fff;
+  color:var(--green);
+}
+.jump-info{
+  border:1px solid #d6dfda;
+  background:#fff;
+  color:var(--green);
+}
+.change-hotel:hover,.jump-info:hover{background:var(--green-soft)}
+
+.rooms-toolbar{
+  display:flex;
+  justify-content:space-between;
+  gap:14px;
+  align-items:center;
+  margin:18px 0 12px;
+}
+.rooms-toolbar h2{
+  margin:0;
+  font-size:18px;
+}
+.rooms-toolbar h2 span{
+  font-weight:500;
+  color:#8a928e;
+  font-size:12px;
+  margin-left:5px;
+}
+.room-filters{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+.room-filter{
+  height:36px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  background:#fff;
+  padding:0 11px;
+  color:#4d5a54;
+  font-size:12px;
+}
+.toggle-pill{
+  height:36px;
+  border:1px solid #dce3df;
+  border-radius:999px;
+  background:#fff;
+  padding:0 11px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:#4d5a54;
+  font-size:12px;
+}
+.toggle-pill input{display:none}
+.toggle{
+  width:32px;height:18px;
+  border-radius:999px;
+  background:#d6dbd8;
+  position:relative;
+  flex:0 0 auto;
+}
+.toggle:after{
+  content:"";
+  width:14px;height:14px;
+  border-radius:50%;
+  background:#fff;
+  position:absolute;
+  top:2px;left:2px;
+  box-shadow:0 1px 3px rgba(0,0,0,.15);
+}
+.toggle-pill input:checked + .toggle{
+  background:var(--green);
+}
+.toggle-pill input:checked + .toggle:after{
+  left:16px;
+}
+
+.room-table{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  overflow:hidden;
+  box-shadow:var(--shadow);
+}
+.room-table-head,
+.room-row{
+  display:grid;
+  grid-template-columns:minmax(0,2.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 165px;
+}
+.room-table-head{
+  background:var(--green);
+  color:#fff;
+}
+.room-table-head div{
+  padding:14px 14px;
+  font-size:13px;
+  border-right:1px solid rgba(255,255,255,.15);
+}
+.room-table-head div:last-child{
+  border-right:0;
+}
+.room-row{
+  border-top:1px solid #eee9e1;
+  align-items:stretch;
+}
+.room-cell{
+  padding:14px 14px;
+  border-right:1px solid #eee9e1;
+  display:flex;
+  align-items:center;
+}
+.room-row .room-cell:last-child{
+  border-right:0;
+}
+.room-main{
+  display:grid;
+  grid-template-columns:104px minmax(0,1fr);
+  gap:12px;
+  align-items:start;
+  width:100%;
+}
+.room-thumb{
+  width:104px;
+  min-height:92px;
+  border-radius:10px;
+  background:
+    linear-gradient(135deg,rgba(23,63,53,.10),rgba(23,63,53,.02)),
+    linear-gradient(180deg,#c7b7a6,#ece5dc);
+}
+.room-title{
+  margin:0 0 7px;
+  font-size:17px;
+  font-weight:760;
+  letter-spacing:-.01em;
+}
+.room-meta{
+  display:grid;
+  gap:4px;
+  color:#596660;
+  font-size:12px;
+  line-height:1.45;
+}
+.room-meta strong{
+  color:#1f2a26;
+}
+.table-note{
+  color:#5a6761;
+  font-size:13px;
+  line-height:1.45;
+}
+.table-note strong{
+  color:#1f2a26;
+}
+.cancel-good{
+  color:#2d8a41;
+  font-weight:700;
+  font-size:14px;
+  margin-bottom:4px;
+}
+.cancel-sub{
+  color:#56645d;
+  font-size:13px;
+}
+.price-wrap{
+  width:100%;
+  text-align:left;
+}
+.price-main{
+  font-size:22px;
+  font-weight:800;
+  line-height:1;
+  letter-spacing:-.02em;
+}
+.price-currency{
+  font-size:15px;
+  font-weight:700;
+  margin-right:4px;
+}
+.price-sub{
+  margin-top:6px;
+  font-size:13px;
+  color:#5f6d66;
+}
+.price-tax{
+  margin-top:4px;
+  font-size:12px;
+  color:#8a948f;
+}
+.action-col{
+  padding:14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.book-btn{
+  width:100%;
+  height:42px;
+  border:0;
+  border-radius:10px;
+  background:var(--green);
+  color:#fff;
+  font-size:12.5px;
+  font-weight:700;
+  cursor:pointer;
+}
+
+/* bottom info area */
+.info-anchor{
+  scroll-margin-top:150px;
+}
+.info-section{
+  margin-top:24px;
+}
+
+.info-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:14px;
+}
+.info-grid .info-card{
+  margin-bottom:0;
+}
+.info-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  padding:16px;
+  margin-bottom:14px;
+}
+.info-card h3{
+  margin:0 0 12px;
+  font-size:18px;
+}
+.gallery-grid{
+  display:grid;
+  grid-template-columns:1.4fr repeat(3,1fr);
+  gap:8px;
+  height:220px;
+}
+.gallery-grid div{
+  border-radius:10px;
+  background:
+    linear-gradient(135deg,rgba(23,63,53,.08),rgba(23,63,53,.02)),
+    linear-gradient(180deg,#91b8c6,#dbe9ed 60%,#c3b39a);
+}
+.map-box{
+  height:360px;
+  border-radius:12px;
+  background:
+    linear-gradient(180deg,#95d0e7 0 0) top/100% 38% no-repeat,
+    linear-gradient(180deg,#bedfc6 0 0) bottom/100% 62% no-repeat;
+  position:relative;
+  overflow:hidden;
+  border:1px solid #e5ebe7;
+}
+
+.map-box:after{
+  content:"SLS Playa Mujeres";
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  background:#fff;
+  padding:12px 16px;
+  border-radius:12px;
+  box-shadow:0 10px 30px rgba(0,0,0,.12);
+  font-size:14px;
+  font-weight:700;
+}
+.detail-text{
+  color:#394640;
+  font-size:14px;
+  line-height:1.7;
+}
+.detail-text p{
+  margin:0 0 16px;
+}
+.detail-meta{
+  display:grid;
+  gap:8px;
+  margin-top:14px;
+  font-size:13px;
+  color:#4a5751;
+}
+.detail-meta strong{
+  color:#1e2824;
+}
+.amenities-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:18px;
+}
+.amenity-col h4{
+  margin:0 0 10px;
+  font-size:16px;
+}
+.amenity-col ul{
+  list-style:none;
+  padding:0;
+  margin:0;
+  display:grid;
+  gap:8px;
+  font-size:13px;
+  color:#49554f;
+}
+.amenity-col li:before{
+  content:"✓";
+  color:var(--green);
+  margin-right:8px;
+  font-weight:800;
+}
+
+
+/* Room actions */
+.room-actions{display:grid;gap:8px;width:100%}
+.quote-btn{width:100%;height:36px;border:1px solid #d4ddd8;border-radius:10px;background:#fff;color:var(--green);font-size:12px;font-weight:700;cursor:pointer}
+.quote-btn.in{background:var(--green-soft);border-color:#cddbd4}
+.price-fee{margin-top:6px;display:inline-block;padding:3px 7px;border-radius:7px;background:#fff7dd;color:#6f5a20;font-size:11px;font-weight:600}
+
+
+
+@media(max-width:1100px){
+  .info-grid{
+    grid-template-columns:1fr;
+  }
+
+  .room-table-head,
+  .room-row{
+    grid-template-columns:minmax(0,2fr) 1fr 1fr 1fr 145px;
+  }
+  .amenities-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+@media(max-width:950px){
+  .hotel-summary{grid-template-columns:1fr}
+  .hotel-actions{
+    border-left:0;
+    border-top:1px solid #f0ece6;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+  }
+  .room-table-head{
+    display:none;
+  }
+  .room-row{
+    grid-template-columns:1fr;
+  }
+  .room-cell{
+    border-right:0;
+    border-bottom:1px solid #eee9e1;
+    align-items:flex-start;
+  }
+  .room-row .room-cell:last-child{
+    border-bottom:0;
+  }
+  .action-col{
+    justify-content:flex-start;
+  }
+}
+@media(max-width:760px){
+  .topbar-inner,.page{width:min(100% - 24px,1280px)}
+  .nav{gap:14px;overflow:auto}
+  .account-name{display:none}
+  .balance-chip small{display:none}
+  .nav-menu{position:fixed;left:12px;right:12px;top:62px;width:auto}
+  .account-menu{top:62px}
+  .search-row{grid-template-columns:1fr}
+  .rooms-toolbar{align-items:flex-start;flex-direction:column}
+  .room-main{
+    grid-template-columns:1fr;
+  }
+  .room-thumb{
+    width:100%;
+    min-height:170px;
+  }
+  .gallery-grid{
+    grid-template-columns:1fr 1fr;
+    grid-template-rows:repeat(3,1fr);
+    height:360px;
+  }
+  .amenities-grid{
+    grid-template-columns:1fr;
+  }
+}
+
+/* ===== Quote drawer: copied from 08-search-results.html ===== */
+.quote-side-tab > span:first-child{
+  writing-mode:vertical-rl;
+  text-orientation:mixed;
+  transform:rotate(180deg);
+}
+.quote-side-tab .quote-side-count{
+  writing-mode:horizontal-tb;
+  transform:none;
+}
+
+.quote-title-block .quote-sub{
+  color:#73817b;
+}
+.quote-name-input{
+  color:#173f35;
+}
+.trip-section strong{
+  color:#173f35;
+}
+.trip-section:before{
+  content:"Current search";
+  display:block;
+  margin-bottom:5px;
+  color:#6f887e;
+  font-size:11px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.quote-item:nth-child(even){
+  background:#fcfdfc;
+  border-left-color:#b89155;
+}
+.quote-item-price{
+  color:#173f35;
+}
+.quote-item-room{
+  color:#55665f;
+}
+.quote-empty{
+  background:#fff;
+  border-color:#cfdcd6;
+}
+.quote-open-btn{
+  box-shadow:0 5px 12px rgba(23,63,53,.14);
+}
+.finish-quote-btn{
+  background:#f4f8f6;
+}
+
+@media(max-width:680px){
+  .topbar-inner,.page{width:min(100% - 24px,1280px)}
+  .nav{gap:14px;overflow:auto}
+  .account-name{display:none}
+  .balance-chip small{display:none}
+  .nav-menu{position:fixed;left:12px;right:12px;top:62px;width:auto}
+  .account-menu{top:62px}
+  .search-row{grid-template-columns:1fr}
+  .results-meta{flex-direction:column;align-items:flex-start}
+}
+
+/* Quote collection experience */
+.quotes-link{
+  display:flex !important;
+  align-items:center;
+  gap:7px;
+}
+.quote-nav-badge{
+  display:none;
+  min-width:20px;
+  height:20px;
+  padding:0 6px;
+  border-radius:999px;
+  background:var(--green);
+  color:#fff;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:800;
+}
+.quote-nav-badge.show{display:inline-flex}
+
+.hotel-card.in-quote{
+  border-color:#aebfb7;
+  box-shadow:0 0 0 2px rgba(23,63,53,.06),var(--shadow);
+}
+.quote-btn.in-quote{
+  background:var(--green-soft);
+  border-color:#cddbd4;
+  color:var(--green);
+}
+.quote-btn.in-quote:before{
+  content:"✓ ";
+  font-weight:900;
+}
+
+.quote-drawer{
+  position:fixed;
+  z-index:250;
+  top:0;
+  right:0;
+  bottom:0;
+  width:410px;
+  height:100vh;
+  background:#f8faf9;
+  border-left:1px solid var(--line);
+  box-shadow:-18px 0 44px rgba(19,47,39,.12);
+  transform:translateX(100%);
+  transition:transform .22s ease;
+  display:flex;
+  flex-direction:column;
+}
+.quote-drawer.open{transform:translateX(0)}
+
+.quote-drawer-head{
+  padding:18px 20px 16px;
+  border-bottom:1px solid #dbe4df;
+  background:#173f35;
+  color:#fff;
+}
+.quote-drawer-kicker{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:12px;
+}
+.quote-drawer-kicker span{
+  color:#c9d8d2;
+  font-size:11px;
+  font-weight:750;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.quote-close{
+  width:30px;
+  height:30px;
+  border:1px solid rgba(255,255,255,.25);
+  border-radius:8px;
+  background:rgba(255,255,255,.10);
+  color:#fff;
+  font-size:18px;
+  line-height:1;
+}
+.quote-picker{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+}
+.quote-picker select{
+  width:100%;
+  height:38px;
+  border:1px solid rgba(255,255,255,.28);
+  border-radius:8px;
+  background:#fff;
+  color:#20302a;
+  padding:0 10px;
+  font-size:12px;
+  font-weight:700;
+}
+.new-quote-btn{
+  height:38px;
+  border:1px solid rgba(255,255,255,.35);
+  border-radius:8px;
+  background:rgba(255,255,255,.12);
+  color:#fff;
+  padding:0 11px;
+  font-size:12px;
+  font-weight:800;
+}
+.quote-title-block{
+  padding:18px 20px 14px;
+  background:#fff;
+  border-bottom:1px solid #e4e9e6;
+}
+.quote-title-row{
+  display:flex;
+  justify-content:space-between;
+  gap:14px;
+  align-items:flex-start;
+}
+.quote-title-row h3{
+  margin:0;
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:22px;
+  font-weight:500;
+}
+.quote-count{
+  flex:0 0 auto;
+  border-radius:999px;
+  background:#dfeee7;
+  color:var(--green);
+  padding:5px 8px;
+  font-size:11px;
+  font-weight:800;
+}
+.quote-sub{
+  margin-top:6px;
+  color:#7c8581;
+  font-size:12px;
+}
+.trip-section{
+  margin:14px 20px 12px;
+  padding:12px 13px;
+  border:1px solid #d8e5df;
+  border-radius:11px;
+  background:#eef5f1;
+}
+.trip-section strong{
+  display:block;
+  font-size:13px;
+  margin-bottom:3px;
+}
+.trip-section span{
+  color:#7c8580;
+  font-size:12px;
+}
+.quote-items{
+  flex:1;
+  overflow:auto;
+  padding:0 20px 18px;
+}
+.quote-empty{
+  margin-top:22px;
+  padding:24px 16px;
+  border:1px dashed #dce3df;
+  border-radius:12px;
+  text-align:center;
+  color:#7d8782;
+  font-size:12.5px;
+  line-height:1.6;
+}
+.quote-item{
+  border:1px solid #dfe7e3;
+  border-left:4px solid #6e9485;
+  border-radius:12px;
+  padding:12px;
+  margin-bottom:10px;
+  background:#fff;
+  box-shadow:0 5px 14px rgba(19,47,39,.05);
+}
+.quote-item-top{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:flex-start;
+}
+.quote-item-hotel{
+  font-size:13.5px;
+  font-weight:800;
+  line-height:1.25;
+}
+.quote-item-remove{
+  flex:0 0 auto;
+  width:25px;
+  height:25px;
+  border:0;
+  border-radius:7px;
+  background:#f5f6f5;
+  color:#89918d;
+  font-size:15px;
+}
+.quote-item-room{
+  margin-top:5px;
+  color:#5f6a65;
+  font-size:12px;
+}
+.quote-item-meta{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-end;
+  margin-top:9px;
+  padding-top:9px;
+  border-top:1px solid #f0eeea;
+}
+.quote-item-dates{
+  color:#8a938e;
+  font-size:11.5px;
+  line-height:1.45;
+}
+.quote-item-price{
+  text-align:right;
+  font-size:13.5px;
+  font-weight:850;
+  white-space:nowrap;
+}
+.quote-item-price small{
+  display:block;
+  margin-top:2px;
+  color:#969d99;
+  font-size:11px;
+  font-weight:600;
+}
+.quote-drawer-foot{
+  border-top:1px solid #dbe4df;
+  padding:14px 20px 16px;
+  background:#fff;
+}
+.quote-limit{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  color:#7d8681;
+  font-size:11.5px;
+  margin-bottom:10px;
+}
+.quote-open-btn{
+  width:100%;
+  height:40px;
+  border:0;
+  border-radius:9px;
+  background:var(--green);
+  color:#fff;
+  font-size:13px;
+  font-weight:800;
+}
+.keep-searching{
+  width:100%;
+  height:34px;
+  margin-top:7px;
+  border:0;
+  background:transparent;
+  color:#617069;
+  font-size:12px;
+  font-weight:750;
+}
+.quote-toast{
+  position:fixed;
+  z-index:300;
+  right:18px;
+  bottom:18px;
+  min-width:250px;
+  padding:11px 13px;
+  border-radius:10px;
+  background:#173f35;
+  color:#fff;
+  box-shadow:0 12px 30px rgba(19,47,39,.22);
+  font-size:12.5px;
+  opacity:0;
+  transform:translateY(8px);
+  pointer-events:none;
+  transition:.18s ease;
+}
+.quote-toast.show{
+  opacity:1;
+  transform:translateY(0);
+}
+
+.quote-side-tab{
+  position:fixed;
+  z-index:240;
+  right:0;
+  top:50%;
+  transform:translateY(-50%);
+  width:42px;
+  min-width:42px;
+  height:92px;
+  padding:10px 0;
+  border:1px solid #cddad4;
+  border-right:0;
+  border-radius:12px 0 0 12px;
+  background:var(--green);
+  color:#fff;
+  box-shadow:-8px 8px 24px rgba(19,47,39,.16);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  font-size:11px;
+  font-weight:800;
+  cursor:pointer;
+  transition:right .22s ease, background .15s ease;
+  writing-mode:horizontal-tb;
+  text-orientation:mixed;
+  transform:translateY(-50%);
+}
+.quote-side-tab:hover{background:#245c4e}
+.quote-side-tab.drawer-open{
+  right:410px;
+  border-right:1px solid #d8e1dc;
+}
+.quote-side-count{
+  display:none;
+  min-width:20px;
+  height:20px;
+  padding:0 6px;
+  border-radius:999px;
+  background:var(--green);
+  color:#fff;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:850;
+}
+.quote-side-count.show{display:inline-flex}
+
+.quote-name-wrap{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+.quote-name-input{
+  width:100%;
+  min-width:0;
+  height:38px;
+  border:1px solid transparent;
+  border-radius:8px;
+  background:transparent;
+  padding:0 8px;
+  margin-left:-8px;
+  color:var(--ink);
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:22px;
+  font-weight:500;
+  outline:none;
+}
+.quote-name-input:hover{border-color:#e1e6e3;background:#fbfcfb}
+.quote-name-input:focus{
+  border-color:#a7b8b0;
+  background:#fff;
+  box-shadow:0 0 0 3px rgba(23,63,53,.06);
+}
+.quote-edit-hint{
+  flex:0 0 auto;
+  color:#8a938e;
+  font-size:11px;
+}
+.finish-quote-btn{
+  width:100%;
+  height:38px;
+  margin-top:7px;
+  border:1px solid #cfdad4;
+  border-radius:9px;
+  background:#fff;
+  color:var(--green);
+  font-size:12.5px;
+  font-weight:800;
+}
+.quote-finished-note{
+  display:none;
+  margin:0 18px 12px;
+  padding:9px 10px;
+  border-radius:9px;
+  background:#dfeee7;
+  color:var(--green);
+  font-size:12px;
+  font-weight:700;
+}
+.quote-finished-note.show{display:block}
+
+@media(max-width:680px){
+  .quote-side-tab.drawer-open{right:0}
+  .quote-side-tab{top:auto;bottom:20px;transform:none}
+}
+
+@media(max-width:680px){
+  .quote-drawer{
+    width:100%;
+    top:0;
+    height:100vh;
+  }
+}
+
+/* ===== Search bar: copied from 07-search.html ===== */
+.field-wrap{position:relative}
+.field-wrap label{
+  display:block;
+  margin:0 0 5px 2px;
+  font-size:11px;
+  font-weight:700;
+  color:#7b8580;
+}
+.field,
+.field-button{
+  width:100%;
+  height:42px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  background:#fff;
+  color:#324039;
+  outline:none;
+  font-size:13px;
+}
+.field{padding:0 11px}
+.field::placeholder{color:#9ba39f}
+.field-button{
+  padding:0 11px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  cursor:pointer;
+  text-align:left;
+}
+.field:focus,.field-button:focus{
+  border-color:#98ada4;
+  box-shadow:0 0 0 3px rgba(23,63,53,.07);
+}
+.search-btn{
+  height:42px;
+  border:0;
+  border-radius:8px;
+  padding:0 22px;
+  background:var(--green);
+  color:#fff;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+.popover{
+  display:none;
+  position: absolute;
+  z-index:80;
+  background:#fff;
+  border:1px solid var(--line);
+  box-shadow:0 18px 48px rgba(19,47,39,.14);
+}
+.popover.open{display:block}
+
+/* Calendar */
+.calendar-pop{
+  top:calc(100% + 8px);
+  left:0;
+  width:520px;
+  border-radius:12px;
+  overflow:hidden;
+}
+.calendar-layout{
+  display:grid;
+  grid-template-columns:145px 1fr;
+  height:430px;
+}
+.month-list{
+  border-right:1px solid #eeeae3;
+  background:#faf9f6;
+  padding:10px 0;
+  overflow:auto;
+}
+.month-list button{
+  width:100%;
+  border:0;
+  background:transparent;
+  padding:10px 16px;
+  text-align:left;
+  color:#4e5954;
+  font-size:12px;
+  cursor:pointer;
+}
+.month-list button:hover,
+.month-list button.active{
+  background:var(--green-soft);
+  color:var(--green);
+  font-weight:700;
+}
+.single-calendar{
+  padding:14px 18px 16px;
+  overflow:auto;
+}
+.weekdays,.days{
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  gap:3px;
+}
+.weekdays{
+  border-top:1px solid #ece8e2;
+  padding-top:7px;
+}
+.weekdays span{
+  text-align:center;
+  color:#7d8a83;
+  font-size:11px;
+  padding:3px 0 5px;
+  font-weight:700;
+}
+.month-section{
+  margin-bottom:18px;
+}
+.month-section h3{
+  margin:0 0 10px;
+  font-size:16px;
+  color:var(--green);
+}
+.days button{
+  height:30px;
+  border:0;
+  background:transparent;
+  color:#3f4b45;
+  border-radius:7px;
+  font-size:11px;
+  cursor:pointer;
+}
+.days button:hover{background:#f1f4f2}
+.days button.muted{color:#c7cbc9}
+.days button.start,
+.days button.end{
+  background:var(--green);
+  color:#fff;
+  font-weight:700;
+}
+.days button.range{
+  background:var(--green-soft);
+  color:var(--green);
+  border-radius:0;
+}
+.days button.start{border-top-right-radius:0;border-bottom-right-radius:0}
+.days button.end{border-top-left-radius:0;border-bottom-left-radius:0}
+
+/* Guests */
+.guests-pop{
+  top:calc(100% + 8px);
+  right:0;
+  left:auto;
+  width:350px;
+  border-radius:12px;
+  padding:16px;
+}
+.room-block + .room-block{
+  border-top:1px solid #eeeae3;
+  margin-top:14px;
+  padding-top:14px;
+}
+.room-title{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:12px;
+}
+.room-title strong{font-size:13px}
+.remove-room{
+  border:0;background:transparent;color:#9a5a50;font-size:11px;cursor:pointer
+}
+.guest-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:14px;
+  margin:10px 0;
+}
+.guest-label strong{display:block;font-size:12px}
+.guest-label span{display:block;color:#8f9793;font-size:11px}
+.counter{
+  display:flex;align-items:center;gap:8px;
+}
+.counter button{
+  width:27px;height:27px;
+  border:1px solid #dce3df;
+  border-radius:7px;
+  background:#fff;
+  cursor:pointer;
+}
+.counter span{
+  min-width:16px;
+  text-align:center;
+  font-size:12px;
+}
+.children-area{
+  margin-top:8px;
+}
+.children-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 12px;
+  margin-bottom:8px;
+}
+.add-child{
+  width:100%;
+  height:34px;
+  border:1px dashed #cfd9d3;
+  border-radius:8px;
+  background:#fbfcfb;
+  color:var(--green);
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+}
+.child-row{
+  position:relative;
+  display:flex;
+  gap:6px;
+  align-items:center;
+  margin-top:0;
+  width:auto;
+}
+.age-trigger{
+  min-width:102px;
+  height:34px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  padding:0 10px;
+  background:#fff;
+  color:#48544e;
+  font-size:11px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  cursor:pointer;
+}
+.age-trigger.open{
+  border-color:#98ada4;
+  box-shadow:0 0 0 3px rgba(23,63,53,.07);
+}
+.age-menu{
+  position:absolute;
+  top:38px;
+  left:0;
+  min-width:160px;
+  max-height:180px;
+  overflow:auto;
+  background:#fff;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  box-shadow:0 14px 28px rgba(19,47,39,.12);
+  z-index:20;
+}
+.age-option{
+  width:100%;
+  text-align:left;
+  border:0;
+  background:#fff;
+  padding:8px 10px;
+  font-size:11px;
+  color:#425049;
+  cursor:pointer;
+}
+.age-option:hover{
+  background:var(--green-soft);
+  color:var(--green);
+}
+.remove-child{
+  width:30px;
+  height:30px;
+  border:0;
+  background:transparent;
+  color:#9a5a50;
+  cursor:pointer;
+  margin-top:2px;
+}
+.guests-footer{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:15px;
+  padding-top:13px;
+  border-top:1px solid #eeeae3;
+}
+.add-room{
+  border:0;background:transparent;color:var(--green);font-size:11px;font-weight:700;cursor:pointer
+}
+.done-btn{
+  min-width:90px;height:34px;
+  border:0;border-radius:8px;
+  background:var(--green);color:#fff;
+  font-size:11px;font-weight:700;cursor:pointer
+}
+
+/* Interactive calendar */
+.calendar-pop{width:560px}
+.cal-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #eeeae3}
+.cal-pick{flex:1;min-width:0;text-align:left;border:1px solid #e3e0d8;border-radius:10px;background:#fff;padding:7px 11px;cursor:pointer}
+.cal-pick small{display:block;font-size:11px;color:#7d8a83;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.cal-pick b{display:block;font-size:13.5px;color:var(--ink);margin-top:1px;white-space:nowrap}
+.cal-pick.on{border-color:var(--green);box-shadow:0 0 0 3px rgba(23,63,53,.09)}
+.cal-pick b.empty{color:#a3aaa6;font-weight:600}
+.cal-arrow{color:#9aa39e}
+.cal-nights{font-size:12px;font-weight:800;color:var(--green);background:var(--green-soft);border-radius:999px;padding:5px 10px;white-space:nowrap}
+.cal-nights:empty{display:none}
+.cal-hint{padding:8px 14px;font-size:12px;color:#5f6a65;background:#fbfaf7;border-bottom:1px solid #eeeae3}
+.calendar-layout{height:360px}
+.single-calendar{padding:0 16px 14px;position:relative}
+.weekdays{position:sticky;top:0;z-index:2;background:#fff;border-top:0;padding:10px 0 6px;border-bottom:1px solid #f0ede7;margin-bottom:8px}
+.weekdays span{font-size:11px;letter-spacing:.03em}
+.month-section{margin-bottom:14px;scroll-margin-top:44px}
+.month-section h3{font-size:15px;margin:4px 0 8px}
+.days{gap:2px 0}
+.days button{height:36px;font-size:12.5px;border-radius:0;position:relative}
+.days button:hover:not(:disabled){background:#e9efeb;border-radius:8px}
+.days button:disabled{cursor:default}
+.days button.past{color:#c3c8c5;text-decoration:line-through;text-decoration-color:#dde1df}
+.days button.blank{visibility:hidden}
+.days button.today:after{content:"";position:absolute;left:50%;bottom:5px;width:4px;height:4px;margin-left:-2px;border-radius:50%;background:var(--green)}
+.days button.range,.days button.preview{background:var(--green-soft);border-radius:0}
+.days button.preview{background:#f1f5f3;box-shadow:inset 0 1px 0 #dfe8e3,inset 0 -1px 0 #dfe8e3}
+.days button.start,.days button.end{background:var(--green);color:#fff;font-weight:800;border-radius:8px}
+.days button.start.has-end{border-radius:8px 0 0 8px}
+.days button.end{border-radius:0 8px 8px 0}
+.days button.start.today:after,.days button.end.today:after{background:#fff}
+.cal-foot{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-top:1px solid #eeeae3;background:#fff}
+.cal-clear{border:0;background:transparent;color:#6d756f;font-size:12px;font-weight:700;cursor:pointer;padding:6px 0}
+.cal-clear:hover{color:var(--green)}
+.nights-inline{font-style:normal;color:#7f8883;font-size:11.5px;margin-left:6px}
+@media(max-width:760px){
+  .calendar-pop{position:fixed;left:8px;right:8px;bottom:8px;top:auto;width:auto;height:min(600px,80vh);display:none;flex-direction:column;z-index:300;box-shadow:0 -10px 40px rgba(19,47,39,.25)}
+  .calendar-pop.open{display:flex}
+  .calendar-pop .calendar-layout{flex:1 1 auto;height:auto;min-height:0}
+  .calendar-layout{grid-template-columns:92px 1fr;height:340px}
+  .month-list button{padding:9px 10px;font-size:11.5px}
+  .cal-head{flex-wrap:wrap}
+  .cal-arrow{display:none}
+  .cal-nights{order:3}
+  .att-summary{display:none!important}
+}
+
+/* ===== Dropdown menus (same look as the child-age menu) ===== */
+.dd-menu{
+  display:none;position:absolute;top:calc(100% + 6px);z-index:90;
+  background:#fff;border:1px solid #dce3df;border-radius:10px;
+  box-shadow:0 14px 34px rgba(19,47,39,.14);overflow:hidden;
+}
+.dd-menu.open{display:block}
+.dd-opt{
+  width:100%;display:flex;align-items:center;gap:11px;border:0;background:#fff;
+  padding:9px 12px;text-align:left;color:#324039;font-size:13px;cursor:pointer;
+}
+.dd-opt:hover,.dd-opt.active{background:var(--green-soft);color:var(--green)}
+.dd-empty{padding:14px 12px;font-size:12.5px;color:#7f8883}
+
+/* Destination */
+.dest-box{position:relative}
+.dest-ico{position:absolute;left:11px;top:50%;width:16px;height:16px;margin-top:-8px;fill:none;stroke:#7b8580;stroke-width:1.8;pointer-events:none}
+.dest-input{padding-left:34px;padding-right:32px}
+.dest-clear{position:absolute;right:7px;top:50%;margin-top:-12px;width:24px;height:24px;border:0;border-radius:50%;background:#eef1ef;color:#55615b;font-size:15px;line-height:1;cursor:pointer}
+.dest-clear:hover{background:#e0e7e3}
+.dest-menu{left:0;width:max(100%,520px);max-height:420px;overflow:auto;padding:5px 0}
+.dest-opt{padding:10px 14px}
+.dest-opt svg{flex:0 0 18px;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;color:#4d5a54}
+.dest-opt:hover svg,.dest-opt.active svg{color:var(--green)}
+.dest-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dest-name b{color:var(--green);font-weight:800}
+.dest-type{flex:0 0 auto;font-size:11.5px;color:#8a928e}
+.dest-sep{height:1px;background:#eeeae5;margin:5px 12px}
+
+/* Nationality */
+.nat-menu{right:0;width:280px}
+.nat-search{padding:8px;border-bottom:1px solid #eeeae3}
+.nat-search input{width:100%;height:36px;border:1px solid #dce3df;border-radius:8px;padding:0 10px;font-size:13px;outline:none;color:var(--ink)}
+.nat-search input:focus{border-color:#98ada4;box-shadow:0 0 0 3px rgba(23,63,53,.07)}
+.nat-list{max-height:280px;overflow:auto;padding:4px 0}
+.nat-opt{justify-content:space-between;padding:8px 12px}
+.nat-opt.sel{font-weight:700;color:var(--green)}
+.nat-opt.sel:after{content:"✓";font-weight:800}
+#natBtn span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+@media(max-width:760px){
+  .dest-menu{width:100%}
+  .dest-type{display:none}
+  .nat-menu{left:0;right:0;width:auto}
+}
+
+/* ===== 09: rooms toolbar menus, room rows, phone layout ===== */
+@media(max-width:1080px){ .search-row{grid-template-columns:1.4fr 1fr 1fr} }
+.dd-wrap{position:relative}
+.dd-btn{display:inline-flex;align-items:center;justify-content:space-between;gap:10px;min-width:150px;cursor:pointer;color:#4d5a54}
+.dd-wrap .dd-menu{left:0;width:220px;padding:4px 0}
+.dd-wrap.right .dd-menu{left:auto;right:0}
+.pick-opt{justify-content:space-between}
+.pick-opt.sel{font-weight:700;color:var(--green)}
+.pick-opt.sel:after{content:"✓";font-weight:800}
+.toggle-pill{cursor:pointer;user-select:none}
+.meal-name{font-weight:700;color:#1f2a26;font-size:13px}
+.cancel-none{color:#56645d;font-size:13px}
+.room-row.in-quote{background:#fbfdfc}
+.book-btn:hover{background:#245c4e}
+.location a{color:var(--green);font-weight:600}
+.location a:hover{text-decoration:underline}
+.rooms-empty{display:none;padding:22px;border-top:1px solid #eee9e1;color:#6f7974;font-size:13px;text-align:center}
+.room-table.is-empty .rooms-empty{display:block}
+.room-table.searching .room-row{opacity:.35;transition:opacity .15s}
+.search-mini{display:none}
+@media(max-width:950px){
+  .room-row{grid-template-columns:minmax(0,1fr) 150px;grid-template-areas:"room room" "meal cancel" "price action";padding:12px 14px;gap:10px 12px}
+  .room-row .room-cell,.room-row .action-col{padding:0;border:0!important}
+  .c-room{grid-area:room}.c-meal{grid-area:meal}.c-cancel{grid-area:cancel}.c-price{grid-area:price}.room-row .action-col{grid-area:action}
+  .c-meal,.c-cancel{font-size:12.5px}
+  .room-main{grid-template-columns:72px minmax(0,1fr)!important;gap:12px}
+  .room-thumb{width:72px!important;min-height:64px!important}
+  .room-title{font-size:15.5px;margin-bottom:4px}
+  .room-meta{display:flex;flex-wrap:wrap;gap:2px 10px}
+  .price-main{font-size:20px}
+  .book-btn{height:38px}
+  .quote-btn{height:34px}
+}
+@media(max-width:760px){
+  .search-summary{position:static;padding-bottom:10px}
+  .search-mini{display:flex;width:100%;align-items:center;gap:10px;padding:10px 12px;border:1px solid #dce3df;border-radius:10px;background:#fff;text-align:left;cursor:pointer;color:var(--ink)}
+  .search-mini svg{flex:0 0 18px;width:18px;height:18px;fill:none;stroke:#7b8580;stroke-width:1.8}
+  .search-mini .mini-text{flex:1;min-width:0}
+  .search-mini b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .search-mini small{display:block;font-size:12px;color:#7f8883;margin-top:1px}
+  .search-mini .mini-edit{font-size:12.5px;font-weight:700;color:var(--green)}
+  .search-box:not(.editing) .search-row{display:none}
+  .search-box.editing .search-row{margin-top:12px}
+  .hero-image{min-height:160px}
+  .hotel-copy h1{font-size:28px}
+  .room-filters{width:100%}
+  .room-filters .room-filter{flex:1 1 140px}
+  .dd-wrap.right .dd-menu{left:0;right:auto}
+}
+
+
+/* ===== 09: compact hotel header (replaces the hotel summary card) ===== */
+.back-link{display:inline-flex;align-items:center;gap:6px;margin:2px 0 12px;font-size:12.5px;font-weight:700;color:var(--green)}
+.back-link:hover{text-decoration:underline;text-underline-offset:3px}
+.hotel-head{display:flex;align-items:center;gap:18px}
+.hotel-thumb{flex:0 0 132px;height:96px;border-radius:12px;position:relative;overflow:hidden;
+  background:linear-gradient(135deg,rgba(23,63,53,.17),rgba(23,63,53,.03)),linear-gradient(180deg,#8ab5c7,#d8e8ed 55%,#bea986)}
+.hotel-thumb span{position:absolute;left:6px;bottom:6px;padding:3px 7px;border-radius:6px;background:rgba(23,33,29,.72);color:#f3f6f4;font-size:11px;font-weight:700}
+.hotel-thumb:hover{box-shadow:0 0 0 3px rgba(23,63,53,.12)}
+.hotel-head .hotel-copy{padding:0;min-width:0}
+.hotel-head .hotel-title-row{justify-content:flex-start;align-items:baseline;gap:12px;flex-wrap:wrap}
+.hotel-head h1{margin:0 0 4px;font-size:32px}
+.hotel-head .stars{font-size:14px}
+.hotel-head .badges{margin-top:10px}
+@media(max-width:760px){
+  .hotel-head{gap:12px;align-items:flex-start}
+  .hotel-thumb{flex-basis:88px;height:76px}
+  .hotel-head h1{font-size:24px}
+  .hotel-head .title-row{gap:6px}
+  .hotel-head .badges{margin-top:8px;gap:5px}
+}
+
+/* Quote drawer: destinations and guests */
+.quote-party{margin-top:6px;font-size:12px;font-weight:700;color:#173f35}
+.quote-dest{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:14px 0 8px;padding-bottom:6px;border-bottom:1px solid #e6ece9}
+.quote-dest strong{font-size:13px}
+.quote-dest span{font-size:12px;color:#7c8580;white-space:nowrap}
+.guests-dlg{position:fixed;inset:0;z-index:400;background:rgba(18,29,25,.38);display:none;align-items:center;justify-content:center;padding:18px}
+.guests-dlg.open{display:flex}
+.guests-box{width:min(420px,100%);background:#fff;border-radius:15px;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.2)}
+.guests-box strong{display:block;font-size:16px}
+.guests-box p{margin:6px 0 16px;font-size:13px;line-height:1.5;color:#5f6a65}
+.guests-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.guests-actions button{height:36px;padding:0 14px;border-radius:9px;font-size:12.5px;font-weight:700;border:1px solid #cfd8d3;background:#fff;color:#173f35;cursor:pointer}
+.guests-actions .guests-new{background:#173f35;border-color:#173f35;color:#fff}
+
+/* v4: one look across all agent pages */
+.search-btn,.book-btn{border-radius:9px}
+.quote-btn{border-radius:8px}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="07-search.html">Apolles</a>
+
+    <nav class="nav">
+      <a class="nav-link active" href="07-search.html">Search</a>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Quotes <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="14-quotes.html">All quotes</a>
+          <a href="15-quote-editor.html">New quote</a>
+          <div class="nav-sep"></div>
+          <a href="18-clients.html">Clients</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Bookings <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="13-bookings.html">All bookings</a>
+          <a href="13-bookings.html">Upcoming stays</a>
+          <a href="13-bookings.html">Completed</a>
+          <a href="13-bookings.html">Cancelled</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Reporting <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="19-reports.html">Overview</a>
+          <a href="19-reports.html">Balance history</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="top-actions">
+      <a class="balance-chip" href="20-agency-settings.html#balance" title="Balance and top-ups">
+        <small>Balance</small>
+        <b>USD 4,250.00</b>
+      </a>
+
+      <div class="nav-group account-group">
+        <button class="account-trigger" type="button">
+          <span class="avatar">MZ</span>
+          <span class="account-name">My Agency</span>
+          <b>⌄</b>
+        </button>
+        <div class="nav-menu account-menu">
+          <a href="20-agency-settings.html">Agency settings</a>
+          <a href="20-agency-settings.html#balance">Balance &amp; top-ups</a>
+          <a href="#">Support</a>
+          <div class="nav-sep"></div>
+          <a href="04-login.html">Sign out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+
+  <section class="search-summary">
+    <div class="search-box">
+      <!-- Phone only: the search collapses to one line. Tap to edit. -->
+      <button class="search-mini" id="searchMini" type="button" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+        <span class="mini-text"><b id="miniDest">SLS Playa Mujeres</b><small id="miniMeta">Oct 12 to Oct 14 · 2 guests</small></span>
+        <span class="mini-edit" id="miniEdit">Edit</span>
+      </button>
+      <div class="search-row">
+
+      <!-- Destination autocomplete. Order of suggestions: cities first, then areas and airports
+           of that city, then hotels. Matched letters are highlighted. Shows after 2 letters. -->
+      <div class="field-wrap dest-wrap" id="destWrap">
+        <label for="destInput">Destination or hotel</label>
+        <div class="dest-box">
+          <svg class="dest-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.6"/></svg>
+          <input class="field dest-input" id="destInput" value="SLS Playa Mujeres, Cancun, Mexico" placeholder="City, hotel or location" autocomplete="off"
+                 role="combobox" aria-expanded="false" aria-controls="destMenu" aria-autocomplete="list">
+          <button class="dest-clear" id="destClear" type="button" aria-label="Clear">×</button>
+        </div>
+        <div class="dd-menu dest-menu" id="destMenu" role="listbox" aria-label="Suggestions"></div>
+      </div>
+
+      <div class="field-wrap">
+        <label>Check-in</label>
+        <button class="field-button" id="checkinBtn" type="button">
+          <span id="checkinText">Oct 28, 2026</span>
+          <span>⌄</span>
+        </button>
+
+        <div class="popover calendar-pop" id="calendarPopover" role="dialog" aria-label="Choose dates">
+          <div class="cal-head">
+            <button type="button" class="cal-pick" id="calPickIn"><small>Check-in</small><b id="calInText">Wed, Oct 28</b></button>
+            <span class="cal-arrow">→</span>
+            <button type="button" class="cal-pick" id="calPickOut"><small>Check-out</small><b id="calOutText">Wed, Nov 4</b></button>
+            <span class="cal-nights" id="calNights">7 nights</span>
+          </div>
+          <div class="cal-hint" id="calHint">Select your check-out date</div>
+          <div class="calendar-layout">
+            <div class="month-list" id="monthList"></div>
+            <div class="single-calendar" id="calScroll">
+              <div class="weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+              <div id="calMonths"></div>
+            </div>
+          </div>
+          <div class="cal-foot">
+            <button type="button" class="cal-clear" id="calClear">Clear dates</button>
+            <button type="button" class="done-btn" id="calDone">Done</button>
+          </div>
+        </div>
+            </div>
+
+      <div class="field-wrap">
+        <label>Check-out</label>
+        <button class="field-button" id="checkoutBtn" type="button">
+          <span id="checkoutText">Nov 4, 2026 <em class="nights-inline">7 nights</em></span>
+          <span>⌄</span>
+        </button>
+      </div>
+
+      <div class="field-wrap">
+        <label>Rooms & guests</label>
+        <button class="field-button" id="guestsBtn">
+          <span id="guestsText">1 room · 2 guests</span>
+          <span>⌄</span>
+        </button>
+
+        <div class="popover guests-pop" id="guestsPopover">
+          <div id="roomsContainer"></div>
+
+          <div class="guests-footer">
+            <button class="add-room" id="addRoomBtn" type="button">+ Add a room</button>
+            <button class="done-btn" id="doneGuestsBtn" type="button">Done</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Guest nationality: full list of all 249 countries (ISO 3166), with search at the top. Default: Israel. -->
+      <div class="field-wrap nat-wrap" id="natWrap">
+        <label>Guest nationality</label>
+        <button class="field-button" id="natBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+          <span id="natText">Israel</span>
+          <span>⌄</span>
+        </button>
+        <div class="dd-menu nat-menu" id="natMenu">
+          <div class="nat-search"><input id="natSearch" type="text" placeholder="Search country" autocomplete="off" aria-label="Search country"></div>
+          <div class="nat-list" id="natList" role="listbox" aria-label="Guest nationality"></div>
+        </div>
+      </div>
+
+      <button class="search-btn" id="searchBtn" type="button">Search</button>
+    </div>
+    </div>
+  </section>
+
+  <a class="back-link" href="08-search-results.html">← Back to hotels</a>
+
+  <!-- Hotel header: compact, no card. Thumbnail opens the photos section. -->
+  <section class="hotel-head">
+    <a class="hotel-thumb" href="#hotel-photos" aria-label="See hotel photos"><span>4 photos</span></a>
+    <div class="hotel-copy">
+      <div class="hotel-title-row">
+        <h1>SLS Playa Mujeres</h1>
+        <span class="stars" aria-label="5 stars">★★★★★</span>
+      </div>
+      <div class="location">Playa Mujeres, Cancún · <a href="#hotel-map">View on map</a> · <a href="#hotel-info">Photos &amp; hotel info</a></div>
+      <div class="badges">
+        <span class="badge">All inclusive</span>
+        <span class="badge">Oceanfront</span>
+        <span class="badge">Luxury spa</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="rooms-toolbar">
+    <h2>Room options <span id="ratesShown">4 rates shown</span></h2>
+
+    <div class="room-filters">
+      <input class="room-filter" id="fRoom" placeholder="Room name" aria-label="Room name">
+
+      <div class="dd-wrap">
+        <button class="room-filter dd-btn" id="mealBtn" type="button" aria-haspopup="listbox" aria-expanded="false"><span id="mealText">All meal plans</span><span>⌄</span></button>
+        <div class="dd-menu" id="mealMenu" role="listbox" aria-label="Meal plan">
+          <button type="button" role="option" class="dd-opt pick-opt sel" data-v="">All meal plans</button>
+          <button type="button" role="option" class="dd-opt pick-opt" data-v="All inclusive">All inclusive</button>
+          <button type="button" role="option" class="dd-opt pick-opt" data-v="Breakfast included">Breakfast included</button>
+          <button type="button" role="option" class="dd-opt pick-opt" data-v="Room only">Room only</button>
+        </div>
+      </div>
+
+      <label class="toggle-pill">
+        <input type="checkbox" id="freeOnly">
+        <span class="toggle"></span>
+        <span>Free cancellation</span>
+      </label>
+
+      <div class="dd-wrap right">
+        <button class="room-filter dd-btn" id="sortBtn" type="button" aria-haspopup="listbox" aria-expanded="false"><span id="sortText">Sort: Price, low to high</span><span>⌄</span></button>
+        <div class="dd-menu" id="sortMenu" role="listbox" aria-label="Sort rooms">
+          <button type="button" role="option" class="dd-opt pick-opt sel" data-v="low">Price, low to high</button>
+          <button type="button" role="option" class="dd-opt pick-opt" data-v="high">Price, high to low</button>
+          <button type="button" role="option" class="dd-opt pick-opt" data-v="name">Room name</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="room-table" id="roomTable">
+    <div class="room-table-head">
+      <div>Room</div>
+      <div>Meals</div>
+      <div>Cancellation</div>
+      <div id="priceHead">Net price · 2 nights</div>
+      <div></div>
+    </div>
+
+    <article class="room-row" data-i="0" data-name="King bed" data-board="All inclusive" data-free="0" data-night="302.39">
+      <div class="room-cell c-room">
+        <div class="room-main">
+          <div class="room-thumb" style="background:linear-gradient(135deg,rgba(23,63,53,.10),rgba(23,63,53,.02)),linear-gradient(180deg,#c7b7a6,#ece5dc);"></div>
+          <div>
+            <h3 class="room-title">King bed</h3>
+            <div class="room-meta">
+              <div>One king bed</div>
+              <div>Garden view</div>
+              <div><strong>Guests:</strong> <span class="room-guests">2 adults</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="room-cell c-meal"><span class="meal-name">All inclusive</span></div>
+      <div class="room-cell c-cancel"><div class="cancel-none">Non-refundable</div></div>
+      <div class="room-cell c-price">
+        <div class="price-wrap">
+          <div class="price-main">USD 604.78</div>
+          <div class="price-sub">USD 302.39 per night</div>
+        </div>
+      </div>
+      <div class="action-col">
+        <div class="room-actions">
+          <button class="book-btn" type="button">Book room</button>
+          <button class="quote-btn" type="button">Add to quote</button>
+        </div>
+      </div>
+    </article>
+
+    <article class="room-row" data-i="1" data-name="Junior Suite King Bed" data-board="All inclusive" data-free="1" data-night="437.0">
+      <div class="room-cell c-room">
+        <div class="room-main">
+          <div class="room-thumb" style="background:linear-gradient(135deg,rgba(23,63,53,.10),rgba(23,63,53,.02)),linear-gradient(180deg,#bcae9f,#e4ded8);"></div>
+          <div>
+            <h3 class="room-title">Junior Suite King Bed</h3>
+            <div class="room-meta">
+              <div>King size bed</div>
+              <div>Non-smoking</div>
+              <div><strong>Guests:</strong> <span class="room-guests">2 adults</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="room-cell c-meal"><span class="meal-name">All inclusive</span></div>
+      <div class="room-cell c-cancel"><div><div class="cancel-good">Free cancellation</div><div class="cancel-sub">until Oct 5</div></div></div>
+      <div class="room-cell c-price">
+        <div class="price-wrap">
+          <div class="price-main">USD 874.00</div>
+          <div class="price-sub">USD 437.00 per night</div>
+        </div>
+      </div>
+      <div class="action-col">
+        <div class="room-actions">
+          <button class="book-btn" type="button">Book room</button>
+          <button class="quote-btn" type="button">Add to quote</button>
+        </div>
+      </div>
+    </article>
+
+    <article class="room-row" data-i="2" data-name="Oceanfront King" data-board="All inclusive" data-free="1" data-night="446.0">
+      <div class="room-cell c-room">
+        <div class="room-main">
+          <div class="room-thumb" style="background:linear-gradient(135deg,rgba(23,63,53,.10),rgba(23,63,53,.02)),linear-gradient(180deg,#c5b09b,#eee7df);"></div>
+          <div>
+            <h3 class="room-title">Oceanfront King</h3>
+            <div class="room-meta">
+              <div>One king bed</div>
+              <div>Ocean view</div>
+              <div><strong>Guests:</strong> <span class="room-guests">2 adults</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="room-cell c-meal"><span class="meal-name">All inclusive</span></div>
+      <div class="room-cell c-cancel"><div><div class="cancel-good">Free cancellation</div><div class="cancel-sub">until Oct 3</div></div></div>
+      <div class="room-cell c-price">
+        <div class="price-wrap">
+          <div class="price-main">USD 892.00</div>
+          <div class="price-sub">USD 446.00 per night</div>
+        </div>
+      </div>
+      <div class="action-col">
+        <div class="room-actions">
+          <button class="book-btn" type="button">Book room</button>
+          <button class="quote-btn" type="button">Add to quote</button>
+        </div>
+      </div>
+    </article>
+
+    <article class="room-row" data-i="3" data-name="Two Queen Beds Ocean View" data-board="All inclusive" data-free="1" data-night="459.0">
+      <div class="room-cell c-room">
+        <div class="room-main">
+          <div class="room-thumb" style="background:linear-gradient(135deg,rgba(23,63,53,.10),rgba(23,63,53,.02)),linear-gradient(180deg,#b9c7c6,#e9ece9);"></div>
+          <div>
+            <h3 class="room-title">Two Queen Beds Ocean View</h3>
+            <div class="room-meta">
+              <div>Two queen beds</div>
+              <div>Ocean view</div>
+              <div><strong>Guests:</strong> <span class="room-guests">2 adults</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="room-cell c-meal"><span class="meal-name">All inclusive</span></div>
+      <div class="room-cell c-cancel"><div><div class="cancel-good">Free cancellation</div><div class="cancel-sub">until Oct 5</div></div></div>
+      <div class="room-cell c-price">
+        <div class="price-wrap">
+          <div class="price-main">USD 918.00</div>
+          <div class="price-sub">USD 459.00 per night</div>
+        </div>
+      </div>
+      <div class="action-col">
+        <div class="room-actions">
+          <button class="book-btn" type="button">Book room</button>
+          <button class="quote-btn" type="button">Add to quote</button>
+        </div>
+      </div>
+    </article>
+
+    <div class="rooms-empty" id="roomsEmpty">No rooms match these filters. Clear a filter to see all rooms.</div>
+  </section>
+
+  <section class="info-section info-anchor" id="hotel-info">
+    <div class="info-grid">
+      <div class="info-card info-anchor" id="hotel-map">
+        <h3>Hotel on map</h3>
+        <div class="map-box"></div>
+      </div>
+
+      <div class="info-card info-anchor" id="hotel-photos">
+        <h3>Hotel photos</h3>
+        <div class="gallery-grid">
+          <div></div>
+          <div></div>
+          <div></div>
+          <div></div>
+        </div>
+      </div>
+
+      <div class="info-card" id="hotel-details">
+        <h3>Hotel details</h3>
+        <div class="detail-text">
+          <p>SLS Playa Mujeres is a refined beachfront resort in the Playa Mujeres area of Cancún, with a marina setting, modern rooms, multiple dining venues, spa facilities and direct beach access.</p>
+          <p>The property is suitable for couples, families and leisure travelers looking for an upscale all-inclusive stay with strong room variety and easy access to resort facilities.</p>
+        </div>
+        <div class="detail-meta">
+          <div><strong>Property registration number:</strong> 0123005f27c81</div>
+          <div><strong>License number:</strong> 0123005f27c81</div>
+        </div>
+      </div>
+
+      <div class="info-card" id="hotel-amenities">
+        <h3>Amenities</h3>
+        <div class="amenities-grid">
+          <div class="amenity-col">
+            <h4>Accessibility</h4>
+            <ul>
+              <li>Braille writing</li>
+              <li>Accessible areas</li>
+              <li>Elevator access</li>
+            </ul>
+          </div>
+
+          <div class="amenity-col">
+            <h4>Family & children</h4>
+            <ul>
+              <li>Children's club</li>
+              <li>Kids play area</li>
+              <li>Family pool</li>
+            </ul>
+          </div>
+
+          <div class="amenity-col">
+            <h4>Health & wellness</h4>
+            <ul>
+              <li>Gym</li>
+              <li>Spa treatments</li>
+              <li>Yoga classes</li>
+            </ul>
+          </div>
+
+          <div class="amenity-col">
+            <h4>Food & drinks</h4>
+            <ul>
+              <li>Beachfront restaurant</li>
+              <li>Lobby bar</li>
+              <li>Poolside bar</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<button class="quote-side-tab" id="quoteSideTab" aria-label="Open quote">
+  <span>Quote</span>
+  <span class="quote-side-count" id="quoteSideCount">0</span>
+</button>
+
+<aside class="quote-drawer" id="quoteDrawer" aria-label="Active quote">
+  <div class="quote-drawer-head">
+    <div class="quote-drawer-kicker">
+      <span>Active quote</span>
+      <button class="quote-close" id="quoteClose" aria-label="Close">×</button>
+    </div>
+
+    <div class="quote-picker">
+      <select id="quotePicker" aria-label="Switch quote">
+        <option value="1">Quote 1 · Untitled quote</option>
+      </select>
+      <button class="new-quote-btn" id="newQuoteBtn">+ New</button>
+    </div>
+  </div>
+
+  <div class="quote-title-block">
+    <div class="quote-title-row">
+      <div style="min-width:0;flex:1">
+        <div class="quote-name-wrap">
+          <input class="quote-name-input" id="quoteNameInput" value="Untitled quote" aria-label="Quote name">
+          <span class="quote-edit-hint">Edit name</span>
+        </div>
+        <div class="quote-sub">Collect hotel and room options first. Add the client when you are ready to send.</div>
+        <div class="quote-party" id="quoteParty"></div>
+      </div>
+      <span class="quote-count" id="quoteCount">0 options</span>
+    </div>
+  </div>
+
+  <div class="quote-finished-note" id="quoteFinishedNote">
+    Quote saved. A new quote is ready for more options.
+  </div>
+
+  <div class="trip-section">
+    <strong id="tripDest">SLS Playa Mujeres</strong>
+    <span id="tripMeta">Oct 12 to Oct 14, 2026 · 2 adults · 1 room</span>
+  </div>
+
+  <div class="quote-items" id="quoteItems">
+    <div class="quote-empty" id="quoteEmpty">
+      Add hotel options while you search.<br>
+      You can mix different hotels, rooms, dates and destinations in the same quote.
+    </div>
+  </div>
+
+  <div class="quote-drawer-foot">
+    <div class="quote-limit">
+      <span id="quoteLimitText">0 of 30 hotels added</span>
+      <span>Auto-saved</span>
+    </div>
+    <button class="quote-open-btn" id="openQuoteBtn">Open quote</button>
+    <button class="finish-quote-btn" id="finishQuoteBtn">Finish quote & start new</button>
+    <button class="keep-searching" id="keepSearching">Close</button>
+  </div>
+</aside>
+
+<div class="quote-toast" id="quoteToast">Added to Untitled quote</div>
+
+<!-- ===== Search bar scripts: copied from 07-search.html ===== -->
+<script>
+const calendarPopover = document.getElementById("calendarPopover");
+const guestsPopover = document.getElementById("guestsPopover");
+const checkinBtn = document.getElementById("checkinBtn");
+const checkoutBtn = document.getElementById("checkoutBtn");
+const guestsBtn = document.getElementById("guestsBtn");
+const roomsContainer = document.getElementById("roomsContainer");
+const guestsText = document.getElementById("guestsText");
+
+function closePopovers(){
+  calendarPopover.classList.remove("open");
+  guestsPopover.classList.remove("open");
+  document.querySelectorAll(".dd-menu.open").forEach(m=>m.classList.remove("open"));
+}
+
+guestsBtn.addEventListener("click",e=>{
+  e.stopPropagation();
+  calendarPopover.classList.remove("open");
+  document.querySelectorAll(".dd-menu.open").forEach(m=>m.classList.remove("open"));
+  guestsPopover.classList.toggle("open");
+});
+calendarPopover.addEventListener("click",e=>e.stopPropagation());
+guestsPopover.addEventListener("click",e=>e.stopPropagation());
+document.addEventListener("click",()=>{
+  closePopovers();
+  openAgePicker = null;
+  renderRooms();
+});
+
+let rooms = [{adults:2, children:[]}];
+let openAgePicker = null;
+
+function updateGuestSummary(){
+  const totalGuests = rooms.reduce((s,r)=>s+r.adults+r.children.length,0);
+  guestsText.textContent = `${rooms.length} room${rooms.length>1?'s':''} · ${totalGuests} guest${totalGuests>1?'s':''}`;
+}
+
+function ageLabel(age){
+  if(age === "" || age === null || age === undefined) return "Select child age";
+  return `${age} year${Number(age)===1?'':'s'}`;
+}
+
+function renderAgeMenu(roomIndex, childIndex){
+  let html = '<div class="age-menu">';
+  for(let i=0;i<=17;i++){
+    html += `<button class="age-option" type="button" data-age-option="${roomIndex}:${childIndex}:${i}">${i} year${i===1?'':'s'}</button>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderRooms(){
+  roomsContainer.innerHTML="";
+  rooms.forEach((room,roomIndex)=>{
+    const block=document.createElement("div");
+    block.className="room-block";
+
+    const childrenHtml = room.children.map((age,childIndex)=>{
+      const isOpen = openAgePicker && openAgePicker.room===roomIndex && openAgePicker.child===childIndex;
+      return `
+        <div class="child-row">
+          <div style="flex:1; position:relative;">
+            <button class="age-trigger ${isOpen?'open':''}" data-open-age="${roomIndex}:${childIndex}" type="button">
+              <span>${ageLabel(age)}</span>
+              <span>⌄</span>
+            </button>
+            ${isOpen ? renderAgeMenu(roomIndex, childIndex) : ""}
+          </div>
+          <button class="remove-child" data-remove-child="${roomIndex}:${childIndex}" type="button">×</button>
+        </div>
+      `;
+    }).join("");
+
+    block.innerHTML=`
+      <div class="room-title">
+        <strong>Room ${roomIndex+1}</strong>
+        ${rooms.length>1?`<button class="remove-room" data-remove-room="${roomIndex}" type="button">Remove</button>`:""}
+      </div>
+
+      <div class="guest-row">
+        <div class="guest-label">
+          <strong>Adults</strong>
+          <span>Age 18+</span>
+        </div>
+        <div class="counter">
+          <button data-adult-minus="${roomIndex}" type="button">−</button>
+          <span>${room.adults}</span>
+          <button data-adult-plus="${roomIndex}" type="button">+</button>
+        </div>
+      </div>
+
+      <div class="children-area">
+        <div class="children-list">
+          ${childrenHtml}
+        </div>
+        <button class="add-child" data-add-child="${roomIndex}" type="button">+ Add a child</button>
+      </div>
+    `;
+    roomsContainer.appendChild(block);
+  });
+
+  bindRoomActions();
+  updateGuestSummary();
+}
+
+function bindRoomActions(){
+  document.querySelectorAll("[data-adult-minus]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const i=Number(btn.dataset.adultMinus);
+      rooms[i].adults=Math.max(1,rooms[i].adults-1);
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-adult-plus]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const i=Number(btn.dataset.adultPlus);
+      rooms[i].adults++;
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-add-child]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const i=Number(btn.dataset.addChild);
+      rooms[i].children.push("");
+      openAgePicker = {room:i, child:rooms[i].children.length-1};
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-remove-child]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const [r,c]=btn.dataset.removeChild.split(":").map(Number);
+      rooms[r].children.splice(c,1);
+      if(openAgePicker && openAgePicker.room===r && openAgePicker.child===c){
+        openAgePicker = null;
+      }
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-open-age]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const [r,c]=btn.dataset.openAge.split(":").map(Number);
+      if(openAgePicker && openAgePicker.room===r && openAgePicker.child===c){
+        openAgePicker = null;
+      } else {
+        openAgePicker = {room:r, child:c};
+      }
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-age-option]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const [r,c,age]=btn.dataset.ageOption.split(":").map(Number);
+      rooms[r].children[c]=age;
+      openAgePicker = null;
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-remove-room]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      rooms.splice(Number(btn.dataset.removeRoom),1);
+      openAgePicker = null;
+      renderRooms();
+    };
+  });
+}
+
+document.getElementById("addRoomBtn").addEventListener("click",(e)=>{
+  e.stopPropagation();
+  rooms.push({adults:2,children:[]});
+  renderRooms();
+});
+
+document.getElementById("doneGuestsBtn").addEventListener("click",(e)=>{
+  e.stopPropagation();
+  guestsPopover.classList.remove("open");
+  openAgePicker = null;
+  renderRooms();
+});
+
+renderRooms();
+
+</script>
+<script>
+/* ===== Interactive date picker (demo "today" = Sep 27, 2026) ===== */
+(function(){
+  const TODAY = new Date(2026, 8, 27);
+  const FIRST = new Date(2026, 8, 1), MONTHS = 14;
+  const MS = 86400000;
+  const pop = document.getElementById('calendarPopover');
+  const monthsEl = document.getElementById('calMonths');
+  const listEl = document.getElementById('monthList');
+  const scrollEl = document.getElementById('calScroll');
+  const inBtn = document.getElementById('checkinBtn'), outBtn = document.getElementById('checkoutBtn');
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const MONL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  let start = new Date(2026, 9, 12), end = new Date(2026, 9, 14);
+  let picking = 'end';           // which date the next click sets
+  let hover = null;
+  const key = d => d.getFullYear()*10000 + d.getMonth()*100 + d.getDate();
+  const nights = () => (start && end) ? Math.round((end - start)/MS) : 0;
+  const short = d => DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate();
+  const full = d => MON[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();
+
+  // build month list + months once
+  for(let m=0; m<MONTHS; m++){
+    const first = new Date(FIRST.getFullYear(), FIRST.getMonth()+m, 1);
+    const b = document.createElement('button'); b.type='button';
+    b.textContent = MONL[first.getMonth()] + (first.getMonth()===0 || m===0 ? ' '+first.getFullYear() : '');
+    b.dataset.m = m; listEl.appendChild(b);
+    b.addEventListener('click', ()=>{ const sec=document.getElementById('cal-m'+m); scrollEl.scrollTo({top: sec.offsetTop - 44, behavior:'smooth'}); });
+    const sec = document.createElement('div'); sec.className='month-section'; sec.id='cal-m'+m;
+    const h = document.createElement('h3'); h.textContent = MONL[first.getMonth()]+' '+first.getFullYear(); sec.appendChild(h);
+    const grid = document.createElement('div'); grid.className='days';
+    for(let i=0;i<first.getDay();i++){ const e=document.createElement('button'); e.className='blank'; e.disabled=true; e.tabIndex=-1; grid.appendChild(e); }
+    const dim = new Date(first.getFullYear(), first.getMonth()+1, 0).getDate();
+    for(let d=1; d<=dim; d++){
+      const date = new Date(first.getFullYear(), first.getMonth(), d);
+      const btn = document.createElement('button'); btn.type='button'; btn.textContent=d; btn.dataset.k = key(date);
+      btn._date = date;
+      if(date < TODAY){ btn.disabled = true; btn.classList.add('past'); }
+      if(key(date)===key(TODAY)) btn.classList.add('today');
+      btn.setAttribute('aria-label', short(date)+' '+date.getFullYear());
+      grid.appendChild(btn);
+    }
+    sec.appendChild(grid); monthsEl.appendChild(sec);
+  }
+  const dayBtns = [...monthsEl.querySelectorAll('.days button:not(.blank)')];
+
+  function paint(){
+    const sk = start && key(start), ek = end && key(end);
+    const hk = (!end && start && hover && hover > start) ? key(hover) : null;
+    dayBtns.forEach(b=>{
+      const k = +b.dataset.k;
+      b.classList.toggle('start', k===sk);
+      b.classList.toggle('has-end', k===sk && !!(ek || hk));
+      b.classList.toggle('end', k===ek);
+      b.classList.toggle('range', !!(sk && ek && k>sk && k<ek));
+      b.classList.toggle('preview', !!(hk && k>sk && k<=hk));
+    });
+    document.getElementById('calInText').textContent = start ? short(start) : 'Add date';
+    document.getElementById('calInText').classList.toggle('empty', !start);
+    document.getElementById('calOutText').textContent = end ? short(end) : 'Add date';
+    document.getElementById('calOutText').classList.toggle('empty', !end);
+    const n = nights();
+    document.getElementById('calNights').textContent = n ? n+' night'+(n>1?'s':'') : '';
+    document.getElementById('calPickIn').classList.toggle('on', picking==='start');
+    document.getElementById('calPickOut').classList.toggle('on', picking==='end');
+    document.getElementById('calHint').textContent = picking==='start' ? 'Select your check-in date' : 'Select your check-out date';
+    document.getElementById('checkinText').textContent = start ? full(start) : 'Add date';
+    document.getElementById('checkoutText').innerHTML = end ? full(end)+' <em class="nights-inline">'+n+' night'+(n>1?'s':'')+'</em>' : 'Add date';
+  }
+
+  function scrollTo(d){
+    if(!d) d = TODAY;
+    const m = (d.getFullYear()-FIRST.getFullYear())*12 + d.getMonth()-FIRST.getMonth();
+    const sec = document.getElementById('cal-m'+Math.max(0,Math.min(MONTHS-1,m)));
+    if(sec) scrollEl.scrollTop = sec.offsetTop - 44;
+    markMonth();
+  }
+  function markMonth(){
+    let cur = 0;
+    for(let m=0;m<MONTHS;m++){ const sec=document.getElementById('cal-m'+m); if(sec.offsetTop - 60 <= scrollEl.scrollTop) cur=m; }
+    listEl.querySelectorAll('button').forEach(b=>b.classList.toggle('active', +b.dataset.m===cur));
+  }
+  scrollEl.addEventListener('scroll', markMonth, {passive:true});
+
+  function open(which){
+    picking = which;
+    if(which==='end' && !start) picking='start';
+    guestsPopover.classList.remove('open');
+    document.querySelectorAll('.dd-menu.open').forEach(m=>m.classList.remove('open'));
+    pop.classList.add('open');
+    paint();
+    scrollTo(picking==='end' ? (start||TODAY) : (start||TODAY));
+  }
+  inBtn.addEventListener('click', e=>{ e.stopPropagation(); if(pop.classList.contains('open') && picking==='start'){ pop.classList.remove('open'); return; } open('start'); });
+  outBtn.addEventListener('click', e=>{ e.stopPropagation(); if(pop.classList.contains('open') && picking==='end'){ pop.classList.remove('open'); return; } open('end'); });
+  document.getElementById('calPickIn').addEventListener('click', ()=>{ picking='start'; paint(); });
+  document.getElementById('calPickOut').addEventListener('click', ()=>{ picking = start ? 'end' : 'start'; paint(); });
+
+  monthsEl.addEventListener('click', e=>{
+    const b = e.target.closest('button'); if(!b || b.disabled || !b._date) return;
+    const d = b._date;
+    if(picking==='start' || !start || d <= start){
+      start = d; end = null; picking = 'end';
+    } else {
+      end = d; picking = 'end';
+      paint();
+      setTimeout(()=>pop.classList.remove('open'), 350);   // both dates chosen: close
+      return;
+    }
+    paint();
+  });
+  monthsEl.addEventListener('mouseover', e=>{
+    const b = e.target.closest('button'); if(!b || !b._date || b.disabled) return;
+    if(start && !end){ hover = b._date; paint(); }
+  });
+  monthsEl.addEventListener('mouseleave', ()=>{ if(hover){ hover=null; paint(); } });
+  document.getElementById('calClear').addEventListener('click', ()=>{ start=null; end=null; picking='start'; paint(); });
+  document.getElementById('calDone').addEventListener('click', ()=>{ if(start && !end){ end = new Date(start.getTime()+MS); } paint(); pop.classList.remove('open'); });
+
+  window.apollesDates = () => ({start, end});
+  paint();
+})();
+
+</script>
+<script>
+/* ===== Destination autocomplete =====
+   Sample data only. In the real system the list comes from the hotel supplier's
+   location search. Ranking rule for the developer:
+   1. Cities whose name starts with what the agent typed
+   2. Areas, regions and airports of that city (Hotel Zone, Downtown, Airport)
+   3. Other destinations that contain the text
+   4. Hotels (name contains the text, or the hotel is in a matching city)          */
+(function(){
+  const T = {city:'City', area:'Area', region:'Region', airport:'Airport', hotel:'Hotel'};
+  const RANK = {city:0, region:1, area:2, airport:3, hotel:4};
+  const D = [
+    ['city','Cancun','Quintana Roo, Mexico'],
+    ['area','Cancun Hotel Zone','Quintana Roo, Mexico','Cancun'],
+    ['area','Cancun Downtown','Quintana Roo, Mexico','Cancun'],
+    ['area','Playa Mujeres','Cancun, Quintana Roo, Mexico','Cancun'],
+    ['area','Costa Mujeres','Cancun, Quintana Roo, Mexico','Cancun'],
+    ['airport','Cancun International Airport (CUN)','Quintana Roo, Mexico','Cancun'],
+    ['region','Riviera Maya','Quintana Roo, Mexico'],
+    ['city','Playa del Carmen','Quintana Roo, Mexico'],
+    ['city','Tulum','Quintana Roo, Mexico'],
+    ['city','Puerto Morelos','Quintana Roo, Mexico'],
+    ['city','Isla Mujeres','Quintana Roo, Mexico'],
+    ['city','Los Cabos','Baja California Sur, Mexico'],
+    ['city','Cabo San Lucas','Baja California Sur, Mexico'],
+    ['airport','Los Cabos International Airport (SJD)','Baja California Sur, Mexico','Los Cabos'],
+    ['city','Puerto Vallarta','Jalisco, Mexico'],
+    ['city','Mexico City','Mexico'],
+    ['city','Punta Cana','La Altagracia, Dominican Republic'],
+    ['area','Cap Cana','Punta Cana, Dominican Republic','Punta Cana'],
+    ['airport','Punta Cana International Airport (PUJ)','Dominican Republic','Punta Cana'],
+    ['city','Las Terrenas','Samaná, Dominican Republic'],
+    ['city','Miami','Florida, United States'],
+    ['city','Miami Beach','Florida, United States'],
+    ['area','South Beach','Miami Beach, Florida, United States','Miami Beach'],
+    ['airport','Miami International Airport (MIA)','Florida, United States','Miami'],
+    ['hotel','SLS Playa Mujeres','Cancun, Mexico','Cancun'],
+    ['hotel','Hyatt Ziva Cancun','Cancun, Mexico','Cancun'],
+    ['hotel','Hard Rock Hotel Cancun','Cancun, Mexico','Cancun'],
+    ['hotel','Nizuc Resort & Spa','Cancun, Mexico','Cancun'],
+    ['hotel','Le Blanc Spa Resort Cancun','Cancun, Mexico','Cancun'],
+    ['hotel','Atelier Playa Mujeres','Cancun, Mexico','Cancun'],
+    ['hotel','Excellence Playa Mujeres','Cancun, Mexico','Cancun'],
+    ['hotel','Hotel Xcaret Mexico','Playa del Carmen, Mexico','Playa del Carmen'],
+    ['hotel','Grand Hyatt Playa del Carmen','Playa del Carmen, Mexico','Playa del Carmen'],
+    ['hotel','Rosewood Mayakoba','Playa del Carmen, Mexico','Playa del Carmen'],
+    ['hotel','Azulik Tulum','Tulum, Mexico','Tulum'],
+    ['hotel','One&Only Palmilla','Los Cabos, Mexico','Los Cabos'],
+    ['hotel','Waldorf Astoria Los Cabos Pedregal','Cabo San Lucas, Mexico','Cabo San Lucas'],
+    ['hotel','Eden Roc Cap Cana','Punta Cana, Dominican Republic','Punta Cana'],
+    ['hotel','Excellence Punta Cana','Punta Cana, Dominican Republic','Punta Cana'],
+    ['hotel','Donoma Las Terrenas','Las Terrenas, Dominican Republic','Las Terrenas'],
+    ['hotel','Nobu Hotel Miami Beach','Miami Beach, United States','Miami Beach'],
+    ['hotel','Faena Hotel Miami Beach','Miami Beach, United States','Miami Beach']
+  ].map((r,i)=>({type:r[0], name:r[1], where:r[2], city:r[3]||r[1], order:i}));
+
+  const ICON = {
+    pin:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.6"/></svg>',
+    plane:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 13.5 3 11l1.4-1.4 8 .8 4.3-4.3a1.9 1.9 0 0 1 2.7 2.7l-4.3 4.3.8 8L14.5 22 12 14.5"/></svg>',
+    bed:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6v13M3 16h18v3M21 16v-4a3 3 0 0 0-3-3h-7v7"/><circle cx="7" cy="11.5" r="2"/></svg>'
+  };
+  const wrap = document.getElementById('destWrap'), input = document.getElementById('destInput');
+  const menu = document.getElementById('destMenu'), clear = document.getElementById('destClear');
+  let items = [], active = -1;
+
+  const esc = s => s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function hl(text, q){
+    const i = text.toLowerCase().indexOf(q);
+    if(i<0) return esc(text);
+    return esc(text.slice(0,i)) + '<b>' + esc(text.slice(i,i+q.length)) + '</b>' + esc(text.slice(i+q.length));
+  }
+  function search(q){
+    const res = [];
+    D.forEach(d=>{
+      const n = d.name.toLowerCase(), c = d.city.toLowerCase();
+      const inName = n.indexOf(q), inCity = c.startsWith(q);
+      if(inName<0 && !inCity) return;
+      // 0 = starts with the text, 1 = word starts with it, 2 = contains it / is in a matching city
+      const m = inName===0 ? 0 : (inName>0 && /[\s(]/.test(n[inName-1])) ? 1 : 2;
+      const group = d.type==='hotel' ? 2 : (d.type==='city' && m===0) ? 0 : 1;
+      res.push({d, group, m});
+    });
+    res.sort((a,b)=> a.group-b.group || a.m-b.m || RANK[a.d.type]-RANK[b.d.type] || a.d.order-b.d.order);
+    const places = res.filter(r=>r.group<2).slice(0,7), hotels = res.filter(r=>r.group===2).slice(0,6);
+    return places.concat(hotels).map(r=>r.d);
+  }
+  function render(){
+    const q = input.value.trim().toLowerCase();
+    clear.hidden = !input.value;
+    if(q.length<2){ close(); return; }
+    items = search(q); active = items.length ? 0 : -1;
+    if(!items.length){
+      menu.innerHTML = '<div class="dd-empty">No matches. Try a city, area or hotel name.</div>';
+    } else {
+      let html = '', prevHotel = false;
+      items.forEach((d,i)=>{
+        const isHotel = d.type==='hotel';
+        if(isHotel && !prevHotel && i>0) html += '<div class="dest-sep"></div>';
+        prevHotel = isHotel;
+        const icon = isHotel ? ICON.bed : d.type==='airport' ? ICON.plane : ICON.pin;
+        html += '<button type="button" role="option" class="dd-opt dest-opt'+(i===active?' active':'')+'" data-i="'+i+'">'+icon+
+                '<span class="dest-name">'+hl(d.name,q)+', '+esc(d.where)+'</span><span class="dest-type">'+T[d.type]+'</span></button>';
+      });
+      menu.innerHTML = html;
+    }
+    closePopovers(); menu.classList.add('open'); input.setAttribute('aria-expanded','true');
+  }
+  function close(){ menu.classList.remove('open'); input.setAttribute('aria-expanded','false'); }
+  function pick(i){ const d = items[i]; if(!d) return; input.value = d.name+', '+d.where; clear.hidden=false; close(); }
+  function move(step){
+    if(!items.length) return;
+    active = (active+step+items.length)%items.length;
+    menu.querySelectorAll('.dest-opt').forEach((b,i)=>b.classList.toggle('active', i===active));
+    const a = menu.querySelector('.dest-opt.active'); if(a) a.scrollIntoView({block:'nearest'});
+  }
+  input.addEventListener('input', render);
+  input.addEventListener('focus', ()=>{ if(input.value.trim().length>=2) render(); });
+  input.addEventListener('click', e=>e.stopPropagation());
+  input.addEventListener('keydown', e=>{
+    if(!menu.classList.contains('open')) return;
+    if(e.key==='ArrowDown'){ e.preventDefault(); move(1); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); move(-1); }
+    else if(e.key==='Enter'){ e.preventDefault(); pick(active); }
+    else if(e.key==='Escape'){ close(); }
+  });
+  menu.addEventListener('click', e=>{ e.stopPropagation(); const b = e.target.closest('.dest-opt'); if(b) pick(+b.dataset.i); });
+  menu.addEventListener('mousemove', e=>{ const b = e.target.closest('.dest-opt'); if(b && +b.dataset.i!==active){ active=+b.dataset.i; move(0); } });
+  clear.addEventListener('click', e=>{ e.stopPropagation(); input.value=''; clear.hidden=true; close(); input.focus(); });
+})();
+
+/* ===== Guest nationality: all countries, searchable ===== */
+(function(){
+  const COUNTRIES = ["Afghanistan", "Åland Islands", "Albania", "Algeria", "American Samoa", "Andorra", "Angola", "Anguilla", "Antarctica", "Antigua and Barbuda", "Argentina", "Armenia", "Aruba", "Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bermuda", "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Bouvet Island", "Brazil", "British Indian Ocean Territory", "British Virgin Islands", "Brunei", "Bulgaria", "Burkina Faso", "Burundi", "Cabo Verde", "Cambodia", "Cameroon", "Canada", "Caribbean Netherlands", "Cayman Islands", "Central African Republic", "Chad", "Chile", "China", "Christmas Island", "Cocos (Keeling) Islands", "Colombia", "Comoros", "Congo", "Congo (DRC)", "Cook Islands", "Costa Rica", "Croatia", "Cuba", "Curaçao", "Cyprus", "Czechia", "Côte d'Ivoire", "Denmark", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia", "Falkland Islands", "Faroe Islands", "Fiji", "Finland", "France", "French Guiana", "French Polynesia", "French Southern Territories", "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Gibraltar", "Greece", "Greenland", "Grenada", "Guadeloupe", "Guam", "Guatemala", "Guernsey", "Guinea", "Guinea-Bissau", "Guyana", "Haiti", "Heard Island and McDonald Islands", "Honduras", "Hong Kong", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Isle of Man", "Israel", "Italy", "Jamaica", "Japan", "Jersey", "Jordan", "Kazakhstan", "Kenya", "Kiribati", "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luxembourg", "Macao", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Martinique", "Mauritania", "Mauritius", "Mayotte", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Montserrat", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal", "Netherlands", "New Caledonia", "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "Norfolk Island", "North Korea", "North Macedonia", "Northern Mariana Islands", "Norway", "Oman", "Pakistan", "Palau", "Palestine", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Pitcairn", "Poland", "Portugal", "Puerto Rico", "Qatar", "Romania", "Russia", "Rwanda", "Réunion", "Saint Barthélemy", "Saint Helena", "Saint Kitts and Nevis", "Saint Lucia", "Saint Martin (French part)", "Saint Pierre and Miquelon", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Sint Maarten", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", "South Georgia and the South Sandwich Islands", "South Korea", "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname", "Svalbard and Jan Mayen", "Sweden", "Switzerland", "Syria", "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo", "Tokelau", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkmenistan", "Turks and Caicos Islands", "Tuvalu", "Türkiye", "U.S. Minor Outlying Islands", "U.S. Virgin Islands", "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Uzbekistan", "Vanuatu", "Vatican City", "Venezuela", "Vietnam", "Wallis and Futuna", "Western Sahara", "Yemen", "Zambia", "Zimbabwe"];
+  const btn = document.getElementById('natBtn'), text = document.getElementById('natText');
+  const menu = document.getElementById('natMenu'), list = document.getElementById('natList'), box = document.getElementById('natSearch');
+  let selected = 'Israel', shown = [], active = -1;
+
+  function render(){
+    const q = box.value.trim().toLowerCase();
+    const starts = COUNTRIES.filter(c=>c.toLowerCase().startsWith(q));
+    const contains = q ? COUNTRIES.filter(c=>!c.toLowerCase().startsWith(q) && c.toLowerCase().includes(q)) : [];
+    shown = starts.concat(contains);
+    if(!shown.length){ list.innerHTML = '<div class="dd-empty">No country found.</div>'; active=-1; return; }
+    active = q ? 0 : Math.max(0, shown.indexOf(selected));
+    list.innerHTML = shown.map((c,i)=>'<button type="button" role="option" class="dd-opt nat-opt'+(c===selected?' sel':'')+(i===active?' active':'')+'" data-i="'+i+'" aria-selected="'+(c===selected)+'">'+c.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</button>').join('');
+  }
+  function mark(scroll){
+    list.querySelectorAll('.nat-opt').forEach((b,i)=>b.classList.toggle('active', i===active));
+    const a = list.querySelector('.nat-opt.active'); if(a && scroll) a.scrollIntoView({block: scroll});
+  }
+  function open(){
+    closePopovers();
+    box.value=''; render(); menu.classList.add('open'); btn.setAttribute('aria-expanded','true');
+    mark('center'); setTimeout(()=>box.focus(), 0);
+  }
+  function close(){ menu.classList.remove('open'); btn.setAttribute('aria-expanded','false'); }
+  function pick(i){ if(shown[i]==null) return; selected = shown[i]; text.textContent = selected; close(); btn.focus(); }
+
+  btn.addEventListener('click', e=>{ e.stopPropagation(); menu.classList.contains('open') ? close() : open(); });
+  menu.addEventListener('click', e=>{ e.stopPropagation(); const b = e.target.closest('.nat-opt'); if(b) pick(+b.dataset.i); });
+  box.addEventListener('input', ()=>{ render(); list.scrollTop = 0; });
+  box.addEventListener('keydown', e=>{
+    if(e.key==='ArrowDown'){ e.preventDefault(); if(shown.length){ active=Math.min(shown.length-1,active+1); mark('nearest'); } }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); if(shown.length){ active=Math.max(0,active-1); mark('nearest'); } }
+    else if(e.key==='Enter'){ e.preventDefault(); pick(active); }
+    else if(e.key==='Escape'){ close(); btn.focus(); }
+  });
+})();
+</script>
+<script>
+(function(){
+  const drawer = document.getElementById('quoteDrawer');
+  const closeBtn = document.getElementById('quoteClose');
+  const keepSearching = document.getElementById('keepSearching');
+  const sideTab = document.getElementById('quoteSideTab');
+  const sideCount = document.getElementById('quoteSideCount');
+  const quoteCount = document.getElementById('quoteCount');
+  const quoteItems = document.getElementById('quoteItems');
+  const quoteEmpty = document.getElementById('quoteEmpty');
+  const quoteLimitText = document.getElementById('quoteLimitText');
+  const toast = document.getElementById('quoteToast');
+  const newQuoteBtn = document.getElementById('newQuoteBtn');
+  const quotePicker = document.getElementById('quotePicker');
+  const quoteNameInput = document.getElementById('quoteNameInput');
+  const finishQuoteBtn = document.getElementById('finishQuoteBtn');
+  const finishedNote = document.getElementById('quoteFinishedNote');
+
+  let toastTimer;
+  let nextQuoteId = 2;
+  let activeQuoteId = 1;
+
+  const quotes = [
+    {
+      id: 1,
+      name: 'Untitled quote',
+      finished: false,
+      items: []
+    }
+  ];
+
+  function getActiveQuote(){
+    return quotes.find(q => q.id === activeQuoteId);
+  }
+
+  function openDrawer(){
+    drawer.classList.add('open');
+    sideTab.classList.add('drawer-open');
+  }
+
+  function closeDrawer(){
+    drawer.classList.remove('open');
+    sideTab.classList.remove('drawer-open');
+  }
+
+  function getCardData(button){
+    const card = button.closest('.room-row');
+    const name = document.querySelector('.hotel-copy h1').textContent.trim();
+    const roomLine = card.querySelector('.room-title').textContent.trim();
+    const price = card.querySelector('.price-main').textContent.trim();
+    const policyBits = [card.dataset.board, card.querySelector('.c-cancel').innerText.replace(/\s+/g,' ').trim()];
+    return {
+      card,
+      button,
+      name,
+      room: roomLine,
+      price,
+      policy: policyBits.join(' · '),
+      dates: window.apollesSearchDates || 'Oct 12 to Oct 14 · 2 nights',
+      dest: window.apollesDest || 'Cancun',
+      party: window.apollesParty || '1 room · 2 adults',
+      key: name + '||' + roomLine + '||' + price + '||' + (window.apollesSearchDates || '')
+    };
+  }
+
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, s => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#039;'
+    }[s]));
+  }
+
+  function showToast(message){
+    toast.textContent = message;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1500);
+  }
+
+  function quoteLabel(q){
+    const prefix = `Quote ${q.id}`;
+    const name = q.name.trim() || 'Untitled quote';
+    const state = q.finished ? ' · Finished' : '';
+    return `${prefix} · ${name}${state}`;
+  }
+
+  function refreshPicker(){
+    quotePicker.innerHTML = quotes.map(q =>
+      `<option value="${q.id}">${escapeHtml(quoteLabel(q))}</option>`
+    ).join('');
+    quotePicker.value = String(activeQuoteId);
+  }
+
+  function syncPageButtons(){
+    const active = getActiveQuote();
+
+    document.querySelectorAll('.quote-btn').forEach(button => {
+      const data = getCardData(button);
+      const included = active.items.some(item => item.key === data.key);
+
+      button.classList.toggle('in-quote', included);
+      button.textContent = included ? 'In quote' : 'Add to quote';
+      data.card.classList.toggle('in-quote', included);
+    });
+  }
+
+  function render(){
+    const active = getActiveQuote();
+    const count = active.items.length;
+
+    quoteNameInput.value = active.name;
+    quoteNameInput.disabled = false;
+    document.getElementById('quoteParty').textContent = active.party ? 'For ' + active.party : '';
+
+    sideCount.textContent = count;
+    sideCount.classList.toggle('show', count > 0);
+
+
+    quoteCount.textContent = count + (count === 1 ? ' option' : ' options');
+    quoteLimitText.textContent = count + ' of 30 hotels added';
+
+    refreshPicker();
+    syncPageButtons();
+
+    if(!count){
+      quoteItems.innerHTML = `
+        <div class="quote-empty" id="quoteEmptyDynamic">
+          No options in this quote yet.<br>
+          Add hotels while you search, or switch to another quote above.
+        </div>`;
+      return;
+    }
+
+    const groups = [];
+    active.items.forEach((item, i) => {
+      let g = groups.find(x => x.key === destKey(item));
+      if(!g){ g = {key: destKey(item), dest: item.dest, dates: item.dates, rows: []}; groups.push(g); }
+      g.rows.push([item, i]);
+    });
+    quoteItems.innerHTML = groups.map(g => `<div class="quote-dest"><strong>${escapeHtml(g.dest)}</strong><span>${escapeHtml(g.dates)}</span></div>` + g.rows.map(([item, i]) => `
+      <div class="quote-item">
+        <div class="quote-item-top">
+          <div class="quote-item-hotel">${escapeHtml(item.name)}</div>
+          <button class="quote-item-remove" data-remove="${i}" aria-label="Remove">×</button>
+        </div>
+        <div class="quote-item-room">${escapeHtml(item.room)}</div>
+        <div class="quote-item-meta">
+          <div class="quote-item-dates">
+            ${escapeHtml(item.policy)}
+          </div>
+          <div class="quote-item-price">
+            ${escapeHtml(item.price)}
+            <small>total stay</small>
+          </div>
+        </div>
+      </div>
+    `).join('')).join('');
+
+    quoteItems.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = Number(btn.dataset.remove);
+        active.items.splice(index, 1);
+        if(!active.items.length) active.party = null;
+        render();
+        showToast('Removed from quote');
+      });
+    });
+  }
+
+  // Where an option lands: the destination with the same city and dates, or a new one.
+  function destKey(x){ return x.dest + '||' + x.dates; }
+  function addToQuote(q, data){
+    const newDest = q.items.length > 0 && !q.items.some(i => destKey(i) === destKey(data));
+    if(!q.party) q.party = data.party;
+    q.items.push(data);
+    render();
+    const where = data.dest + ', ' + data.dates.split(' · ')[0];
+    showToast(`Added to ${q.name || 'Untitled quote'} · ${newDest ? 'new destination: ' : ''}${where}`);
+  }
+
+  // A quote is priced for one set of rooms and guests. A search for other guests
+  // cannot go into it: the prices would not fit.
+  let pendingAdd = null;
+  const guestsDlg = document.createElement('div');
+  guestsDlg.className = 'guests-dlg';
+  guestsDlg.setAttribute('role', 'dialog');
+  guestsDlg.setAttribute('aria-modal', 'true');
+  guestsDlg.innerHTML = '<div class="guests-box"><strong>Different rooms and guests</strong><p class="guests-text"></p><div class="guests-actions"><button type="button" class="guests-cancel">Cancel</button><button type="button" class="guests-new">Start a new quote</button></div></div>';
+  document.body.appendChild(guestsDlg);
+  function askDifferentGuests(q, data){
+    pendingAdd = data;
+    guestsDlg.querySelector('.guests-text').textContent = `"${q.name || 'Untitled quote'}" is for ${q.party}. This search is for ${data.party}, so its prices do not fit this quote. Start a new quote for these guests, or change the search.`;
+    guestsDlg.classList.add('open');
+  }
+  function closeGuestsDlg(){ guestsDlg.classList.remove('open'); pendingAdd = null; }
+  guestsDlg.querySelector('.guests-cancel').addEventListener('click', e => { e.stopPropagation(); closeGuestsDlg(); });
+  guestsDlg.addEventListener('click', e => { e.stopPropagation(); if(e.target === guestsDlg) closeGuestsDlg(); });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape' && guestsDlg.classList.contains('open')) closeGuestsDlg(); });
+  guestsDlg.querySelector('.guests-new').addEventListener('click', e => {
+    e.stopPropagation();
+    const data = pendingAdd; closeGuestsDlg();
+    const q = createQuote('Untitled quote');
+    addToQuote(q, data);
+    showToast(`Quote ${q.id} created for ${data.party} · ${data.dest}, ${data.dates.split(' · ')[0]}`);
+  });
+
+  function createQuote(name){
+    const q = {
+      id: nextQuoteId++,
+      name: name || 'Untitled quote',
+      finished: false,
+      items: []
+    };
+    quotes.push(q);
+    activeQuoteId = q.id;
+    finishedNote.classList.remove('show');
+    render();
+    return q;
+  }
+
+  document.querySelectorAll('.quote-btn').forEach(button => {
+    button.addEventListener('click', () => {
+      const active = getActiveQuote();
+      const data = getCardData(button);
+      const existingIndex = active.items.findIndex(item => item.key === data.key);
+
+      if(existingIndex >= 0){
+        active.items.splice(existingIndex, 1);
+        if(!active.items.length) active.party = null;
+        render();
+        showToast('Removed from quote');
+        return;
+      }
+
+      if(active.items.length >= 30){
+        showToast('This quote already has 30 hotels');
+        return;
+      }
+
+      if(active.party && active.party !== data.party){ askDifferentGuests(active, data); return; }
+      addToQuote(active, data);
+    });
+  });
+
+  sideTab.addEventListener('click', () => {
+    drawer.classList.contains('open') ? closeDrawer() : openDrawer();
+  });
+
+  closeBtn.addEventListener('click', closeDrawer);
+  keepSearching.addEventListener('click', closeDrawer);
+
+
+  // Clicking outside the drawer closes it.
+  document.addEventListener('click', event => {
+    if(!drawer.classList.contains('open')) return;
+    if(drawer.contains(event.target)) return;
+    if(sideTab.contains(event.target)) return;
+    closeDrawer();
+  });
+
+  // Switch between quotes without leaving the search screen.
+  quotePicker.addEventListener('change', () => {
+    activeQuoteId = Number(quotePicker.value);
+    finishedNote.classList.remove('show');
+    render();
+
+    const active = getActiveQuote();
+    showToast(`Switched to ${active.name || 'Untitled quote'}`);
+  });
+
+  quoteNameInput.addEventListener('input', () => {
+    const active = getActiveQuote();
+    active.name = quoteNameInput.value;
+    refreshPicker();
+  });
+
+  quoteNameInput.addEventListener('blur', () => {
+    const active = getActiveQuote();
+    if(!active.name.trim()){
+      active.name = 'Untitled quote';
+      quoteNameInput.value = active.name;
+    }
+    refreshPicker();
+  });
+
+  newQuoteBtn.addEventListener('click', () => {
+    const q = createQuote('Untitled quote');
+    showToast(`Quote ${q.id} created`);
+  });
+
+  finishQuoteBtn.addEventListener('click', () => {
+    const active = getActiveQuote();
+
+    if(!active.items.length){
+      showToast('Add at least one option before finishing');
+      return;
+    }
+
+    active.finished = true;
+    const finishedName = active.name || `Quote ${active.id}`;
+
+    const newQuote = createQuote('Untitled quote');
+    finishedNote.textContent = `${finishedName} saved. Quote ${newQuote.id} is ready for new options.`;
+    finishedNote.classList.add('show');
+
+    showToast(`${finishedName} finished`);
+  });
+
+  document.getElementById('openQuoteBtn').addEventListener('click', () => {
+    const active = getActiveQuote();
+    if(!active.items.length){ showToast('No options in this quote yet'); return; }
+    location.href = '15-quote-editor.html';
+  });
+
+  window.apollesSyncQuote = syncPageButtons;
+  closeDrawer();
+  render();
+})();
+</script>
+<script>
+(function(){
+  // Top menu dropdowns
+  document.querySelectorAll('.nav-trigger,.account-trigger').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const group=btn.closest('.nav-group');
+      document.querySelectorAll('.nav-group.menu-open').forEach(g=>{ if(g!==group) g.classList.remove('menu-open'); });
+      group.classList.toggle('menu-open');
+    });
+  });
+  document.addEventListener('click',()=>document.querySelectorAll('.nav-group.menu-open').forEach(g=>g.classList.remove('menu-open')));
+
+  // ===== Room filters and sort =====
+  // Demo prices: price per night x nights x rooms. Taxes and fees paid at the hotel are shown on the next page (10).
+  const $=id=>document.getElementById(id);
+  const table=$('roomTable');
+  const rows=[...document.querySelectorAll('.room-row')];
+  const money=n=>'USD '+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const plural=(n,w)=>n+' '+w+(n===1?'':'s');
+  const S={nights:2, rooms:1, adults:2, children:0};
+  let meal='', sortBy='low';
+
+  function partyLine(){ let t=plural(S.rooms,'room')+' · '+plural(S.adults,'adult'); if(S.children) t+=' · '+(S.children===1?'1 child':S.children+' children'); return t; }
+  function guestsLine(){
+    let t=plural(S.adults,'adult');
+    if(S.children) t+=', '+(S.children===1?'1 child':S.children+' children');
+    return t;
+  }
+  function apply(){
+    const q=$('fRoom').value.trim().toLowerCase(), freeOnly=$('freeOnly').checked;
+    let shown=0;
+    rows.forEach(r=>{
+      const night=+r.dataset.night, total=night*S.nights*S.rooms;
+      r._total=total;
+      r.querySelector('.price-main').textContent=money(total);
+      r.querySelector('.price-sub').textContent=money(total/S.nights)+' per night';
+      r.querySelector('.room-guests').textContent=guestsLine();
+      const ok=(!q||r.dataset.name.toLowerCase().includes(q)) && (!meal||r.dataset.board===meal) && (!freeOnly||r.dataset.free==='1');
+      r.style.display=ok?'':'none'; if(ok) shown++;
+    });
+    const order=[...rows].sort((a,b)=> sortBy==='high' ? b._total-a._total : sortBy==='name' ? a.dataset.name.localeCompare(b.dataset.name) : a._total-b._total);
+    const empty=$('roomsEmpty');
+    order.forEach(r=>table.insertBefore(r,empty));
+    table.classList.toggle('is-empty',!shown);
+    $('ratesShown').textContent=plural(shown,'rate')+' shown';
+    $('priceHead').textContent='Net price · '+plural(S.nights,'night')+(S.rooms>1?' · '+plural(S.rooms,'room'):'');
+    if(window.apollesSyncQuote) window.apollesSyncQuote();
+  }
+  $('fRoom').addEventListener('input',apply);
+  $('freeOnly').addEventListener('change',apply);
+
+  // Meal plan and Sort menus (same look as the other dropdowns)
+  function menu(btnId,menuId,textId,prefix,onPick){
+    const btn=$(btnId), m=$(menuId);
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const open=!m.classList.contains('open');
+      closePopovers(); m.classList.toggle('open',open); btn.setAttribute('aria-expanded',String(open));
+    });
+    m.addEventListener('click',e=>{
+      e.stopPropagation();
+      const o=e.target.closest('.pick-opt'); if(!o) return;
+      m.querySelectorAll('.pick-opt').forEach(x=>x.classList.toggle('sel',x===o));
+      $(textId).textContent=prefix+o.textContent;
+      m.classList.remove('open'); btn.setAttribute('aria-expanded','false');
+      onPick(o.dataset.v); apply();
+    });
+  }
+  menu('mealBtn','mealMenu','mealText','',v=>{meal=v;});
+  menu('sortBtn','sortMenu','sortText','Sort: ',v=>{sortBy=v;});
+
+  // Book room -> guest details
+  table.addEventListener('click',e=>{ if(e.target.closest('.book-btn')) location.href='10-guest-details.html'; });
+
+  // Search: same hotel -> refresh rooms here. Another destination -> hotel results page.
+  const MONS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmt=d=>MONS[d.getMonth()]+' '+d.getDate();
+  const box=document.querySelector('.search-box');
+  $('searchBtn').addEventListener('click',e=>{
+    e.stopPropagation();
+    const d=window.apollesDates(), dest=$('destInput').value.trim();
+    if(!dest){ $('destInput').focus(); return; }
+    if(!d.start||!d.end){ $('checkinBtn').click(); return; }
+    if(!/^SLS Playa Mujeres/i.test(dest)){ location.href='08-search-results.html'; return; }
+    closePopovers();
+    S.nights=Math.round((d.end-d.start)/86400000);
+    S.rooms=rooms.length;
+    S.adults=rooms.reduce((a,r)=>a+r.adults,0);
+    S.children=rooms.reduce((a,r)=>a+r.children.length,0);
+    const label=fmt(d.start)+' to '+fmt(d.end);
+    $('tripMeta').textContent=label+', '+d.end.getFullYear()+' · '+(S.rooms>1?plural(S.rooms,'room')+', ':'')+guestsLine();
+    window.apollesSearchDates=label+' · '+plural(S.nights,'night');
+    window.apollesDest='Cancun'; window.apollesParty=partyLine();
+    $('miniMeta').textContent=label+' · '+plural(S.adults+S.children,'guest');
+    box.classList.remove('editing'); $('miniEdit').textContent='Edit'; $('searchMini').setAttribute('aria-expanded','false');
+    table.classList.add('searching');
+    setTimeout(()=>{ table.classList.remove('searching'); apply(); },450);
+  });
+  $('searchMini').addEventListener('click',()=>{
+    const on=box.classList.toggle('editing');
+    $('searchMini').setAttribute('aria-expanded',String(on));
+    $('miniEdit').textContent=on?'Close':'Edit';
+  });
+
+  window.apollesSearchDates='Oct 12 to Oct 14 · 2 nights';
+  window.apollesDest='Cancun'; window.apollesParty=partyLine();
+  apply();
+})();
+</script>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

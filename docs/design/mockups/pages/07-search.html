@@ -1,0 +1,1379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Search | Apolles</title>
+<style>
+:root{
+  --ink:#17211d;
+  --muted:#6d756f;
+  --green:#173f35;
+  --green-2:#245c4e;
+  --line:#e7e2d8;
+  --shadow:0 14px 36px rgba(19,47,39,.08);
+  --green-soft:#eef3f0;
+  --green-soft-2:#e3ece7;
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  min-height:100%;
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--ink);
+  background:#faf9f6;
+}
+a{text-decoration:none;color:inherit}
+button,input,select{font:inherit}
+
+.topbar{
+  position:sticky;
+  top:0;
+  z-index:100;
+  height:68px;
+  background:#fff;
+  border-bottom:1px solid var(--line);
+}
+.topbar-inner{
+  width:min(1260px,calc(100% - 40px));
+  height:100%;
+  margin:auto;
+  display:flex;
+  align-items:center;
+  gap:28px;
+}
+.brand{
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:27px;
+  margin-right:10px;
+}
+.nav{display:flex;height:100%;align-items:center;gap:26px}
+.nav-link{height:100%;display:flex;align-items:center;position:relative;font-size:13px;color:#6c7671}
+.nav-link.active{color:var(--green);font-weight:700}
+.nav-link.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-group{position:relative;height:100%;display:flex;align-items:center}
+.nav-trigger{
+  height:100%;border:0;background:transparent;padding:0;cursor:pointer;
+  color:#6c7671;font-size:13px;display:flex;align-items:center;gap:5px;position:relative;
+}
+.nav-trigger.active{color:var(--green);font-weight:700}
+.nav-trigger.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-trigger span{font-size:11px;color:#8a938e}
+.nav-menu{
+  position:absolute;top:58px;left:-10px;z-index:180;
+  width:190px;padding:7px;background:#fff;border:1px solid #e1e6e3;
+  border-radius:11px;box-shadow:0 15px 38px rgba(19,47,39,.14);
+  opacity:0;visibility:hidden;transform:translateY(5px);transition:.14s ease;
+}
+.nav-group:hover>.nav-menu,.nav-group.menu-open>.nav-menu{opacity:1;visibility:visible;transform:translateY(0)}
+.nav-menu a{display:block;padding:8px 10px;border-radius:7px;color:#4d5a54;font-size:12.5px}
+.nav-menu a:hover{background:#f1f6f3;color:var(--green)}
+.nav-sep{height:1px;background:#eeeae5;margin:5px 2px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:14px;color:#647069;font-size:12px}
+.balance-chip{
+  display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;
+  padding:6px 11px;border:1px solid #dce6e0;border-radius:10px;background:#f7faf8;
+}
+.balance-chip small{font-size:11px;color:#7f8984;font-weight:600}
+.balance-chip b{font-size:12.5px;color:var(--green)}
+.balance-chip:hover{border-color:#bcd0c6}
+.account-group{height:auto}
+.account-trigger{border:0;background:transparent;display:flex;align-items:center;gap:8px;color:#4d5a54;font-size:12.5px;padding:0;cursor:pointer}
+.account-trigger b{font-size:11px;font-weight:500}
+.account-menu{left:auto;right:0;top:40px}
+.avatar{
+  width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#e5eee9;color:var(--green);
+  font-size:11px;font-weight:800;
+}
+
+.page{
+  width:min(1260px,calc(100% - 40px));
+  margin:auto;
+  padding:32px 0 60px;
+}
+.page-head{margin-bottom:16px}
+.page-head h1{
+  margin:0 0 5px;
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:34px;
+  font-weight:500;
+  letter-spacing:-.02em;
+}
+.page-head p{
+  margin:0;
+  font-size:13px;
+  color:var(--muted);
+}
+
+.search-shell{
+  position:relative;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:18px;
+  box-shadow:var(--shadow);
+  padding:18px;
+}
+.search-row{
+  display:grid;
+  grid-template-columns:1.65fr .95fr .95fr 1.05fr .85fr auto;
+  gap:9px;
+  align-items:end;
+}
+.field-wrap{position:relative}
+.field-wrap label{
+  display:block;
+  margin:0 0 5px 2px;
+  font-size:11px;
+  font-weight:700;
+  color:#7b8580;
+}
+.field,
+.field-button{
+  width:100%;
+  height:42px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  background:#fff;
+  color:#324039;
+  outline:none;
+  font-size:13px;
+}
+.field{padding:0 11px}
+.field::placeholder{color:#9ba39f}
+.field-button{
+  padding:0 11px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  cursor:pointer;
+  text-align:left;
+}
+.field:focus,.field-button:focus{
+  border-color:#98ada4;
+  box-shadow:0 0 0 3px rgba(23,63,53,.07);
+}
+.search-btn{
+  height:42px;
+  border:0;
+  border-radius:8px;
+  padding:0 22px;
+  background:var(--green);
+  color:#fff;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+.popover{
+  display:none;
+  position: absolute;
+  z-index:80;
+  background:#fff;
+  border:1px solid var(--line);
+  box-shadow:0 18px 48px rgba(19,47,39,.14);
+}
+.popover.open{display:block}
+
+/* Calendar */
+.calendar-pop{
+  top:calc(100% + 8px);
+  left:0;
+  width:520px;
+  border-radius:12px;
+  overflow:hidden;
+}
+.calendar-layout{
+  display:grid;
+  grid-template-columns:145px 1fr;
+  height:430px;
+}
+.month-list{
+  border-right:1px solid #eeeae3;
+  background:#faf9f6;
+  padding:10px 0;
+  overflow:auto;
+}
+.month-list button{
+  width:100%;
+  border:0;
+  background:transparent;
+  padding:10px 16px;
+  text-align:left;
+  color:#4e5954;
+  font-size:12px;
+  cursor:pointer;
+}
+.month-list button:hover,
+.month-list button.active{
+  background:var(--green-soft);
+  color:var(--green);
+  font-weight:700;
+}
+.single-calendar{
+  padding:14px 18px 16px;
+  overflow:auto;
+}
+.weekdays,.days{
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  gap:3px;
+}
+.weekdays{
+  border-top:1px solid #ece8e2;
+  padding-top:7px;
+}
+.weekdays span{
+  text-align:center;
+  color:#7d8a83;
+  font-size:11px;
+  padding:3px 0 5px;
+  font-weight:700;
+}
+.month-section{
+  margin-bottom:18px;
+}
+.month-section h3{
+  margin:0 0 10px;
+  font-size:16px;
+  color:var(--green);
+}
+.days button{
+  height:30px;
+  border:0;
+  background:transparent;
+  color:#3f4b45;
+  border-radius:7px;
+  font-size:11px;
+  cursor:pointer;
+}
+.days button:hover{background:#f1f4f2}
+.days button.muted{color:#c7cbc9}
+.days button.start,
+.days button.end{
+  background:var(--green);
+  color:#fff;
+  font-weight:700;
+}
+.days button.range{
+  background:var(--green-soft);
+  color:var(--green);
+  border-radius:0;
+}
+.days button.start{border-top-right-radius:0;border-bottom-right-radius:0}
+.days button.end{border-top-left-radius:0;border-bottom-left-radius:0}
+
+/* Guests */
+.guests-pop{
+  top:calc(100% + 8px);
+  right:0;
+  left:auto;
+  width:350px;
+  border-radius:12px;
+  padding:16px;
+}
+.room-block + .room-block{
+  border-top:1px solid #eeeae3;
+  margin-top:14px;
+  padding-top:14px;
+}
+.room-title{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:12px;
+}
+.room-title strong{font-size:13px}
+.remove-room{
+  border:0;background:transparent;color:#9a5a50;font-size:11px;cursor:pointer
+}
+.guest-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:14px;
+  margin:10px 0;
+}
+.guest-label strong{display:block;font-size:12px}
+.guest-label span{display:block;color:#8f9793;font-size:11px}
+.counter{
+  display:flex;align-items:center;gap:8px;
+}
+.counter button{
+  width:27px;height:27px;
+  border:1px solid #dce3df;
+  border-radius:7px;
+  background:#fff;
+  cursor:pointer;
+}
+.counter span{
+  min-width:16px;
+  text-align:center;
+  font-size:12px;
+}
+.children-area{
+  margin-top:8px;
+}
+.children-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 12px;
+  margin-bottom:8px;
+}
+.add-child{
+  width:100%;
+  height:34px;
+  border:1px dashed #cfd9d3;
+  border-radius:8px;
+  background:#fbfcfb;
+  color:var(--green);
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+}
+.child-row{
+  position:relative;
+  display:flex;
+  gap:6px;
+  align-items:center;
+  margin-top:0;
+  width:auto;
+}
+.age-trigger{
+  min-width:102px;
+  height:34px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  padding:0 10px;
+  background:#fff;
+  color:#48544e;
+  font-size:11px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  cursor:pointer;
+}
+.age-trigger.open{
+  border-color:#98ada4;
+  box-shadow:0 0 0 3px rgba(23,63,53,.07);
+}
+.age-menu{
+  position:absolute;
+  top:38px;
+  left:0;
+  min-width:160px;
+  max-height:180px;
+  overflow:auto;
+  background:#fff;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  box-shadow:0 14px 28px rgba(19,47,39,.12);
+  z-index:20;
+}
+.age-option{
+  width:100%;
+  text-align:left;
+  border:0;
+  background:#fff;
+  padding:8px 10px;
+  font-size:11px;
+  color:#425049;
+  cursor:pointer;
+}
+.age-option:hover{
+  background:var(--green-soft);
+  color:var(--green);
+}
+.remove-child{
+  width:30px;
+  height:30px;
+  border:0;
+  background:transparent;
+  color:#9a5a50;
+  cursor:pointer;
+  margin-top:2px;
+}
+.guests-footer{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:15px;
+  padding-top:13px;
+  border-top:1px solid #eeeae3;
+}
+.add-room{
+  border:0;background:transparent;color:var(--green);font-size:11px;font-weight:700;cursor:pointer
+}
+.done-btn{
+  min-width:90px;height:34px;
+  border:0;border-radius:8px;
+  background:var(--green);color:#fff;
+  font-size:11px;font-weight:700;cursor:pointer
+}
+
+/* recent */
+.recent{margin-top:26px}
+.section-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:11px;
+}
+.section-head h2{margin:0;font-size:15px}
+.section-head a{font-size:11.5px;color:var(--green);font-weight:600}
+.recent-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:10px;
+}
+.recent-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:11px;
+  padding:13px 14px;
+  transition:.14s ease;
+}
+.recent-card:hover{
+  border-color:#ccd7d1;
+  transform:translateY(-1px);
+}
+.recent-card strong{
+  display:block;
+  font-size:12.5px;
+  margin-bottom:4px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.recent-card span{
+  display:block;
+  color:#8a928e;
+  font-size:11px;
+  line-height:1.45;
+}
+.reuse{
+  margin-top:8px;
+  font-size:11px;
+  font-weight:700;
+  color:var(--green);
+}
+
+
+/* Needs attention */
+.attention{margin-top:26px}
+.section-head{justify-content:flex-start;gap:8px}
+.section-head a{margin-left:auto}
+.count-pill{
+  min-width:22px;height:22px;padding:0 7px;border-radius:999px;
+  background:#fff4dc;color:#7d5f1c;font-size:11px;font-weight:800;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+.attention-list{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.attention-row{
+  display:grid;grid-template-columns:230px minmax(0,1fr) auto;gap:16px;align-items:center;
+  padding:13px 16px;border-bottom:1px solid #f0ece6;
+}
+.attention-row:last-child{border-bottom:0}
+.attention-row:hover{background:#fbfcfb}
+.tag{justify-self:start;display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
+.tag:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.tag.warn{background:#fff7e3;color:#8a6516}
+.tag.good{background:var(--green-soft);color:var(--green)}
+.attention-main{min-width:0}
+.attention-main strong{display:block;font-size:13px}
+.attention-main span{display:block;margin-top:2px;color:#7f8883;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-btn{height:34px;padding:0 13px;border:1px solid #d5ded9;border-radius:8px;background:#fff;color:var(--green);font-size:12px;font-weight:700;display:inline-flex;align-items:center;white-space:nowrap}
+.row-btn.primary{background:var(--green);border-color:var(--green);color:#fff}
+.attention-empty{display:none;padding:18px;border:1px dashed #d8dfdb;border-radius:14px;color:#7c8580;font-size:12.5px;text-align:center;background:#fff}
+
+@media(max-width:1080px){
+  .search-row{grid-template-columns:1.4fr 1fr 1fr}
+  .recent-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:760px){
+  .topbar-inner,.page{width:min(100% - 24px,1260px)}
+  .nav{gap:14px;overflow:auto}
+  .account-name{display:none}
+  .balance-chip small{display:none}
+  .nav-menu{position:fixed;left:12px;right:12px;top:62px;width:auto}
+  .account-menu{top:62px}
+  .attention-row{grid-template-columns:1fr;gap:8px}
+  .attention-main span{white-space:normal}
+  .page{padding-top:22px}
+  .page-head h1{font-size:30px}
+  .search-row{grid-template-columns:1fr}
+  .calendar-pop{width:min(94vw,520px)}
+  .calendar-layout{grid-template-columns:105px 1fr}
+  .recent-grid{grid-template-columns:1fr}
+}
+
+/* Needs attention: hide / show */
+.att-summary{display:none;font-size:12px;color:#7f8883;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.att-toggle{margin-left:auto;height:30px;padding:0 11px;border:1px solid #d5ded9;border-radius:8px;background:#fff;color:var(--green);font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:6px;cursor:pointer;flex-shrink:0}
+.att-toggle:hover{background:var(--green-soft)}
+.att-toggle .chev{display:inline-block;transition:transform .15s}
+.attention.collapsed #attBody{display:none}
+.attention.collapsed .att-summary{display:block}
+.attention.collapsed .att-toggle .chev{transform:rotate(180deg)}
+.attention .section-head{display:flex;align-items:center;min-width:0}
+
+/* Interactive calendar */
+.calendar-pop{width:560px}
+.cal-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #eeeae3}
+.cal-pick{flex:1;min-width:0;text-align:left;border:1px solid #e3e0d8;border-radius:10px;background:#fff;padding:7px 11px;cursor:pointer}
+.cal-pick small{display:block;font-size:11px;color:#7d8a83;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.cal-pick b{display:block;font-size:13.5px;color:var(--ink);margin-top:1px;white-space:nowrap}
+.cal-pick.on{border-color:var(--green);box-shadow:0 0 0 3px rgba(23,63,53,.09)}
+.cal-pick b.empty{color:#a3aaa6;font-weight:600}
+.cal-arrow{color:#9aa39e}
+.cal-nights{font-size:12px;font-weight:800;color:var(--green);background:var(--green-soft);border-radius:999px;padding:5px 10px;white-space:nowrap}
+.cal-nights:empty{display:none}
+.cal-hint{padding:8px 14px;font-size:12px;color:#5f6a65;background:#fbfaf7;border-bottom:1px solid #eeeae3}
+.calendar-layout{height:360px}
+.single-calendar{padding:0 16px 14px;position:relative}
+.weekdays{position:sticky;top:0;z-index:2;background:#fff;border-top:0;padding:10px 0 6px;border-bottom:1px solid #f0ede7;margin-bottom:8px}
+.weekdays span{font-size:11px;letter-spacing:.03em}
+.month-section{margin-bottom:14px;scroll-margin-top:44px}
+.month-section h3{font-size:15px;margin:4px 0 8px}
+.days{gap:2px 0}
+.days button{height:36px;font-size:12.5px;border-radius:0;position:relative}
+.days button:hover:not(:disabled){background:#e9efeb;border-radius:8px}
+.days button:disabled{cursor:default}
+.days button.past{color:#c3c8c5;text-decoration:line-through;text-decoration-color:#dde1df}
+.days button.blank{visibility:hidden}
+.days button.today:after{content:"";position:absolute;left:50%;bottom:5px;width:4px;height:4px;margin-left:-2px;border-radius:50%;background:var(--green)}
+.days button.range,.days button.preview{background:var(--green-soft);border-radius:0}
+.days button.preview{background:#f1f5f3;box-shadow:inset 0 1px 0 #dfe8e3,inset 0 -1px 0 #dfe8e3}
+.days button.start,.days button.end{background:var(--green);color:#fff;font-weight:800;border-radius:8px}
+.days button.start.has-end{border-radius:8px 0 0 8px}
+.days button.end{border-radius:0 8px 8px 0}
+.days button.start.today:after,.days button.end.today:after{background:#fff}
+.cal-foot{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-top:1px solid #eeeae3;background:#fff}
+.cal-clear{border:0;background:transparent;color:#6d756f;font-size:12px;font-weight:700;cursor:pointer;padding:6px 0}
+.cal-clear:hover{color:var(--green)}
+.nights-inline{font-style:normal;color:#7f8883;font-size:11.5px;margin-left:6px}
+@media(max-width:760px){
+  .calendar-pop{position:fixed;left:8px;right:8px;bottom:8px;top:auto;width:auto;height:min(600px,80vh);display:none;flex-direction:column;z-index:300;box-shadow:0 -10px 40px rgba(19,47,39,.25)}
+  .calendar-pop.open{display:flex}
+  .calendar-pop .calendar-layout{flex:1 1 auto;height:auto;min-height:0}
+  .calendar-layout{grid-template-columns:92px 1fr;height:340px}
+  .month-list button{padding:9px 10px;font-size:11.5px}
+  .cal-head{flex-wrap:wrap}
+  .cal-arrow{display:none}
+  .cal-nights{order:3}
+  .att-summary{display:none!important}
+}
+
+/* ===== Dropdown menus (same look as the child-age menu) ===== */
+.dd-menu{
+  display:none;position:absolute;top:calc(100% + 6px);z-index:90;
+  background:#fff;border:1px solid #dce3df;border-radius:10px;
+  box-shadow:0 14px 34px rgba(19,47,39,.14);overflow:hidden;
+}
+.dd-menu.open{display:block}
+.dd-opt{
+  width:100%;display:flex;align-items:center;gap:11px;border:0;background:#fff;
+  padding:9px 12px;text-align:left;color:#324039;font-size:13px;cursor:pointer;
+}
+.dd-opt:hover,.dd-opt.active{background:var(--green-soft);color:var(--green)}
+.dd-empty{padding:14px 12px;font-size:12.5px;color:#7f8883}
+
+/* Destination */
+.dest-box{position:relative}
+.dest-ico{position:absolute;left:11px;top:50%;width:16px;height:16px;margin-top:-8px;fill:none;stroke:#7b8580;stroke-width:1.8;pointer-events:none}
+.dest-input{padding-left:34px;padding-right:32px}
+.dest-clear{position:absolute;right:7px;top:50%;margin-top:-12px;width:24px;height:24px;border:0;border-radius:50%;background:#eef1ef;color:#55615b;font-size:15px;line-height:1;cursor:pointer}
+.dest-clear:hover{background:#e0e7e3}
+.dest-menu{left:0;width:max(100%,520px);max-height:420px;overflow:auto;padding:5px 0}
+.dest-opt{padding:10px 14px}
+.dest-opt svg{flex:0 0 18px;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;color:#4d5a54}
+.dest-opt:hover svg,.dest-opt.active svg{color:var(--green)}
+.dest-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dest-name b{color:var(--green);font-weight:800}
+.dest-type{flex:0 0 auto;font-size:11.5px;color:#8a928e}
+.dest-sep{height:1px;background:#eeeae5;margin:5px 12px}
+
+/* Nationality */
+.nat-menu{right:0;width:280px}
+.nat-search{padding:8px;border-bottom:1px solid #eeeae3}
+.nat-search input{width:100%;height:36px;border:1px solid #dce3df;border-radius:8px;padding:0 10px;font-size:13px;outline:none;color:var(--ink)}
+.nat-search input:focus{border-color:#98ada4;box-shadow:0 0 0 3px rgba(23,63,53,.07)}
+.nat-list{max-height:280px;overflow:auto;padding:4px 0}
+.nat-opt{justify-content:space-between;padding:8px 12px}
+.nat-opt.sel{font-weight:700;color:var(--green)}
+.nat-opt.sel:after{content:"✓";font-weight:800}
+#natBtn span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+@media(max-width:760px){
+  .dest-menu{width:100%}
+  .dest-type{display:none}
+  .nat-menu{left:0;right:0;width:auto}
+}
+
+/* v4: one look across all agent pages */
+@media(min-width:1100px){.topbar-inner{width:min(1280px,calc(100% - 40px))}}
+.search-btn{border-radius:9px}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="07-search.html">Apolles</a>
+
+    <nav class="nav">
+      <a class="nav-link active" href="07-search.html">Search</a>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Quotes <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="14-quotes.html">All quotes</a>
+          <a href="15-quote-editor.html">New quote</a>
+          <div class="nav-sep"></div>
+          <a href="18-clients.html">Clients</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Bookings <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="13-bookings.html">All bookings</a>
+          <a href="13-bookings.html#upcoming">Upcoming stays</a>
+          <a href="13-bookings.html#completed">Completed</a>
+          <a href="13-bookings.html#cancelled">Cancelled</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Reporting <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="19-reports.html">Overview</a>
+          <a href="19-reports.html">Balance history</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="top-actions">
+      <a class="balance-chip" href="20-agency-settings.html#balance" title="Balance and top-ups">
+        <small>Balance</small>
+        <b>USD 4,250.00</b>
+      </a>
+
+      <div class="nav-group account-group">
+        <button class="account-trigger" type="button">
+          <span class="avatar">MZ</span>
+          <span class="account-name">My Agency</span>
+          <b>⌄</b>
+        </button>
+        <div class="nav-menu account-menu">
+          <a href="20-agency-settings.html">Agency settings</a>
+          <a href="20-agency-settings.html#balance">Balance &amp; top-ups</a>
+          <a href="#">Support</a>
+          <div class="nav-sep"></div>
+          <a href="04-login.html">Sign out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <div class="page-head">
+    <h1>Hotel search</h1>
+    <p>Search live hotel availability and rates.</p>
+  </div>
+
+  <section class="search-shell">
+    <div class="search-row">
+
+      <!-- Destination autocomplete. Order of suggestions: cities first, then areas and airports
+           of that city, then hotels. Matched letters are highlighted. Shows after 2 letters. -->
+      <div class="field-wrap dest-wrap" id="destWrap">
+        <label for="destInput">Destination or hotel</label>
+        <div class="dest-box">
+          <svg class="dest-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.6"/></svg>
+          <input class="field dest-input" id="destInput" placeholder="City, hotel or location" autocomplete="off"
+                 role="combobox" aria-expanded="false" aria-controls="destMenu" aria-autocomplete="list">
+          <button class="dest-clear" id="destClear" type="button" aria-label="Clear" hidden>×</button>
+        </div>
+        <div class="dd-menu dest-menu" id="destMenu" role="listbox" aria-label="Suggestions"></div>
+      </div>
+
+      <div class="field-wrap">
+        <label>Check-in</label>
+        <button class="field-button" id="checkinBtn" type="button">
+          <span id="checkinText">Oct 28, 2026</span>
+          <span>⌄</span>
+        </button>
+
+        <div class="popover calendar-pop" id="calendarPopover" role="dialog" aria-label="Choose dates">
+          <div class="cal-head">
+            <button type="button" class="cal-pick" id="calPickIn"><small>Check-in</small><b id="calInText">Wed, Oct 28</b></button>
+            <span class="cal-arrow">→</span>
+            <button type="button" class="cal-pick" id="calPickOut"><small>Check-out</small><b id="calOutText">Wed, Nov 4</b></button>
+            <span class="cal-nights" id="calNights">7 nights</span>
+          </div>
+          <div class="cal-hint" id="calHint">Select your check-out date</div>
+          <div class="calendar-layout">
+            <div class="month-list" id="monthList"></div>
+            <div class="single-calendar" id="calScroll">
+              <div class="weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+              <div id="calMonths"></div>
+            </div>
+          </div>
+          <div class="cal-foot">
+            <button type="button" class="cal-clear" id="calClear">Clear dates</button>
+            <button type="button" class="done-btn" id="calDone">Done</button>
+          </div>
+        </div>
+            </div>
+
+      <div class="field-wrap">
+        <label>Check-out</label>
+        <button class="field-button" id="checkoutBtn" type="button">
+          <span id="checkoutText">Nov 4, 2026 <em class="nights-inline">7 nights</em></span>
+          <span>⌄</span>
+        </button>
+      </div>
+
+      <div class="field-wrap">
+        <label>Rooms & guests</label>
+        <button class="field-button" id="guestsBtn">
+          <span id="guestsText">1 room · 2 guests</span>
+          <span>⌄</span>
+        </button>
+
+        <div class="popover guests-pop" id="guestsPopover">
+          <div id="roomsContainer"></div>
+
+          <div class="guests-footer">
+            <button class="add-room" id="addRoomBtn" type="button">+ Add a room</button>
+            <button class="done-btn" id="doneGuestsBtn" type="button">Done</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Guest nationality: full list of all 249 countries (ISO 3166), with search at the top. Default: Israel. -->
+      <div class="field-wrap nat-wrap" id="natWrap">
+        <label>Guest nationality</label>
+        <button class="field-button" id="natBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+          <span id="natText">Israel</span>
+          <span>⌄</span>
+        </button>
+        <div class="dd-menu nat-menu" id="natMenu">
+          <div class="nat-search"><input id="natSearch" type="text" placeholder="Search country" autocomplete="off" aria-label="Search country"></div>
+          <div class="nat-list" id="natList" role="listbox" aria-label="Guest nationality"></div>
+        </div>
+      </div>
+
+      <button class="search-btn">Search</button>
+    </div>
+
+  </section>
+
+  <!-- Hidden by default. Stays open only for an agent who clicked Show (remembered per agent). -->
+  <section class="attention collapsed" id="attention">
+    <div class="section-head">
+      <h2>Needs attention</h2>
+      <span class="count-pill">3</span>
+      <span class="att-summary" id="attSummary">2 bookings without a voucher · 1 client selection</span>
+      <button class="att-toggle" id="attToggle" type="button" aria-expanded="false" aria-controls="attBody">
+        <span id="attToggleText">Show</span><span class="chev" aria-hidden="true">⌃</span>
+      </button>
+    </div>
+    <div id="attBody">
+
+    <div class="attention-list">
+      <article class="attention-row">
+        <span class="tag warn">No voucher · auto-cancels tomorrow</span>
+        <div class="attention-main">
+          <strong>Donoma Las Terrenas</strong>
+          <span>VT5H8Q · Mr Omar Shahin · Oct 3 to Oct 7 · Issue the voucher by Sep 28, 23:59 hotel time</span>
+        </div>
+        <a class="row-btn" href="12-booking-summary.html#confirmed">Issue voucher</a>
+      </article>
+
+      <article class="attention-row">
+        <span class="tag warn">No voucher · auto-cancels in 2 days</span>
+        <div class="attention-main">
+          <strong>Nobu Hotel Miami Beach</strong>
+          <span>LH6W9S · Mr Dan Reshef · Nov 18 to Nov 21 · Issue the voucher by Sep 29, 23:59 hotel time</span>
+        </div>
+        <a class="row-btn" href="12-booking-summary.html#confirmed">Issue voucher</a>
+      </article>
+
+      <article class="attention-row">
+        <span class="tag good">Client selected an option</span>
+        <div class="attention-main">
+          <strong>Miami November · Noa Elkobi</strong>
+          <span>Q-1046 · Selected Nobu Hotel Miami Beach, King Room · Ready to book</span>
+        </div>
+        <a class="row-btn primary" href="15-quote-editor.html">Open quote</a>
+      </article>
+    </div>
+
+    <!-- Shown instead of the list when there is nothing to show -->
+    <div class="attention-empty">Nothing needs your attention right now.</div>
+    </div>
+  </section>
+
+  <section class="recent">
+    <div class="section-head">
+      <h2>Recent searches</h2>
+      <a href="#">Clear all</a>
+    </div>
+
+    <div class="recent-grid">
+      <article class="recent-card">
+        <strong>Atelier Playa Mujeres</strong>
+        <span>Oct 28 – Nov 4 · 7 nights</span>
+        <span>1 room · 2 adults · Israel</span>
+        <div class="reuse">Search again</div>
+      </article>
+
+      <article class="recent-card">
+        <strong>Ocean Allure Costa Mujeres</strong>
+        <span>Oct 12 – Oct 14 · 2 nights</span>
+        <span>1 room · 2 adults · Israel</span>
+        <div class="reuse">Search again</div>
+      </article>
+
+      <article class="recent-card">
+        <strong>Hotel B Unique</strong>
+        <span>Nov 16 – Nov 18 · 2 nights</span>
+        <span>1 room · 2 adults · Israel</span>
+        <div class="reuse">Search again</div>
+      </article>
+
+      <article class="recent-card">
+        <strong>Casa del Jaguar Beach Hotel</strong>
+        <span>Nov 8 – Nov 11 · 3 nights</span>
+        <span>1 room · 2 adults · Israel</span>
+        <div class="reuse">Search again</div>
+      </article>
+    </div>
+  </section>
+</main>
+
+<script>
+const calendarPopover = document.getElementById("calendarPopover");
+const guestsPopover = document.getElementById("guestsPopover");
+const checkinBtn = document.getElementById("checkinBtn");
+const checkoutBtn = document.getElementById("checkoutBtn");
+const guestsBtn = document.getElementById("guestsBtn");
+const roomsContainer = document.getElementById("roomsContainer");
+const guestsText = document.getElementById("guestsText");
+
+function closePopovers(){
+  calendarPopover.classList.remove("open");
+  guestsPopover.classList.remove("open");
+  document.querySelectorAll(".dd-menu.open").forEach(m=>m.classList.remove("open"));
+}
+
+guestsBtn.addEventListener("click",e=>{
+  e.stopPropagation();
+  calendarPopover.classList.remove("open");
+  document.querySelectorAll(".dd-menu.open").forEach(m=>m.classList.remove("open"));
+  guestsPopover.classList.toggle("open");
+});
+calendarPopover.addEventListener("click",e=>e.stopPropagation());
+guestsPopover.addEventListener("click",e=>e.stopPropagation());
+document.addEventListener("click",()=>{
+  closePopovers();
+  openAgePicker = null;
+  renderRooms();
+});
+
+let rooms = [{adults:2, children:[]}];
+let openAgePicker = null;
+
+function updateGuestSummary(){
+  const totalGuests = rooms.reduce((s,r)=>s+r.adults+r.children.length,0);
+  guestsText.textContent = `${rooms.length} room${rooms.length>1?'s':''} · ${totalGuests} guest${totalGuests>1?'s':''}`;
+}
+
+function ageLabel(age){
+  if(age === "" || age === null || age === undefined) return "Select child age";
+  return `${age} year${Number(age)===1?'':'s'}`;
+}
+
+function renderAgeMenu(roomIndex, childIndex){
+  let html = '<div class="age-menu">';
+  for(let i=0;i<=17;i++){
+    html += `<button class="age-option" type="button" data-age-option="${roomIndex}:${childIndex}:${i}">${i} year${i===1?'':'s'}</button>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderRooms(){
+  roomsContainer.innerHTML="";
+  rooms.forEach((room,roomIndex)=>{
+    const block=document.createElement("div");
+    block.className="room-block";
+
+    const childrenHtml = room.children.map((age,childIndex)=>{
+      const isOpen = openAgePicker && openAgePicker.room===roomIndex && openAgePicker.child===childIndex;
+      return `
+        <div class="child-row">
+          <div style="flex:1; position:relative;">
+            <button class="age-trigger ${isOpen?'open':''}" data-open-age="${roomIndex}:${childIndex}" type="button">
+              <span>${ageLabel(age)}</span>
+              <span>⌄</span>
+            </button>
+            ${isOpen ? renderAgeMenu(roomIndex, childIndex) : ""}
+          </div>
+          <button class="remove-child" data-remove-child="${roomIndex}:${childIndex}" type="button">×</button>
+        </div>
+      `;
+    }).join("");
+
+    block.innerHTML=`
+      <div class="room-title">
+        <strong>Room ${roomIndex+1}</strong>
+        ${rooms.length>1?`<button class="remove-room" data-remove-room="${roomIndex}" type="button">Remove</button>`:""}
+      </div>
+
+      <div class="guest-row">
+        <div class="guest-label">
+          <strong>Adults</strong>
+          <span>Age 18+</span>
+        </div>
+        <div class="counter">
+          <button data-adult-minus="${roomIndex}" type="button">−</button>
+          <span>${room.adults}</span>
+          <button data-adult-plus="${roomIndex}" type="button">+</button>
+        </div>
+      </div>
+
+      <div class="children-area">
+        <div class="children-list">
+          ${childrenHtml}
+        </div>
+        <button class="add-child" data-add-child="${roomIndex}" type="button">+ Add a child</button>
+      </div>
+    `;
+    roomsContainer.appendChild(block);
+  });
+
+  bindRoomActions();
+  updateGuestSummary();
+}
+
+function bindRoomActions(){
+  document.querySelectorAll("[data-adult-minus]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const i=Number(btn.dataset.adultMinus);
+      rooms[i].adults=Math.max(1,rooms[i].adults-1);
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-adult-plus]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const i=Number(btn.dataset.adultPlus);
+      rooms[i].adults++;
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-add-child]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const i=Number(btn.dataset.addChild);
+      rooms[i].children.push("");
+      openAgePicker = {room:i, child:rooms[i].children.length-1};
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-remove-child]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const [r,c]=btn.dataset.removeChild.split(":").map(Number);
+      rooms[r].children.splice(c,1);
+      if(openAgePicker && openAgePicker.room===r && openAgePicker.child===c){
+        openAgePicker = null;
+      }
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-open-age]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const [r,c]=btn.dataset.openAge.split(":").map(Number);
+      if(openAgePicker && openAgePicker.room===r && openAgePicker.child===c){
+        openAgePicker = null;
+      } else {
+        openAgePicker = {room:r, child:c};
+      }
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-age-option]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const [r,c,age]=btn.dataset.ageOption.split(":").map(Number);
+      rooms[r].children[c]=age;
+      openAgePicker = null;
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-remove-room]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      rooms.splice(Number(btn.dataset.removeRoom),1);
+      openAgePicker = null;
+      renderRooms();
+    };
+  });
+}
+
+document.getElementById("addRoomBtn").addEventListener("click",(e)=>{
+  e.stopPropagation();
+  rooms.push({adults:2,children:[]});
+  renderRooms();
+});
+
+document.getElementById("doneGuestsBtn").addEventListener("click",(e)=>{
+  e.stopPropagation();
+  guestsPopover.classList.remove("open");
+  openAgePicker = null;
+  renderRooms();
+});
+
+renderRooms();
+
+// Top menu: opens on hover (desktop) or on click (touch screens).
+document.querySelectorAll(".nav-trigger,.account-trigger").forEach(btn=>{
+  btn.addEventListener("click",e=>{
+    e.stopPropagation();
+    const group=btn.closest(".nav-group");
+    document.querySelectorAll(".nav-group.menu-open").forEach(g=>{ if(g!==group) g.classList.remove("menu-open"); });
+    group.classList.toggle("menu-open");
+  });
+});
+document.addEventListener("click",()=>{
+  document.querySelectorAll(".nav-group.menu-open").forEach(g=>g.classList.remove("menu-open"));
+});
+</script>
+
+<script>
+/* ===== Interactive date picker (demo "today" = Sep 27, 2026) ===== */
+(function(){
+  const TODAY = new Date(2026, 8, 27);
+  const FIRST = new Date(2026, 8, 1), MONTHS = 14;
+  const MS = 86400000;
+  const pop = document.getElementById('calendarPopover');
+  const monthsEl = document.getElementById('calMonths');
+  const listEl = document.getElementById('monthList');
+  const scrollEl = document.getElementById('calScroll');
+  const inBtn = document.getElementById('checkinBtn'), outBtn = document.getElementById('checkoutBtn');
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const MONL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  let start = new Date(2026, 9, 28), end = new Date(2026, 10, 4);
+  let picking = 'end';           // which date the next click sets
+  let hover = null;
+  const key = d => d.getFullYear()*10000 + d.getMonth()*100 + d.getDate();
+  const nights = () => (start && end) ? Math.round((end - start)/MS) : 0;
+  const short = d => DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate();
+  const full = d => MON[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();
+
+  // build month list + months once
+  for(let m=0; m<MONTHS; m++){
+    const first = new Date(FIRST.getFullYear(), FIRST.getMonth()+m, 1);
+    const b = document.createElement('button'); b.type='button';
+    b.textContent = MONL[first.getMonth()] + (first.getMonth()===0 || m===0 ? ' '+first.getFullYear() : '');
+    b.dataset.m = m; listEl.appendChild(b);
+    b.addEventListener('click', ()=>{ const sec=document.getElementById('cal-m'+m); scrollEl.scrollTo({top: sec.offsetTop - 44, behavior:'smooth'}); });
+    const sec = document.createElement('div'); sec.className='month-section'; sec.id='cal-m'+m;
+    const h = document.createElement('h3'); h.textContent = MONL[first.getMonth()]+' '+first.getFullYear(); sec.appendChild(h);
+    const grid = document.createElement('div'); grid.className='days';
+    for(let i=0;i<first.getDay();i++){ const e=document.createElement('button'); e.className='blank'; e.disabled=true; e.tabIndex=-1; grid.appendChild(e); }
+    const dim = new Date(first.getFullYear(), first.getMonth()+1, 0).getDate();
+    for(let d=1; d<=dim; d++){
+      const date = new Date(first.getFullYear(), first.getMonth(), d);
+      const btn = document.createElement('button'); btn.type='button'; btn.textContent=d; btn.dataset.k = key(date);
+      btn._date = date;
+      if(date < TODAY){ btn.disabled = true; btn.classList.add('past'); }
+      if(key(date)===key(TODAY)) btn.classList.add('today');
+      btn.setAttribute('aria-label', short(date)+' '+date.getFullYear());
+      grid.appendChild(btn);
+    }
+    sec.appendChild(grid); monthsEl.appendChild(sec);
+  }
+  const dayBtns = [...monthsEl.querySelectorAll('.days button:not(.blank)')];
+
+  function paint(){
+    const sk = start && key(start), ek = end && key(end);
+    const hk = (!end && start && hover && hover > start) ? key(hover) : null;
+    dayBtns.forEach(b=>{
+      const k = +b.dataset.k;
+      b.classList.toggle('start', k===sk);
+      b.classList.toggle('has-end', k===sk && !!(ek || hk));
+      b.classList.toggle('end', k===ek);
+      b.classList.toggle('range', !!(sk && ek && k>sk && k<ek));
+      b.classList.toggle('preview', !!(hk && k>sk && k<=hk));
+    });
+    document.getElementById('calInText').textContent = start ? short(start) : 'Add date';
+    document.getElementById('calInText').classList.toggle('empty', !start);
+    document.getElementById('calOutText').textContent = end ? short(end) : 'Add date';
+    document.getElementById('calOutText').classList.toggle('empty', !end);
+    const n = nights();
+    document.getElementById('calNights').textContent = n ? n+' night'+(n>1?'s':'') : '';
+    document.getElementById('calPickIn').classList.toggle('on', picking==='start');
+    document.getElementById('calPickOut').classList.toggle('on', picking==='end');
+    document.getElementById('calHint').textContent = picking==='start' ? 'Select your check-in date' : 'Select your check-out date';
+    document.getElementById('checkinText').textContent = start ? full(start) : 'Add date';
+    document.getElementById('checkoutText').innerHTML = end ? full(end)+' <em class="nights-inline">'+n+' night'+(n>1?'s':'')+'</em>' : 'Add date';
+  }
+
+  function scrollTo(d){
+    if(!d) d = TODAY;
+    const m = (d.getFullYear()-FIRST.getFullYear())*12 + d.getMonth()-FIRST.getMonth();
+    const sec = document.getElementById('cal-m'+Math.max(0,Math.min(MONTHS-1,m)));
+    if(sec) scrollEl.scrollTop = sec.offsetTop - 44;
+    markMonth();
+  }
+  function markMonth(){
+    let cur = 0;
+    for(let m=0;m<MONTHS;m++){ const sec=document.getElementById('cal-m'+m); if(sec.offsetTop - 60 <= scrollEl.scrollTop) cur=m; }
+    listEl.querySelectorAll('button').forEach(b=>b.classList.toggle('active', +b.dataset.m===cur));
+  }
+  scrollEl.addEventListener('scroll', markMonth, {passive:true});
+
+  function open(which){
+    picking = which;
+    if(which==='end' && !start) picking='start';
+    guestsPopover.classList.remove('open');
+    document.querySelectorAll('.dd-menu.open').forEach(m=>m.classList.remove('open'));
+    pop.classList.add('open');
+    paint();
+    scrollTo(picking==='end' ? (start||TODAY) : (start||TODAY));
+  }
+  inBtn.addEventListener('click', e=>{ e.stopPropagation(); if(pop.classList.contains('open') && picking==='start'){ pop.classList.remove('open'); return; } open('start'); });
+  outBtn.addEventListener('click', e=>{ e.stopPropagation(); if(pop.classList.contains('open') && picking==='end'){ pop.classList.remove('open'); return; } open('end'); });
+  document.getElementById('calPickIn').addEventListener('click', ()=>{ picking='start'; paint(); });
+  document.getElementById('calPickOut').addEventListener('click', ()=>{ picking = start ? 'end' : 'start'; paint(); });
+
+  monthsEl.addEventListener('click', e=>{
+    const b = e.target.closest('button'); if(!b || b.disabled || !b._date) return;
+    const d = b._date;
+    if(picking==='start' || !start || d <= start){
+      start = d; end = null; picking = 'end';
+    } else {
+      end = d; picking = 'end';
+      paint();
+      setTimeout(()=>pop.classList.remove('open'), 350);   // both dates chosen: close
+      return;
+    }
+    paint();
+  });
+  monthsEl.addEventListener('mouseover', e=>{
+    const b = e.target.closest('button'); if(!b || !b._date || b.disabled) return;
+    if(start && !end){ hover = b._date; paint(); }
+  });
+  monthsEl.addEventListener('mouseleave', ()=>{ if(hover){ hover=null; paint(); } });
+  document.getElementById('calClear').addEventListener('click', ()=>{ start=null; end=null; picking='start'; paint(); });
+  document.getElementById('calDone').addEventListener('click', ()=>{ if(start && !end){ end = new Date(start.getTime()+MS); } paint(); pop.classList.remove('open'); });
+
+  paint();
+})();
+
+/* ===== Needs attention: hidden by default; Show / Hide remembered for this agent ===== */
+(function(){
+  const sec = document.getElementById('attention'), btn = document.getElementById('attToggle'), txt = document.getElementById('attToggleText');
+  const KEY = 'apolles-attention-open';
+  function set(collapsed, remember){
+    sec.classList.toggle('collapsed', collapsed);
+    btn.setAttribute('aria-expanded', String(!collapsed));
+    txt.textContent = collapsed ? 'Show' : 'Hide';
+    if(remember){ try{ localStorage.setItem(KEY, collapsed ? '0' : '1'); }catch(e){} }
+  }
+  let open = false; try{ open = localStorage.getItem(KEY)==='1'; }catch(e){}
+  set(!open, false);
+  btn.addEventListener('click', ()=>set(!sec.classList.contains('collapsed'), true));
+})();
+</script>
+<script>
+/* ===== Destination autocomplete =====
+   Sample data only. In the real system the list comes from the hotel supplier's
+   location search. Ranking rule for the developer:
+   1. Cities whose name starts with what the agent typed
+   2. Areas, regions and airports of that city (Hotel Zone, Downtown, Airport)
+   3. Other destinations that contain the text
+   4. Hotels (name contains the text, or the hotel is in a matching city)          */
+(function(){
+  const T = {city:'City', area:'Area', region:'Region', airport:'Airport', hotel:'Hotel'};
+  const RANK = {city:0, region:1, area:2, airport:3, hotel:4};
+  const D = [
+    ['city','Cancun','Quintana Roo, Mexico'],
+    ['area','Cancun Hotel Zone','Quintana Roo, Mexico','Cancun'],
+    ['area','Cancun Downtown','Quintana Roo, Mexico','Cancun'],
+    ['area','Playa Mujeres','Cancun, Quintana Roo, Mexico','Cancun'],
+    ['area','Costa Mujeres','Cancun, Quintana Roo, Mexico','Cancun'],
+    ['airport','Cancun International Airport (CUN)','Quintana Roo, Mexico','Cancun'],
+    ['region','Riviera Maya','Quintana Roo, Mexico'],
+    ['city','Playa del Carmen','Quintana Roo, Mexico'],
+    ['city','Tulum','Quintana Roo, Mexico'],
+    ['city','Puerto Morelos','Quintana Roo, Mexico'],
+    ['city','Isla Mujeres','Quintana Roo, Mexico'],
+    ['city','Los Cabos','Baja California Sur, Mexico'],
+    ['city','Cabo San Lucas','Baja California Sur, Mexico'],
+    ['airport','Los Cabos International Airport (SJD)','Baja California Sur, Mexico','Los Cabos'],
+    ['city','Puerto Vallarta','Jalisco, Mexico'],
+    ['city','Mexico City','Mexico'],
+    ['city','Punta Cana','La Altagracia, Dominican Republic'],
+    ['area','Cap Cana','Punta Cana, Dominican Republic','Punta Cana'],
+    ['airport','Punta Cana International Airport (PUJ)','Dominican Republic','Punta Cana'],
+    ['city','Las Terrenas','Samaná, Dominican Republic'],
+    ['city','Miami','Florida, United States'],
+    ['city','Miami Beach','Florida, United States'],
+    ['area','South Beach','Miami Beach, Florida, United States','Miami Beach'],
+    ['airport','Miami International Airport (MIA)','Florida, United States','Miami'],
+    ['hotel','Hyatt Ziva Cancun','Cancun, Mexico','Cancun'],
+    ['hotel','Hard Rock Hotel Cancun','Cancun, Mexico','Cancun'],
+    ['hotel','Nizuc Resort & Spa','Cancun, Mexico','Cancun'],
+    ['hotel','Le Blanc Spa Resort Cancun','Cancun, Mexico','Cancun'],
+    ['hotel','Atelier Playa Mujeres','Cancun, Mexico','Cancun'],
+    ['hotel','Excellence Playa Mujeres','Cancun, Mexico','Cancun'],
+    ['hotel','Hotel Xcaret Mexico','Playa del Carmen, Mexico','Playa del Carmen'],
+    ['hotel','Grand Hyatt Playa del Carmen','Playa del Carmen, Mexico','Playa del Carmen'],
+    ['hotel','Rosewood Mayakoba','Playa del Carmen, Mexico','Playa del Carmen'],
+    ['hotel','Azulik Tulum','Tulum, Mexico','Tulum'],
+    ['hotel','One&Only Palmilla','Los Cabos, Mexico','Los Cabos'],
+    ['hotel','Waldorf Astoria Los Cabos Pedregal','Cabo San Lucas, Mexico','Cabo San Lucas'],
+    ['hotel','Eden Roc Cap Cana','Punta Cana, Dominican Republic','Punta Cana'],
+    ['hotel','Excellence Punta Cana','Punta Cana, Dominican Republic','Punta Cana'],
+    ['hotel','Donoma Las Terrenas','Las Terrenas, Dominican Republic','Las Terrenas'],
+    ['hotel','Nobu Hotel Miami Beach','Miami Beach, United States','Miami Beach'],
+    ['hotel','Faena Hotel Miami Beach','Miami Beach, United States','Miami Beach']
+  ].map((r,i)=>({type:r[0], name:r[1], where:r[2], city:r[3]||r[1], order:i}));
+
+  const ICON = {
+    pin:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.6"/></svg>',
+    plane:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 13.5 3 11l1.4-1.4 8 .8 4.3-4.3a1.9 1.9 0 0 1 2.7 2.7l-4.3 4.3.8 8L14.5 22 12 14.5"/></svg>',
+    bed:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6v13M3 16h18v3M21 16v-4a3 3 0 0 0-3-3h-7v7"/><circle cx="7" cy="11.5" r="2"/></svg>'
+  };
+  const wrap = document.getElementById('destWrap'), input = document.getElementById('destInput');
+  const menu = document.getElementById('destMenu'), clear = document.getElementById('destClear');
+  let items = [], active = -1;
+
+  const esc = s => s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function hl(text, q){
+    const i = text.toLowerCase().indexOf(q);
+    if(i<0) return esc(text);
+    return esc(text.slice(0,i)) + '<b>' + esc(text.slice(i,i+q.length)) + '</b>' + esc(text.slice(i+q.length));
+  }
+  function search(q){
+    const res = [];
+    D.forEach(d=>{
+      const n = d.name.toLowerCase(), c = d.city.toLowerCase();
+      const inName = n.indexOf(q), inCity = c.startsWith(q);
+      if(inName<0 && !inCity) return;
+      // 0 = starts with the text, 1 = word starts with it, 2 = contains it / is in a matching city
+      const m = inName===0 ? 0 : (inName>0 && /[\s(]/.test(n[inName-1])) ? 1 : 2;
+      const group = d.type==='hotel' ? 2 : (d.type==='city' && m===0) ? 0 : 1;
+      res.push({d, group, m});
+    });
+    res.sort((a,b)=> a.group-b.group || a.m-b.m || RANK[a.d.type]-RANK[b.d.type] || a.d.order-b.d.order);
+    const places = res.filter(r=>r.group<2).slice(0,7), hotels = res.filter(r=>r.group===2).slice(0,6);
+    return places.concat(hotels).map(r=>r.d);
+  }
+  function render(){
+    const q = input.value.trim().toLowerCase();
+    clear.hidden = !input.value;
+    if(q.length<2){ close(); return; }
+    items = search(q); active = items.length ? 0 : -1;
+    if(!items.length){
+      menu.innerHTML = '<div class="dd-empty">No matches. Try a city, area or hotel name.</div>';
+    } else {
+      let html = '', prevHotel = false;
+      items.forEach((d,i)=>{
+        const isHotel = d.type==='hotel';
+        if(isHotel && !prevHotel && i>0) html += '<div class="dest-sep"></div>';
+        prevHotel = isHotel;
+        const icon = isHotel ? ICON.bed : d.type==='airport' ? ICON.plane : ICON.pin;
+        html += '<button type="button" role="option" class="dd-opt dest-opt'+(i===active?' active':'')+'" data-i="'+i+'">'+icon+
+                '<span class="dest-name">'+hl(d.name,q)+', '+esc(d.where)+'</span><span class="dest-type">'+T[d.type]+'</span></button>';
+      });
+      menu.innerHTML = html;
+    }
+    closePopovers(); menu.classList.add('open'); input.setAttribute('aria-expanded','true');
+  }
+  function close(){ menu.classList.remove('open'); input.setAttribute('aria-expanded','false'); }
+  function pick(i){ const d = items[i]; if(!d) return; input.value = d.name+', '+d.where; clear.hidden=false; close(); }
+  function move(step){
+    if(!items.length) return;
+    active = (active+step+items.length)%items.length;
+    menu.querySelectorAll('.dest-opt').forEach((b,i)=>b.classList.toggle('active', i===active));
+    const a = menu.querySelector('.dest-opt.active'); if(a) a.scrollIntoView({block:'nearest'});
+  }
+  input.addEventListener('input', render);
+  input.addEventListener('focus', ()=>{ if(input.value.trim().length>=2) render(); });
+  input.addEventListener('click', e=>e.stopPropagation());
+  input.addEventListener('keydown', e=>{
+    if(!menu.classList.contains('open')) return;
+    if(e.key==='ArrowDown'){ e.preventDefault(); move(1); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); move(-1); }
+    else if(e.key==='Enter'){ e.preventDefault(); pick(active); }
+    else if(e.key==='Escape'){ close(); }
+  });
+  menu.addEventListener('click', e=>{ e.stopPropagation(); const b = e.target.closest('.dest-opt'); if(b) pick(+b.dataset.i); });
+  menu.addEventListener('mousemove', e=>{ const b = e.target.closest('.dest-opt'); if(b && +b.dataset.i!==active){ active=+b.dataset.i; move(0); } });
+  clear.addEventListener('click', e=>{ e.stopPropagation(); input.value=''; clear.hidden=true; close(); input.focus(); });
+})();
+
+/* ===== Guest nationality: all countries, searchable ===== */
+(function(){
+  const COUNTRIES = ["Afghanistan", "Åland Islands", "Albania", "Algeria", "American Samoa", "Andorra", "Angola", "Anguilla", "Antarctica", "Antigua and Barbuda", "Argentina", "Armenia", "Aruba", "Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bermuda", "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Bouvet Island", "Brazil", "British Indian Ocean Territory", "British Virgin Islands", "Brunei", "Bulgaria", "Burkina Faso", "Burundi", "Cabo Verde", "Cambodia", "Cameroon", "Canada", "Caribbean Netherlands", "Cayman Islands", "Central African Republic", "Chad", "Chile", "China", "Christmas Island", "Cocos (Keeling) Islands", "Colombia", "Comoros", "Congo", "Congo (DRC)", "Cook Islands", "Costa Rica", "Croatia", "Cuba", "Curaçao", "Cyprus", "Czechia", "Côte d'Ivoire", "Denmark", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia", "Falkland Islands", "Faroe Islands", "Fiji", "Finland", "France", "French Guiana", "French Polynesia", "French Southern Territories", "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Gibraltar", "Greece", "Greenland", "Grenada", "Guadeloupe", "Guam", "Guatemala", "Guernsey", "Guinea", "Guinea-Bissau", "Guyana", "Haiti", "Heard Island and McDonald Islands", "Honduras", "Hong Kong", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Isle of Man", "Israel", "Italy", "Jamaica", "Japan", "Jersey", "Jordan", "Kazakhstan", "Kenya", "Kiribati", "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luxembourg", "Macao", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Martinique", "Mauritania", "Mauritius", "Mayotte", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Montserrat", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal", "Netherlands", "New Caledonia", "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "Norfolk Island", "North Korea", "North Macedonia", "Northern Mariana Islands", "Norway", "Oman", "Pakistan", "Palau", "Palestine", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Pitcairn", "Poland", "Portugal", "Puerto Rico", "Qatar", "Romania", "Russia", "Rwanda", "Réunion", "Saint Barthélemy", "Saint Helena", "Saint Kitts and Nevis", "Saint Lucia", "Saint Martin (French part)", "Saint Pierre and Miquelon", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Sint Maarten", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", "South Georgia and the South Sandwich Islands", "South Korea", "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname", "Svalbard and Jan Mayen", "Sweden", "Switzerland", "Syria", "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo", "Tokelau", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkmenistan", "Turks and Caicos Islands", "Tuvalu", "Türkiye", "U.S. Minor Outlying Islands", "U.S. Virgin Islands", "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Uzbekistan", "Vanuatu", "Vatican City", "Venezuela", "Vietnam", "Wallis and Futuna", "Western Sahara", "Yemen", "Zambia", "Zimbabwe"];
+  const btn = document.getElementById('natBtn'), text = document.getElementById('natText');
+  const menu = document.getElementById('natMenu'), list = document.getElementById('natList'), box = document.getElementById('natSearch');
+  let selected = 'Israel', shown = [], active = -1;
+
+  function render(){
+    const q = box.value.trim().toLowerCase();
+    const starts = COUNTRIES.filter(c=>c.toLowerCase().startsWith(q));
+    const contains = q ? COUNTRIES.filter(c=>!c.toLowerCase().startsWith(q) && c.toLowerCase().includes(q)) : [];
+    shown = starts.concat(contains);
+    if(!shown.length){ list.innerHTML = '<div class="dd-empty">No country found.</div>'; active=-1; return; }
+    active = q ? 0 : Math.max(0, shown.indexOf(selected));
+    list.innerHTML = shown.map((c,i)=>'<button type="button" role="option" class="dd-opt nat-opt'+(c===selected?' sel':'')+(i===active?' active':'')+'" data-i="'+i+'" aria-selected="'+(c===selected)+'">'+c.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</button>').join('');
+  }
+  function mark(scroll){
+    list.querySelectorAll('.nat-opt').forEach((b,i)=>b.classList.toggle('active', i===active));
+    const a = list.querySelector('.nat-opt.active'); if(a && scroll) a.scrollIntoView({block: scroll});
+  }
+  function open(){
+    closePopovers();
+    box.value=''; render(); menu.classList.add('open'); btn.setAttribute('aria-expanded','true');
+    mark('center'); setTimeout(()=>box.focus(), 0);
+  }
+  function close(){ menu.classList.remove('open'); btn.setAttribute('aria-expanded','false'); }
+  function pick(i){ if(shown[i]==null) return; selected = shown[i]; text.textContent = selected; close(); btn.focus(); }
+
+  btn.addEventListener('click', e=>{ e.stopPropagation(); menu.classList.contains('open') ? close() : open(); });
+  menu.addEventListener('click', e=>{ e.stopPropagation(); const b = e.target.closest('.nat-opt'); if(b) pick(+b.dataset.i); });
+  box.addEventListener('input', ()=>{ render(); list.scrollTop = 0; });
+  box.addEventListener('keydown', e=>{
+    if(e.key==='ArrowDown'){ e.preventDefault(); if(shown.length){ active=Math.min(shown.length-1,active+1); mark('nearest'); } }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); if(shown.length){ active=Math.max(0,active-1); mark('nearest'); } }
+    else if(e.key==='Enter'){ e.preventDefault(); pick(active); }
+    else if(e.key==='Escape'){ close(); btn.focus(); }
+  });
+})();
+</script>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

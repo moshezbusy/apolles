@@ -25,6 +25,8 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
         <nav aria-label="Main" className="hidden h-full items-center gap-6 text-[13px] lg:flex">
           <Link href="/search" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">Search</Link>
           <Link href="/bookings" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">Bookings</Link>
+          {/* Plan 5a: Clients is its own link until Quotes exists; then it moves under the Quotes menu (mockup 07). */}
+          <Link href="/clients" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">Clients</Link>
           {COMING_SOON.map((item) => (
             <span
               key={item}

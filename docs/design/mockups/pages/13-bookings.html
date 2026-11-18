@@ -1,0 +1,1166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bookings | Apolles</title>
+<style>
+:root{
+  --ink:#17211d;
+  --muted:#6d756f;
+  --green:#173f35;
+  --green-2:#245c4e;
+  --green-soft:#eef3f0;
+  --green-soft-2:#e4eee9;
+  --line:#e7e2d8;
+  --bg:#faf9f6;
+  --card:#fff;
+  --shadow:0 14px 36px rgba(19,47,39,.08);
+  --amber:#936c13;
+  --amber-soft:#fff8e8;
+  --amber-line:#eadfbe;
+  --red:#9a5148;
+  --red-soft:#fbf1ef;
+  --blue:#3f6880;
+  --blue-soft:#eef5fb;
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  min-height:100%;
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--ink);
+  background:var(--bg);
+}
+a{text-decoration:none;color:inherit}
+button,input,select{font:inherit}
+button{cursor:pointer}
+
+.topbar{
+  position:sticky;
+  top:0;
+  z-index:100;
+  height:68px;
+  background:#fff;
+  border-bottom:1px solid var(--line);
+}
+.topbar-inner{
+  width:min(1280px,calc(100% - 40px));
+  height:100%;
+  margin:auto;
+  display:flex;
+  align-items:center;
+  gap:28px;
+}
+.brand{
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:27px;
+  margin-right:10px;
+}
+.nav{display:flex;height:100%;align-items:center;gap:26px}
+.nav-link{height:100%;display:flex;align-items:center;position:relative;font-size:13px;color:#6c7671}
+.nav-link.active{color:var(--green);font-weight:700}
+.nav-link.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-group{position:relative;height:100%;display:flex;align-items:center}
+.nav-trigger{
+  height:100%;border:0;background:transparent;padding:0;cursor:pointer;
+  color:#6c7671;font-size:13px;display:flex;align-items:center;gap:5px;position:relative;
+}
+.nav-trigger.active{color:var(--green);font-weight:700}
+.nav-trigger.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-trigger span{font-size:11px;color:#8a938e}
+.nav-menu{
+  position:absolute;top:58px;left:-10px;z-index:180;
+  width:190px;padding:7px;background:#fff;border:1px solid #e1e6e3;
+  border-radius:11px;box-shadow:0 15px 38px rgba(19,47,39,.14);
+  opacity:0;visibility:hidden;transform:translateY(5px);transition:.14s ease;
+}
+.nav-group:hover>.nav-menu,.nav-group.menu-open>.nav-menu{opacity:1;visibility:visible;transform:translateY(0)}
+.nav-menu a{display:block;padding:8px 10px;border-radius:7px;color:#4d5a54;font-size:12.5px}
+.nav-menu a:hover{background:#f1f6f3;color:var(--green)}
+.nav-sep{height:1px;background:#eeeae5;margin:5px 2px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:14px;color:#647069;font-size:12px}
+.balance-chip{
+  display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;
+  padding:6px 11px;border:1px solid #dce6e0;border-radius:10px;background:#f7faf8;
+}
+.balance-chip small{font-size:11px;color:#7f8984;font-weight:600}
+.balance-chip b{font-size:12.5px;color:var(--green)}
+.balance-chip:hover{border-color:#bcd0c6}
+.account-group{height:auto}
+.account-trigger{border:0;background:transparent;display:flex;align-items:center;gap:8px;color:#4d5a54;font-size:12.5px;padding:0;cursor:pointer}
+.account-trigger b{font-size:11px;font-weight:500}
+.account-menu{left:auto;right:0;top:40px}
+.avatar{
+  width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#e5eee9;color:var(--green);
+  font-size:11px;font-weight:800;
+}
+
+.page{
+  width:min(1280px,calc(100% - 40px));
+  margin:auto;
+  padding:28px 0 58px;
+}
+.page-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  gap:24px;
+  margin-bottom:18px;
+}
+.page-title h1{
+  margin:0 0 6px;
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:34px;
+  font-weight:500;
+  letter-spacing:-.02em;
+}
+.page-title p{
+  margin:0;
+  color:var(--muted);
+  font-size:13px;
+}
+.primary-btn{
+  height:40px;
+  padding:0 16px;
+  border:0;
+  border-radius:9px;
+  background:var(--green);
+  color:#fff;
+  font-size:12px;
+  font-weight:750;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+}
+.primary-btn .plus{font-size:18px;line-height:1}
+
+.metrics{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin-bottom:14px;
+}
+.metric{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:15px 16px;
+  min-height:92px;
+}
+.metric-top{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+  margin-bottom:8px;
+}
+.metric-label{
+  font-size:11px;
+  font-weight:700;
+  color:#77817c;
+}
+.metric-icon{
+  width:27px;height:27px;
+  border-radius:9px;
+  background:var(--green-soft);
+  color:var(--green);
+  display:grid;
+  place-items:center;
+  font-size:13px;
+}
+.metric-value{
+  font-size:23px;
+  line-height:1;
+  font-weight:800;
+  letter-spacing:-.02em;
+}
+.metric-note{
+  margin-top:6px;
+  font-size:11px;
+  color:#8d9691;
+}
+.metric-note.warn{color:#8a6b21}
+
+.filters{
+  position:sticky;
+  top:68px;
+  z-index:80;
+  padding:10px 0;
+  background:rgba(250,249,246,.96);
+  backdrop-filter:blur(10px);
+}
+.filter-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:0 8px 22px rgba(19,47,39,.05);
+  padding:12px;
+}
+.filter-row{
+  display:grid;
+  grid-template-columns:minmax(260px,1.6fr) 200px 200px auto;
+  gap:9px;
+  align-items:end;
+}
+.field-wrap label{
+  display:block;
+  margin:0 0 5px 2px;
+  font-size:11px;
+  font-weight:750;
+  color:#808985;
+}
+.field{
+  width:100%;
+  height:39px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  background:#fff;
+  color:#34413b;
+  padding:0 11px;
+  outline:none;
+  font-size:12px;
+}
+.field:focus{
+  border-color:#9bada5;
+  box-shadow:0 0 0 3px rgba(23,63,53,.06);
+}
+.search-wrap{position:relative}
+.search-wrap:before{
+  content:"⌕";
+  position:absolute;
+  left:11px;
+  top:31px;
+  color:#89928d;
+  font-size:16px;
+}
+.search-wrap .field{padding-left:32px}
+.clear-btn{
+  height:39px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  background:#fff;
+  color:#5b6761;
+  padding:0 14px;
+  font-size:11.5px;
+  font-weight:700;
+}
+
+.list-card{
+  margin-top:6px;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:18px;
+  box-shadow:var(--shadow);
+  overflow:hidden;
+}
+.list-head{
+  min-height:58px;
+  padding:0 16px 0 18px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+  border-bottom:1px solid #f0ece6;
+}
+.list-head-copy{
+  display:flex;
+  align-items:baseline;
+  gap:8px;
+}
+.list-head h2{
+  margin:0;
+  font-size:15px;
+}
+.result-count{
+  color:#8b938f;
+  font-size:11px;
+}
+.tabs{
+  display:flex;
+  gap:3px;
+  padding:4px;
+  background:#f6f7f6;
+  border-radius:10px;
+}
+.tab{
+  height:30px;
+  padding:0 11px;
+  border:0;
+  background:transparent;
+  border-radius:7px;
+  color:#737d78;
+  font-size:11px;
+  font-weight:700;
+}
+.tab.active{
+  background:#fff;
+  color:var(--green);
+  box-shadow:0 1px 3px rgba(17,42,35,.08);
+}
+
+.table-wrap{overflow-x:auto}
+.bookings-table{
+  width:100%;
+  border-collapse:collapse;
+  table-layout:fixed;
+}
+.bookings-table th{
+  text-align:left;
+  padding:10px 12px;
+  background:#fbfbfa;
+  color:#7b8580;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.045em;
+  font-weight:800;
+  border-bottom:1px solid #ece9e4;
+}
+.bookings-table td{
+  padding:13px 12px;
+  border-bottom:1px solid #f0eeea;
+  vertical-align:middle;
+  font-size:11.5px;
+}
+.bookings-table tr:last-child td{border-bottom:0}
+.booking-row{
+  transition:background .14s ease;
+}
+.booking-row:hover{background:#fbfcfb}
+.col-booking{width:14%}
+.col-hotel{width:25%}
+.col-guest{width:13%}
+.col-stay{width:17%}
+.col-status{width:13%}
+.col-sale{width:11%}
+.col-action{width:7%}
+
+.ref{
+  font-size:12px;
+  font-weight:800;
+  color:#24312b;
+}
+.booked-on{
+  margin-top:4px;
+  font-size:11px;
+  color:#969d99;
+}
+.hotel-cell{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+.hotel-thumb{
+  width:54px;
+  height:44px;
+  flex:0 0 54px;
+  border-radius:9px;
+  border:1px solid rgba(23,63,53,.08);
+  overflow:hidden;
+}
+.hotel-thumb.one{background:linear-gradient(145deg,#7da8b8,#d9e9ed 57%,#c0a67f)}
+.hotel-thumb.two{background:linear-gradient(145deg,#d8c49d,#a2c3b8 55%,#67897f)}
+.hotel-thumb.three{background:linear-gradient(145deg,#9ab0cf,#e2d3bc 58%,#9a745c)}
+.hotel-thumb.four{background:linear-gradient(145deg,#b9d2cb,#f1e2bf 60%,#9a9f83)}
+.hotel-thumb.five{background:linear-gradient(145deg,#8aa7bd,#e2c4b0 58%,#776960)}
+.hotel-thumb.six{background:linear-gradient(145deg,#8aa99b,#e6d4aa 55%,#b1846d)}
+.hotel-name{
+  font-size:12px;
+  font-weight:800;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.hotel-loc{
+  margin-top:4px;
+  color:#8b948f;
+  font-size:11px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.guest-name{
+  font-weight:700;
+  font-size:11.5px;
+}
+.guest-meta,.stay-meta,.money-sub{
+  margin-top:4px;
+  color:#8a938e;
+  font-size:11px;
+}
+.stay-main{font-weight:700;font-size:11.5px}
+.cancel-note{
+  margin-top:5px;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  color:#557167;
+  background:#f3f7f5;
+  border-radius:999px;
+  padding:3px 7px;
+  font-size:11px;
+  font-weight:700;
+}
+.cancel-note.soon{
+  color:#826516;
+  background:var(--amber-soft);
+}
+.cancel-note.none{
+  color:#8c5a51;
+  background:var(--red-soft);
+}
+.status{
+  display:inline-flex;
+  min-height:25px;
+  align-items:center;
+  gap:6px;
+  padding:0 9px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.status:before{
+  content:"";
+  width:6px;height:6px;border-radius:50%;
+  background:currentColor;
+}
+.status.confirmed{background:var(--green-soft);color:var(--green)}
+.status.pending{background:var(--amber-soft);color:var(--amber)}
+.status.cancelled{background:var(--red-soft);color:var(--red)}
+.status.completed{background:#f1f2f1;color:#69726e}
+.status.instay{background:var(--blue-soft);color:var(--blue)}
+.pager[hidden]{display:none}
+.status.open{background:#fff;color:#3f5f7a;box-shadow:inset 0 0 0 1px #cbd8e4}
+.toast{position:fixed;right:18px;bottom:18px;z-index:450;background:var(--green);color:#fff;padding:11px 14px;border-radius:10px;font-size:12px;opacity:0;transform:translateY(8px);transition:.18s ease;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+.money-main{
+  font-size:12px;
+  font-weight:850;
+}
+.profit{
+  color:var(--green);
+  font-weight:800;
+}
+.view-btn{
+  height:32px;
+  border:1px solid #d8e1dc;
+  border-radius:8px;
+  background:#fff;
+  color:var(--green);
+  font-size:11px;
+  font-weight:800;
+  padding:0 10px;
+  white-space:nowrap;
+}
+.view-btn{cursor:pointer}
+.view-btn:hover{background:var(--green-soft)}
+
+.mobile-list{display:none}
+.empty{
+  display:none;
+  padding:44px 20px;
+  text-align:center;
+  color:#74807a;
+  font-size:12px;
+}
+.empty strong{
+  display:block;
+  color:#34413b;
+  margin-bottom:5px;
+  font-size:14px;
+}
+
+.list-footer{
+  min-height:52px;
+  padding:0 16px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  border-top:1px solid #f0ece6;
+  background:#fbfbfa;
+}
+.showing{
+  color:#838c87;
+  font-size:11px;
+}
+.pager{display:flex;gap:5px}
+.page-btn{
+  width:30px;height:30px;
+  border:1px solid #dfe4e1;
+  background:#fff;
+  border-radius:7px;
+  color:#65706a;
+  font-size:11px;
+  font-weight:700;
+}
+.page-btn.active{
+  background:var(--green);
+  color:#fff;
+  border-color:var(--green);
+}
+.page-btn:disabled{opacity:.45;cursor:default}
+
+
+.head-actions{display:flex;gap:8px;align-items:center}
+.secondary-btn{height:40px;padding:0 14px;border:1px solid #d5ded9;border-radius:9px;background:#fff;color:var(--green);font-size:12px;font-weight:750;cursor:pointer}
+
+@media(max-width:1120px){
+  .metrics{grid-template-columns:1fr 1fr}
+  .filter-row{grid-template-columns:1.5fr 1fr 1fr auto}
+  .col-guest{display:none}
+  .bookings-table th:nth-child(3),.bookings-table td:nth-child(3){display:none}
+  .col-booking{width:16%}
+  .col-hotel{width:28%}
+  .col-stay{width:20%}
+  .col-status{width:15%}
+  .col-sale{width:13%}
+  .col-action{width:8%}
+}
+@media(max-width:760px){
+  .topbar-inner,.page{width:min(100% - 24px,1280px)}
+  .nav{gap:14px;overflow:auto}
+  .account-name{display:none}
+  .balance-chip small{display:none}
+  .nav-menu{position:fixed;left:12px;right:12px;top:62px;width:auto}
+  .account-menu{top:62px}
+  .page{padding-top:20px}
+  .page-head{align-items:flex-start}
+  .page-title h1{font-size:30px}
+  .metrics{grid-template-columns:1fr 1fr}
+  .metric{padding:13px;min-height:86px}
+  .metric-value{font-size:20px}
+  .filters{top:68px}
+  .filter-row{grid-template-columns:1fr 1fr}
+  .search-wrap{grid-column:1/-1}
+  .clear-btn{width:100%}
+  .list-head{align-items:flex-start;flex-direction:column;padding:13px}
+  .tabs{width:100%;overflow:auto}
+  .tab{flex:0 0 auto}
+  .table-wrap{display:none}
+  .mobile-list{display:grid}
+  .mobile-booking{
+    padding:14px;
+    border-bottom:1px solid #efede9;
+    display:grid;
+    gap:12px;
+  }
+  .mobile-booking:last-child{border-bottom:0}
+  .mobile-top{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    align-items:flex-start;
+  }
+  .mobile-hotel{
+    display:grid;
+    grid-template-columns:58px 1fr;
+    gap:10px;
+    min-width:0;
+  }
+  .mobile-hotel .hotel-thumb{width:58px;height:50px}
+  .mobile-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    padding:10px 0;
+    border-top:1px solid #f2efeb;
+    border-bottom:1px solid #f2efeb;
+  }
+  .mobile-label{font-size:11px;color:#8a938e;margin-bottom:3px}
+  .mobile-value{font-size:11px;font-weight:700}
+  .mobile-bottom{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+  }
+  .mobile-bottom .view-btn{min-width:100px}
+}
+@media(max-width:520px){
+  .page-head{display:block}
+  .primary-btn{margin-top:14px}
+  .metrics{grid-template-columns:1fr 1fr}
+  .filter-row{grid-template-columns:1fr}
+  .search-wrap{grid-column:auto}
+  .list-footer{align-items:flex-start;flex-direction:column;padding:12px 14px}
+}
+
+/* v4: one look across all agent pages */
+.clear-btn{border-radius:9px;height:40px}
+@media(min-width:1121px){.col-booking{width:12%}.col-hotel{width:23%}.col-guest{width:13%}.col-stay{width:19%}.col-status{width:12%}.col-sale{width:14%}.col-action{width:7%}}
+.money-sub,.cancel-note{white-space:nowrap}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="07-search.html">Apolles</a>
+
+    <nav class="nav">
+      <a class="nav-link" href="07-search.html">Search</a>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Quotes <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="14-quotes.html">All quotes</a>
+          <a href="15-quote-editor.html">New quote</a>
+          <div class="nav-sep"></div>
+          <a href="18-clients.html">Clients</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger active" type="button">Bookings <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="13-bookings.html">All bookings</a>
+          <a href="13-bookings.html#upcoming">Upcoming stays</a>
+          <a href="13-bookings.html#completed">Completed</a>
+          <a href="13-bookings.html#cancelled">Cancelled</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Reporting <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="19-reports.html">Overview</a>
+          <a href="19-reports.html">Balance history</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="top-actions">
+      <a class="balance-chip" href="20-agency-settings.html#balance" title="Balance and top-ups">
+        <small>Balance</small>
+        <b>USD 4,250.00</b>
+      </a>
+
+      <div class="nav-group account-group">
+        <button class="account-trigger" type="button">
+          <span class="avatar">MZ</span>
+          <span class="account-name">My Agency</span>
+          <b>⌄</b>
+        </button>
+        <div class="nav-menu account-menu">
+          <a href="20-agency-settings.html">Agency settings</a>
+          <a href="20-agency-settings.html#balance">Balance &amp; top-ups</a>
+          <a href="#">Support</a>
+          <div class="nav-sep"></div>
+          <a href="04-login.html">Sign out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <div class="page-head">
+    <div class="page-title">
+      <h1>Bookings</h1>
+    </div>
+    <div class="head-actions">
+      <button class="secondary-btn" type="button" id="exportBtn">Export CSV</button>
+      <a class="primary-btn" href="07-search.html"><span class="plus">+</span> New booking</a>
+    </div>
+  </div>
+
+
+  <section class="filters">
+    <div class="filter-card">
+      <div class="filter-row">
+        <div class="field-wrap search-wrap">
+          <label>Search bookings</label>
+          <input id="searchInput" class="field" placeholder="Guest, hotel or confirmation number">
+        </div>
+
+        <div class="field-wrap">
+          <label>Booked</label>
+          <select id="bookedSelect" class="field">
+            <option value="90">Last 90 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="7">Last 7 days</option>
+            <option value="all">All time</option>
+          </select>
+        </div>
+
+        <button id="clearBtn" class="clear-btn">Clear filters</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="list-card">
+    <div class="list-head">
+      <div class="list-head-copy">
+        <h2 id="resultCount">8 bookings</h2>
+      </div>
+
+      <div class="tabs" id="tabs">
+        <button class="tab active" data-tab="all">All</button>
+        <button class="tab" data-tab="upcoming">Upcoming</button>
+        <button class="tab" data-tab="novoucher">No voucher</button>
+        <button class="tab" data-tab="instay">In stay</button>
+        <button class="tab" data-tab="completed">Completed</button>
+        <button class="tab" data-tab="pending">Pending</button>
+        <button class="tab" data-tab="cancelled">Cancelled</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="bookings-table">
+        <thead>
+          <tr>
+            <th class="col-booking">Booking</th>
+            <th class="col-hotel">Hotel</th>
+            <th class="col-guest">Lead guest</th>
+            <th class="col-stay">Stay</th>
+            <th class="col-status">Status</th>
+            <th class="col-sale">Net amount</th>
+            <th class="col-action"></th>
+          </tr>
+        </thead>
+        <tbody id="desktopRows">
+
+          <tr class="booking-row" data-search="fo0cdj secrets the vine cancun noa elkobi" data-status="vouchered" data-stay="upcoming">
+            <td>
+              <div class="ref">FO0CDJ</div>
+              <div class="booked-on">Booked Sep 16, 2026</div>
+            </td>
+            <td>
+              <div class="hotel-cell">
+                <div class="hotel-thumb one"></div>
+                <div style="min-width:0">
+                  <div class="hotel-name">Secrets The Vine Cancun</div>
+                  <div class="hotel-loc">Cancun, Mexico · All inclusive</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="guest-name">Mrs Noa Elkobi</div>
+              <div class="guest-meta">2 adults · 1 room</div>
+            </td>
+            <td>
+              <div class="stay-main">Oct 20 to Oct 23</div>
+              <div class="stay-meta">3 nights · Check-in in 34 days</div>
+              <div class="cancel-note">Free cancel until Oct 14</div>
+            </td>
+            <td><span class="status confirmed">Vouchered</span></td>
+            <td>
+              <div class="money-main">USD 1,137.25</div>
+              <div class="money-sub">Paid · profit <span class="profit">USD 136.47</span></div>
+            </td>
+            <td><button class="view-btn">View</button></td>
+          </tr>
+
+          <tr class="booking-row" data-search="ap9k2m hotel xcaret mexico maya rivera daniel levy" data-status="vouchered" data-stay="upcoming">
+            <td>
+              <div class="ref">AP9K2M</div>
+              <div class="booked-on">Booked Sep 16, 2026</div>
+            </td>
+            <td>
+              <div class="hotel-cell">
+                <div class="hotel-thumb two"></div>
+                <div style="min-width:0">
+                  <div class="hotel-name">Hotel Xcaret Mexico</div>
+                  <div class="hotel-loc">Playa del Carmen, Mexico · All inclusive</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="guest-name">Mr Daniel Levy</div>
+              <div class="guest-meta">2 adults · 2 children</div>
+            </td>
+            <td>
+              <div class="stay-main">Dec 06 to Dec 10</div>
+              <div class="stay-meta">4 nights · Check-in in 81 days</div>
+              <div class="cancel-note">Free cancel until Nov 28</div>
+            </td>
+            <td><span class="status confirmed">Vouchered</span></td>
+            <td>
+              <div class="money-main">USD 3,480.00</div>
+              <div class="money-sub">Paid · profit <span class="profit">USD 430.00</span></div>
+            </td>
+            <td><button class="view-btn">View</button></td>
+          </tr>
+
+          <tr class="booking-row" data-search="rm8t4c mare paphos cyprus maya cohen" data-status="instay" data-stay="upcoming">
+            <td>
+              <div class="ref">RM8T4C</div>
+              <div class="booked-on">Booked Sep 14, 2026</div>
+            </td>
+            <td>
+              <div class="hotel-cell">
+                <div class="hotel-thumb three"></div>
+                <div style="min-width:0">
+                  <div class="hotel-name">Mare Paphos</div>
+                  <div class="hotel-loc">Paphos, Cyprus · Half board</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="guest-name">Mrs Maya Cohen</div>
+              <div class="guest-meta">2 adults · 1 child</div>
+            </td>
+            <td>
+              <div class="stay-main">Sep 15 to Sep 19</div>
+              <div class="stay-meta">4 nights · Check-out Sep 19</div>
+              <div class="cancel-note none">Stay in progress</div>
+            </td>
+            <td><span class="status instay">In stay</span></td>
+            <td>
+              <div class="money-main">USD 1,286.50</div>
+              <div class="money-sub">Paid · profit <span class="profit">USD 164.50</span></div>
+            </td>
+            <td><button class="view-btn">View</button></td>
+          </tr>
+
+          <tr class="booking-row" data-search="kx2p7a hyatt zilara cancun mexico ron shavit" data-status="pending" data-stay="upcoming">
+            <td>
+              <div class="ref">KX2P7A</div>
+              <div class="booked-on">Booked Sep 13, 2026</div>
+            </td>
+            <td>
+              <div class="hotel-cell">
+                <div class="hotel-thumb four"></div>
+                <div style="min-width:0">
+                  <div class="hotel-name">Hyatt Zilara Cancun</div>
+                  <div class="hotel-loc">Cancun, Mexico · All inclusive</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="guest-name">Mr Ron Shavit</div>
+              <div class="guest-meta">2 adults · 1 room</div>
+            </td>
+            <td>
+              <div class="stay-main">Nov 02 to Nov 06</div>
+              <div class="stay-meta">4 nights · Waiting for hotel confirmation</div>
+              <div class="cancel-note">Free cancel until Oct 24</div>
+            </td>
+            <td><span class="status pending">Pending</span></td>
+            <td>
+              <div class="money-main">USD 2,196.00</div>
+              <div class="money-sub">Held from balance</div>
+            </td>
+            <td><button class="view-btn">View</button></td>
+          </tr>
+
+          <tr class="booking-row" data-search="vt5h8q donoma las terrenas dominican republic omar shahin" data-status="confirmed" data-stay="upcoming">
+            <td>
+              <div class="ref">VT5H8Q</div>
+              <div class="booked-on">Booked Sep 11, 2026</div>
+            </td>
+            <td>
+              <div class="hotel-cell">
+                <div class="hotel-thumb five"></div>
+                <div style="min-width:0">
+                  <div class="hotel-name">Donoma Las Terrenas</div>
+                  <div class="hotel-loc">Las Terrenas, Dominican Republic · Breakfast</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="guest-name">Mr Omar Shahin</div>
+              <div class="guest-meta">2 adults · 1 room</div>
+            </td>
+            <td>
+              <div class="stay-main">Oct 03 to Oct 07</div>
+              <div class="stay-meta">4 nights · Check-in in 17 days</div>
+              <div class="cancel-note soon">No voucher · auto-cancels tomorrow</div>
+            </td>
+            <td><span class="status open">Confirmed</span></td>
+            <td>
+              <div class="money-main">USD 1,548.00</div>
+              <div class="money-sub">Not paid yet</div>
+            </td>
+            <td><button class="view-btn">View</button></td>
+          </tr>
+
+          <tr class="booking-row" data-search="zn4b1r villas hm palapas del mar holbox israel gal" data-status="completed" data-stay="past">
+            <td>
+              <div class="ref">ZN4B1R</div>
+              <div class="booked-on">Booked Aug 28, 2026</div>
+            </td>
+            <td>
+              <div class="hotel-cell">
+                <div class="hotel-thumb six"></div>
+                <div style="min-width:0">
+                  <div class="hotel-name">Villas HM Palapas del Mar</div>
+                  <div class="hotel-loc">Holbox, Mexico · Breakfast</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="guest-name">Mr Israel Gal</div>
+              <div class="guest-meta">2 adults · 1 room</div>
+            </td>
+            <td>
+              <div class="stay-main">Sep 04 to Sep 08</div>
+              <div class="stay-meta">4 nights · Checked out Sep 08</div>
+              <div class="cancel-note none">Past stay</div>
+            </td>
+            <td><span class="status completed">Completed</span></td>
+            <td>
+              <div class="money-main">USD 924.00</div>
+              <div class="money-sub">Paid · profit <span class="profit">USD 118.00</span></div>
+            </td>
+            <td><button class="view-btn">View</button></td>
+          </tr>
+
+          <tr class="booking-row" data-search="bp7q3d secrets moxche playa del carmen mexico lior aviv" data-status="cancelled" data-stay="past">
+            <td>
+              <div class="ref">BP7Q3D</div>
+              <div class="booked-on">Booked Aug 22, 2026</div>
+            </td>
+            <td>
+              <div class="hotel-cell">
+                <div class="hotel-thumb two"></div>
+                <div style="min-width:0">
+                  <div class="hotel-name">Secrets Moxché Playa del Carmen</div>
+                  <div class="hotel-loc">Playa del Carmen, Mexico · All inclusive</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="guest-name">Mrs Lior Aviv</div>
+              <div class="guest-meta">2 adults · 1 room</div>
+            </td>
+            <td>
+              <div class="stay-main">Sep 27 to Oct 01</div>
+              <div class="stay-meta">4 nights · Cancelled Sep 10</div>
+              <div class="cancel-note none">Refund processed</div>
+            </td>
+            <td><span class="status cancelled">Cancelled</span></td>
+            <td>
+              <div class="money-main">USD 0.00</div>
+              <div class="money-sub">Cancelled without charge</div>
+            </td>
+            <td><button class="view-btn">View</button></td>
+          </tr>
+
+          <tr class="booking-row" data-search="lh6w9s nobu hotel miami beach usa dan reshef" data-status="confirmed" data-stay="upcoming">
+            <td>
+              <div class="ref">LH6W9S</div>
+              <div class="booked-on">Booked Aug 19, 2026</div>
+            </td>
+            <td>
+              <div class="hotel-cell">
+                <div class="hotel-thumb four"></div>
+                <div style="min-width:0">
+                  <div class="hotel-name">Nobu Hotel Miami Beach</div>
+                  <div class="hotel-loc">Miami Beach, USA · Room only</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="guest-name">Mr Dan Reshef</div>
+              <div class="guest-meta">2 adults · 1 room</div>
+            </td>
+            <td>
+              <div class="stay-main">Nov 18 to Nov 21</div>
+              <div class="stay-meta">3 nights · Check-in in 63 days</div>
+              <div class="cancel-note soon">No voucher · auto-cancels in 2 days</div>
+            </td>
+            <td><span class="status open">Confirmed</span></td>
+            <td>
+              <div class="money-main">USD 1,764.00</div>
+              <div class="money-sub">Not paid yet</div>
+            </td>
+            <td><button class="view-btn">View</button></td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mobile-list" id="mobileList"></div>
+
+    <div class="empty" id="emptyState">
+      <strong>No bookings found</strong>
+      Try changing your filters or search terms.
+    </div>
+
+    <div class="list-footer">
+      <div class="showing" id="showingText">Showing 8 of 8 bookings</div>
+      <div class="pager" id="pager" hidden>
+        <button class="page-btn" disabled>‹</button>
+        <button class="page-btn active">1</button>
+        <button class="page-btn">2</button>
+        <button class="page-btn">3</button>
+        <button class="page-btn">›</button>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const rows = Array.from(document.querySelectorAll('.booking-row'));
+const searchInput = document.getElementById('searchInput');
+const bookedSelect = document.getElementById('bookedSelect');
+const clearBtn = document.getElementById('clearBtn');
+const tabs = Array.from(document.querySelectorAll('.tab'));
+const resultCount = document.getElementById('resultCount');
+const showingText = document.getElementById('showingText');
+const emptyState = document.getElementById('emptyState');
+const tableWrap = document.querySelector('.table-wrap');
+const mobileList = document.getElementById('mobileList');
+
+let activeTab = 'all';
+
+function buildMobileCards(){
+  mobileList.innerHTML = rows.map((row, index) => {
+    const cells = row.querySelectorAll('td');
+    const hotel = cells[1].querySelector('.hotel-name').textContent;
+    const location = cells[1].querySelector('.hotel-loc').textContent;
+    const thumbClass = cells[1].querySelector('.hotel-thumb').className;
+    const ref = cells[0].querySelector('.ref').textContent;
+    const booked = cells[0].querySelector('.booked-on').textContent;
+    const guest = cells[2].querySelector('.guest-name').textContent;
+    const guestMeta = cells[2].querySelector('.guest-meta').textContent;
+    const stay = cells[3].querySelector('.stay-main').textContent;
+    const stayMeta = cells[3].querySelector('.stay-meta').textContent;
+    const cancel = cells[3].querySelector('.cancel-note').outerHTML;
+    const status = cells[4].innerHTML;
+    const sale = cells[5].querySelector('.money-main').textContent;
+    const sub = cells[5].querySelector('.money-sub').innerHTML;
+    return `
+      <article class="mobile-booking" data-index="${index}">
+        <div class="mobile-top">
+          <div class="mobile-hotel">
+            <div class="${thumbClass}"></div>
+            <div style="min-width:0">
+              <div class="hotel-name">${hotel}</div>
+              <div class="hotel-loc">${location}</div>
+              <div style="margin-top:7px">${status}</div>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div class="ref">${ref}</div>
+            <div class="booked-on">${booked.replace('Booked ','')}</div>
+          </div>
+        </div>
+        <div class="mobile-grid">
+          <div>
+            <div class="mobile-label">Lead guest</div>
+            <div class="mobile-value">${guest}</div>
+            <div class="guest-meta">${guestMeta}</div>
+          </div>
+          <div>
+            <div class="mobile-label">Stay</div>
+            <div class="mobile-value">${stay}</div>
+            <div class="stay-meta">${stayMeta}</div>
+          </div>
+        </div>
+        <div>${cancel}</div>
+        <div class="mobile-bottom">
+          <div>
+            <div class="money-main">${sale}</div>
+            <div class="money-sub">${sub}</div>
+          </div>
+          <button class="view-btn">View booking</button>
+        </div>
+      </article>`;
+  }).join('');
+}
+buildMobileCards();
+
+function filterRows(){
+  const q = searchInput.value.trim().toLowerCase();
+  let visibleCount = 0;
+
+  rows.forEach((row, index) => {
+    const matchesSearch = !q || row.dataset.search.includes(q);
+
+    let matchesTab = true;
+    if(activeTab === 'upcoming') matchesTab = row.dataset.stay === 'upcoming' && row.dataset.status !== 'instay';
+    if(activeTab === 'instay') matchesTab = row.dataset.status === 'instay';
+    if(activeTab === 'completed') matchesTab = row.dataset.status === 'completed';
+    if(activeTab === 'cancelled') matchesTab = row.dataset.status === 'cancelled';
+    if(activeTab === 'pending') matchesTab = row.dataset.status === 'pending';
+    if(activeTab === 'novoucher') matchesTab = row.dataset.status === 'confirmed';
+
+    const show = matchesSearch && matchesTab;
+    row.style.display = show ? '' : 'none';
+
+    const card = mobileList.querySelector(`[data-index="${index}"]`);
+    if(card) card.style.display = show ? '' : 'none';
+    if(show) visibleCount++;
+  });
+
+  resultCount.textContent = `${visibleCount} booking${visibleCount === 1 ? '' : 's'}`;
+  showingText.textContent = `Showing ${visibleCount} of ${rows.length} bookings`;
+  document.getElementById('pager').hidden = rows.length <= 25;
+  emptyState.style.display = visibleCount ? 'none' : 'block';
+  if(window.innerWidth > 760) tableWrap.style.display = visibleCount ? 'block' : 'none';
+  if(window.innerWidth <= 760) mobileList.style.display = visibleCount ? 'grid' : 'none';
+}
+
+searchInput.addEventListener('input', filterRows);
+bookedSelect.addEventListener('change', filterRows);
+
+tabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    tabs.forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    activeTab = tab.dataset.tab;
+    filterRows();
+  });
+});
+
+clearBtn.addEventListener('click', () => {
+  searchInput.value = '';
+  bookedSelect.value = '90';
+  activeTab = 'all';
+  tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === 'all'));
+  filterRows();
+});
+
+window.addEventListener('resize', filterRows);
+
+document.querySelectorAll('.nav-trigger,.account-trigger').forEach(btn=>{
+  btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const group=btn.closest('.nav-group');
+    document.querySelectorAll('.nav-group.menu-open').forEach(g=>{ if(g!==group) g.classList.remove('menu-open'); });
+    group.classList.toggle('menu-open');
+  });
+});
+document.addEventListener('click',()=>document.querySelectorAll('.nav-group.menu-open').forEach(g=>g.classList.remove('menu-open')));
+</script>
+<script>
+/* Open a tab from the link (#upcoming, #completed, #cancelled ...) */
+function openTabFromHash(){
+  const h=location.hash.replace('#','');
+  const tab=tabs.find(t=>t.dataset.tab===h);
+  if(!tab) return;
+  tabs.forEach(t=>t.classList.toggle('active',t===tab));
+  activeTab=h; filterRows();
+}
+openTabFromHash();
+window.addEventListener('hashchange',openTabFromHash);
+document.getElementById('exportBtn').addEventListener('click',()=>{
+  const t=document.getElementById('toast');
+  t.textContent='CSV file with the bookings shown here is downloading.'; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2400);
+});
+/* View opens the booking summary (page 12) in the matching state. */
+document.addEventListener('click',e=>{
+  const b=e.target.closest('.view-btn'); if(!b) return;
+  const card=b.closest('.mobile-booking');
+  const row=b.closest('.booking-row') || (card ? rows[+card.dataset.index] : null);
+  const s=row ? row.dataset.status : '';
+  location.href='12-booking-summary.html'+(s==='pending'?'#pending':s==='cancelled'?'#cancelled':s==='confirmed'?'#confirmed':'');
+});
+</script>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

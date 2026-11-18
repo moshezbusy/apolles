@@ -1,0 +1,205 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Apolles Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+<style>
+/* Layout: product bar on top, page list on the left, the live mockup filling the rest. Apolles colors. */
+:root{
+  --bar:#173f35; --bar-ink:#ffffff; --bar-muted:#b9cdc4;
+  --bg:#f4f1ea; --panel:#ffffff; --ink:#17211d; --muted:#6b736e; --line:#e2ddd2;
+  --sel:#eef3f0; --accent:#173f35; --gold:#b89155; --frame:#1f2622;
+  --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+  --serif:Georgia,"Times New Roman",serif;
+  --mono:ui-monospace,Menlo,Consolas,monospace;
+  --barh:56px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bar:#10261f; --bar-ink:#f1f5f2; --bar-muted:#9fb7ad;
+  --bg:#141a17; --panel:#1b221e; --ink:#e7ece9; --muted:#9aa49f; --line:#2c3531;
+  --sel:#223029; --accent:#8fc3ae; --gold:#d3b27a; --frame:#0b0f0d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bar:#10261f; --bar-ink:#f1f5f2; --bar-muted:#9fb7ad;
+  --bg:#141a17; --panel:#1b221e; --ink:#e7ece9; --muted:#9aa49f; --line:#2c3531;
+  --sel:#223029; --accent:#8fc3ae; --gold:#d3b27a; --frame:#0b0f0d; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans);overflow:hidden}
+button,a{font:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+.app{height:100%;display:grid;grid-template-rows:auto 1fr}
+.bar{display:flex;align-items:center;gap:12px;min-height:var(--barh);padding:0 16px;padding-top:env(safe-area-inset-top,0px);background:var(--bar);color:var(--bar-ink)}
+.mark{display:flex;align-items:baseline;gap:8px;white-space:nowrap}
+.mark b{font:500 21px var(--serif)}
+.mark span{font-size:12px;color:var(--bar-muted);font-weight:600}
+.now{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
+.now .num{font:600 12px var(--mono);color:var(--bar-muted);font-variant-numeric:tabular-nums}
+.now strong{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tools{display:flex;align-items:center;gap:6px}
+.ib{height:34px;min-width:34px;padding:0 11px;border-radius:9px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:var(--bar-ink);font-weight:600;font-size:13px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;white-space:nowrap}
+.ib:hover{background:rgba(255,255,255,.14)}
+.ib[disabled]{opacity:.35;cursor:default}
+.ib.brief{background:var(--gold);border-color:var(--gold);color:#1b1a14}
+.seg{display:inline-flex;border:1px solid rgba(255,255,255,.2);border-radius:9px;overflow:hidden}
+.seg button{height:32px;padding:0 11px;border:0;background:transparent;color:var(--bar-muted);font-weight:600;font-size:13px}
+.seg button.on{background:var(--bar-ink);color:var(--bar)}
+.only-narrow{display:none}
+
+.main{min-height:0;display:grid;grid-template-columns:250px 1fr}
+.nav{min-height:0;overflow:auto;background:var(--panel);border-right:1px solid var(--line);padding:12px 10px 24px}
+.grp+.grp{margin-top:14px}
+.grp h3{margin:0 8px 6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.item{width:100%;display:grid;grid-template-columns:26px 1fr;align-items:baseline;gap:6px;padding:7px 8px;border:0;border-radius:8px;background:transparent;text-align:left;color:var(--ink)}
+.item:hover{background:var(--sel)}
+.item.on{background:var(--sel);box-shadow:inset 3px 0 0 var(--accent)}
+.item .n{font:600 11.5px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.item.on .n{color:var(--accent)}
+.item .t{font-weight:600;font-size:13.5px;min-width:0}
+.item .f{display:block;font:11px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.help{margin:18px 8px 0;padding-top:14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.55}
+.help a{color:var(--accent);font-weight:600}
+
+.stage{min-width:0;min-height:0;display:flex;padding:14px}
+.frame-wrap{flex:1;min-width:0;display:flex;justify-content:center}
+iframe{flex:1;width:100%;height:100%;border:1px solid var(--line);border-radius:12px;background:#fff}
+.phone iframe{flex:0 0 390px;max-width:100%;border:10px solid var(--frame);border-radius:34px}
+
+.scrim{display:none}
+@media (max-width:900px){
+  .main{grid-template-columns:1fr}
+  .only-narrow{display:inline-flex}
+  .hide-narrow{display:none}
+  .nav{position:fixed;top:calc(var(--barh) + env(safe-area-inset-top,0px));bottom:0;left:0;width:min(300px,86vw);z-index:5;display:none;box-shadow:0 10px 40px rgba(0,0,0,.2)}
+  .show-nav .nav{display:block}
+  .show-nav .scrim{display:block;position:fixed;inset:0;top:calc(var(--barh) + env(safe-area-inset-top,0px));background:rgba(10,15,12,.4);z-index:4}
+  .stage{padding:0}
+  iframe{border:0;border-radius:0}
+  .phone iframe{flex:1 1 auto;border:0;border-radius:0}
+  .bar{gap:8px;padding:0 10px}
+  .mark span{display:none}
+}
+@media (max-width:520px){ .now .num{display:none} .mark b{font-size:17px} .ib{padding:0 8px} }
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app" id="app">
+  <header class="bar">
+    <button class="ib only-narrow" id="navBtn" type="button" aria-controls="nav">Pages</button>
+    <div class="mark"><b>Apolles</b><span>Mockups</span></div>
+    <div class="now"><span class="num" id="nowNum">01 / 24</span><strong id="nowTitle">Homepage</strong></div>
+    <div class="tools">
+      <button class="ib hide-narrow" id="backBtn" type="button" title="Go back inside the page">Back</button>
+      <button class="ib" id="prevBtn" type="button" aria-label="Previous page">←</button>
+      <button class="ib" id="nextBtn" type="button" aria-label="Next page">→</button>
+      <div class="seg hide-narrow" role="group" aria-label="Screen size">
+        <button type="button" id="deskBtn" class="on">Desktop</button>
+        <button type="button" id="phoneBtn">Phone</button>
+      </div>
+      <a class="ib hide-narrow" id="openBtn" href="pages/01-homepage.html" target="_blank" rel="noopener">Open alone</a>
+      <a class="ib brief" href="https://claude.ai/code/artifact/aba9af67-1638-4546-8ae9-eec2c40a0163" target="_blank" rel="noopener">Brief</a>
+    </div>
+  </header>
+
+  <div class="main">
+    <nav class="nav" id="nav" aria-label="Pages"></nav>
+    <section class="stage" id="stage">
+      <div class="frame-wrap"><iframe id="view" title="Mockup page" src="about:blank"></iframe></div>
+    </section>
+    <div class="scrim" id="scrim"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const PAGES = [
+    ["01-homepage","Homepage","Public site and sign-up"],
+    ["02-join","Join","Public site and sign-up"],
+    ["03-application-received","Application received","Public site and sign-up"],
+    ["04-login","Sign in","Public site and sign-up"],
+    ["05-forgot-password","Forgot password","Public site and sign-up"],
+    ["06-set-password","Set password","Public site and sign-up"],
+    ["07-search","Search","Search and booking"],
+    ["08-search-results","Search results","Search and booking"],
+    ["09-hotel-rooms","Hotel rooms","Search and booking"],
+    ["10-guest-details","Guest details","Search and booking"],
+    ["11-review-and-book","Review and book","Search and booking"],
+    ["12-booking-summary","Booking summary","Search and booking"],
+    ["13-bookings","Bookings list","Search and booking"],
+    ["14-quotes","Quotes list","Quotes and clients"],
+    ["15-quote-editor","Quote editor","Quotes and clients"],
+    ["16-client-quote-en","Client quote, English","Quotes and clients"],
+    ["17-client-quote-he","Client quote, Hebrew","Quotes and clients"],
+    ["18-clients","Clients","Quotes and clients"],
+    ["19-reports","Reports","Agency"],
+    ["20-agency-settings","Agency settings","Agency"],
+    ["21-voucher","Hotel voucher","Documents"],
+    ["22-invoice","Invoice and credit note","Documents"],
+    ["23-emails","Automatic emails","Specs"],
+    ["24-system-states","System states","Specs"]
+  ].map((p,i)=>({id:p[0],name:p[1],group:p[2],i}));
+  const byId = Object.fromEntries(PAGES.map(p=>[p.id,p]));
+  const $ = id => document.getElementById(id);
+  const view = $('view'), app = $('app');
+  let current = PAGES[0].id;
+  const num = p => p.id.slice(0,2);
+
+  function renderNav(){
+    const nav = $('nav'); nav.textContent = '';
+    const groups = [];
+    PAGES.forEach(p=>{ let g = groups.find(x=>x.name===p.group); if(!g){ g={name:p.group,items:[]}; groups.push(g); } g.items.push(p); });
+    groups.forEach(g=>{
+      const wrap = document.createElement('div'); wrap.className='grp';
+      const h = document.createElement('h3'); h.textContent = g.name; wrap.appendChild(h);
+      g.items.forEach(p=>{
+        const b = document.createElement('button'); b.type='button'; b.className='item'; b.dataset.id=p.id;
+        const n = document.createElement('span'); n.className='n'; n.textContent=num(p);
+        const t = document.createElement('span'); t.className='t'; t.textContent=p.name;
+        const f = document.createElement('span'); f.className='f'; f.textContent=p.id+'.html'; t.appendChild(f);
+        b.append(n,t);
+        b.addEventListener('click',()=>{ go(p.id); app.classList.remove('show-nav'); });
+        wrap.appendChild(b);
+      });
+      nav.appendChild(wrap);
+    });
+    const help = document.createElement('p'); help.className='help';
+    help.innerHTML = 'Links and buttons inside the pages work. Dashed "Prototype only" boxes switch demo states and are not part of the product. Questions and comments go in the <a href="https://claude.ai/code/artifact/aba9af67-1638-4546-8ae9-eec2c40a0163" target="_blank" rel="noopener">brief</a>.';
+    nav.appendChild(help);
+  }
+
+  function setCurrent(id){
+    if(!byId[id]) return;
+    current = id;
+    const p = byId[id];
+    $('nowNum').textContent = num(p)+' / '+String(PAGES.length).padStart(2,'0');
+    $('nowTitle').textContent = p.name;
+    $('openBtn').href = 'pages/'+id+'.html';
+    $('prevBtn').disabled = p.i===0; $('nextBtn').disabled = p.i===PAGES.length-1;
+    document.querySelectorAll('.item').forEach(b=>b.classList.toggle('on', b.dataset.id===id));
+    try{ if(location.hash.slice(1)!==id) history.replaceState(null,'','#'+id); }catch(e){}
+  }
+  function go(id){ setCurrent(id); view.src = 'pages/'+id+'.html'; }
+
+  window.addEventListener('message', e=>{
+    const d = e.data;
+    if(!d || d.apolles!=='page' || e.source!==view.contentWindow) return;
+    const id = String(d.file||'').replace(/\.html$/,'');
+    if(byId[id] && id!==current) setCurrent(id);
+  });
+  $('prevBtn').addEventListener('click',()=>{ const i=byId[current].i; if(i>0) go(PAGES[i-1].id); });
+  $('nextBtn').addEventListener('click',()=>{ const i=byId[current].i; if(i<PAGES.length-1) go(PAGES[i+1].id); });
+  $('backBtn').addEventListener('click',()=>{ try{ view.contentWindow.postMessage({apolles:'back'},'*'); }catch(e){} });
+  $('deskBtn').addEventListener('click',()=>{ $('stage').classList.remove('phone'); $('deskBtn').classList.add('on'); $('phoneBtn').classList.remove('on'); });
+  $('phoneBtn').addEventListener('click',()=>{ $('stage').classList.add('phone'); $('phoneBtn').classList.add('on'); $('deskBtn').classList.remove('on'); });
+  $('navBtn').addEventListener('click',()=>app.classList.toggle('show-nav'));
+  $('scrim').addEventListener('click',()=>app.classList.remove('show-nav'));
+  window.addEventListener('hashchange',()=>{ const id=location.hash.slice(1); if(byId[id] && id!==current) go(id); });
+
+  renderNav();
+  const start = location.hash.slice(1);
+  go(byId[start] ? start : PAGES[0].id);
+})();
+</script>
+
+</body></html>

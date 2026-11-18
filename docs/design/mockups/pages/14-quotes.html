@@ -1,0 +1,1086 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quotes | Apolles</title>
+<style>
+:root{
+  --ink:#17211d;
+  --muted:#6d756f;
+  --green:#173f35;
+  --green-2:#245c4e;
+  --green-soft:#eef3f0;
+  --cream:#f7f4ed;
+  --line:#e7e2d8;
+  --bg:#faf9f6;
+  --card:#fff;
+  --shadow:0 14px 36px rgba(19,47,39,.08);
+  --amber:#87691f;
+  --amber-soft:#fff7e7;
+  --blue:#426b82;
+  --blue-soft:#eef5fb;
+  --red:#94554e;
+  --red-soft:#fbf1ef;
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  min-height:100%;
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--ink);
+  background:var(--bg);
+}
+a{text-decoration:none;color:inherit}
+button,input,select{font:inherit}
+button{cursor:pointer}
+
+.topbar{
+  position:sticky;
+  top:0;
+  z-index:100;
+  height:68px;
+  background:#fff;
+  border-bottom:1px solid var(--line);
+}
+.topbar-inner{
+  width:min(1280px,calc(100% - 40px));
+  height:100%;
+  margin:auto;
+  display:flex;
+  align-items:center;
+  gap:28px;
+}
+.brand{
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:27px;
+  margin-right:10px;
+}
+.nav{display:flex;height:100%;align-items:center;gap:26px}
+.nav-link{height:100%;display:flex;align-items:center;position:relative;font-size:13px;color:#6c7671}
+.nav-link.active{color:var(--green);font-weight:700}
+.nav-link.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-group{position:relative;height:100%;display:flex;align-items:center}
+.nav-trigger{
+  height:100%;border:0;background:transparent;padding:0;cursor:pointer;
+  color:#6c7671;font-size:13px;display:flex;align-items:center;gap:5px;position:relative;
+}
+.nav-trigger.active{color:var(--green);font-weight:700}
+.nav-trigger.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-trigger span{font-size:11px;color:#8a938e}
+.nav-menu{
+  position:absolute;top:58px;left:-10px;z-index:180;
+  width:190px;padding:7px;background:#fff;border:1px solid #e1e6e3;
+  border-radius:11px;box-shadow:0 15px 38px rgba(19,47,39,.14);
+  opacity:0;visibility:hidden;transform:translateY(5px);transition:.14s ease;
+}
+.nav-group:hover>.nav-menu,.nav-group.menu-open>.nav-menu{opacity:1;visibility:visible;transform:translateY(0)}
+.nav-menu a{display:block;padding:8px 10px;border-radius:7px;color:#4d5a54;font-size:12.5px}
+.nav-menu a:hover{background:#f1f6f3;color:var(--green)}
+.nav-sep{height:1px;background:#eeeae5;margin:5px 2px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:14px;color:#647069;font-size:12px}
+.balance-chip{
+  display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;
+  padding:6px 11px;border:1px solid #dce6e0;border-radius:10px;background:#f7faf8;
+}
+.balance-chip small{font-size:11px;color:#7f8984;font-weight:600}
+.balance-chip b{font-size:12.5px;color:var(--green)}
+.balance-chip:hover{border-color:#bcd0c6}
+.account-group{height:auto}
+.account-trigger{border:0;background:transparent;display:flex;align-items:center;gap:8px;color:#4d5a54;font-size:12.5px;padding:0;cursor:pointer}
+.account-trigger b{font-size:11px;font-weight:500}
+.account-menu{left:auto;right:0;top:40px}
+.avatar{
+  width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#e5eee9;color:var(--green);
+  font-size:11px;font-weight:800;
+}
+
+.page{
+  width:min(1280px,calc(100% - 40px));
+  margin:auto;
+  padding:30px 0 60px;
+}
+.page-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:24px;
+  margin-bottom:18px;
+}
+.page-head h1{
+  margin:0;
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:36px;
+  line-height:1;
+  font-weight:500;
+  letter-spacing:-.025em;
+}
+.new-btn{
+  height:42px;
+  padding:0 16px;
+  border:0;
+  border-radius:9px;
+  background:var(--green);
+  color:#fff;
+  font-size:12px;
+  font-weight:800;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+}
+.new-btn span{font-size:18px;line-height:1}
+
+.toolbar{
+  position:sticky;
+  top:68px;
+  z-index:80;
+  padding:10px 0;
+  background:rgba(250,249,246,.96);
+  backdrop-filter:blur(10px);
+}
+.toolbar-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:15px;
+  box-shadow:0 8px 22px rgba(19,47,39,.05);
+  padding:11px;
+  display:grid;
+  grid-template-columns:minmax(260px,1.35fr) auto;
+  gap:12px;
+  align-items:center;
+}
+.search-wrap{
+  position:relative;
+}
+.search-wrap:before{
+  content:"⌕";
+  position:absolute;
+  left:11px;
+  top:50%;
+  transform:translateY(-50%);
+  color:#8a938e;
+  font-size:16px;
+}
+.search-input{
+  width:100%;
+  height:39px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  padding:0 12px 0 32px;
+  outline:none;
+  font-size:12px;
+  color:#31403a;
+}
+.search-input:focus{
+  border-color:#9cadA5;
+  box-shadow:0 0 0 3px rgba(23,63,53,.06);
+}
+.tabs{
+  display:flex;
+  gap:3px;
+  padding:4px;
+  border-radius:10px;
+  background:#f5f6f5;
+  overflow:auto;
+}
+.tab{
+  height:31px;
+  padding:0 12px;
+  border:0;
+  border-radius:7px;
+  background:transparent;
+  color:#747d79;
+  font-size:11px;
+  font-weight:750;
+  white-space:nowrap;
+}
+.tab.active{
+  background:#fff;
+  color:var(--green);
+  box-shadow:0 1px 4px rgba(19,47,39,.08);
+}
+
+.quote-list{
+  margin-top:6px;
+  display:grid;
+  gap:10px;
+}
+.quote-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:0 8px 22px rgba(19,47,39,.05);
+  overflow:visible;
+  transition:.15s ease;
+}
+.quote-card:hover{
+  border-color:#ccd8d2;
+  box-shadow:0 10px 28px rgba(19,47,39,.08);
+}
+.quote-main{
+  display:grid;
+  grid-template-columns:minmax(260px,1.35fr) minmax(180px,.7fr) minmax(160px,.62fr) minmax(125px,.5fr) 130px 200px;
+  grid-template-areas:"title client options updated status actions";
+  gap:16px;
+  align-items:center;
+  padding:16px 16px 15px;
+  border-radius:16px 16px 0 0;
+}
+.quote-title{grid-area:title;min-width:0}
+.col-client{grid-area:client}
+.col-options{grid-area:options}
+.col-updated{grid-area:updated}
+.col-status{grid-area:status}
+.actions{grid-area:actions}
+.quote-name-row{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  min-width:0;
+}
+.quote-name{
+  font-size:14px;
+  font-weight:850;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.quote-id{
+  color:#9aa19d;
+  font-size:11px;
+  flex:0 0 auto;
+}
+.quote-route{
+  margin-top:6px;
+  display:flex;
+  gap:6px;
+  align-items:center;
+  flex-wrap:wrap;
+  color:#747e79;
+  font-size:11px;
+}
+.route-pill{
+  display:inline-flex;
+  min-height:22px;
+  padding:0 7px;
+  align-items:center;
+  border-radius:999px;
+  background:#f4f7f5;
+  color:#5d6d65;
+  font-size:11px;
+  font-weight:700;
+}
+.meta-label{
+  color:#969e9a;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.055em;
+  margin-bottom:4px;
+}
+.meta-value{
+  font-size:11px;
+  font-weight:750;
+  color:#34413b;
+}
+.meta-value.none{color:#87908b}
+.meta-sub{
+  margin-top:3px;
+  color:#949c98;
+  font-size:11px;
+}
+.status{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:25px;
+  padding:0 9px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.status:before{
+  content:"";
+  width:6px;height:6px;border-radius:50%;
+  background:currentColor;
+}
+.status.draft{background:#f1f3f2;color:#68736d}
+.status.sent{background:var(--blue-soft);color:var(--blue)}
+.status.viewed{background:var(--amber-soft);color:var(--amber)}
+.status.selected{background:var(--green-soft);color:var(--green)}
+.status.booked{background:#e6efe9;color:#1f4a3d}
+.actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:7px;
+}
+.open-btn{
+  height:34px;
+  padding:0 11px;
+  border:1px solid #d5ded9;
+  border-radius:8px;
+  background:#fff;
+  color:var(--green);
+  font-size:11px;
+  font-weight:800;
+  display:inline-flex;
+  align-items:center;
+  white-space:nowrap;
+}
+.open-btn.primary{background:var(--green);border-color:var(--green);color:#fff}
+.more-btn{
+  width:34px;height:34px;
+  border:1px solid #dfe4e1;
+  border-radius:8px;
+  background:#fff;
+  color:#78827d;
+  font-size:18px;
+  line-height:1;
+  flex:0 0 auto;
+}
+
+.quote-footer{
+  min-height:40px;
+  display:flex;
+  align-items:center;
+  gap:18px;
+  padding:0 16px;
+  border-top:1px solid #f0eeea;
+  background:#fbfbfa;
+  color:#7c8580;
+  font-size:11px;
+  border-radius:0 0 16px 16px;
+}
+.quote-footer strong{color:#4c5a54}
+.quote-footer .spacer{margin-left:auto}
+.activity{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+}
+.activity-dot{
+  width:6px;height:6px;border-radius:50%;
+  background:#6f9485;
+}
+.activity-dot.view{background:#b4944d}
+
+.highlight{
+  border-color:#bfd1c8;
+}
+.highlight .quote-main{
+  background:linear-gradient(90deg,#fbfdfc 0%,#fff 55%);
+}
+.highlight .quote-footer{
+  background:#f5f9f7;
+}
+
+.empty{
+  display:none;
+  margin-top:14px;
+  padding:50px 20px;
+  text-align:center;
+  background:#fff;
+  border:1px dashed #d8dfdb;
+  border-radius:15px;
+  color:#7c8580;
+  font-size:12px;
+}
+.empty strong{
+  display:block;
+  margin-bottom:6px;
+  color:#33413b;
+  font-size:14px;
+}
+
+/* Secondary quote actions behind one simple menu */
+.more-wrap{position:relative}
+.quick-menu{
+  position:absolute;right:0;top:39px;z-index:120;
+  width:150px;padding:5px;background:#fff;border:1px solid #e1e6e3;
+  border-radius:9px;box-shadow:0 12px 28px rgba(19,47,39,.13);
+  display:none;
+}
+.more-wrap.open .quick-menu{display:block}
+.quick-menu button,.quick-menu a{
+  display:block;width:100%;height:30px;line-height:30px;border:0;border-radius:6px;background:transparent;
+  text-align:left;padding:0 8px;color:#52605a;font-size:11px;font-weight:700;
+}
+.quick-menu button:hover,.quick-menu a:hover{background:#f3f6f4;color:var(--green)}
+.quick-menu .danger{color:#965a52}
+
+/* Small confirmation message at the bottom */
+.toast{
+  position:fixed;left:50%;bottom:26px;z-index:300;
+  transform:translate(-50%,12px);
+  padding:10px 16px;border-radius:10px;
+  background:#17211d;color:#fff;font-size:11.5px;font-weight:700;
+  box-shadow:0 12px 30px rgba(19,47,39,.25);
+  opacity:0;visibility:hidden;transition:.18s ease;white-space:nowrap;
+}
+.toast.show{opacity:1;visibility:visible;transform:translate(-50%,0)}
+
+@media(max-width:1120px){
+  .quote-main{
+    grid-template-columns:minmax(240px,1.2fr) minmax(160px,.7fr) minmax(140px,.6fr) 120px 200px;
+    grid-template-areas:"title client options status actions";
+  }
+  .col-updated{display:none}
+}
+@media(max-width:820px){
+  .toolbar-card{grid-template-columns:1fr}
+  .quote-main{
+    grid-template-columns:1fr auto;
+    grid-template-areas:"title actions" "client status";
+    gap:10px 12px;
+    align-items:start;
+  }
+  .col-options,.col-updated{display:none}
+  .col-client .meta-label,.col-client .meta-sub{display:none}
+  .col-client{align-self:center}
+  .col-status{justify-self:end;align-self:center}
+  .open-btn .wide{display:none}
+  .quote-footer{
+    flex-wrap:wrap;
+    padding:9px 14px;
+    gap:8px 14px;
+  }
+  .quote-footer .spacer{display:none}
+}
+@media(max-width:650px){
+  .topbar-inner,.page{width:min(100% - 24px,1280px)}
+  .nav{gap:14px;overflow:auto}
+  .account-name{display:none}
+  .balance-chip small{display:none}
+  .nav-menu{position:fixed;left:12px;right:12px;top:62px;width:auto}
+  .account-menu{top:62px}
+  .page{padding-top:22px}
+  .page-head h1{font-size:31px}
+  .new-btn{height:38px;padding:0 13px}
+}
+
+/* v4: one look across all agent pages */
+.new-btn{height:40px}
+.page-head h1{font-size:34px}
+@media(max-width:760px){.page-head h1{font-size:30px}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="07-search.html">Apolles</a>
+
+    <nav class="nav">
+      <a class="nav-link" href="07-search.html">Search</a>
+
+      <div class="nav-group">
+        <button class="nav-trigger active" type="button">Quotes <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="14-quotes.html">All quotes</a>
+          <a href="15-quote-editor.html">New quote</a>
+          <div class="nav-sep"></div>
+          <a href="18-clients.html">Clients</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Bookings <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="13-bookings.html">All bookings</a>
+          <a href="13-bookings.html#upcoming">Upcoming stays</a>
+          <a href="13-bookings.html#completed">Completed</a>
+          <a href="13-bookings.html#cancelled">Cancelled</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Reporting <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="19-reports.html">Overview</a>
+          <a href="19-reports.html">Balance history</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="top-actions">
+      <a class="balance-chip" href="20-agency-settings.html#balance" title="Balance and top-ups">
+        <small>Balance</small>
+        <b>USD 4,250.00</b>
+      </a>
+
+      <div class="nav-group account-group">
+        <button class="account-trigger" type="button">
+          <span class="avatar">MZ</span>
+          <span class="account-name">My Agency</span>
+          <b>⌄</b>
+        </button>
+        <div class="nav-menu account-menu">
+          <a href="20-agency-settings.html">Agency settings</a>
+          <a href="20-agency-settings.html#balance">Balance &amp; top-ups</a>
+          <a href="#">Support</a>
+          <div class="nav-sep"></div>
+          <a href="04-login.html">Sign out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <div class="page-head">
+    <h1>Quotes</h1>
+    <a class="new-btn" href="15-quote-editor.html"><span>+</span> New quote</a>
+  </div>
+
+  <section class="toolbar">
+    <div class="toolbar-card">
+      <div class="search-wrap">
+        <input class="search-input" id="quoteSearch" placeholder="Search by quote name, number, client or destination">
+      </div>
+
+      <div class="tabs" id="tabs">
+        <button class="tab active" data-tab="all">All</button>
+        <button class="tab" data-tab="draft">Drafts</button>
+        <button class="tab" data-tab="sent">Sent</button>
+        <button class="tab" data-tab="viewed">Viewed</button>
+        <button class="tab" data-tab="selected">Selected</button>
+        <button class="tab" data-tab="booked">Booked</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="quote-list" id="quoteList">
+
+    <article class="quote-card" data-status="draft" data-search="q-1048 mexico honeymoon daniel levy cancun playa mujeres tulum">
+      <div class="quote-main">
+        <div class="quote-title">
+          <div class="quote-name-row">
+            <div class="quote-name">Mexico Honeymoon</div>
+            <div class="quote-id">Q-1048</div>
+          </div>
+          <div class="quote-route">
+            <span class="route-pill">Cancún</span>
+            <span class="route-pill">Playa Mujeres</span>
+            <span class="route-pill">Tulum</span>
+          </div>
+        </div>
+
+        <div class="col-client">
+          <div class="meta-label">Client</div>
+          <div class="meta-value">Daniel Levy</div>
+          <div class="meta-sub">daniel@example.com</div>
+        </div>
+
+        <div class="col-options">
+          <div class="meta-label">Options</div>
+          <div class="meta-value">8 hotels · 13 rooms</div>
+          <div class="meta-sub">3 stay periods</div>
+        </div>
+
+        <div class="col-updated">
+          <div class="meta-label">Last updated</div>
+          <div class="meta-value">Sep 16</div>
+          <div class="meta-sub">18 minutes ago</div>
+        </div>
+
+        <div class="col-status"><span class="status draft">Draft</span></div>
+
+        <div class="actions">
+          <a class="open-btn" href="15-quote-editor.html">Open</a>
+          <div class="more-wrap">
+            <button class="more-btn" type="button" aria-label="More actions">⋮</button>
+            <div class="quick-menu">
+              <a href="16-client-quote-en.html">Preview</a>
+              <button type="button" data-action="duplicate">Duplicate</button>
+              <button class="danger" type="button" data-action="delete">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="quote-footer">
+        <span><strong>Oct 25 to Nov 02</strong></span>
+        <span>2 adults</span>
+        <span>Not sent yet</span>
+        <span class="spacer"></span>
+        <span class="activity"><span class="activity-dot"></span>Auto-saved</span>
+      </div>
+    </article>
+
+    <article class="quote-card" data-status="viewed" data-search="q-1047 cancun family maya cohen cancun mexico">
+      <div class="quote-main">
+        <div class="quote-title">
+          <div class="quote-name-row">
+            <div class="quote-name">Cancun Family</div>
+            <div class="quote-id">Q-1047</div>
+          </div>
+          <div class="quote-route">
+            <span class="route-pill">Cancún</span>
+          </div>
+        </div>
+
+        <div class="col-client">
+          <div class="meta-label">Client</div>
+          <div class="meta-value">Maya Cohen</div>
+          <div class="meta-sub">maya@example.com</div>
+        </div>
+
+        <div class="col-options">
+          <div class="meta-label">Options</div>
+          <div class="meta-value">5 hotels · 8 rooms</div>
+          <div class="meta-sub">1 stay period</div>
+        </div>
+
+        <div class="col-updated">
+          <div class="meta-label">Last updated</div>
+          <div class="meta-value">Sep 15</div>
+          <div class="meta-sub">Yesterday</div>
+        </div>
+
+        <div class="col-status"><span class="status viewed">Viewed</span></div>
+
+        <div class="actions">
+          <a class="open-btn" href="15-quote-editor.html">Open</a>
+          <div class="more-wrap">
+            <button class="more-btn" type="button" aria-label="More actions">⋮</button>
+            <div class="quick-menu">
+              <a href="16-client-quote-en.html">Preview</a>
+              <button type="button" data-action="copy">Copy client link</button>
+              <button type="button" data-action="duplicate">Duplicate</button>
+              <button class="danger" type="button" data-action="delete">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="quote-footer">
+        <span><strong>Nov 06 to Nov 10</strong></span>
+        <span>2 adults · 2 children</span>
+        <span>Sent Sep 15</span>
+        <span class="spacer"></span>
+        <span class="activity"><span class="activity-dot view"></span>Viewed 42 minutes ago</span>
+      </div>
+    </article>
+
+    <article class="quote-card highlight" data-status="selected" data-search="q-1046 miami november noa elkobi miami beach">
+      <div class="quote-main">
+        <div class="quote-title">
+          <div class="quote-name-row">
+            <div class="quote-name">Miami November</div>
+            <div class="quote-id">Q-1046</div>
+          </div>
+          <div class="quote-route">
+            <span class="route-pill">Miami Beach</span>
+          </div>
+        </div>
+
+        <div class="col-client">
+          <div class="meta-label">Client</div>
+          <div class="meta-value">Noa Elkobi</div>
+          <div class="meta-sub">noa@example.com</div>
+        </div>
+
+        <div class="col-options">
+          <div class="meta-label">Options</div>
+          <div class="meta-value">3 hotels · 5 rooms</div>
+          <div class="meta-sub">1 stay period</div>
+        </div>
+
+        <div class="col-updated">
+          <div class="meta-label">Last updated</div>
+          <div class="meta-value">Sep 13</div>
+          <div class="meta-sub">3 days ago</div>
+        </div>
+
+        <div class="col-status"><span class="status selected">Option selected</span></div>
+
+        <div class="actions">
+          <a class="open-btn primary" href="10-guest-details.html">Book<span class="wide">&nbsp;selected</span>&nbsp;option</a>
+          <div class="more-wrap">
+            <button class="more-btn" type="button" aria-label="More actions">⋮</button>
+            <div class="quick-menu">
+              <a href="15-quote-editor.html">Open quote</a>
+              <a href="16-client-quote-en.html">Preview</a>
+              <button type="button" data-action="copy">Copy client link</button>
+              <button type="button" data-action="duplicate">Duplicate</button>
+              <button class="danger" type="button" data-action="delete">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="quote-footer">
+        <span><strong>Nov 18 to Nov 21</strong></span>
+        <span>2 adults</span>
+        <span>Sent Sep 13</span>
+        <span class="spacer"></span>
+        <span class="activity"><span class="activity-dot"></span>Client selected Nobu Hotel Miami Beach</span>
+      </div>
+    </article>
+
+    <article class="quote-card" data-status="sent" data-search="q-1044 paphos october ron shavit paphos cyprus">
+      <div class="quote-main">
+        <div class="quote-title">
+          <div class="quote-name-row">
+            <div class="quote-name">Paphos October</div>
+            <div class="quote-id">Q-1044</div>
+          </div>
+          <div class="quote-route">
+            <span class="route-pill">Paphos</span>
+          </div>
+        </div>
+
+        <div class="col-client">
+          <div class="meta-label">Client</div>
+          <div class="meta-value">Ron Shavit</div>
+          <div class="meta-sub">ron@example.com</div>
+        </div>
+
+        <div class="col-options">
+          <div class="meta-label">Options</div>
+          <div class="meta-value">4 hotels · 6 rooms</div>
+          <div class="meta-sub">1 stay period</div>
+        </div>
+
+        <div class="col-updated">
+          <div class="meta-label">Last updated</div>
+          <div class="meta-value">Sep 11</div>
+          <div class="meta-sub">5 days ago</div>
+        </div>
+
+        <div class="col-status"><span class="status sent">Sent</span></div>
+
+        <div class="actions">
+          <a class="open-btn" href="15-quote-editor.html">Open</a>
+          <div class="more-wrap">
+            <button class="more-btn" type="button" aria-label="More actions">⋮</button>
+            <div class="quick-menu">
+              <a href="16-client-quote-en.html">Preview</a>
+              <button type="button" data-action="copy">Copy client link</button>
+              <button type="button" data-action="duplicate">Duplicate</button>
+              <button class="danger" type="button" data-action="delete">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="quote-footer">
+        <span><strong>Oct 04 to Oct 08</strong></span>
+        <span>2 adults</span>
+        <span>Sent Sep 11</span>
+        <span class="spacer"></span>
+        <span>Waiting for client</span>
+      </div>
+    </article>
+
+    <article class="quote-card" data-status="draft" data-search="q-1043 untitled quote no client punta cana">
+      <div class="quote-main">
+        <div class="quote-title">
+          <div class="quote-name-row">
+            <div class="quote-name">Untitled quote</div>
+            <div class="quote-id">Q-1043</div>
+          </div>
+          <div class="quote-route">
+            <span class="route-pill">Punta Cana</span>
+          </div>
+        </div>
+
+        <div class="col-client">
+          <div class="meta-label">Client</div>
+          <div class="meta-value none">No client yet</div>
+          <div class="meta-sub">Add before sending</div>
+        </div>
+
+        <div class="col-options">
+          <div class="meta-label">Options</div>
+          <div class="meta-value">2 hotels · 3 rooms</div>
+          <div class="meta-sub">1 stay period</div>
+        </div>
+
+        <div class="col-updated">
+          <div class="meta-label">Last updated</div>
+          <div class="meta-value">Sep 11</div>
+          <div class="meta-sub">5 days ago</div>
+        </div>
+
+        <div class="col-status"><span class="status draft">Draft</span></div>
+
+        <div class="actions">
+          <a class="open-btn" href="15-quote-editor.html">Open</a>
+          <div class="more-wrap">
+            <button class="more-btn" type="button" aria-label="More actions">⋮</button>
+            <div class="quick-menu">
+              <a href="16-client-quote-en.html">Preview</a>
+              <button type="button" data-action="duplicate">Duplicate</button>
+              <button class="danger" type="button" data-action="delete">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="quote-footer">
+        <span><strong>Dec 02 to Dec 05</strong></span>
+        <span>2 adults</span>
+        <span>Not sent yet</span>
+        <span class="spacer"></span>
+        <span class="activity"><span class="activity-dot"></span>Auto-saved</span>
+      </div>
+    </article>
+
+    <article class="quote-card" data-status="booked" data-search="q-1040 dominican getaway omar shahin las terrenas vt5h8q">
+      <div class="quote-main">
+        <div class="quote-title">
+          <div class="quote-name-row">
+            <div class="quote-name">Dominican Getaway</div>
+            <div class="quote-id">Q-1040</div>
+          </div>
+          <div class="quote-route">
+            <span class="route-pill">Las Terrenas</span>
+          </div>
+        </div>
+
+        <div class="col-client">
+          <div class="meta-label">Client</div>
+          <div class="meta-value">Omar Shahin</div>
+          <div class="meta-sub">omar@example.com</div>
+        </div>
+
+        <div class="col-options">
+          <div class="meta-label">Options</div>
+          <div class="meta-value">3 hotels · 4 rooms</div>
+          <div class="meta-sub">1 stay period</div>
+        </div>
+
+        <div class="col-updated">
+          <div class="meta-label">Last updated</div>
+          <div class="meta-value">Sep 11</div>
+          <div class="meta-sub">5 days ago</div>
+        </div>
+
+        <div class="col-status"><span class="status booked">Booked</span></div>
+
+        <div class="actions">
+          <a class="open-btn" href="12-booking-summary.html">View booking</a>
+          <div class="more-wrap">
+            <button class="more-btn" type="button" aria-label="More actions">⋮</button>
+            <div class="quick-menu">
+              <a href="16-client-quote-en.html">Preview</a>
+              <button type="button" data-action="duplicate">Duplicate</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="quote-footer">
+        <span><strong>Oct 03 to Oct 07</strong></span>
+        <span>2 adults</span>
+        <span>Sent Sep 09</span>
+        <span class="spacer"></span>
+        <span class="activity"><span class="activity-dot"></span>Booked Sep 11 · Donoma Las Terrenas · VT5H8Q</span>
+      </div>
+    </article>
+
+    <article class="quote-card" data-status="sent" data-search="q-1038 athens winter gal cohen athens greece">
+      <div class="quote-main">
+        <div class="quote-title">
+          <div class="quote-name-row">
+            <div class="quote-name">Athens Winter</div>
+            <div class="quote-id">Q-1038</div>
+          </div>
+          <div class="quote-route">
+            <span class="route-pill">Athens</span>
+          </div>
+        </div>
+
+        <div class="col-client">
+          <div class="meta-label">Client</div>
+          <div class="meta-value">Gal Cohen</div>
+          <div class="meta-sub">gal@example.com</div>
+        </div>
+
+        <div class="col-options">
+          <div class="meta-label">Options</div>
+          <div class="meta-value">4 hotels · 7 rooms</div>
+          <div class="meta-sub">1 stay period</div>
+        </div>
+
+        <div class="col-updated">
+          <div class="meta-label">Last updated</div>
+          <div class="meta-value">Aug 29</div>
+          <div class="meta-sub">18 days ago</div>
+        </div>
+
+        <div class="col-status"><span class="status sent">Sent</span></div>
+
+        <div class="actions">
+          <a class="open-btn" href="15-quote-editor.html">Open</a>
+          <div class="more-wrap">
+            <button class="more-btn" type="button" aria-label="More actions">⋮</button>
+            <div class="quick-menu">
+              <a href="16-client-quote-en.html">Preview</a>
+              <button type="button" data-action="copy">Copy client link</button>
+              <button type="button" data-action="duplicate">Duplicate</button>
+              <button class="danger" type="button" data-action="delete">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="quote-footer">
+        <span><strong>Dec 10 to Dec 13</strong></span>
+        <span>2 adults</span>
+        <span>Sent Aug 29</span>
+        <span class="spacer"></span>
+        <span>Waiting for client</span>
+      </div>
+    </article>
+
+  </section>
+
+  <div class="empty" id="emptyState">
+    <strong>No quotes found</strong>
+    Try a different search or status.
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  const search = document.getElementById('quoteSearch');
+  const tabs = Array.from(document.querySelectorAll('.tab'));
+  const list = document.getElementById('quoteList');
+  const empty = document.getElementById('emptyState');
+  const toast = document.getElementById('toast');
+  let activeTab = 'all';
+  let toastTimer = null;
+  let nextId = 1049;
+
+  function cards(){ return Array.from(list.querySelectorAll('.quote-card')); }
+
+  function showToast(text){
+    toast.textContent = text;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>toast.classList.remove('show'), 2200);
+  }
+
+  function filter(){
+    const q = search.value.trim().toLowerCase();
+    let visible = 0;
+    cards().forEach(card => {
+      const matchesSearch = !q || card.dataset.search.includes(q);
+      const matchesTab = activeTab === 'all' || card.dataset.status === activeTab;
+      const show = matchesSearch && matchesTab;
+      card.style.display = show ? '' : 'none';
+      if(show) visible++;
+    });
+    empty.style.display = visible ? 'none' : 'block';
+  }
+
+  search.addEventListener('input', filter);
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      activeTab = tab.dataset.tab;
+      filter();
+    });
+  });
+
+  function closeMenus(){
+    document.querySelectorAll('.nav-group.menu-open').forEach(g=>g.classList.remove('menu-open'));
+    document.querySelectorAll('.more-wrap.open').forEach(x=>x.classList.remove('open'));
+  }
+
+  // Main nav dropdowns
+  document.querySelectorAll('.nav-trigger,.account-trigger').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const group = btn.closest('.nav-group');
+      document.querySelectorAll('.nav-group.menu-open').forEach(g=>{ if(g !== group) g.classList.remove('menu-open'); });
+      group.classList.toggle('menu-open');
+    });
+  });
+
+  document.addEventListener('click', closeMenus);
+
+  // Everything inside the list: three-dot menus and menu actions
+  list.addEventListener('click', e => {
+    const more = e.target.closest('.more-btn');
+    if(more){
+      e.stopPropagation();
+      const wrap = more.closest('.more-wrap');
+      document.querySelectorAll('.more-wrap.open').forEach(x=>{ if(x !== wrap) x.classList.remove('open'); });
+      wrap.classList.toggle('open');
+      return;
+    }
+
+    const btn = e.target.closest('[data-action]');
+    if(!btn) return;
+    e.stopPropagation();
+    closeMenus();
+
+    const card = btn.closest('.quote-card');
+    const name = card.querySelector('.quote-name').textContent.trim();
+    const action = btn.dataset.action;
+
+    if(action === 'copy'){
+      showToast('Client link copied');
+    }
+
+    if(action === 'duplicate'){
+      const copy = card.cloneNode(true);
+      const id = 'Q-' + (nextId++);
+      copy.classList.remove('highlight');
+      copy.dataset.status = 'draft';
+      copy.dataset.search = id.toLowerCase() + ' ' + card.dataset.search + ' copy';
+      copy.querySelector('.quote-name').textContent = name + ' (copy)';
+      copy.querySelector('.quote-id').textContent = id;
+      copy.querySelector('.col-updated .meta-value').textContent = 'Sep 16';
+      copy.querySelector('.col-updated .meta-sub').textContent = 'Just now';
+      copy.querySelector('.col-status').innerHTML = '<span class="status draft">Draft</span>';
+      // Like Taya: the copy keeps hotels and rooms, but starts with no client, no message and no client selection.
+      copy.querySelector('.col-client .meta-value').textContent = 'No client yet';
+      copy.querySelector('.col-client .meta-sub').textContent = 'Choose the new client';
+      copy.querySelector('.actions').innerHTML =
+        '<a class="open-btn" href="15-quote-editor.html">Open</a>' +
+        '<div class="more-wrap"><button class="more-btn" type="button" aria-label="More actions">⋮</button>' +
+        '<div class="quick-menu"><a href="16-client-quote-en.html">Preview</a>' +
+        '<button type="button" data-action="duplicate">Duplicate</button>' +
+        '<button class="danger" type="button" data-action="delete">Delete</button></div></div>';
+      const footer = copy.querySelector('.quote-footer');
+      const dates = footer.querySelector('strong').textContent;
+      const guests = footer.children[1].textContent;
+      footer.innerHTML = '<span><strong>' + dates + '</strong></span><span>' + guests + '</span><span>Not sent yet</span>' +
+        '<span class="spacer"></span><span class="activity"><span class="activity-dot"></span>Auto-saved</span>';
+      list.prepend(copy);
+      filter();
+      window.scrollTo({top:0, behavior:'smooth'});
+      showToast('Duplicated as ' + id + '. Choose the client, and prices are checked again on open.');
+    }
+
+    if(action === 'delete'){
+      const ok = window.confirm('Delete "' + name + '"?\nThe client link will stop working. This cannot be undone.');
+      if(ok){
+        card.remove();
+        filter();
+        showToast('Quote deleted');
+      }
+    }
+
+  });
+})();
+</script>
+
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hotel voucher FO0CDJ | My Agency</title>
+<style>
+*{box-sizing:border-box}
+:root{--ink:#17211d;--muted:#6d756f;--green:#173f35;--line:#e3e0d8;--soft:#f6f8f6}
+body{margin:0;background:#ecebe6;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.toolbar{width:min(794px,calc(100% - 24px));margin:18px auto 10px;display:flex;justify-content:flex-end;gap:8px}
+.toolbar button{height:36px;padding:0 14px;border-radius:9px;border:1px solid #cfd8d3;background:#fff;color:var(--green);font-size:12.5px;font-weight:700;cursor:pointer}
+.toolbar button.primary{background:var(--green);border-color:var(--green);color:#fff}
+
+/* A4 sheet */
+.sheet{width:min(794px,calc(100% - 24px));margin:0 auto 30px;background:#fff;padding:40px 44px;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:18px;border-bottom:2px solid var(--green)}
+.agency{display:flex;align-items:center;gap:12px}
+.logo{width:52px;height:52px;border-radius:12px;background:#e9e1d1;color:#7a5f30;font:500 20px Georgia,"Times New Roman",serif;display:grid;place-items:center}
+.agency strong{display:block;font-size:16px}
+.agency span{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
+.title{text-align:right}
+.title h1{margin:0;font:500 26px Georgia,"Times New Roman",serif;letter-spacing:-.01em}
+.title span{display:block;font-size:11px;color:var(--muted);margin-top:4px}
+
+.refs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}
+.ref{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.ref span{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.ref strong{display:block;font-size:15px;margin-top:3px}
+.ref.status strong{color:var(--green)}
+
+h2{margin:18px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--green)}
+.hotel{display:flex;justify-content:space-between;gap:16px;padding:14px;border-radius:12px;background:var(--soft)}
+.hotel strong{display:block;font:500 20px Georgia,"Times New Roman",serif}
+.hotel p{margin:4px 0 0;font-size:12px;color:#4d5a54;line-height:1.5}
+.dates{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px}
+.date{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.date span{display:block;font-size:11px;color:var(--muted)}
+.date strong{display:block;font-size:14px;margin-top:3px}
+.date em{display:block;font-style:normal;font-size:11px;color:var(--muted);margin-top:2px}
+
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #eeece6}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:#fbfbf9}
+
+.pay{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pay-box{border-radius:10px;padding:12px;font-size:12px;line-height:1.5}
+.pay-box strong{display:block;font-size:13px;margin-bottom:3px}
+.pay-box.paid{background:#eef4f1;color:#28493f}
+.pay-box.hotel-pay{background:#fff7e3;color:#6f5a20}
+
+.notes{font-size:11.5px;color:#4d5a54;line-height:1.6;margin:0;padding-left:18px}
+.contact{margin-top:18px;padding:12px 14px;border:1px dashed #cfd8d3;border-radius:10px;font-size:12px;line-height:1.5}
+.contact strong{color:var(--green)}
+.contact a{color:var(--green);font-weight:700;text-decoration:underline}
+.hotel a{color:inherit}
+.toast{position:fixed;right:18px;bottom:18px;z-index:50;background:var(--green);color:#fff;padding:10px 13px;border-radius:9px;font-size:12px;font-weight:700;opacity:0;transform:translateY(8px);transition:.18s ease;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+.foot{margin-top:18px;font-size:11px;color:var(--muted);text-align:center}
+
+@media(max-width:640px){
+  .sheet{padding:22px 18px}
+  .top{flex-direction:column}
+  .title{text-align:left}
+  .refs,.dates,.pay{grid-template-columns:1fr}
+}
+@page{size:A4;margin:14mm}
+@media print{
+  body{background:#fff}
+  .toast{display:none}
+  .contact a{text-decoration:none}
+  .toolbar{display:none}
+  .sheet{box-shadow:none;margin:0;width:100%;padding:0}
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button type="button" onclick="window.print()">Print</button>
+  <button class="primary" type="button" id="pdfBtn">Download PDF</button>
+</div>
+
+<main class="sheet">
+  <div class="top">
+    <div class="agency">
+      <div class="logo">MA</div>
+      <div>
+        <strong>My Agency</strong>
+        <span>Moshe Zafrani · +972 50 555 0198 · moshe@myagency.com</span>
+      </div>
+    </div>
+    <div class="title">
+      <h1>Hotel voucher</h1>
+      <span>Issued Sep 16, 2026</span>
+    </div>
+  </div>
+
+  <div class="refs">
+    <div class="ref"><span>Booking reference</span><strong>FO0CDJ</strong></div>
+    <div class="ref"><span>Hotel confirmation</span><strong>88365120</strong></div>
+    <div class="ref status"><span>Status</span><strong>Confirmed · Paid</strong></div>
+  </div>
+
+  <h2>Hotel</h2>
+  <div class="hotel">
+    <div>
+      <strong>Secrets The Vine Cancun</strong>
+      <p>Blvd. Kukulcan Km. 14.5, Zona Hotelera, 77500 Cancún, Q.R., Mexico<br>Hotel phone: <a href="tel:+529980000000">+52 998 000 0000</a></p>
+    </div>
+  </div>
+  <div class="dates">
+    <div class="date"><span>Check-in</span><strong>Tue, Oct 20, 2026</strong><em>From 15:00</em></div>
+    <div class="date"><span>Check-out</span><strong>Fri, Oct 23, 2026</strong><em>Until 12:00</em></div>
+    <div class="date"><span>Stay</span><strong>3 nights · 1 room</strong><em>All inclusive</em></div>
+  </div>
+
+  <h2>Room and guests</h2>
+  <table>
+    <thead><tr><th>Room</th><th>Guest</th><th>Type</th></tr></thead>
+    <tbody>
+      <tr><td>Ocean View King Global Getaway</td><td><strong>Mrs Noa Elkobi</strong> (lead guest)</td><td>Adult</td></tr>
+      <tr><td></td><td>Mr Noam Elkobi</td><td>Adult</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Payment</h2>
+  <div class="pay">
+    <div class="pay-box paid"><strong>Room paid in advance</strong>The room and meal plan are fully paid. Do not charge the guest for them.</div>
+    <div class="pay-box hotel-pay"><strong>Payable by the guest at the hotel</strong>Management fee: USD 40.00 per night (USD 120.00 total). Local taxes may apply.</div>
+  </div>
+
+  <h2>Special requests</h2>
+  <ul class="notes">
+    <li>Honeymoon. Requests are subject to availability and not guaranteed.</li>
+  </ul>
+
+  <h2>Important information</h2>
+  <ul class="notes">
+    <li>Guests must present a valid photo ID and a payment card at check-in for incidentals.</li>
+    <li>Names must match the travel documents of the guests.</li>
+    <li>Early check-in and late check-out are subject to hotel availability.</li>
+  </ul>
+
+  <div class="contact"><strong>Need help during the stay?</strong> Contact your travel advisor, Moshe Zafrani: <a href="https://wa.me/972505550198">WhatsApp</a> or <a href="tel:+972505550198">call +972 50 555 0198</a>.</div>
+
+  <div class="foot">Booking reference FO0CDJ · Please present this voucher at check-in, printed or on your phone.</div>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+<script>
+(function(){
+  var t, toast = document.getElementById('toast');
+  document.getElementById('pdfBtn').addEventListener('click', function(){
+    toast.textContent = 'The PDF voucher downloads here';
+    toast.classList.add('show');
+    clearTimeout(t); t = setTimeout(function(){ toast.classList.remove('show'); }, 1800);
+  });
+})();
+</script>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>
