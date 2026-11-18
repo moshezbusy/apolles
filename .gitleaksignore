@@ -1,0 +1,8 @@
+# Known false positives of the gitleaks secret scan (owner decision 2026-11-18,
+# docs/decisions/2026-11-18-ci-false-alarms.md). One fingerprint per line; each one names a single
+# finding in a single commit. Any other match still fails the scan.
+
+# Branch claude/hotelbeds-supplier-layer: a made-up API key used only inside a unit test.
+b09a491ebd57af87592d5907e0708c0f1363261c:test/server.test.ts:generic-api-key:7
+# Branch claude/demo-access-button: the list of letters used to build a random demo password.
+729a5aa0ae5f04ca6d1a6bae275c61d637b584e9:src/server/content/demo-seed.ts:generic-api-key:77

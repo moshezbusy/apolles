@@ -6,6 +6,13 @@
   "engines": {
     "node": ">=22.18"
   },
+  "pnpm": {
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-fc5q-39xc-vjpf"
+      ]
+    }
+  },
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
