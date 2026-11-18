@@ -1,3 +1,4 @@
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requireAgent } from "@/server/auth/guards";
 import { db } from "@/server/db";
@@ -65,7 +66,27 @@ describe("search action and destinations (screen 07)", () => {
     expect(await db.searchHotel.count({ where: { snapshotId: snapshot.id } })).toBe(2);
   });
 
-  it("an agencyId in the form is never read: the search belongs to the session's agency", async () => {
+  it("recent searches: listed with Search again (which fills the form), Clear all; Needs attention shows a client's choice", async () => {
+    await db.user.create({ data: { id: "user-1", email: "a@t.local", name: "A", role: "AGENT", agencyId: "A" } });
+    signInAs("A");
+    const { startSearchAction, clearRecentAction } = await import("./(agent)/search/actions");
+    const fields = { destinationId: "paris", destinationLabel: "Paris, France", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "3", childCount: "0" };
+    await expect(startSearchAction(null, form(fields))).rejects.toThrow(/NEXT_REDIRECT/);
+    const recent = await db.recentSearch.findFirstOrThrow();
+    await db.quote.create({ data: { agencyId: "A", createdById: "user-1", title: "Paris Spring", status: "SELECTED", selectedAt: new Date() } });
+    const { default: SearchPage } = await import("./(agent)/search/page");
+    const html = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("Recent searches");
+    expect(html).toContain(`href="/search?again=${recent.id}"`);
+    expect(html).toContain("Client selected an option");
+    expect(html).toContain("Paris Spring");
+    const again = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({ again: recent.id }) }));
+    expect(again).toContain('value="Paris, France"');
+    await expect(clearRecentAction()).rejects.toThrow("NEXT_REDIRECT:/search");
+    expect(await db.recentSearch.count()).toBe(0);
+  });
+
+    it("an agencyId in the form is never read: the search belongs to the session's agency", async () => {
     signInAs("B");
     const { startSearchAction } = await import("./(agent)/search/actions");
     const fields = { agencyId: "A", destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "2" };
