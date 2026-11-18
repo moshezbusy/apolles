@@ -41,7 +41,7 @@ export function penaltyText(p: CancelPenalty): string {
 
 // The short label next to the price (AP2): "Non-refundable", or free cancellation until the
 // first charge starts.
-export function cancellationLabel(offer: Offer): { refundable: boolean; text: string } {
+export function cancellationLabel(offer: Pick<Offer, "refundable" | "cancelPenalties">): { refundable: boolean; text: string } {
   if (!offer.refundable) return { refundable: false, text: "Non-refundable" };
   const first = [...offer.cancelPenalties].sort((a, b) => a.start.localeCompare(b.start))[0];
   return { refundable: true, text: first ? `Free cancellation until ${propertyTime(first.start)}` : "Free cancellation" };

@@ -189,6 +189,21 @@ describe("results page (screen 08)", () => {
     expect(html).not.toMatch(/per night/i); // no divided (rounded) price, BP5
   });
 
+  it("each card shows the room behind its price, with Book this room and Add to quote for that rate (no price-check token)", async () => {
+    signInAs("A");
+    const id = await search("A");
+    const html = await renderResults(id);
+    const hotel = await db.searchHotel.findFirstOrThrow({ where: { snapshotId: id, propertyId: "11" } });
+    const offers = hotel.offers as { rateId: string; roomName: string; price: { total: { minor: number } }; bedGroups: { priceCheckToken: string }[] }[];
+    const best = [...offers].sort((x, y) => x.price.total.minor - y.price.total.minor)[0]!;
+    expect(html).toContain("<strong>Room:</strong> ");
+    expect(html).toContain(best.roomName.replace(/&/g, "&amp;"));
+    expect(html).toContain(`name="r" value="${best.rateId}"`);
+    expect(html).toContain("Book this room");
+    expect(html).toContain("Add to quote");
+    for (const o of offers) for (const b of o.bedGroups) expect(html).not.toContain(b.priceCheckToken);
+  });
+
   it("the link to a hotel keeps the results page, so 'Back to hotels' returns to it", async () => {
     signInAs("A");
     const id = await search("A");

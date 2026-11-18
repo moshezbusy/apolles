@@ -57,6 +57,7 @@ function offer(propertyId: string, n: number, nights: number, checkin: string, k
       ? [{ start: `${freeUntil}T00:00:00.000+02:00`, end: `${checkin}T23:59:00.000+02:00`, amount: usd(nightly), nights: null, percent: null }]
       : [],
     nonrefundableDateRanges: [],
+    amenities: [[], ["Breakfast buffet", "Free WiFi"], ["Breakfast for 2", "Free parking"]][kind]!,
     price: {
       total: usd(room + taxes),
       lines: [

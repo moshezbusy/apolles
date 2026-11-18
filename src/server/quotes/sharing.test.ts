@@ -24,6 +24,7 @@ const OFFER = (rateId: string, total: number): Offer => ({
   bedGroups: [{ id: "bed1", description: "1 King Bed", priceCheckToken: "secret-token" }],
   cancelPenalties: [{ start: "2099-04-03T00:00:00.000+02:00", end: "2099-04-10T00:00:00.000+02:00", amount: null, nights: 1, percent: null }],
   nonrefundableDateRanges: [],
+    amenities: [],
   price: {
     total: { minor: total, currency: "USD" },
     lines: [],

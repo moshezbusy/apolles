@@ -86,6 +86,32 @@ describe("ExpediaAdapter", () => {
       expect(offer.cancelPenalties[0]).toMatchObject({ amount: { minor: 1000, currency: "USD" } });
     });
 
+    it("reads what the rate includes as the supplier names it (meal plan, perks); a bad list never drops the rate", async () => {
+      fetchMock.mockResolvedValueOnce(json(200, fixture("availability.usd.json")));
+      expect((await adapter.searchAvailability(query, context))[0]!.offers[0]!.amenities).toEqual(["Free Wireless Internet"]);
+
+      const data = fixture("availability.usd.json") as { rooms: { rates: Record<string, unknown>[] }[] }[];
+      const rate = data[0]!.rooms[0]!.rates[0]!;
+      rate.amenities = {
+        "1": { id: "1", name: "  Breakfast buffet " },
+        "2": { id: "2", name: "Breakfast buffet" },
+        "3": { id: "3", name: "Free\u0007 parking" },
+        "4": { id: "4" },
+        "5": "x",
+        "6": { id: "6", name: "y".repeat(300) },
+        "7": { id: "7", name: "z".repeat(99) + "😀😀" },
+        "8": { id: "8", name: "lone \ud83d half" },
+      };
+      fetchMock.mockResolvedValueOnce(json(200, data));
+      const [offer] = (await adapter.searchAvailability(query, context))[0]!.offers;
+      expect(offer!.amenities).toEqual(["Breakfast buffet", "Free parking", "y".repeat(100), "z".repeat(99) + "😀", "lone half"]);
+      expect(offer!.amenities.every((a) => a.isWellFormed())).toBe(true);
+
+      rate.amenities = "not a map";
+      fetchMock.mockResolvedValueOnce(json(200, data));
+      expect((await adapter.searchAvailability(query, context))[0]!.offers[0]!.amenities).toEqual([]);
+    });
+
     it("drops rates billed in another currency (phase 1 wallets are USD only, BP5: no conversion)", async () => {
       fetchMock.mockResolvedValue(json(200, fixture("availability.availability.json"))); // billed in CAD
       const result = await adapter.searchAvailability(query, context);

@@ -50,6 +50,13 @@ describe("postmark email adapter", () => {
     expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("sends attachments base64 with their name and type (plan 8g)", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    await sendPostmarkEmail({ ...msg, attachments: [{ name: "voucher.pdf", contentType: "application/pdf", content: Buffer.from("%PDF-1") }] });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]?.body as string) as Record<string, unknown>;
+    expect(body.Attachments).toEqual([{ Name: "voucher.pdf", ContentType: "application/pdf", Content: Buffer.from("%PDF-1").toString("base64") }]);
+  });
+
   it("a quote email: the agency's name on the platform's address, replies to the agency", async () => {
     fetchMock.mockResolvedValue(okResponse());
     await sendPostmarkEmail({ ...msg, fromName: 'Sunrise "Travel" <x>', replyTo: "office@sunrise.example" });

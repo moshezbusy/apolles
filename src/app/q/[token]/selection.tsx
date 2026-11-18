@@ -146,6 +146,11 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
                                 <span className="min-w-0">
                                   <span className="block text-[14px] font-bold text-ink">{room.roomName}</span>
                                   <span className="block text-xs text-muted">{room.bedDescription}</span>
+                                  {room.amenities.length > 0 ? (
+                                    <span className="block text-xs text-[#37413d]">
+                                      {t.rateIncludes}: {room.amenities.join(", ")}
+                                    </span>
+                                  ) : null}
                                   {quote.showCancellation ? (
                                     <span className={`block text-xs font-semibold ${room.freeUntil ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>
                                       {room.freeUntil ? t.freeUntil(day(room.freeUntil, lang, true)) : room.refundable ? "" : t.nonRefundable}

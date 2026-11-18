@@ -39,6 +39,7 @@ function offer(propertyId: string, rateId: string, totalMinor: number, refundabl
     bedGroups: [{ id: "bed1", description: "1 King Bed", priceCheckToken: "secret-token" }],
     cancelPenalties: refundable ? [{ start: "2027-04-03T00:00:00.000+02:00", end: "2027-04-10T00:00:00.000+02:00", amount: null, nights: 1, percent: null }] : [],
     nonrefundableDateRanges: [],
+    amenities: ["Breakfast buffet"],
     price: { total: { minor: totalMinor, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 },
   };
 }
@@ -153,7 +154,7 @@ describe("addFromSearch", () => {
     expect(quote?.stays).toMatchObject([{ destinationName: "Cancun, Quintana Roo, Mexico", checkin: "2027-04-10", checkout: "2027-04-12" }]);
     const room = quote?.stays[0]?.hotels[0]?.rooms[0];
     expect(quote?.stays[0]?.hotels[0]).toMatchObject({ name: "Hotel p1", city: "Cancun" });
-    expect(room).toMatchObject({ roomName: "Ocean View King rA", bedDescription: "1 King Bed", netMinor: 100_000, refundable: true, freeCancelUntil: "2027-04-02", clientCancelUntil: "2027-04-01", sellMinor: null });
+    expect(room).toMatchObject({ roomName: "Ocean View King rA", bedDescription: "1 King Bed", amenities: ["Breakfast buffet"], netMinor: 100_000, refundable: true, freeCancelUntil: "2027-04-02", clientCancelUntil: "2027-04-01", sellMinor: null });
     // The price-check token never leaves the search.
     expect(JSON.stringify(await db.quoteRoom.findMany())).not.toContain("secret-token");
   });

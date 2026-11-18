@@ -224,6 +224,7 @@ describe("booking screens", () => {
     expect(html).toContain("Hotel confirmation");
     expect(html).toContain("Cancel booking");
     expect(html).toContain(`href="/bookings/${id}/voucher"`);
+    expect(html).toContain("Email to client"); // plan 8g
     const { GET: voucher } = await import("./(agent)/bookings/[id]/voucher/route");
     const pdf = await voucher(new Request(`http://localhost/bookings/${id}/voucher`), { params: Promise.resolve({ id }) });
     expect(pdf.headers.get("content-type")).toBe("application/pdf");

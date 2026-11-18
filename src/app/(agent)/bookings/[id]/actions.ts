@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
 import { BookingNotFound, cancel } from "@/server/booking/service";
 import { setSellingPrice } from "@/server/booking/selling";
+import { emailBookingToClient } from "@/server/booking/client-email";
 import { supplierContextFrom } from "@/server/supplier-context";
 
 // "Confirm cancellation" (screen 12). The charge sent is only compared with the charge the
@@ -48,4 +49,16 @@ export async function sellingPriceAction(_previous: SellState, formData: FormDat
   revalidatePath(`/book/${bookingId}`);
   revalidatePath("/reporting");
   return { status: "success", message: "Selling price saved." };
+}
+
+export type EmailClientState = { status: "success" | "error"; message: string } | null;
+
+// "Email to client" (screen 12, plan 8g). The service checks the booking, the address and limits.
+export async function emailClientAction(_previous: EmailClientState, formData: FormData): Promise<EmailClientState> {
+  const { userId, agencyId } = await requireAgent();
+  const bookingId = formData.get("bookingId");
+  const email = formData.get("email");
+  if (typeof bookingId !== "string" || typeof email !== "string") return { status: "error", message: "Enter one valid email address." };
+  const result = await emailBookingToClient(userId, agencyId, { bookingId: bookingId.slice(0, 64), email: email.slice(0, 300) });
+  return result.ok ? { status: "success", message: "The voucher was emailed to the client." } : { status: "error", message: result.error };
 }

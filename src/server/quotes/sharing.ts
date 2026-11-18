@@ -177,6 +177,7 @@ export type ClientRoom = {
   id: string;
   roomName: string;
   bedDescription: string;
+  amenities: string[]; // what the rate includes, as the supplier named it
   sellMinor: number;
   currency: string;
   freeUntil: string | null; // shown only when the quote shows cancellation terms
@@ -287,7 +288,7 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
               agencyPick: true,
               rooms: {
                 orderBy: { position: "asc" },
-                select: { id: true, roomName: true, bedDescription: true, netMinor: true, sellMinor: true, currency: true, refundable: true, clientCancelUntil: true, price: true },
+                select: { id: true, roomName: true, bedDescription: true, amenities: true, netMinor: true, sellMinor: true, currency: true, refundable: true, clientCancelUntil: true, price: true },
               },
             },
           },
@@ -337,6 +338,7 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
             id: r.id,
             roomName: r.roomName,
             bedDescription: r.bedDescription,
+            amenities: r.amenities,
             sellMinor: sellingMinor(r, q),
             currency: r.currency,
             refundable: r.refundable,

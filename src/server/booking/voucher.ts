@@ -111,6 +111,7 @@ export async function renderVoucher(agencyId: string, bookingId: string): Promis
   line(`Check-in: ${longDate(b.checkin)}${content?.checkin.beginTime ? `, from ${content.checkin.beginTime}${content.checkin.endTime ? ` to ${content.checkin.endTime}` : ""}` : ""}`);
   line(`Check-out: ${longDate(b.checkout)}${content?.checkout.time ? `, by ${content.checkout.time}` : ""}`);
   line(`Room: ${b.roomName}`);
+  if (b.amenities.length > 0) line(`Rate includes: ${b.amenities.join(", ")}`);
   line(`Bed type: ${b.bedDescription}`);
   line("Bed type is a request and not guaranteed.", { muted: true });
 

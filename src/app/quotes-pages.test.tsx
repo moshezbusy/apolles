@@ -49,6 +49,7 @@ const OFFER: Offer = {
   bedGroups: [{ id: "bed1", description: "1 King Bed", priceCheckToken: "secret-token" }],
   cancelPenalties: [{ start: "2099-04-03T00:00:00.000+02:00", end: "2099-04-10T00:00:00.000+02:00", amount: null, nights: 1, percent: null }],
   nonrefundableDateRanges: [],
+    amenities: [],
   price: { total: { minor: 100_000, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 },
 };
 
@@ -175,7 +176,8 @@ describe("booking from a quote (plan 5d)", () => {
         reference: "APL-QUOTE001", agencyId: agencyA, userId: agentA, status: "CONFIRMED", confirmedAt: new Date("2099-01-05T10:00:00Z"), quoteId, quoteStayId: stayId,
         propertyId: "p1", hotelName: "Secrets The Vine", hotelCity: "Cancun", roomId: "room1", roomName: "Ocean View King", rateId: "rate1", bedGroupId: "bed1", bedDescription: "1 King Bed",
         checkin: "2099-04-10", checkout: "2099-04-12", adults: 2, childAges: [], leadGivenName: "Dana", leadFamilyName: "Levi", leadEmail: "dana@example.com", leadPhone: "+972501234567",
-        guests: [], refundable: true, totalMinor: 100_000, currency: "USD", price: {}, cancelPenalties: [], nonrefundableDateRanges: [], priceCheckToken: "tok",
+        guests: [], refundable: true, totalMinor: 100_000, currency: "USD", price: {}, cancelPenalties: [], nonrefundableDateRanges: [],
+    amenities: [], priceCheckToken: "tok",
       },
     });
   }

@@ -190,6 +190,7 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
     rateId: offer.rateId,
     bedGroupId: bedGroup.id,
     bedDescription: bedGroup.description,
+    amenities: offer.amenities,
     checkin: query.checkin,
     checkout: query.checkout,
     adults: query.adults,

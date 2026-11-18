@@ -137,6 +137,13 @@ describe("booking: draft and review", () => {
     ).rejects.toThrow(/Check the guest names/); // unknown fields (a price) are refused
   });
 
+  it("a draft keeps what the rate includes, as the supplier named it (plan 8f)", async () => {
+    const { snapshotId, offers } = await setup();
+    const offer = offers.find((o) => o.amenities.length > 0)!;
+    const { bookingId } = await draft(snapshotId, offer);
+    expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).amenities).toEqual(offer.amenities);
+  });
+
   it("every guest needs a name, and another agency's search gives nothing", async () => {
     const { snapshotId, offers } = await setup();
     const offer = offers[0]!;

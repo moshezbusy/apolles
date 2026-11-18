@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { alertError, alertInfo, alertSuccess, btnDanger, card, link, pageTitle, sectionTitle } from "@/components/ui";
@@ -13,7 +14,9 @@ import { type StoredGuest, guestLines } from "../../_components/guests";
 import { CancellationPolicy, Policies, PriceDetails } from "../../_components/hotel-info";
 import { shortDate, stayText } from "../../search/parts";
 import { SellingPrice } from "../../_components/selling-price";
-import { cancelAction, sellingPriceAction } from "./actions";
+import { cancelAction, emailClientAction, sellingPriceAction } from "./actions";
+import { EmailToClient } from "./email-client";
+import { clientEmailDefault } from "@/server/booking/client-email";
 
 export const metadata: Metadata = { title: "Booking | Apolles", robots: { index: false, follow: false } };
 
@@ -103,7 +106,10 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
               </div>
               <div>
                 <dt className="font-semibold text-ink">Room</dt>
-                <dd>{b.roomName}</dd>
+                <dd>
+                  {b.roomName}
+                  <RateIncludes amenities={b.amenities} className="text-xs text-muted" />
+                </dd>
               </div>
               <div>
                 <dt className="font-semibold text-ink">Bed type</dt>
@@ -145,9 +151,12 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
                 <dt className="font-semibold text-ink">Voucher</dt>
                 <dd>
                   {b.status === "CONFIRMED" ? (
-                    <a href={`/bookings/${b.id}/voucher`} className={link}>
-                      Download voucher (PDF)
-                    </a>
+                    <>
+                      <a href={`/bookings/${b.id}/voucher`} className={link}>
+                        Download voucher (PDF)
+                      </a>
+                      <EmailToClient action={emailClientAction} bookingId={b.id} defaultEmail={await clientEmailDefault(agencyId, b.id)} />
+                    </>
                   ) : (
                     <span className="text-muted">Available once the booking is confirmed</span>
                   )}

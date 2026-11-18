@@ -23,6 +23,7 @@ export async function sendConsoleEmail(msg: EmailMessage): Promise<void> {
       subject: msg.subject,
       text: msg.text,
       ...(msg.html !== undefined ? { html: msg.html } : {}),
+      ...(msg.attachments?.length ? { attachments: msg.attachments.map((a) => a.name) } : {}),
       sentAt: new Date().toISOString(),
     });
     await appendFile(sinkFile, `${line}\n`, "utf8");

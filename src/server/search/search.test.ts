@@ -21,6 +21,7 @@ function offer(propertyId: string, totalMinor: number, refundable = true): Offer
     bedGroups: [{ id: "b1", description: "1 Queen Bed", priceCheckToken: "tok-a1" }],
     cancelPenalties: [],
     nonrefundableDateRanges: [],
+    amenities: [],
     price: { total: { minor: totalMinor, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 },
   };
 }
@@ -221,6 +222,34 @@ describe("search service", () => {
     // Sorting by price uses the matching price.
     const ocean = await listResults("A", snapshotId, { sort: "price_asc", roomName: "ocean" }, NOW);
     expect(ocean?.hotels[0]?.minTotal.minor).toBe(50_000);
+  });
+
+  it("the card carries the rate behind its price (for Book / Add to quote) and how many other rates the hotel has", async () => {
+    await hotels(1);
+    const cheapLocked = { ...offer("1", 10_000, false), roomId: "a", rateId: "a", roomName: "Garden Double" };
+    const dearFree = {
+      ...offer("1", 50_000, true),
+      roomId: "b",
+      rateId: "b",
+      roomName: "Ocean Suite",
+      bedGroups: [
+        { id: "k", description: "1 King Bed", priceCheckToken: "t-k" },
+        { id: "t", description: "2 Twin Beds", priceCheckToken: "t-t" },
+      ],
+    };
+    const third = { ...offer("1", 70_000, true), roomId: "c", rateId: "c", roomName: "Ocean Villa" };
+    const { adapter } = fakeAdapter(() => [{ propertyId: "1", offers: [dearFree, cheapLocked, third] }]);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+
+    const all = await listResults("A", snapshotId, { sort: "recommended" }, NOW);
+    expect(all?.hotels[0]?.best).toEqual({ offer: expect.objectContaining({ rateId: "a", roomName: "Garden Double", refundable: false }), otherRates: 2 });
+    // The price-check tokens stay on the server.
+    expect(all?.hotels[0]?.best?.offer.bedGroups).toEqual([{ id: "b1", description: "1 Queen Bed" }]);
+    const free = await listResults("A", snapshotId, { sort: "recommended", freeCancellation: true }, NOW);
+    expect(free?.hotels[0]?.best).toEqual({
+      offer: expect.objectContaining({ rateId: "b", bedGroups: [{ id: "k", description: "1 King Bed" }, { id: "t", description: "2 Twin Beds" }] }),
+      otherRates: 2,
+    });
   });
 
   it("marks a hotel whose shown rate has fees paid at the property", async () => {
