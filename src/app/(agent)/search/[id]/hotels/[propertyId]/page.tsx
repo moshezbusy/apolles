@@ -11,6 +11,7 @@ import { CancellationPolicy, Policies, PriceDetails, SupplierText } from "../../
 import { cancellationLabel } from "../../../../_components/rate-text";
 import { addToQuoteAction } from "../../../../quotes/actions";
 import { AddToQuote } from "../../../../quotes/add-to-quote";
+import { freeCancelEnds } from "@/server/booking/service";
 import { openQuotes, quoteCode } from "@/server/quotes/quotes";
 import { quoteParam } from "../../../quote-param";
 
@@ -133,7 +134,22 @@ export default async function HotelPage({ params, searchParams }: { params: Para
   const name = content?.name ?? hotel.name;
   const stay = stayText(summary);
   const address = content ? [content.address.line1, content.address.city, content.address.countryCode].filter(Boolean).join(", ") : hotel.city;
-  const sorted = [...offers].sort((a, b) => a.price.total.minor - b.price.total.minor);
+  // Room filters (screen 09): room name, free cancellation only, price order. Names differ from
+  // the results filters (kept for "Back to hotels").
+  const one = (v: string | string[] | undefined) => ((Array.isArray(v) ? v[0] : v) ?? "").slice(0, 60);
+  const roomText = one(query.rq).trim().toLowerCase();
+  const freeOnly = one(query.rf) === "1";
+  const desc = one(query.rs) === "price_desc";
+  const sorted = offers
+    .filter((o) => !roomText || `${o.roomName} ${o.bedGroups.map((b) => b.description).join(" ")}`.toLowerCase().includes(roomText))
+    // Free cancellation still ahead (the same rule as the booking's deadline), never one already over.
+    .filter((o) => {
+      if (!freeOnly) return true;
+      const end = freeCancelEnds(o);
+      return end !== null && end > now;
+    })
+    .sort((a, b) => (desc ? b.price.total.minor - a.price.total.minor : a.price.total.minor - b.price.total.minor));
+  const filtered = roomText !== "" || freeOnly;
   // Plan 5b: "Add to quote" lists the agency's open quotes; one opened from a quote is preselected.
   const quoteId = quoteParam(query.quote);
   const quotes = (await openQuotes(agencyId, quoteId)).map((q) => ({ id: q.id, label: `${quoteCode(q.number)} · ${q.title || "Untitled quote"}` }));
@@ -159,8 +175,37 @@ export default async function HotelPage({ params, searchParams }: { params: Para
 
       <section aria-labelledby="rooms-title">
         <h2 id="rooms-title" className={sectionTitle}>
-          Room options <span className="text-sm font-normal text-muted">{offers.length} {offers.length === 1 ? "rate" : "rates"}</span>
+          Room options <span className="text-sm font-normal text-muted">{filtered ? `${sorted.length} of ${offers.length}` : offers.length} {offers.length === 1 ? "rate" : "rates"}</span>
         </h2>
+        <form method="get" className="mt-3 flex flex-wrap items-end gap-3 text-[13px]">
+          {[...back.entries()].map(([k, v], i) => (
+            <input key={`${k}-${i}`} type="hidden" name={k} value={v} />
+          ))}
+          <label className="flex flex-col gap-1 font-semibold text-[#37413d]">
+            Room name
+            <input type="search" name="rq" defaultValue={one(query.rq)} maxLength={60} placeholder="e.g. Ocean view, King" className="rounded-[10px] border border-line bg-white px-3 py-2 font-normal" />
+          </label>
+          <label className="flex items-center gap-2 pb-2">
+            <input type="checkbox" name="rf" value="1" defaultChecked={freeOnly} className="h-4 w-4 accent-brand" />
+            Free cancellation only
+          </label>
+          <label className="flex flex-col gap-1 font-semibold text-[#37413d]">
+            Sort
+            <select name="rs" defaultValue={desc ? "price_desc" : "price_asc"} className="rounded-[10px] border border-line bg-white px-3 py-2 font-normal">
+              <option value="price_asc">Price: low to high</option>
+              <option value="price_desc">Price: high to low</option>
+            </select>
+          </label>
+          <button type="submit" className="rounded-[10px] border border-line bg-white px-4 py-2 font-semibold text-ink hover:border-brand">
+            Apply
+          </button>
+          {filtered ? (
+            <Link href={`/search/${id}/hotels/${propertyId}${back.toString() ? `?${back}` : ""}`} className={link}>
+              Clear filters
+            </Link>
+          ) : null}
+        </form>
+        {sorted.length === 0 ? <p className="mt-3 text-sm text-muted">No room matches these filters. Clear the filters to see all rooms.</p> : null}
         <div className="mt-3 overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_14px_36px_rgba(19,47,39,0.08)]">
           <table className="w-full min-w-[820px] text-left text-sm">
             <thead className="bg-brand text-paper">
