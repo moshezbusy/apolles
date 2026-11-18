@@ -153,6 +153,17 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
                   )}
                 </dd>
               </div>
+              {b.chargedMinor !== null && ["CONFIRMED", "CANCEL_PENDING", "CANCELLED", "CANCELLED_BY_SUPPLIER"].includes(b.status) ? (
+                <div>
+                  <dt className="font-semibold text-ink">Statement</dt>
+                  <dd>
+                    <a href={`/bookings/${b.id}/statement`} className={link}>
+                      Download statement (PDF)
+                    </a>
+                    <span className="block text-xs text-muted">What was paid from your balance. Not a tax invoice; for you, not the client.</span>
+                  </dd>
+                </div>
+              ) : null}
             </dl>
           </section>
           <section aria-labelledby="policy-title" className={`${card} bg-white p-5`}>
