@@ -215,7 +215,7 @@ export async function approveApplication(actor: string, id: string): Promise<Rev
   try {
     await link().catch(link);
   } catch (error) {
-    console.error(`application link failed: ${error instanceof Error ? error.name : "Error"}`, { applicationId: app.id, agencyId: created.agencyId });
+    console.error("application link failed", { error: error instanceof Error ? error.name : "Error", applicationId: app.id, agencyId: created.agencyId });
   }
   return { ok: true, agencyId: created.agencyId, emailSent: created.emailSent };
 }
