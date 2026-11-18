@@ -231,6 +231,15 @@ describe("booking screens", () => {
     expect(pdf.headers.get("content-disposition")).toMatch(/^attachment; filename="hotel-voucher-[A-Za-z0-9]+\.pdf"$/);
     expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString()).toBe("%PDF-");
 
+    // The booking statement (not a tax invoice), for the agency only.
+    expect(html).toContain(`href="/bookings/${id}/statement"`);
+    const { GET: statement } = await import("./(agent)/bookings/[id]/statement/route");
+    const st = await statement(new Request(`http://localhost/bookings/${id}/statement`), { params: Promise.resolve({ id }) });
+    expect(st.headers.get("content-type")).toBe("application/pdf");
+    signInAs("B");
+    expect((await statement(new Request(`http://localhost/bookings/${id}/statement`), { params: Promise.resolve({ id }) })).status).toBe(404);
+    signInAs("A");
+
     const { cancelAction } = await import("./(agent)/bookings/[id]/actions");
     // Without "I understand" nothing is cancelled.
     expect(await redirectOf(cancelAction(form({ bookingId: id, expectedCharge: "0" })))).toBe(`/bookings/${id}?notice=cancel_confirm`);
