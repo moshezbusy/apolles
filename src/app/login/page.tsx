@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { AuthShell } from "@/components/AuthShell";
 import { alertInfo, alertSuccess } from "@/components/ui";
 import { LoginForm } from "./login-form";
@@ -13,10 +14,10 @@ export default async function LoginPage({
   const { reset, expired } = await searchParams;
 
   return (
-    <AuthShell eyebrow="Sign in" title="Welcome back" subtitle="Sign in to your Apolles account.">
+    <AuthShell eyebrow="Agent portal" title="Welcome back" subtitle="Sign in to your Apolles account." headerLink={{ href: "/join", label: "Join Apolles" }}>
       {reset === "1" ? (
         <p role="status" className={`mb-4 ${alertSuccess}`}>
-          Your password is set. Sign in.
+          Your password is set. For your security, other devices signed in to your account were signed out. Sign in.
         </p>
       ) : null}
       {expired === "1" ? (
@@ -27,6 +28,12 @@ export default async function LoginPage({
       <LoginForm />
       <p className="mt-3 text-center text-xs text-muted">
         For your security, you are signed out automatically after 12 hours.
+      </p>
+      <p className="mt-4 border-t border-[#f2ede6] pt-4 text-center text-[13px] text-muted">
+        Don&apos;t have an account?{" "}
+        <Link href="/join" className="font-semibold text-brand hover:underline">
+          Apply for access
+        </Link>
       </p>
     </AuthShell>
   );

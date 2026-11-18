@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { createQuoteAction } from "@/app/(agent)/quotes/actions";
 import { SignOutButton } from "@/components/SignOutButton";
 import { formatUsd } from "@/lib/money";
 
-// Agent header (mockup 07). Quotes (All quotes, Clients; plan 5b) and Reporting (Overview,
-// Balance history; plan 6) are menus: plain <details> elements, so they need no client JavaScript.
+// Agent header (mockup 07). Quotes (All quotes, New quote, Clients), Bookings (All, Upcoming
+// stays, Completed, Cancelled) and Reporting (Overview, Balance history) are menus: plain <details> elements, so they need no client JavaScript.
 
 // "Test Travel" → "TT", "Caryotrip" → "CA". Shown in the avatar circle.
 export function initials(name: string): string {
@@ -30,12 +31,33 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
               <Link href="/quotes" className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
                 All quotes
               </Link>
+              <form action={createQuoteAction}>
+                <button type="submit" className="w-full rounded-[7px] px-2.5 py-2 text-left text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
+                  New quote
+                </button>
+              </form>
               <Link href="/clients" className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
                 Clients
               </Link>
             </div>
           </details>
-          <Link href="/bookings" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">Bookings</Link>
+          <details className="relative">
+            <summary className="flex cursor-pointer list-none items-center gap-1 font-semibold text-[#4d5a54] hover:text-brand">
+              Bookings <span aria-hidden="true" className="text-[11px] text-[#8a938e]">▾</span>
+            </summary>
+            <div className="absolute left-0 z-40 mt-2.5 flex w-[170px] flex-col rounded-[11px] border border-[#e1e6e3] bg-white p-[7px] shadow-[0_15px_38px_rgba(19,47,39,0.14)]">
+              {[
+                { href: "/bookings", label: "All bookings" },
+                { href: "/bookings?tab=upcoming", label: "Upcoming stays" },
+                { href: "/bookings?tab=completed", label: "Completed" },
+                { href: "/bookings?tab=cancelled", label: "Cancelled" },
+              ].map((item) => (
+                <Link key={item.href} href={item.href} className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </details>
           <details className="relative">
             <summary className="flex cursor-pointer list-none items-center gap-1 font-semibold text-[#4d5a54] hover:text-brand">
               Reporting <span aria-hidden="true" className="text-[11px] text-[#8a938e]">▾</span>

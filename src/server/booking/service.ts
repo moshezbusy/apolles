@@ -227,7 +227,7 @@ async function scheduleReconcile(bookingId: string, at: Date, client?: Prisma.Tr
   await enqueue("booking.reconcile", { bookingId }, { runAt: at, dedupeKey: `booking.reconcile:${bookingId}:${randomUUID()}` }, client);
 }
 
-// Screen 11's one button: "Book and issue voucher".
+// Screen 11's one button: "Book and pay USD … from balance".
 export async function book(
   ctx: BookingContext,
   bookingId: string,

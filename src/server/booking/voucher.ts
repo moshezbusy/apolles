@@ -99,6 +99,9 @@ export async function renderVoucher(agencyId: string, bookingId: string): Promis
   doc.moveDown(0.3);
   line(`Booking reference: ${b.reference}`, { bold: true });
   line(`Hotel confirmation number: ${b.hotelConfirmationId ?? "to be confirmed by the hotel"}`, { bold: true });
+  line(`Status: Confirmed · Paid${b.confirmedAt ? `   Issued: ${longDate(b.confirmedAt.toISOString().slice(0, 10))}` : ""}`);
+  // Screen 21: the hotel must not charge the guest for the room (paid in advance to the supplier).
+  line("The room is paid in advance. Do not charge the guest for it. Only the fees under \"To pay at the property\" are paid by the guest.", { bold: true });
 
   heading("Hotel");
   line(b.hotelName, { bold: true });

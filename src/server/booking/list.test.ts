@@ -66,6 +66,10 @@ describe("listBookings", () => {
     expect((await listBookings("A", { tab: "upcoming" }, NOW)).rows.map((r) => r.reference)).toEqual(["APL-A0000001"]);
     expect((await listBookings("A", { tab: "pending" }, NOW)).rows.map((r) => r.reference)).toEqual(["APL-A0000003"]);
     expect((await listBookings("A", { tab: "cancelled" }, NOW)).rows.map((r) => r.reference)).toEqual(["APL-A0000004"]);
+    // Every fixture checks out on 2027-12-31: booking 2 (checked in 2027-01-10) is in stay now.
+    expect((await listBookings("A", { tab: "in_stay" }, NOW)).rows.map((r) => r.reference)).toEqual(["APL-A0000002"]);
+    expect((await listBookings("A", { tab: "completed" }, NOW)).rows).toEqual([]);
+    expect((await listBookings("A", { tab: "completed" }, new Date("2028-01-05T10:00:00Z"))).rows.map((r) => r.reference)).toEqual(["APL-A0000001", "APL-A0000002"]);
   });
 
   it("search by reference, hotel or guest name, case-insensitive, wildcards taken literally", async () => {

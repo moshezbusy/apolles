@@ -66,10 +66,11 @@ describe("/forgot-password", () => {
 });
 
 describe("/login success notice", () => {
-  it("?reset=1 → 'Your password is set. Sign in.'", async () => {
+  it("?reset=1 → 'Your password is set', and other devices were signed out", async () => {
     const { default: Page } = await import("./login/page");
     const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ reset: "1" }) }));
-    expect(html).toContain("Your password is set. Sign in.");
+    expect(html).toContain("Your password is set.");
+    expect(html).toContain("other devices signed in to your account were signed out");
   });
 
   it("no notice without ?reset=1", async () => {
@@ -86,8 +87,9 @@ describe("/login in the mockup layout", () => {
     expect(html).toContain("Apolles");
     expect(html).toContain("Welcome back");
     expect(html).toContain("For your security, you are signed out automatically after 12 hours.");
-    // Phase 1 has no public join form (spec section 3).
-    expect(html).not.toContain("Apply for access");
-    expect(html).not.toContain("Join Apolles");
+    // Join Apolles exists since plan 7 (owner decision 17.11.2026: build screens 01 to 03).
+    expect(html).toMatch(/<a[^>]*href="\/join"[^>]*>Apply for access<\/a>/);
+    expect(html).toMatch(/<a[^>]*href="\/join"[^>]*>Join Apolles<\/a>/);
+    expect(html).toContain("Terms and Privacy");
   });
 });

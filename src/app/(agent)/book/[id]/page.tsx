@@ -17,6 +17,7 @@ import { shortDate, stayText } from "../../search/parts";
 import { bookAction } from "../actions";
 import { SellingPrice } from "../../_components/selling-price";
 import { sellingPriceAction } from "../../bookings/[id]/actions";
+import { lastFreeDay } from "@/server/quotes/pricing";
 import { BookForm } from "./book-form";
 
 export const metadata: Metadata = { title: "Review and book | Apolles", robots: { index: false, follow: false } };
@@ -144,6 +145,11 @@ export default async function ReviewPage({ params }: { params: Params }) {
               <p className="flex justify-between">
                 <span>Available balance</span> <strong className="tabular-nums">{formatUsd(balanceCents)}</strong>
               </p>
+              {shortfall === 0 ? (
+                <p className="mt-1 flex justify-between">
+                  <span>After this booking</span> <strong className="tabular-nums">{formatUsd(balanceCents - b.totalMinor)}</strong>
+                </p>
+              ) : null}
               {shortfall > 0 ? (
                 <p role="alert" className={`${alertError} mt-2`}>
                   Missing: {formatUsd(shortfall)}. <Link href="/balance" className={link}>How to top up</Link>
@@ -164,6 +170,14 @@ export default async function ReviewPage({ params }: { params: Params }) {
           </section>
           <section className={`${card} bg-white p-5`}>
             <BookForm action={bookAction} bookingId={b.id} expectedTotal={b.totalMinor} terms={termsLinks()} canPay={shortfall === 0} />
+            {(() => {
+              const free = lastFreeDay({ refundable: b.refundable, cancelPenalties: b.cancelPenalties as unknown as CancelPenalty[] });
+              return (
+                <p className={`mt-3 text-center text-xs font-semibold ${free ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>
+                  {free ? `Free cancellation until ${shortDate(free)} (hotel time)` : b.refundable ? "See the cancellation policy before booking" : "Non-refundable"}
+                </p>
+              );
+            })()}
           </section>
           <p className="text-xs text-muted">
             Questions about this booking? Apolles support: {support.email ?? "email not set yet"}

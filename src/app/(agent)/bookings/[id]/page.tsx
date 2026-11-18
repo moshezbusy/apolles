@@ -154,6 +154,12 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
             <div className="mt-2">
               <PriceDetails price={price} stay={stay} />
             </div>
+            {b.chargedMinor !== null && b.status !== "FAILED" ? (
+              <p className="mt-3 border-t border-line pt-3 text-[13px] text-[#37413d]">
+                Payment · Paid from balance{" "}
+                {b.status === "PENDING_CONFIRMATION" ? "(held until the hotel confirms)" : b.confirmedAt ? `· Deducted on ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(b.confirmedAt)}` : ""}
+              </p>
+            ) : null}
             {b.status === "CANCELLED" && b.refundMinor !== null ? (
               <p className="mt-3 border-t border-line pt-3 text-[13px]">
                 Cancellation charge {formatUsd(b.cancelChargeMinor ?? 0)} · Refunded {formatUsd(b.refundMinor)}

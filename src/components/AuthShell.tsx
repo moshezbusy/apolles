@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { card, eyebrow as eyebrowClass } from "@/components/ui";
+import { supportContact } from "@/server/app-info";
 
 // Frame of the signed-out pages (mockups 04, 05, 06): wordmark header, a centered card under a
 // serif title, and the dark footer. No navigation and no links out: phase 1 has no public
@@ -8,19 +10,28 @@ export function AuthShell({
   title,
   subtitle,
   wide = false,
+  headerLink,
   children,
 }: {
   eyebrow?: string;
   title?: string;
   subtitle?: string;
   wide?: boolean;
+  // A link on the right of the header (the sign-in page offers "Join Apolles"). Not on 2FA pages.
+  headerLink?: { href: string; label: string };
   children: React.ReactNode;
 }) {
+  const support = supportContact();
   return (
     <div className="flex min-h-screen flex-1 flex-col bg-[radial-gradient(circle_at_85%_10%,rgba(184,145,85,0.12),transparent_25%),linear-gradient(180deg,#fbf8f0_0%,#fffdf8_55%)]">
       <header className="sticky top-0 z-20 border-b border-line/80 bg-paper/95 backdrop-blur">
         <div className="mx-auto flex h-[78px] w-[min(1180px,calc(100%-40px))] items-center">
           <span className="font-serif text-[29px] font-medium tracking-[0.02em] text-ink">Apolles</span>
+          {headerLink ? (
+            <Link href={headerLink.href} className="ml-auto text-[13px] font-semibold text-[#4d5a54] hover:text-brand">
+              {headerLink.label}
+            </Link>
+          ) : null}
         </div>
       </header>
 
@@ -45,6 +56,16 @@ export function AuthShell({
         <div className="mx-auto w-[min(1180px,calc(100%-40px))]">
           <p className="font-serif text-2xl text-paper">Apolles</p>
           <p className="text-xs text-[#9db0a8]">Hotel booking tools for verified travel professionals.</p>
+          <nav aria-label="Footer" className="mt-3 flex flex-wrap gap-4 text-xs">
+            {support.email ? (
+              <a href={`mailto:${support.email}`} className="hover:text-paper">
+                Support
+              </a>
+            ) : null}
+            <Link href="/terms" className="hover:text-paper">
+              Terms and Privacy
+            </Link>
+          </nav>
         </div>
       </footer>
     </div>
