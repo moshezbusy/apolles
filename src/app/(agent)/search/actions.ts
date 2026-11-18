@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "@/server/search/errors";
+import { destinationById } from "@/server/search/destinations";
 import { clearRecentSearches, rememberSearch } from "@/server/search/recent";
 import { startSearch } from "@/server/search/search";
 import { supplierContextFrom } from "@/server/supplier-context";
@@ -40,7 +41,8 @@ export async function startSearchAction(_previous: SearchFormState, formData: Fo
     const input = toSearchInput(values);
     await rememberSearch(
       { agencyId, userId },
-      { destinationId: input.destinationId, destinationName: values.destinationLabel.slice(0, 120) || input.destinationId, checkin: input.checkin, checkout: input.checkout, adults: input.adults, childAges: input.childAges },
+      // The name is read on the server, never taken from the form.
+      { destinationId: input.destinationId, destinationName: (await destinationById(input.destinationId))?.label ?? input.destinationId, checkin: input.checkin, checkout: input.checkout, adults: input.adults, childAges: input.childAges },
     );
   } catch (error) {
     console.error("recent search not saved", { error: error instanceof Error ? error.name : "Error" });

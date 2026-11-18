@@ -11,6 +11,8 @@ export async function rememberSearch(
   search: { destinationId: string; destinationName: string; checkin: string; checkout: string; adults: number; childAges: number[] },
 ): Promise<void> {
   await db.$transaction(async (tx) => {
+    // One save at a time per user, so two at once keep the list at 5 without repeats.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`recent:${ctx.userId}`}))`;
     // The same search again moves to the top instead of being listed twice.
     await tx.recentSearch.deleteMany({
       where: { userId: ctx.userId, agencyId: ctx.agencyId, destinationId: search.destinationId, checkin: search.checkin, checkout: search.checkout, adults: search.adults, childAges: { equals: search.childAges } },
