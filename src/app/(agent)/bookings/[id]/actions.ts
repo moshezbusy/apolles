@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
 import { BookingNotFound, cancel } from "@/server/booking/service";
+import { setSellingPrice } from "@/server/booking/selling";
 import { supplierContextFrom } from "@/server/supplier-context";
 
 // "Confirm cancellation" (screen 12). The charge sent is only compared with the charge the
@@ -24,4 +25,25 @@ export async function cancelAction(formData: FormData): Promise<void> {
   revalidatePath("/", "layout"); // the header shows the balance (a refund changes it)
   const notice = { cancelled: "cancelled", pending: "cancel_pending", refused: "cancel_refused", not_allowed: "cancel_not_allowed" }[outcome.kind];
   redirect(`/bookings/${bookingId}?notice=${notice}`);
+}
+
+export type SellState = { status: "success" | "error"; message: string } | null;
+
+// "Your selling price" (screens 11, 12): for the agency's reports only. It never changes the
+// amount charged and is not on the voucher.
+export async function sellingPriceAction(_previous: SellState, formData: FormData): Promise<SellState> {
+  const { userId, agencyId } = await requireAgent();
+  const field = (key: string) => {
+    const value = formData.get(key);
+    return typeof value === "string" ? value.slice(0, 20) : "";
+  };
+  const raw = formData.get("bookingId");
+  const bookingId = typeof raw === "string" ? raw.slice(0, 64) : "";
+  const clear = formData.get("clear") === "1";
+  const result = await setSellingPrice(userId, agencyId, bookingId, { markupType: clear ? "" : field("markupType"), markupValue: clear ? "" : field("markupValue") });
+  if (!result.ok) return { status: "error", message: result.error };
+  revalidatePath(`/bookings/${bookingId}`);
+  revalidatePath(`/book/${bookingId}`);
+  revalidatePath("/reporting");
+  return { status: "success", message: "Selling price saved." };
 }

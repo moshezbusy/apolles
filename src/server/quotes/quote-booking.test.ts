@@ -126,7 +126,8 @@ describe("book the client's selection from a quote", () => {
     await pick(stay!.id, stay!.rooms[0]!.id);
     const { bookingId, outcome } = await bookStay(stay!.id);
     expect(outcome.kind).toBe("confirmed");
-    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ quoteId, quoteStayId: stay!.id, status: "CONFIRMED" });
+    // The quote's 10% markup goes with the booking, as its selling price (reports only).
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ quoteId, quoteStayId: stay!.id, status: "CONFIRMED", sellMarkupType: "PERCENT", sellMarkupValue: 1000 });
     expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "BOOKED" });
     expect((await stayBookings("A", quoteId)).get(stay!.id)).toMatchObject({ id: bookingId, status: "CONFIRMED" });
     expect((await stayBookings("B", quoteId)).size).toBe(0);

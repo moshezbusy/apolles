@@ -15,6 +15,8 @@ import { guestLines } from "../../_components/guests";
 import { CancellationPolicy, Policies, PriceDetails } from "../../_components/hotel-info";
 import { shortDate, stayText } from "../../search/parts";
 import { bookAction } from "../actions";
+import { SellingPrice } from "../../_components/selling-price";
+import { sellingPriceAction } from "../../bookings/[id]/actions";
 import { BookForm } from "./book-form";
 
 export const metadata: Metadata = { title: "Review and book | Apolles", robots: { index: false, follow: false } };
@@ -150,6 +152,15 @@ export default async function ReviewPage({ params }: { params: Params }) {
                 <p className="mt-1 text-xs text-muted">The total is paid from your balance when you book.</p>
               )}
             </div>
+          </section>
+          <section className={`${card} bg-white p-5`}>
+            <SellingPrice
+              action={sellingPriceAction}
+              bookingId={b.id}
+              netMinor={b.totalMinor}
+              saved={b.sellMarkupType && b.sellMarkupValue !== null ? { markupType: b.sellMarkupType, markupValue: b.sellMarkupValue } : null}
+              title="Add your selling price (optional)"
+            />
           </section>
           <section className={`${card} bg-white p-5`}>
             <BookForm action={bookAction} bookingId={b.id} expectedTotal={b.totalMinor} terms={termsLinks()} canPay={shortfall === 0} />

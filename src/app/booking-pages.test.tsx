@@ -160,6 +160,23 @@ describe("booking screens", () => {
     expect(html).not.toContain("fakebk-");
   });
 
+  it("selling price (11, 12, 13): saved for the agency's own booking, for reports only; the charge does not change", async () => {
+    signInAs("A");
+    const { snapshotId, offers } = await seed();
+    const id = await draftFor(snapshotId, offers[2]!);
+    const { default: ReviewPage } = await import("./(agent)/book/[id]/page");
+    expect(renderToStaticMarkup(await ReviewPage({ params: Promise.resolve({ id }) }))).toContain("Add your selling price (optional)");
+    const before = await db.booking.findUniqueOrThrow({ where: { id } });
+    const { sellingPriceAction } = await import("./(agent)/bookings/[id]/actions");
+    expect(await sellingPriceAction(null, form({ bookingId: id, markupType: "FIXED", markupValue: "50" }))).toEqual({ status: "success", message: "Selling price saved." });
+    expect(await db.booking.findUniqueOrThrow({ where: { id } })).toMatchObject({ sellMarkupType: "FIXED", sellMarkupValue: 5000, totalMinor: before.totalMinor });
+    signInAs("B");
+    expect(await sellingPriceAction(null, form({ bookingId: id, markupType: "FIXED", markupValue: "1" }))).toEqual({ status: "error", message: "This booking was not found." });
+    signInAs("A");
+    expect(await sellingPriceAction(null, form({ bookingId: id, markupType: "FIXED", markupValue: "50", clear: "1" }))).toMatchObject({ status: "success" });
+    expect(await db.booking.findUniqueOrThrow({ where: { id } })).toMatchObject({ sellMarkupType: null });
+  });
+
   it("not enough balance: the page shows how much is missing and how to top up", async () => {
     signInAs("A");
     const { snapshotId, offers } = await seed(1_000);

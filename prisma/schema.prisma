@@ -478,8 +478,12 @@ model Booking {
 
   // The quote and destination this booking was made from (plan 5d). When every destination with
   // a client pick has a confirmed booking, the quote is booked.
-  quoteId     String?
-  quoteStayId String?
+  quoteId         String?
+  quoteStayId     String?
+  // The agency's own selling price, for its reports only (plan 6): never charged, never on the
+  // voucher. A markup on the charged total, as on quotes (percent in basis points, fixed in cents).
+  sellMarkupType  MarkupType?
+  sellMarkupValue Int?
 
   agency    Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   user      User           @relation(fields: [userId], references: [id], onDelete: Restrict)
