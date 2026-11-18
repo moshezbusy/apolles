@@ -155,7 +155,8 @@ describe("booking screens", () => {
     expect(html).toContain("Noa Levi (child, age 6)");
     expect(html).toContain("Supplier Terms &amp; Conditions");
     expect(html).toContain('name="acceptedTerms"');
-    expect(html).toContain("Book and issue voucher");
+    expect(html).toMatch(/Book and pay USD [\d,]+\.\d{2} from balance/);
+    expect(html).toContain("After this booking");
     expect(html).toContain("Available balance");
     expect(html).not.toContain("fakebk-");
   });
@@ -208,6 +209,8 @@ describe("booking screens", () => {
     const { GET: voucher } = await import("./(agent)/bookings/[id]/voucher/route");
     const pdf = await voucher(new Request(`http://localhost/bookings/${id}/voucher`), { params: Promise.resolve({ id }) });
     expect(pdf.headers.get("content-type")).toBe("application/pdf");
+    // The client gets this file: its name does not say Apolles.
+    expect(pdf.headers.get("content-disposition")).toMatch(/^attachment; filename="hotel-voucher-[A-Za-z0-9]+\.pdf"$/);
     expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString()).toBe("%PDF-");
 
     const { cancelAction } = await import("./(agent)/bookings/[id]/actions");

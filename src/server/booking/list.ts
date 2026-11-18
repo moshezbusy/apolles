@@ -5,8 +5,8 @@ import { db } from "@/server/db";
 // The agency's bookings list (screen 13) and its CSV export. Always scoped by agencyId;
 // drafts and expired drafts are not bookings and never listed.
 
-export type BookingTab = "all" | "upcoming" | "pending" | "cancelled";
-export const BOOKING_TABS: readonly BookingTab[] = ["all", "upcoming", "pending", "cancelled"];
+export type BookingTab = "all" | "upcoming" | "in_stay" | "completed" | "pending" | "cancelled";
+export const BOOKING_TABS: readonly BookingTab[] = ["all", "upcoming", "in_stay", "completed", "pending", "cancelled"];
 
 export const STATUS_LABEL: Record<BookingStatus, string> = {
   DRAFT: "Draft",
@@ -29,7 +29,9 @@ type Options = { tab: BookingTab; q?: string; cursor?: string; take?: number };
 function whereFor(agencyId: string, opts: Options, now: Date): Prisma.BookingWhereInput {
   const today = now.toISOString().slice(0, 10);
   const where: Prisma.BookingWhereInput = { agencyId, status: { in: LISTED } };
-  if (opts.tab === "upcoming") Object.assign(where, { status: "CONFIRMED", checkin: { gte: today } });
+  if (opts.tab === "upcoming") Object.assign(where, { status: "CONFIRMED", checkin: { gt: today } });
+  if (opts.tab === "in_stay") Object.assign(where, { status: "CONFIRMED", checkin: { lte: today }, checkout: { gt: today } });
+  if (opts.tab === "completed") Object.assign(where, { status: "CONFIRMED", checkout: { lte: today } });
   if (opts.tab === "pending") where.status = { in: ["PENDING_CONFIRMATION", "CANCEL_PENDING"] };
   if (opts.tab === "cancelled") where.status = { in: ["CANCELLED", "CANCELLED_BY_SUPPLIER"] };
   const raw = opts.q?.trim().slice(0, 100);
@@ -61,6 +63,8 @@ const SELECT = {
   chargedMinor: true,
   sellMarkupType: true,
   sellMarkupValue: true,
+  refundable: true,
+  cancelPenalties: true,
   currency: true,
   createdAt: true,
 } satisfies Prisma.BookingSelect;

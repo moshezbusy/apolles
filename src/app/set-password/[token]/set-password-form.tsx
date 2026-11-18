@@ -19,6 +19,7 @@ export function SetPasswordForm({ token, title }: { token: string; title: string
   );
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [show, setShow] = useState(false);
 
   if (state && "status" in state) return <ExpiredLink />;
 
@@ -41,7 +42,7 @@ export function SetPasswordForm({ token, title }: { token: string; title: string
       <label className={label}>
         New password
         <input
-          type="password"
+          type={show ? "text" : "password"}
           name="password"
           autoComplete="new-password"
           required
@@ -55,11 +56,25 @@ export function SetPasswordForm({ token, title }: { token: string; title: string
       <p id="password-rule" className={`-mt-2 ${hint}`}>
         {PASSWORD_RULE_COPY}
       </p>
+      <ul aria-label="Password rule" className="-mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        {[
+          { ok: password.length >= 8, text: "At least 8 characters" },
+          { ok: /\p{L}/u.test(password) && /\p{Nd}/u.test(password), text: "Letters and numbers" },
+        ].map((rule) => (
+          <li key={rule.text} className={rule.ok ? "font-semibold text-brand" : "text-muted"}>
+            {rule.ok ? "✓" : "○"} {rule.text}
+          </li>
+        ))}
+      </ul>
+      <label className="-mt-1 flex items-center gap-2 text-xs text-[#4d5a54]">
+        <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} className="h-4 w-4 accent-brand" />
+        Show passwords
+      </label>
 
       <label className={label}>
         Confirm password
         <input
-          type="password"
+          type={show ? "text" : "password"}
           name="confirm"
           autoComplete="new-password"
           required
@@ -78,6 +93,7 @@ export function SetPasswordForm({ token, title }: { token: string; title: string
       >
         {pending ? "Saving…" : "Save password"}
       </button>
+      <p className="text-center text-xs text-muted">Saving signs out every other device signed in to your account.</p>
     </form>
   );
 }

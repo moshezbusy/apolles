@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { alertError, btnPrimary, link } from "@/components/ui";
+import { formatUsd } from "@/lib/money";
 import type { BookFormState } from "../form-state";
 
 type Action = (previous: BookFormState, formData: FormData) => Promise<BookFormState>;
@@ -50,8 +51,9 @@ export function BookForm({
         </span>
       </label>
       <button type="submit" disabled={pending || !canPay} className={btnPrimary}>
-        {pending ? "Booking…" : "Book and issue voucher"}
+        {pending ? "Booking…" : `Book and pay ${formatUsd(expectedTotal)} from balance`}
       </button>
+      <p className="text-center text-xs text-muted">The voucher is issued as soon as the hotel confirms.</p>
     </form>
   );
 }

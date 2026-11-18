@@ -92,8 +92,12 @@ describe("Header", () => {
     expect(summary).not.toMatch(/class="hidden[^"]*">Test Travel</);
   });
 
-  it("links to the bookings list", () => {
-    expect(html).toMatch(/<a[^>]*href="\/bookings"[^>]*>Bookings<\/a>/);
+  it("Bookings is a menu: all bookings, upcoming stays, completed, cancelled", () => {
+    expect(html).toMatch(/<a[^>]*href="\/bookings"[^>]*>All bookings<\/a>/);
+    expect(html).toMatch(/<a[^>]*href="\/bookings\?tab=upcoming"[^>]*>Upcoming stays<\/a>/);
+    expect(html).toMatch(/<a[^>]*href="\/bookings\?tab=completed"[^>]*>Completed<\/a>/);
+    expect(html).toMatch(/<a[^>]*href="\/bookings\?tab=cancelled"[^>]*>Cancelled<\/a>/);
+    expect(html).toContain(">New quote</button>");
   });
 
   it("shows the balance as a link to /balance", () => {

@@ -20,7 +20,7 @@ export default function NotFound() {
         </>
       }
     >
-      The link may be old or mistyped. Your bookings are safe.
+      The link may be old or mistyped. Your bookings and quotes are safe.
     </StatePanel>
   );
 }

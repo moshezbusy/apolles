@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { clientQuote } from "@/server/quotes/sharing";
-import { Gone, Proposal, proposalPhotos } from "./proposal";
+import { notFound } from "next/navigation";
+import { Proposal, proposalPhotos } from "./proposal";
 
 export const metadata: Metadata = { title: "Your travel proposal", robots: { index: false, follow: false } };
 
@@ -12,6 +13,6 @@ type Params = Promise<{ token: string }>;
 export default async function ClientQuotePage({ params }: { params: Params }) {
   const { token } = await params;
   const data = await clientQuote(token);
-  if (!data) return <Gone />;
+  if (!data) notFound();
   return <Proposal quote={data.view} token={token} logoSrc={`/q/${token}/logo`} photos={await proposalPhotos(data)} />;
 }

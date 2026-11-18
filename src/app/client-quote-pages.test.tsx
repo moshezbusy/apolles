@@ -103,10 +103,13 @@ describe("client page /q/[token]", () => {
     expect(html).toContain("וואטסאפ");
   });
 
-  it("an unknown link shows the 'not available' page in both languages", async () => {
-    const html = await renderClientPage("A".repeat(32));
+  it("an unknown link answers 404 with the client's 'not available' page in both languages", async () => {
+    await expect(renderClientPage("A".repeat(32))).rejects.toThrow("NEXT_NOT_FOUND");
+    const { default: NotFound } = await import("./q/[token]/not-found");
+    const html = renderToStaticMarkup(<NotFound />);
     expect(html).toContain("This proposal link is not available");
     expect(html).toContain("הקישור להצעה לא זמין");
+    expect(html).not.toContain("/search");
   });
 });
 

@@ -22,6 +22,13 @@ export function ForgotPasswordForm() {
         <p role="status" className={alertSuccess}>
           {FORGOT_PASSWORD_SENT_COPY}
         </p>
+        <ul className="flex flex-col gap-1 text-[13px] text-[#4d5a54]">
+          <li>The link expires in 60 minutes.</li>
+          <li>Don&apos;t see it? Check your spam folder.</li>
+        </ul>
+        <a href="/forgot-password" className={backLink}>
+          Send the email again
+        </a>
         <Link href="/login" className={backLink}>
           Back to sign in
         </Link>

@@ -69,6 +69,7 @@ describe("voucher PDF", () => {
       "Sunrise Travel", "office@sunrise.example", "+972 3 555 0000", "APL-VOUCH001", "H-777", "Hotel Lumiere", "1 Rue Example", "Superior King Room", "1 King Bed",
       "Bed type is a request and not guaranteed", "Dana Levi", "Noa Levi (child, age 6)", "3:00 PM", "11:00 AM", "Photo ID is required.", "Ring the bell.",
       "City tax EUR 5 per night.", "No pets.", "EUR 37.00", "Cancellation",
+      "Status: Confirmed", "The room is paid in advance. Do not charge the guest for it.",
     ]) expect(text, t).toContain(t);
   });
 
