@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
 import { audit } from "@/server/audit";
-import { STAY_BOOKED, stayHasActiveBooking, syncQuoteBooked } from "@/server/quotes/quote-booking";
+import { ACTIVE_BOOKING, STAY_BOOKED, stayHasActiveBooking, syncQuoteBooked } from "@/server/quotes/quote-booking";
 import { db } from "@/server/db";
 import { findOffer } from "@/server/search/search";
 import { clientDateAllowed, defaultClientDate, lastFreeDay, parseMarkup, sellingMinor } from "@/server/quotes/pricing";
@@ -329,6 +329,10 @@ export async function updateQuoteSettings(
     // is withdrawn and the quote goes back to a draft, to be sent again.
     // Adding the first client keeps the link (it may already be with that client).
     const clientChanged = quote.clientId !== null && quote.clientId !== clientId;
+    // A booked destination is the old client's booking: the client cannot change under it.
+    if (clientChanged && (await tx.booking.count({ where: { quoteId, agencyId, status: { in: ACTIVE_BOOKING } } })) > 0) {
+      return fail("This quote has a booking. Cancel the booking first to change the client.");
+    }
     if (clientChanged) {
       await tx.quoteStay.updateMany({ where: { quoteId }, data: { selectedRoomId: null, selectedSellMinor: null, selectedCurrency: null } });
     }

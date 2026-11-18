@@ -100,7 +100,7 @@ export function BrandingForm({
         <label className={label}>
           Default message to clients
           <textarea name="defaultMessage" rows={3} maxLength={1000} defaultValue={shown.defaultMessage} className={input} />
-          <span className={hint}>Put into each new quote, in the quote&apos;s language. You can change it on each quote.</span>
+          <span className={hint}>Put into each new quote. You can change it on each quote.</span>
         </label>
         <button type="submit" disabled={pending} className={`${btnPrimary} self-start`}>
           {pending ? "Saving…" : "Save changes"}

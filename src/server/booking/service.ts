@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Booking, Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import { enqueue } from "@/server/jobs/queue";
-import { QuoteStayAlreadyBooked, claimQuoteStay, lockQuoteOfBooking, stayForDraft, syncQuoteOfBooking } from "@/server/quotes/quote-booking";
+import { QuoteStayAlreadyBooked, QuoteStayChanged, claimQuoteStay, lockQuoteOfBooking, stayForDraft, syncQuoteOfBooking } from "@/server/quotes/quote-booking";
 import { findOffer } from "@/server/search/search";
 import { bookingSupplier } from "@/server/supplier";
 import { SupplierAuthError, SupplierError, SupplierRateLimited, SupplierRequestRejected } from "@/server/supplier/expedia/client";
@@ -250,7 +250,7 @@ export async function book(
   let holdId: string;
   try {
     holdId = await withLedgerTransaction(async (tx) => {
-      await claimQuoteStay(tx, booking);
+      await claimQuoteStay(tx, booking.id);
       const hold = await placeHoldInTx(tx, { agencyId: booking.agencyId, amountCents: booking.totalMinor, bookingRef: booking.reference, idempotencyKey: holdKey(booking.id, "hold") });
       await transition(tx, {
         bookingId: booking.id,
@@ -266,7 +266,7 @@ export async function book(
   } catch (error) {
     // Another click got here first: it books. Nothing of this attempt was written.
     if (error instanceof BookingStateConflict) return { kind: "already", bookingId: booking.id };
-    if (error instanceof QuoteStayAlreadyBooked) return { kind: "review_again", message: error.message };
+    if (error instanceof QuoteStayAlreadyBooked || error instanceof QuoteStayChanged) return { kind: "review_again", message: error.message };
     if (error instanceof InsufficientFunds) {
       const { balanceCents } = await getBalance(booking.agencyId);
       return { kind: "insufficient", shortfallMinor: Math.max(0, booking.totalMinor - balanceCents) };

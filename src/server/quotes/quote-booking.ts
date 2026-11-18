@@ -111,12 +111,42 @@ export class QuoteStayAlreadyBooked extends Error {
   }
 }
 
-// Inside the transaction that places the hold: the stay is locked, so two bookings of it are
-// checked one after the other, and another active booking of it stops this one.
-export async function claimQuoteStay(tx: Prisma.TransactionClient, booking: { id: string; quoteStayId: string | null }): Promise<void> {
-  if (!booking.quoteStayId) return;
-  await tx.$queryRaw`SELECT id FROM "QuoteStay" WHERE id = ${booking.quoteStayId} FOR UPDATE`;
-  const other = await tx.booking.count({ where: { quoteStayId: booking.quoteStayId, status: { in: ACTIVE_BOOKING }, id: { not: booking.id } } });
+export class QuoteStayChanged extends Error {
+  constructor() {
+    super("The client's choice on this quote changed. Open the quote and choose Book again.");
+    this.name = "QuoteStayChanged";
+  }
+}
+
+// Inside the transaction that places the hold. Locks the quote, then the destination (the same
+// order as the editor, the client's choice, confirm and cancel), then checks under the lock that
+// the booking is still the client's pick: the destination is there, the quote is not booked, the
+// picked hotel and dates are the booking's, and no other booking holds it.
+export async function claimQuoteStay(tx: Prisma.TransactionClient, bookingId: string): Promise<void> {
+  const booking = await tx.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    select: { quoteId: true, quoteStayId: true, agencyId: true, propertyId: true, checkin: true, checkout: true },
+  });
+  if (!booking.quoteId) return;
+  await tx.$queryRaw`SELECT id FROM "Quote" WHERE id = ${booking.quoteId} FOR UPDATE`;
+  // Read again after the lock: a removed destination clears the booking's link.
+  const linked = await tx.booking.findUniqueOrThrow({ where: { id: bookingId }, select: { quoteStayId: true } });
+  if (!linked.quoteStayId) throw new QuoteStayChanged();
+  await tx.$queryRaw`SELECT id FROM "QuoteStay" WHERE id = ${linked.quoteStayId} FOR UPDATE`;
+  const stay = await tx.quoteStay.findFirst({
+    where: { id: linked.quoteStayId, quote: { id: booking.quoteId, agencyId: booking.agencyId } },
+    select: { checkin: true, checkout: true, quote: { select: { status: true } }, selectedRoom: { select: { hotel: { select: { propertyId: true } } } } },
+  });
+  if (
+    !stay ||
+    stay.quote.status === "BOOKED" ||
+    stay.checkin !== booking.checkin ||
+    stay.checkout !== booking.checkout ||
+    stay.selectedRoom?.hotel.propertyId !== booking.propertyId
+  ) {
+    throw new QuoteStayChanged();
+  }
+  const other = await tx.booking.count({ where: { quoteStayId: linked.quoteStayId, status: { in: ACTIVE_BOOKING }, id: { not: bookingId } } });
   if (other > 0) throw new QuoteStayAlreadyBooked();
 }
 

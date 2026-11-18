@@ -249,6 +249,43 @@ describe("a booked destination (review fixes)", () => {
     expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "BOOKED" });
   });
 
+  it("the client changes the pick after the draft: 'Book' is refused and nothing is charged", async () => {
+    await db.property.create({ data: { id: "12", name: "Hotel 12", city: "Paris", countryCode: "FR", rank: 2, expediaCollect: true, active: true, catalogSeenRunId: "r" } });
+    const [stay] = await quoteStays();
+    await pick(stay!.id, stay!.rooms[0]!.id);
+    const prepared = await prepareQuoteBooking(ctx(), stay!.id, { adapter: supplier(), now: NOW });
+    if (!prepared.ok) throw new Error(prepared.error);
+    const { s, p, r, b } = prepared.rate;
+    const { bookingId } = await createDraft(ctx(), { snapshotId: s, propertyId: p, rateId: r, bedGroupId: b, quoteStayId: stay!.id, guests, leadEmail: "d@example.com", leadPhone: { countryCode: "972", number: "501234567" } }, { now: later(1) });
+    const review = await prepareReview(ctx(), bookingId, { supplier: supplier(), now: later(2) });
+    if (review.kind !== "ready") throw new Error("not ready");
+    // The client now picks a room of another hotel on this destination.
+    const otherHotel = await db.quoteHotel.create({ data: { stayId: stay!.id, propertyId: "12", name: "Hotel 12", city: "Paris", position: 1 } });
+    const otherRoom = await db.quoteRoom.create({
+      data: { hotelId: otherHotel.id, roomId: "x", rateId: "x", bedGroupId: "x", roomName: "Room", bedDescription: "Bed", refundable: true, netMinor: 1000, currency: "USD", price: {}, position: 0 },
+    });
+    await db.quoteStay.update({ where: { id: stay!.id }, data: { selectedRoomId: otherRoom.id } });
+    expect(await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: review.booking.totalMinor }, { supplier: supplier(), now: later(3) })).toEqual({
+      kind: "review_again",
+      message: "The client's choice on this quote changed. Open the quote and choose Book again.",
+    });
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "DRAFT", holdId: null });
+  });
+
+  it("the client of a quote with a booking cannot change", async () => {
+    await addStay("2027-04-12", "2027-04-15");
+    const [first, second] = await quoteStays();
+    await pick(first!.id, first!.rooms[0]!.id);
+    await pick(second!.id, second!.rooms[0]!.id);
+    await bookStay(first!.id);
+    const other = await createClient("u-A", "A", { firstName: "Noa", lastName: "Bar", phone: "+972 50 765 4321", email: "", nationality: "IL", notes: "" });
+    if (!other.ok) throw new Error("setup");
+    expect(
+      await updateQuoteSettings("u-A", "A", quoteId, { title: "Paris", clientId: other.id, language: "EN", message: "", showCancellation: true, markupType: "PERCENT", markupValue: "10", adults: "2", childAges: "" }),
+    ).toEqual({ ok: false, error: "This quote has a booking. Cancel the booking first to change the client." });
+    expect(await db.quoteStay.findUniqueOrThrow({ where: { id: first!.id } })).toMatchObject({ selectedRoomId: first!.rooms[0]!.id });
+  });
+
   it("a draft from a quote must be the hotel the client picked", async () => {
     const [stay] = await quoteStays();
     const prepared = await (async () => {
