@@ -22,8 +22,9 @@ function appUrl(): string {
 }
 
 // "Apr 7, 2027, 14:00 UTC": the moment free cancellation ends (the first charge starts).
+const DEADLINE_DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 function deadline(at: Date): string {
-  return `${at.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}, ${at.toISOString().slice(11, 16)} UTC`;
+  return `${DEADLINE_DAY.format(at)}, ${at.toISOString().slice(11, 16)} UTC`;
 }
 
 function longDate(iso: string): string {
