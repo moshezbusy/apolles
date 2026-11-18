@@ -99,10 +99,13 @@ describe("ExpediaAdapter", () => {
         "4": { id: "4" },
         "5": "x",
         "6": { id: "6", name: "y".repeat(300) },
+        "7": { id: "7", name: "z".repeat(99) + "😀😀" },
+        "8": { id: "8", name: "lone \ud83d half" },
       };
       fetchMock.mockResolvedValueOnce(json(200, data));
       const [offer] = (await adapter.searchAvailability(query, context))[0]!.offers;
-      expect(offer!.amenities).toEqual(["Breakfast buffet", "Free parking", "y".repeat(100)]);
+      expect(offer!.amenities).toEqual(["Breakfast buffet", "Free parking", "y".repeat(100), "z".repeat(99) + "😀", "lone half"]);
+      expect(offer!.amenities.every((a) => a.isWellFormed())).toBe(true);
 
       rate.amenities = "not a map";
       fetchMock.mockResolvedValueOnce(json(200, data));

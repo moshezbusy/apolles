@@ -16,6 +16,12 @@ export async function sendStagingLogEmail(msg: EmailMessage): Promise<void> {
   }
 
   console.log(
-    JSON.stringify({ type: "staging-email", to: msg.to, subject: msg.subject, text: msg.text }),
+    JSON.stringify({
+      type: "staging-email",
+      to: msg.to,
+      subject: msg.subject,
+      text: msg.text,
+      ...(msg.attachments?.length ? { attachments: msg.attachments.map((a) => a.name) } : {}),
+    }),
   );
 }

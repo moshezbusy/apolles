@@ -243,7 +243,8 @@ export function amenityNames(raw: unknown): string[] {
   for (const item of Object.values(raw)) {
     const name = item && typeof item === "object" ? (item as { name?: unknown }).name : undefined;
     if (typeof name !== "string") continue;
-    const clean = name.replace(/[\p{Cc}\p{Cf}]/gu, "").replace(/\s+/g, " ").trim().slice(0, 100);
+    // Whole characters only: a cut emoji (a lone surrogate) cannot be stored as jsonb.
+    const clean = Array.from(name.replace(/[\p{Cc}\p{Cf}\p{Cs}]/gu, "").replace(/\s+/g, " ").trim()).slice(0, 100).join("").trim();
     if (clean && !names.includes(clean)) names.push(clean);
     if (names.length === MAX_AMENITIES) break;
   }

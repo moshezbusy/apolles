@@ -11,7 +11,11 @@ export type EmailMessage = {
   // replies go to the agency (Reply-To), never to the platform's mailbox.
   fromName?: string;
   replyTo?: string;
+  // Plan 8g: files sent with the email (the voucher PDF). Never logged, only their names.
+  attachments?: EmailAttachment[];
 };
+
+export type EmailAttachment = { name: string; contentType: "application/pdf"; content: Buffer };
 
 // The single way the app sends email. The adapter is chosen by EMAIL_PROVIDER on every send:
 //   console  (default) - development and tests; refuses to run in production

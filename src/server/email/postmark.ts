@@ -40,6 +40,9 @@ export async function sendPostmarkEmail(msg: EmailMessage): Promise<void> {
       Subject: msg.subject,
       TextBody: msg.text,
       ...(msg.html !== undefined ? { HtmlBody: msg.html } : {}),
+      ...(msg.attachments?.length
+        ? { Attachments: msg.attachments.map((a) => ({ Name: a.name, ContentType: a.contentType, Content: a.content.toString("base64") })) }
+        : {}),
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });

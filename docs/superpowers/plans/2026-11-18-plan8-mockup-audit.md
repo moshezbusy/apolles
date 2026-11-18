@@ -39,7 +39,9 @@ TR2). The approved spec could not be read by the audit agent (guardrail): confir
   "Paid from your Apolles balance", fees not included; links on 12 and in the emails.
 - Emails: booking confirmed with guests, free-cancellation deadline, new balance; cancelled with
   the new balance; top-up received; low balance; "free cancellation ends soon" (EXP); "not approved".
-- Email to client (from 12), in the agency's name, without the net price.
+- Email to client (from 12), in the agency's name, without the net price. Done (plan 8g): the
+  voucher PDF attached, no prices at all, English or the quote's Hebrew, limited per agency and
+  per booking.
 
 ## 8d — search and results (one PR)
 - Search (07): recent searches; "Needs attention" (client selected an option → Open quote).

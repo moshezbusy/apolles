@@ -57,6 +57,15 @@ describe("console email adapter", () => {
     await expect(readFile(file, "utf8")).rejects.toThrow();
   });
 
+  it("the sink records attachment names only, never their bytes", async () => {
+    const file = join(dir, "sink.jsonl");
+    vi.stubEnv("EMAIL_SINK_FILE", file);
+    await sendConsoleEmail({ ...msg, attachments: [{ name: "voucher.pdf", contentType: "application/pdf", content: Buffer.from("SECRET-BYTES") }] });
+    const line = JSON.parse((await readFile(file, "utf8")).trim()) as Record<string, unknown>;
+    expect(line.attachments).toEqual(["voucher.pdf"]);
+    expect(JSON.stringify(line)).not.toContain(Buffer.from("SECRET-BYTES").toString("base64"));
+  });
+
   it("appends one JSON line per email to EMAIL_SINK_FILE", async () => {
     const file = join(dir, "sink.jsonl");
     vi.stubEnv("EMAIL_SINK_FILE", file);
