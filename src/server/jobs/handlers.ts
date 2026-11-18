@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { cleanupSupplierLog } from "@/server/admin/bookings";
-import { BOOKING_EMAIL_EVENTS, sendBookingEmail } from "@/server/booking/emails";
+import { BOOKING_EMAIL_EVENTS, sendBookingEmail, sendFreeCancelReminders } from "@/server/booking/emails";
+import { sendTopupEmail } from "@/server/wallet/notifications";
 import { reconcile } from "@/server/booking/service";
 import { syncCatalog } from "@/server/content/catalog-sync";
 import { syncInactive } from "@/server/content/inactive-sync";
@@ -31,6 +32,15 @@ export const HANDLERS: Handlers = {
   "email.booking": async (payload) => {
     const { bookingId, event } = z.object({ bookingId: z.string().min(1).max(64), event: z.enum(BOOKING_EMAIL_EVENTS) }).strict().parse(payload);
     await sendBookingEmail(bookingId, event);
+  },
+  // "USD X added to your Apolles balance" after a bank transfer is confirmed (email #18).
+  "email.topup": async (payload) => {
+    const { entryId } = z.object({ entryId: z.string().min(1).max(64) }).strict().parse(payload);
+    await sendTopupEmail(entryId);
+  },
+  // "Free cancellation ends in 72 hours" (email #14), every hour.
+  "booking.cancel-reminders": async () => {
+    await sendFreeCancelReminders();
   },
   // A booking or cancellation without a clear supplier answer (plan 3). It never books again.
   "booking.reconcile": async (payload) => {

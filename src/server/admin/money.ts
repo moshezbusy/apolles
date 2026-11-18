@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { LedgerEntry } from "@/generated/prisma/client";
 import { MAX_AMOUNT_CENTS } from "@/lib/money";
 import { audit } from "@/server/audit";
+import { enqueue } from "@/server/jobs/queue";
 import { db } from "@/server/db";
 import { IdempotencyKeyConflict, TopupRefConflict } from "@/server/wallet/errors";
 import {
@@ -139,6 +140,8 @@ export async function confirmBankTopup(actor: string, raw: BankTopupInput): Prom
         idempotencyKey,
       });
       if (!created) return repeatOrConflict(entry);
+      // Email #18 to the agency, only if this transaction commits, once per entry.
+      await enqueue("email.topup", { entryId: entry.id }, { dedupeKey: `email.topup:${entry.id}` }, tx);
       await audit(
         actor,
         "wallet.topup",

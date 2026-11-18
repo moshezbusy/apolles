@@ -4,7 +4,7 @@ import type { JobKind } from "./kinds";
 // Jobs that run on a schedule. Daily ones at 02:00 UTC, hourly ones at the start of each hour.
 // The dedupe key makes ensureDailyJobs safe to call every few seconds: each is created once.
 export const DAILY_KINDS: readonly JobKind[] = ["content.regions", "content.catalog", "content.inactive", "supplier-log.cleanup"];
-export const HOURLY_KINDS: readonly JobKind[] = ["search.cleanup"];
+export const HOURLY_KINDS: readonly JobKind[] = ["search.cleanup", "booking.cancel-reminders"];
 
 export async function ensureDailyJobs(now: Date): Promise<void> {
   const day = now.toISOString().slice(0, 10);

@@ -95,6 +95,14 @@ export function requestHasPersonalDetails(text: string): boolean {
   return /\p{Nd}{6,}/u.test(compact) || text.includes("@");
 }
 
+// When free cancellation ends: the start of the first charge (an instant, from the hotel's time
+// with its offset). null: non-refundable, or no charge listed.
+export function freeCancelEnds(offer: { refundable: boolean; cancelPenalties: CancelPenalty[] }): Date | null {
+  if (!offer.refundable) return null;
+  const starts = offer.cancelPenalties.map((p) => Date.parse(p.start)).filter((t) => Number.isFinite(t));
+  return starts.length ? new Date(Math.min(...starts)) : null;
+}
+
 export function specialRequestText(input: z.infer<typeof specialRequestsSchema> | undefined): string {
   if (!input) return "";
   const parts = [...new Set(input.options)].map((o) => `${SPECIAL_REQUESTS[o]}.`);
@@ -194,6 +202,7 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
     currency: offer.price.total.currency,
     price: offer.price as unknown as Prisma.InputJsonValue,
     cancelPenalties: offer.cancelPenalties as unknown as Prisma.InputJsonValue,
+    freeCancelEndsAt: freeCancelEnds(offer),
     nonrefundableDateRanges: offer.nonrefundableDateRanges as unknown as Prisma.InputJsonValue,
     priceCheckToken: bedGroup.priceCheckToken,
   };

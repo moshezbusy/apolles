@@ -1,7 +1,10 @@
 import { z } from "zod";
+import { type StoredGuest, guestLines } from "@/lib/guests";
 import { formatUsd } from "@/lib/money";
 import { db } from "@/server/db";
 import { sendEmail } from "@/server/email/port";
+import { lowBalanceCheck } from "@/server/wallet/notifications";
+import { getBalance } from "@/server/wallet/ledger";
 
 // Booking emails (spec section 3 row 15). Phase 1: to the agent who booked, never to the
 // guest; "needs attention" to the admin. Sent by the job queue ("email.booking"), queued in
@@ -19,6 +22,11 @@ function appUrl(): string {
   return parsed.data.replace(/\/+$/, "");
 }
 
+// "Apr 7, 2027, 14:00 UTC": the moment free cancellation ends (the first charge starts).
+function deadline(at: Date): string {
+  return `${at.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}, ${at.toISOString().slice(11, 16)} UTC`;
+}
+
 function longDate(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
@@ -31,7 +39,9 @@ export async function sendBookingEmail(bookingId: string, event: BookingEmailEve
   if (event !== "needs_attention" && b.status !== STATUS_FOR[event]) return;
   const link = `${appUrl()}/bookings/${b.id}`;
   const stay = `${b.hotelName}, ${b.hotelCity}\n${longDate(b.checkin)} to ${longDate(b.checkout)}\n${b.roomName} · ${b.bedDescription} (bed type is a request)`;
-  const lead = `Lead guest: ${b.leadGivenName} ${b.leadFamilyName}`;
+  const names = guestLines(b.guests as StoredGuest[], b.adults, b.childAges);
+  const lead = names.length ? `Guests:\n${names.map((g) => `  ${g}`).join("\n")}` : `Lead guest: ${b.leadGivenName} ${b.leadFamilyName}`;
+  const requests = b.specialRequest ? `\nSpecial requests (sent to the hotel, not guaranteed): ${b.specialRequest}\n` : "";
   const paid = formatUsd(b.chargedMinor ?? b.totalMinor);
 
   if (event === "needs_attention") {
@@ -47,13 +57,17 @@ export async function sendBookingEmail(bookingId: string, event: BookingEmailEve
 
   const hello = `Hello ${b.user.name},\n\n`;
   if (event === "confirmed") {
+    const { balanceCents } = await getBalance(b.agencyId);
+    const free = b.freeCancelEndsAt && b.freeCancelEndsAt > new Date() ? `Free cancellation until ${deadline(b.freeCancelEndsAt)}.` : b.refundable ? "See the booking for the cancellation charges." : "This rate is non-refundable.";
     await sendEmail({
       to: b.user.email,
-      subject: `Booking confirmed: ${b.reference}, ${b.hotelName}`,
+      subject: `Booking confirmed: ${b.hotelName}, ${longDate(b.checkin)} to ${longDate(b.checkout)}, ${b.reference}`,
       text:
         `${hello}Your booking is confirmed.\n\nApolles reference: ${b.reference}\nHotel confirmation: ${b.hotelConfirmationId ?? "sent by the hotel later; it will show on the booking page"}\n\n` +
-        `${stay}\n${lead}\n\nPaid from your balance: ${paid}\n\nBooking details, voucher and cancellation:\n${link}\n`,
+        `${stay}\n${lead}\n${requests}\n${free}\n\nPaid from your balance: ${paid}\nYour balance now: ${formatUsd(balanceCents)}\n\nBooking details, voucher and cancellation:\n${link}\n`,
     });
+    // Email #19: once per drop under USD 500.
+    await lowBalanceCheck(b.agencyId);
   } else if (event === "failed") {
     await sendEmail({
       to: b.user.email,
@@ -66,7 +80,33 @@ export async function sendBookingEmail(bookingId: string, event: BookingEmailEve
       subject: `Booking cancelled: ${b.reference}`,
       text:
         `${hello}Booking ${b.reference} is cancelled.\n\n${stay}\n${lead}\n\n` +
-        `Cancellation charge: ${formatUsd(b.cancelChargeMinor ?? 0)}\nRefunded to your balance: ${formatUsd(b.refundMinor ?? 0)}\n\n${link}\n`,
+        `Cancellation charge: ${formatUsd(b.cancelChargeMinor ?? 0)}\nRefunded to your balance: ${formatUsd(b.refundMinor ?? 0)}\nYour balance now: ${formatUsd((await getBalance(b.agencyId)).balanceCents)}\n\n${link}\n`,
     });
   }
+}
+
+// Email #14: 72 hours before free cancellation ends, for each confirmed booking, once. Run every
+// hour; each booking is claimed (reminder time set) before its email, so it is never sent twice.
+export async function sendFreeCancelReminders(now: Date = new Date()): Promise<number> {
+  const due = await db.booking.findMany({
+    where: { status: "CONFIRMED", freeCancelReminderAt: null, freeCancelEndsAt: { gt: now, lte: new Date(now.getTime() + 72 * 3_600_000) } },
+    orderBy: { freeCancelEndsAt: "asc" },
+    take: 200,
+    select: { id: true },
+  });
+  let sent = 0;
+  for (const { id } of due) {
+    const claimed = await db.booking.updateMany({ where: { id, freeCancelReminderAt: null, status: "CONFIRMED" }, data: { freeCancelReminderAt: now } });
+    if (claimed.count === 0) continue;
+    const b = await db.booking.findUniqueOrThrow({ where: { id }, include: { user: { select: { email: true, name: true } } } });
+    await sendEmail({
+      to: b.user.email,
+      subject: `Free cancellation ends in 72 hours: ${b.reference}`,
+      text:
+        `Hello ${b.user.name},\n\nFree cancellation for booking ${b.reference} ends on ${deadline(b.freeCancelEndsAt!)}. After that, cancelling costs a charge (see the booking).\n\n` +
+        `${b.hotelName}, ${b.hotelCity}\n${longDate(b.checkin)} to ${longDate(b.checkout)}\nLead guest: ${b.leadGivenName} ${b.leadFamilyName}\n\nView the booking:\n${appUrl()}/bookings/${b.id}\n`,
+    });
+    sent += 1;
+  }
+  return sent;
 }
