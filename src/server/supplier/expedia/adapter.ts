@@ -102,7 +102,8 @@ function schemas(object: ObjectFactory) {
     holdable: unused,
     current_refundability: unused,
     member_deal_available: unused,
-    amenities: unused,
+    // Read leniently in toOffer: a bad list never drops the rate.
+    amenities: z.unknown().optional(),
     links: unused,
     marketing_fee_incentives: unused,
     promotions: unused,
@@ -233,6 +234,22 @@ export function toBreakdown(pricing: Pricing): PriceBreakdown {
   return { total, lines, dueAtProperty, dueAtPropertyTotal, nights: pricing.nightly.length };
 }
 
+// What the rate includes (meal plan, perks), as the supplier names it: names only, plain text,
+// no duplicates, at most 10 of at most 100 characters. Anything unreadable is left out.
+const MAX_AMENITIES = 10;
+export function amenityNames(raw: unknown): string[] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  const names: string[] = [];
+  for (const item of Object.values(raw)) {
+    const name = item && typeof item === "object" ? (item as { name?: unknown }).name : undefined;
+    if (typeof name !== "string") continue;
+    const clean = name.replace(/[\p{Cc}\p{Cf}]/gu, "").replace(/\s+/g, " ").trim().slice(0, 100);
+    if (clean && !names.includes(clean)) names.push(clean);
+    if (names.length === MAX_AMENITIES) break;
+  }
+  return names;
+}
+
 function toOffer(propertyId: string, room: { id: string; room_name: string }, rate: Rate, occupancy: string): Offer | null {
   if (rate.sale_scenario?.package) return null; // AP4: no package rates
   if (rate.merchant_of_record !== undefined && rate.merchant_of_record !== "expedia") return null; // no property collect
@@ -263,6 +280,7 @@ function toOffer(propertyId: string, room: { id: string; room_name: string }, ra
       bedGroups,
       cancelPenalties,
       nonrefundableDateRanges: rate.nonrefundable_date_ranges ?? [],
+      amenities: amenityNames(rate.amenities),
       price: toBreakdown(pricing),
     };
   } catch (error) {

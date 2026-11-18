@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { alertError, alertInfo, btnPrimary, btnSecondary, card, emptyState, input, label, link } from "@/components/ui";
@@ -56,6 +57,7 @@ function CardRoom({ best, href }: { best: NonNullable<HotelCard["best"]>; href: 
       <p className="text-[13px] text-ink">
         <strong>Room:</strong> {best.offer.roomName}
       </p>
+      <RateIncludes amenities={best.offer.amenities} />
       <p className={`text-[13px] font-semibold ${cancel.refundable ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>{cancel.text}</p>
       {best.otherRates > 0 ? (
         <Link href={href} className={`${link} text-[13px]`}>

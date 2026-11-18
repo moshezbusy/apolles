@@ -4,7 +4,7 @@ import { requireAgent } from "@/server/auth/guards";
 import { createClient } from "@/server/clients";
 import { db } from "@/server/db";
 import { addFromSearch, updateQuoteSettings } from "@/server/quotes/quotes";
-import { shareLink } from "@/server/quotes/sharing";
+import { clientQuote, shareLink } from "@/server/quotes/sharing";
 import type { Offer } from "@/server/supplier/types";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
@@ -37,6 +37,7 @@ const OFFER: Offer = {
   bedGroups: [{ id: "bed1", description: "1 King Bed", priceCheckToken: "secret-token" }],
   cancelPenalties: [{ start: "2099-04-03T00:00:00.000+02:00", end: "2099-04-10T00:00:00.000+02:00", amount: null, nights: 1, percent: null }],
   nonrefundableDateRanges: [],
+  amenities: ["Breakfast buffet"],
   price: { total: { minor: 100_000, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 },
 };
 
@@ -88,6 +89,8 @@ describe("client page /q/[token]", () => {
     expect(html).toContain("Mexico Honeymoon");
     expect(html).toContain("Hi Daniel");
     expect(html).toContain("USD 1,100.00");
+    // What the rate includes reaches the client page as the supplier named it (plan 8f).
+    expect(JSON.stringify(await clientQuote(token))).toContain('"amenities":["Breakfast buffet"]');
     expect(html).toContain("https://wa.me/972505550100");
     expect(html).not.toContain("USD 1,000.00");
     expect(html).not.toMatch(/expedia/i);

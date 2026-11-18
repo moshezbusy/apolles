@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { alertError, alertInfo, alertSuccess, btnDanger, card, link, pageTitle, sectionTitle } from "@/components/ui";
@@ -103,7 +104,10 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
               </div>
               <div>
                 <dt className="font-semibold text-ink">Room</dt>
-                <dd>{b.roomName}</dd>
+                <dd>
+                  {b.roomName}
+                  <RateIncludes amenities={b.amenities} className="text-xs text-muted" />
+                </dd>
               </div>
               <div>
                 <dt className="font-semibold text-ink">Bed type</dt>

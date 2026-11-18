@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { alertInfo, card, link, pageTitle } from "@/components/ui";
 import { requireAgent } from "@/server/auth/guards";
@@ -65,6 +66,7 @@ export default async function GuestDetailsPage({ searchParams }: { searchParams:
         <p className="mt-3 text-sm font-bold text-ink">{offer.roomName}</p>
         <p className="text-[13px] text-[#37413d]">{bedGroup.description}</p>
         <p className="text-xs text-muted">Bed type is a request and not guaranteed.</p>
+        <RateIncludes amenities={offer.amenities} className="mt-1 text-[13px] text-[#37413d]" />
         <p className="mt-2 text-[13px] text-[#37413d]">
           {shortDate(query.checkin)} to {shortDate(query.checkout)} · {stay}
         </p>

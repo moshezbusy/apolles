@@ -86,6 +86,8 @@ const offerSchema: z.ZodType<Offer> = z
         .strict(),
     ),
     nonrefundableDateRanges: z.array(z.object({ start: z.string(), end: z.string() }).strict()),
+    // Plan 8f: a search stored before this field reads as "nothing listed".
+    amenities: z.array(z.string().max(100)).max(10).default([]),
     price: z
       .object({
         total: money,
@@ -333,7 +335,6 @@ type ResultRow = {
   feesAtProperty: boolean;
   anyRefundable: boolean;
   rateIndex: number;
-  rateCount: bigint;
 };
 
 export async function listResults(
@@ -369,7 +370,6 @@ export async function listResults(
       SELECT r."propertyId", r."totalMinor", r."currency", r."feesAtProperty",
              r."rateIndex",
              bool_or(r."refundable") OVER (PARTITION BY r."propertyId") AS "anyRefundable",
-             count(*) OVER (PARTITION BY r."propertyId") AS "rateCount",
              row_number() OVER (PARTITION BY r."propertyId" ORDER BY r."totalMinor" ASC, r."rateIndex" ASC) AS "rn"
       FROM "SearchRate" r
       WHERE ${Prisma.join(rateWhere, " AND ")}
@@ -379,7 +379,7 @@ export async function listResults(
   const [rows, counted] = await Promise.all([
     db.$queryRaw<ResultRow[]>`${matched}
       SELECT h."propertyId", h."name", h."city", h."starRating"::text AS "starRating",
-             m."totalMinor", m."currency", m."feesAtProperty", m."anyRefundable", m."rateIndex", m."rateCount"
+             m."totalMinor", m."currency", m."feesAtProperty", m."anyRefundable", m."rateIndex"
       ${from}
       ORDER BY ${orderSql(opts.sort)}
       OFFSET ${skip} LIMIT ${take + 1}`,
@@ -398,10 +398,11 @@ export async function listResults(
   const bestOf = (row: ResultRow): HotelCard["best"] => {
     const offers = storedOffers.safeParse(offersById.get(row.propertyId));
     const offer = offers.success ? offers.data[row.rateIndex] : undefined;
-    if (!offer) return null;
+    if (!offer || offer.bedGroups.length === 0) return null;
     return {
       offer: { ...offer, bedGroups: offer.bedGroups.map((b) => ({ id: b.id, description: b.description })) },
-      otherRates: Number(row.rateCount) - 1,
+      // Every other rate of the hotel, as its page lists them (that page has its own filters).
+      otherRates: offers.success ? offers.data.length - 1 : 0,
     };
   };
   const heroById = new Map(

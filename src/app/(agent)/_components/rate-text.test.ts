@@ -11,6 +11,7 @@ const base: Offer = {
   bedGroups: [],
   cancelPenalties: [],
   nonrefundableDateRanges: [],
+    amenities: [],
   price: { total: { minor: 1, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 1 },
 };
 

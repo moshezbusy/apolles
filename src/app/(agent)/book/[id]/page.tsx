@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RateIncludes } from "@/components/RateIncludes";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -102,7 +103,10 @@ export default async function ReviewPage({ params }: { params: Params }) {
             <dl className="mt-3 grid gap-2 text-[13.5px] sm:grid-cols-2">
               <div>
                 <dt className="font-semibold text-ink">Room</dt>
-                <dd>{b.roomName}</dd>
+                <dd>
+                  {b.roomName}
+                  <RateIncludes amenities={b.amenities} className="text-xs text-muted" />
+                </dd>
               </div>
               <div>
                 <dt className="font-semibold text-ink">Bed type</dt>

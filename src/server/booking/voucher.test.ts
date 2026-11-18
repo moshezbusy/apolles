@@ -44,7 +44,7 @@ async function seed(status: "CONFIRMED" | "PENDING_CONFIRMATION" = "CONFIRMED") 
   return db.booking.create({
     data: {
       id: "bk1", reference: "APL-VOUCH001", agencyId: "A", userId: "u-A", status, propertyId: "11", hotelName: "Hotel Lumiere", hotelCity: "Paris", roomId: "r",
-      roomName: "Superior King Room", rateId: "x", bedGroupId: "b", bedDescription: "1 King Bed", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [6],
+      roomName: "Superior King Room", rateId: "x", bedGroupId: "b", bedDescription: "1 King Bed", amenities: ["Breakfast buffet"], checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [6],
       leadGivenName: "Dana", leadFamilyName: "Levi", leadEmail: "dana@example.com", leadPhone: "+972 501234567",
       guests: [{ givenName: "Dana", familyName: "Levi" }, { givenName: "Avi", familyName: "Levi" }, { givenName: "Noa", familyName: "Levi" }],
       refundable: true, totalMinor: 48_375, chargedMinor: 48_375, currency: "USD",
@@ -66,7 +66,7 @@ describe("voucher PDF", () => {
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
     const text = pdfText(pdf);
     for (const t of [
-      "Sunrise Travel", "office@sunrise.example", "+972 3 555 0000", "APL-VOUCH001", "H-777", "Hotel Lumiere", "1 Rue Example", "Superior King Room", "1 King Bed",
+      "Sunrise Travel", "office@sunrise.example", "+972 3 555 0000", "APL-VOUCH001", "H-777", "Hotel Lumiere", "1 Rue Example", "Superior King Room", "1 King Bed", "Rate includes: Breakfast buffet",
       "Bed type is a request and not guaranteed", "Dana Levi", "Noa Levi (child, age 6)", "3:00 PM", "11:00 AM", "Photo ID is required.", "Ring the bell.",
       "City tax EUR 5 per night.", "No pets.", "EUR 37.00", "Cancellation",
       "Status: Confirmed", "The room is paid in advance. Do not charge the guest for it.",

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { btnPrimary, btnSecondary, card, input, label, link } from "@/components/ui";
@@ -372,6 +373,7 @@ function RoomBlock({ quote, room }: { quote: QuoteDetail; room: Room }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[13.5px] font-bold text-ink">{room.roomName}</p>
+          <RateIncludes amenities={room.amenities} className="text-xs text-[#37413d]" />
           <p className="text-xs text-muted">
             {room.bedDescription}
             {atHotel ? ` · + ${formatMinor(atHotel.minor, atHotel.currency)} paid at the hotel` : ""}

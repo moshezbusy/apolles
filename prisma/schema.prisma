@@ -469,6 +469,7 @@ model Booking {
   price                   Json // PriceBreakdown as last checked
   cancelPenalties         Json // CancelPenalty[]
   nonrefundableDateRanges Json
+  amenities               String[]      @default([]) // what the rate includes, as the supplier named it (plan 8f)
   priceCheckToken         String // from the search snapshot; server-only
   bookToken               String? // from the last price check; server-only
   priceCheckedAt          DateTime?
@@ -649,6 +650,7 @@ model QuoteRoom {
   bedGroupId        String
   roomName          String
   bedDescription    String
+  amenities         String[] @default([]) // what the rate includes, as the supplier named it (plan 8f)
   refundable        Boolean
   freeCancelUntil   String? // the supplier's last free-cancellation day, YYYY-MM-DD (hotel's calendar)
   clientCancelUntil String? // the date the client sees; never later than freeCancelUntil

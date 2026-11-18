@@ -53,6 +53,7 @@ export type Offer = {
   bedGroups: BedGroup[];
   cancelPenalties: CancelPenalty[];
   nonrefundableDateRanges: { start: string; end: string }[];
+  amenities: string[]; // what the rate includes (meal plan, perks), as the supplier names it
   price: PriceBreakdown;
 };
 

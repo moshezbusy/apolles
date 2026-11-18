@@ -50,8 +50,8 @@ TR2). The approved spec could not be read by the audit agent (guardrail): confir
   search; price-check tokens never reach the page. Area: not in our data yet. Room filters on the
   hotel page (09) are done, plan 8d-2.
 - Hotel (09): room filters (name, free cancellation, sort); photo gallery; registration number.
-- Meal plan (08, 09, 10–13, 21): needs the rate's amenities from Rapid in the adapter (EXP: shown
-  as the supplier gives it). Adapter change: own small plan.
+- Meal plan (08, 09, 10–13, 21): done (plan 8f): the rate's amenities from Rapid, shown as
+  "Rate includes: …" exactly as the supplier names them, on every screen that shows the room.
 
 ## 8e — sign-in code on a new device (04, 23 #6) (SEC, own plan)
 - Email a 6-digit code when an agent signs in from a new device (10 minutes, resend, rate limits).

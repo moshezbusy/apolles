@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { alertError, btnPrimary, card, link, sectionTitle } from "@/components/ui";
@@ -60,6 +61,7 @@ function RateRow({
           <p className="mt-1 text-[13px] text-[#37413d]">{offer.bedGroups[0]?.description}</p>
         )}
         <p className="mt-1.5 text-xs text-muted">Bed type is a request and not guaranteed.</p>
+        <RateIncludes amenities={offer.amenities} className="mt-1.5 text-[13px] text-[#37413d]" />
       </td>
       <td className="px-4 py-4">
         <p className={`text-[13.5px] font-bold ${cancel.refundable ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>{cancel.text}</p>
