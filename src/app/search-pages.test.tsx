@@ -78,6 +78,9 @@ describe("search action and destinations (screen 07)", () => {
     const html = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({}) }));
     expect(html).toContain("Recent searches");
     expect(html).toContain(`href="/search?again=${recent.id}"`);
+    // Dates as day/month/year, as in the search form (plan 9).
+    const dmy = (iso: string) => iso.split("-").reverse().join("/");
+    expect(html).toContain(`${dmy(fields.checkin)} to ${dmy(fields.checkout)}`);
     expect(html).toContain("Client selected an option");
     expect(html).toContain("Paris Spring");
     const again = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({ again: recent.id }) }));

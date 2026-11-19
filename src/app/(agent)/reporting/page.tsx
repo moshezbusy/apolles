@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
+import { DateField } from "@/components/date-picker/DateField";
 import Link from "next/link";
-import { btnPrimary, btnSecondary, card, cell, input, label, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
+import { btnPrimary, btnSecondary, card, cell, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { requireAgent } from "@/server/auth/guards";
 import { STATUS_LABEL } from "@/server/booking/list";
@@ -104,26 +105,8 @@ export default async function ReportingPage({
           className="flex flex-wrap items-end gap-2"
         >
           <input type="hidden" name="range" value="custom" />
-          <label className={label}>
-            From
-            <input
-              type="date"
-              name="from"
-              defaultValue={period.range === "custom" ? period.from : ""}
-              required
-              className={input}
-            />
-          </label>
-          <label className={label}>
-            To
-            <input
-              type="date"
-              name="to"
-              defaultValue={period.range === "custom" ? period.to : ""}
-              required
-              className={input}
-            />
-          </label>
+          <DateField name="from" label="From" defaultValue={period.range === "custom" ? period.from : ""} />
+          <DateField name="to" label="To" defaultValue={period.range === "custom" ? period.to : ""} />
           <button
             type="submit"
             className={period.range === "custom" ? btnPrimary : btnSecondary}
