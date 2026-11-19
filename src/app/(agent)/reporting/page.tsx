@@ -1,21 +1,7 @@
 import type { Metadata } from "next";
+import { DateField } from "@/components/date-picker/DateField";
 import Link from "next/link";
-import {
-  btnPrimary,
-  btnSecondary,
-  card,
-  cell,
-  input,
-  label,
-  link,
-  pageTitle,
-  table,
-  tableWrap,
-  tbody,
-  td,
-  th,
-  thead,
-} from "@/components/ui";
+import { btnPrimary, btnSecondary, card, cell, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { requireAgent } from "@/server/auth/guards";
 import { STATUS_LABEL } from "@/server/booking/list";
@@ -119,26 +105,8 @@ export default async function ReportingPage({
           className="flex flex-wrap items-end gap-2"
         >
           <input type="hidden" name="range" value="custom" />
-          <label className={label}>
-            From
-            <input
-              type="date"
-              name="from"
-              defaultValue={period.range === "custom" ? period.from : ""}
-              required
-              className={input}
-            />
-          </label>
-          <label className={label}>
-            To
-            <input
-              type="date"
-              name="to"
-              defaultValue={period.range === "custom" ? period.to : ""}
-              required
-              className={input}
-            />
-          </label>
+          <DateField name="from" label="From" defaultValue={period.range === "custom" ? period.from : ""} />
+          <DateField name="to" label="To" defaultValue={period.range === "custom" ? period.to : ""} />
           <button
             type="submit"
             className={period.range === "custom" ? btnPrimary : btnSecondary}
@@ -284,8 +252,8 @@ export default async function ReportingPage({
               </thead>
               <tbody className={tbody}>
                 {r.recent.map((b) => (
-                  <tr key={b.id}>
-                    <td className={td}>
+                  <tr key={b.id} className={tr}>
+                    <td data-label="Booking" className={td}>
                       <Link href={`/bookings/${b.id}`} className={link}>
                         {b.hotelName}
                       </Link>
@@ -293,13 +261,13 @@ export default async function ReportingPage({
                         {b.reference} · {b.leadName}
                       </span>
                     </td>
-                    <td className={`${cell} text-right tabular-nums`}>
+                    <td data-label="Sale" className={`${cell} text-right tabular-nums`}>
                       {formatUsd(b.saleMinor)}
                     </td>
-                    <td className={`${cell} text-right tabular-nums`}>
+                    <td data-label="Profit" className={`${cell} text-right tabular-nums`}>
                       {formatUsd(b.profitMinor)}
                     </td>
-                    <td className={td}>
+                    <td data-label="Status" className={td}>
                       {STATUS_LABEL[b.status as keyof typeof STATUS_LABEL] ??
                         b.status}
                     </td>
@@ -461,26 +429,26 @@ function BalanceActivity({ r }: { r: Report }) {
             </thead>
             <tbody className={tbody}>
               {r.ledger.map((e) => (
-                <tr key={e.id}>
-                  <td
+                <tr key={e.id} className={tr}>
+                  <td data-label="Date"
                     className={`${cell} whitespace-nowrap text-[13px] text-muted`}
                   >
                     {fullDay.format(e.createdAt)}
                   </td>
-                  <td className={td}>
+                  <td data-label="Activity" className={td}>
                     {TYPE_LABEL[e.type as keyof typeof TYPE_LABEL] ?? e.type}
                   </td>
-                  <td className={`${cell} font-mono text-xs`}>
+                  <td data-label="Reference" className={`${cell} font-mono text-xs`}>
                     {e.bookingRef ?? ""}
                   </td>
-                  <td
+                  <td data-label="Amount"
                     className={`${cell} text-right tabular-nums ${e.amountCents > 0 ? "text-brand" : "text-ink"}`}
                   >
                     {e.amountCents > 0
                       ? `+${formatUsd(e.amountCents)}`
                       : formatUsd(e.amountCents)}
                   </td>
-                  <td className={`${td} text-right tabular-nums`}>
+                  <td data-label="Balance after" className={`${td} text-right tabular-nums`}>
                     {formatUsd(e.balanceAfterCents)}
                   </td>
                 </tr>
@@ -528,15 +496,15 @@ function TopTable({
             </thead>
             <tbody className={tbody}>
               {rows.map((row) => (
-                <tr key={row.name}>
-                  <td className={td}>{row.name}</td>
-                  <td className={`${cell} text-right tabular-nums`}>
+                <tr key={row.name} className={tr}>
+                  <td data-label="" className={td}>{row.name}</td>
+                  <td data-label="Bookings" className={`${cell} text-right tabular-nums`}>
                     {row.bookings}
                   </td>
-                  <td className={`${cell} text-right tabular-nums`}>
+                  <td data-label="Sales" className={`${cell} text-right tabular-nums`}>
                     {formatUsd(row.salesMinor)}
                   </td>
-                  <td className={`${cell} text-right tabular-nums`}>
+                  <td data-label="Profit" className={`${cell} text-right tabular-nums`}>
                     {formatUsd(row.profitMinor)}
                   </td>
                 </tr>

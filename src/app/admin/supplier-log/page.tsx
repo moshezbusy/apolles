@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { btnPrimary, btnSecondary, cell, emptyState, input, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
+import { btnPrimary, btnSecondary, cell, cellWide, emptyState, input, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { SUPPLIER_LOG_DAYS, listSupplierLog } from "@/server/admin/bookings";
 import { requireAdmin } from "@/server/auth/guards";
 
@@ -47,16 +47,16 @@ export default async function SupplierLogPage({ searchParams }: { searchParams: 
             </thead>
             <tbody className={tbody}>
               {page.rows.map((r) => (
-                <tr key={r.id}>
-                  <td className={`${cell} text-xs`}>{r.createdAt.toISOString().slice(0, 19).replace("T", " ")}</td>
-                  <td className={`${cell} max-w-[520px] truncate font-mono text-xs`}>
+                <tr key={r.id} className={tr}>
+                  <td data-label="When (UTC)" className={`${cell} text-xs`}>{r.createdAt.toISOString().slice(0, 19).replace("T", " ")}</td>
+                  <td data-label="Call" className={`${cell} ${cellWide} max-w-[520px] truncate font-mono text-xs`}>
                     <Link href={`/admin/supplier-log/${r.id}`} className={link}>
                       {r.method} {r.path}
                     </Link>
                   </td>
-                  <td className={td}>{r.status ?? r.error ?? "—"}</td>
-                  <td className={`${td} tabular-nums`}>{r.durationMs} ms</td>
-                  <td className={`${td} font-mono text-xs`}>{r.affiliateReferenceId ?? ""}</td>
+                  <td data-label="Status" className={td}>{r.status ?? r.error ?? "—"}</td>
+                  <td data-label="Time" className={`${td} tabular-nums`}>{r.durationMs} ms</td>
+                  <td data-label="Booking" className={`${td} font-mono text-xs`}>{r.affiliateReferenceId ?? ""}</td>
                 </tr>
               ))}
             </tbody>

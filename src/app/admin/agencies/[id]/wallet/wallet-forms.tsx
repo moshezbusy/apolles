@@ -12,8 +12,14 @@ import {
   label,
   link,
 } from "@/components/ui";
+import { DateField } from "@/components/date-picker/DateField";
+import { formatDmy } from "@/components/date-picker/calendar";
 import { formatUsd, parseUsdToCents } from "@/lib/money";
 import type { WalletFormState } from "./form-state";
+
+export function topUpConfirmText(cents: number, agencyName: string, v: Record<string, string>): string {
+  return `Confirm top-up of ${formatUsd(cents)} to ${agencyName}? Bank transfer ${v.bankTransferRef ?? ""}, received ${formatDmy(v.receivedOn ?? "")}.`;
+}
 
 type Action = (previous: WalletFormState, formData: FormData) => Promise<WalletFormState>;
 
@@ -112,10 +118,14 @@ function TwoStepForm({
             const hintId = field.hint ? `${formId}-${field.name}-hint` : undefined;
             return (
               <div key={field.name} className="flex flex-col gap-1">
+                {field.type === "date" ? (
+                  // Our calendar (plan 9): DD/MM/YYYY, never the browser's month-first format.
+                  <DateField name={field.name} label={field.label} defaultValue={values[field.name] ?? ""} onChange={(iso) => setValues({ ...values, [field.name]: iso })} />
+                ) : (
                 <label className={label}>
                   {field.label}
                   <input
-                    type={field.type ?? "text"}
+                    type="text"
                     name={field.name}
                     value={values[field.name] ?? ""}
                     onChange={(e) => setValues({ ...values, [field.name]: e.target.value })}
@@ -128,6 +138,7 @@ function TwoStepForm({
                     className={input}
                   />
                 </label>
+                )}
                 {field.hint ? (
                   <p id={hintId} className={hint}>
                     {field.hint}
@@ -193,9 +204,7 @@ export function TopupForm({ agencyId, agencyName, action }: FormProps) {
       ]}
       hidden={{ agencyId }}
       allowNegative={false}
-      confirmText={(cents, v) =>
-        `Confirm top-up of ${formatUsd(cents)} to ${agencyName}? Bank transfer ${v.bankTransferRef ?? ""}, received ${v.receivedOn ?? ""}.`
-      }
+      confirmText={(cents, v) => topUpConfirmText(cents, agencyName, v)}
       confirmLabel="Confirm top-up"
       action={action}
     />

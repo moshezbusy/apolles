@@ -27,7 +27,7 @@ describe("/admin/agencies table", () => {
   it("gives every body cell the dark table-cell style", async () => {
     const { default: Page } = await import("./admin/agencies/page");
     const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
-    const cells = [...html.matchAll(/<td class="([^"]*)"/g)].map((m) => m[1] ?? "");
+    const cells = [...html.matchAll(/<td[^>]*class="([^"]*)"/g)].map((m) => m[1] ?? "");
     expect(cells.length).toBe(6);
     for (const cls of cells) expect(cls).toContain(td);
     expect(html).toContain("APL-0001");

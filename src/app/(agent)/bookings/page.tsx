@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { btnPrimary, btnSecondary, cell, emptyState, input, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
+import { btnPrimary, btnSecondary, cell, emptyState, input, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { bookingSale } from "@/server/booking/selling";
 import { lastFreeDay } from "@/server/quotes/pricing";
@@ -100,21 +100,21 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
             </thead>
             <tbody className={tbody}>
               {page.rows.map((r) => (
-                <tr key={r.id}>
-                  <td className={`${cell} font-mono`}>
+                <tr key={r.id} className={tr}>
+                  <td data-label="Reference" className={`${cell} font-mono`}>
                     <Link href={`/bookings/${r.id}`} className={link}>
                       {r.reference}
                     </Link>
                     <span className="block font-sans text-xs text-muted">Booked {shortDate(r.createdAt.toISOString().slice(0, 10))}</span>
                   </td>
-                  <td className={td}>
+                  <td data-label="Hotel" className={td}>
                     {r.hotelName}
                     <span className="block text-xs text-muted">{r.hotelCity}</span>
                   </td>
-                  <td className={td}>
+                  <td data-label="Lead guest" className={td}>
                     {r.leadGivenName} {r.leadFamilyName}
                   </td>
-                  <td className={td}>
+                  <td data-label="Stay" className={td}>
                     {shortDate(r.checkin)} to {shortDate(r.checkout)}
                     <span className="block text-xs text-muted">{stayLine(r, today)}</span>
                     {(() => {
@@ -122,14 +122,14 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
                       return free && free >= today ? <span className="block text-xs font-semibold text-[#2f7d4a]">Free cancel until {shortDate(free)}</span> : null;
                     })()}
                   </td>
-                  <td className={`${td} tabular-nums`}>
+                  <td data-label="Total" className={`${td} tabular-nums`}>
                     {formatUsd(r.totalMinor)}
                     {(() => {
                       const sale = bookingSale(r);
                       return sale.priced && sale.saleMinor > 0 ? <span className="block text-xs text-muted">Paid · profit {formatUsd(sale.profitMinor)}</span> : null;
                     })()}
                   </td>
-                  <td className={td}>{STATUS_LABEL[r.status]}</td>
+                  <td data-label="Status" className={td}>{STATUS_LABEL[r.status]}</td>
                 </tr>
               ))}
             </tbody>

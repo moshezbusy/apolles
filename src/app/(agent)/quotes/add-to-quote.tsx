@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useActionState, useEffect } from "react";
-import { alertError, alertSuccess, btnSecondary, input } from "@/components/ui";
+import { alertError, alertSuccess, btnSecondary, inputUnsized } from "@/components/ui";
 import type { ActionState } from "./action-state";
 
 type Action = (previous: ActionState, formData: FormData) => Promise<ActionState>;
@@ -42,7 +42,7 @@ export function AddToQuote({
   const chosen = added ?? (defaultQuoteId && quotes.some((q) => q.id === defaultQuoteId) ? defaultQuoteId : "new");
   return (
     <div className="mt-2 flex flex-col gap-1.5">
-      <select key={chosen} form={formId} name="quoteId" defaultValue={chosen} aria-label="Quote" className={`${input} text-xs`}>
+      <select key={chosen} form={formId} name="quoteId" defaultValue={chosen} aria-label="Quote" className={`${inputUnsized} text-base sm:text-xs`}>
         <option value="new">New quote</option>
         {list.map((q) => (
           <option key={q.id} value={q.id}>

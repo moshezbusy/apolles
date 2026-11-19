@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { alertInfo, card, link, pageTitle } from "@/components/ui";
+import { formatDmy } from "@/components/date-picker/calendar";
 import { requireAgent } from "@/server/auth/guards";
 import { destinationById } from "@/server/search/destinations";
 import { getQuote, listQuotes, quoteCode } from "@/server/quotes/quotes";
@@ -97,7 +98,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                     <span>
                       <strong className="block text-ink">{r.destinationName}</strong>
                       <span className="text-muted">
-                        {r.checkin} to {r.checkout} · {r.adults} {r.adults === 1 ? "adult" : "adults"}
+                        {formatDmy(r.checkin)} to {formatDmy(r.checkout)} · {r.adults} {r.adults === 1 ? "adult" : "adults"}
                         {r.childAges.length ? ` · ${r.childAges.length} ${r.childAges.length === 1 ? "child" : "children"}` : ""}
                       </span>
                     </span>

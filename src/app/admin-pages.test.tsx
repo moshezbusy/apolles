@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AdminHeader } from "@/components/AdminHeader";
-import { TopupForm } from "@/app/admin/agencies/[id]/wallet/wallet-forms";
+import { TopupForm, topUpConfirmText } from "@/app/admin/agencies/[id]/wallet/wallet-forms";
 
 const SIGN_OUT_FORM = /<form(?=[^>]*method="post")(?=[^>]*action="\/logout")[^>]*>\s*<button[^>]*type="submit"[^>]*>Sign out<\/button>\s*<\/form>/;
 
@@ -29,6 +29,16 @@ describe("AdminHeader", () => {
 
   it("has a Sign out POST form to /logout", () => {
     expect(html).toMatch(SIGN_OUT_FORM);
+  });
+
+  it("has a Menu for phones (below md) with the four sections and Sign out; the tabs show from md up", () => {
+    const html = renderToStaticMarkup(<AdminHeader active="bookings" />);
+    const phoneMenu = /<details[^>]*data-menu="nav"[^>]*>\s*<summary[^>]*aria-label="Menu"[\s\S]*?<\/details>/.exec(html)?.[0] ?? "";
+    expect(phoneMenu).toMatch(/<details[^>]*class="[^"]*md:hidden/);
+    for (const href of ["/admin/agencies", "/admin/applications", "/admin/bookings", "/admin/supplier-log"]) expect(phoneMenu, href).toContain(`href="${href}"`);
+    expect(phoneMenu).toMatch(/<a[^>]*href="\/admin\/bookings"[^>]*aria-current="page"|<a[^>]*aria-current="page"[^>]*href="\/admin\/bookings"/);
+    expect(phoneMenu).toMatch(SIGN_OUT_FORM);
+    expect(html).toMatch(/<nav[^>]*class="[^"]*hidden[^"]*md:flex/);
   });
 });
 
@@ -56,6 +66,12 @@ describe("admin pages", () => {
 });
 
 describe("wallet top-up form", () => {
+  it("the confirm step shows the received date as DD/MM/YYYY (plan 9)", () => {
+    expect(topUpConfirmText(100000, "Sunrise", { bankTransferRef: "TR-9", receivedOn: "2026-11-18" })).toBe(
+      "Confirm top-up of USD 1,000.00 to Sunrise? Bank transfer TR-9, received 18/11/2026.",
+    );
+  });
+
   it("asks for the bank's own transfer reference and warns against the agency reference", () => {
     const html = renderToStaticMarkup(
       <TopupForm agencyId="a1" agencyName="Sunrise" action={async () => null} />,

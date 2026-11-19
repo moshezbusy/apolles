@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { initials } from "@/components/Header";
-import { btnPrimary, btnSecondary, card, cell, emptyState, input, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
+import { btnPrimary, btnSecondary, card, cell, emptyState, input, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { countryName, countryOptions } from "@/lib/countries";
 import { getAgencyProfile } from "@/server/agency-profile";
 import { requireAgent } from "@/server/auth/guards";
@@ -106,20 +106,20 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
                 </thead>
                 <tbody className={tbody}>
                   {page.clients.map((c) => (
-                    <tr key={c.id} className={c.id === open?.id ? "bg-brand-soft" : undefined}>
-                      <td className={cell}>
+                    <tr key={c.id} className={`${tr} ${c.id === open?.id ? "bg-brand-soft" : ""}`}>
+                      <td data-label="Client" className={cell}>
                         <Link href={hrefFor({ id: c.id })} className="font-bold text-ink hover:underline">
                           {c.firstName} {c.lastName}
                         </Link>
                         <span className="block text-xs text-muted">{countryName(c.nationality)}</span>
                       </td>
-                      <td className={td}>
+                      <td data-label="Contact" className={td}>
                         {c.email ?? "No email"}
                         <span className="block text-xs text-muted">{c.phone}</span>
                       </td>
-                      <td className={`${td} tabular-nums`}>{c.travelers}</td>
-                      <td className={`${td} tabular-nums`}>{c.quotes}</td>
-                      <td className={td}>
+                      <td data-label="Travelers" className={`${td} tabular-nums`}>{c.travelers}</td>
+                      <td data-label="Quotes" className={`${td} tabular-nums`}>{c.quotes}</td>
+                      <td data-label="Last activity" className={td}>
                         {dayMonth.format(c.updatedAt)}
                         <span className="block text-xs text-muted">Client updated</span>
                       </td>

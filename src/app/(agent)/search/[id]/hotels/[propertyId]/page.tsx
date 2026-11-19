@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { alertError, btnPrimary, card, link, sectionTitle } from "@/components/ui";
+import { alertError, btnPrimary, card, cellTop, cellWide, link, sectionTitle, tbody, tr } from "@/components/ui";
 import { requireAgent } from "@/server/auth/guards";
 import { SearchRateLimited } from "@/server/search/errors";
 import { getHotelOffers, searchSummary } from "@/server/search/search";
@@ -44,8 +44,8 @@ function RateRow({
   const cancel = cancellationLabel(offer);
   const formId = `book-${offer.roomId}-${offer.rateId}`.replace(/[^A-Za-z0-9_-]/g, "_");
   return (
-    <tr className="align-top">
-      <td className="px-4 py-4">
+    <tr className={`${tr} align-top`}>
+      <td data-label="" className={cellTop}>
         <p className="text-[15px] font-bold text-ink">{offer.roomName}</p>
         {offer.bedGroups.length > 1 ? (
           <fieldset className="mt-2">
@@ -63,7 +63,7 @@ function RateRow({
         <p className="mt-1.5 text-xs text-muted">Bed type is a request and not guaranteed.</p>
         <RateIncludes amenities={offer.amenities} className="mt-1.5 text-[13px] text-[#37413d]" />
       </td>
-      <td className="px-4 py-4">
+      <td data-label="Cancellation" className={cellTop}>
         <p className={`text-[13.5px] font-bold ${cancel.refundable ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>{cancel.text}</p>
         <details className="mt-1.5">
           <summary className="cursor-pointer text-xs font-semibold text-brand">Cancellation policy</summary>
@@ -72,10 +72,10 @@ function RateRow({
           </div>
         </details>
       </td>
-      <td className="px-4 py-4">
+      <td data-label="Price" className={cellTop}>
         <PriceDetails price={offer.price} stay={stay} />
       </td>
-      <td className="px-4 py-4">
+      <td data-label="" className={`${cellTop} ${cellWide}`}>
         <form id={formId} method="get" action="/book/new">
           <input type="hidden" name="s" value={snapshotId} />
           <input type="hidden" name="p" value={offer.propertyId} />
@@ -209,8 +209,8 @@ export default async function HotelPage({ params, searchParams }: { params: Para
         </form>
         {sorted.length === 0 ? <p className="mt-3 text-sm text-muted">No room matches these filters. Clear the filters to see all rooms.</p> : null}
         <div className="mt-3 overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_14px_36px_rgba(19,47,39,0.08)]">
-          <table className="w-full min-w-[820px] text-left text-sm">
-            <thead className="bg-brand text-paper">
+          <table className="w-full text-left text-sm max-md:block md:min-w-[820px]">
+            <thead className="bg-brand text-paper max-md:hidden">
               <tr>
                 <th className="px-4 py-3 font-semibold">Room</th>
                 <th className="px-4 py-3 font-semibold">Cancellation</th>
@@ -220,7 +220,7 @@ export default async function HotelPage({ params, searchParams }: { params: Para
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#f0ece4]">
+            <tbody className={tbody}>
               {sorted.map((offer) => (
                 <RateRow key={`${offer.roomId}-${offer.rateId}`} offer={offer} stay={stay} snapshotId={id} quotes={quotes} quoteId={quoteId} />
               ))}

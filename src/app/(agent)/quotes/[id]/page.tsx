@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { DateField } from "@/components/date-picker/DateField";
+import { DateRangeField } from "@/components/date-picker/DateRangeField";
 import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { btnPrimary, btnSecondary, card, input, label, link } from "@/components/ui";
+import { btnPrimary, btnSecondary, card, input, inputUnsized, label, link } from "@/components/ui";
 import { formatMinor } from "@/lib/supplier-money";
 import { requireAgent } from "@/server/auth/guards";
 import { clientOptions } from "@/server/clients";
@@ -73,7 +75,7 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
               maxLength={80}
               defaultValue={quote.title}
               placeholder="Untitled quote"
-              className={`${input} font-serif text-[22px]`}
+              className={`${inputUnsized} font-serif text-[22px]`}
             />
             <p className="mt-2 text-[13px] text-muted">
               {quote.client ? `${quote.client.firstName} ${quote.client.lastName} · ` : ""}
@@ -257,14 +259,7 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
               <span>Destination</span>
               <DestinationPicker defaultId="" defaultLabel="" />
             </div>
-            <label className={label}>
-              Check-in
-              <input type="date" name="checkin" required min={minDate} max={maxDate} className={input} />
-            </label>
-            <label className={label}>
-              Check-out
-              <input type="date" name="checkout" required min={minDate} max={maxDate} className={input} />
-            </label>
+            <DateRangeField checkin="" checkout="" min={minDate} max={maxDate} />
             <button type="submit" className={btnSecondary}>
               Add destination
             </button>
@@ -423,10 +418,9 @@ function RoomBlock({ quote, room }: { quote: QuoteDetail; room: Room }) {
         {room.refundable && room.freeCancelUntil ? (
           <ActionForm action={roomDateAction} className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="roomId" value={room.id} />
-            <label className={`${label} flex-1`}>
-              Client sees free cancellation until
-              <input type="date" name="date" min={today} max={room.freeCancelUntil} defaultValue={room.clientCancelUntil ?? ""} className={input} />
-            </label>
+            <div className="flex-1">
+              <DateField name="date" label="Client sees free cancellation until" min={today} max={room.freeCancelUntil} today={today} defaultValue={room.clientCancelUntil ?? ""} />
+            </div>
             <button type="submit" className={btnSecondary}>
               Set
             </button>

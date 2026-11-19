@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DemoBanner } from "@/components/DemoBanner";
+import { MenuCloser } from "@/components/MenuCloser";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,6 +16,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <DemoBanner />
         {children}
+        <MenuCloser />
       </body>
     </html>
   );

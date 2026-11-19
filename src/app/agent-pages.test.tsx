@@ -62,6 +62,25 @@ function rowsOf(html: string): string[] {
 describe("Header", () => {
   const html = renderToStaticMarkup(<Header agencyName="Test Travel" balanceCents={100000} />);
 
+  // The phone Menu (plan 9): the panel of the <details data-menu="nav"> whose summary is "Menu".
+  const phoneMenu = /<details[^>]*data-menu="nav"[^>]*>\s*<summary[^>]*aria-label="Menu"[\s\S]*?<\/details>/.exec(html)?.[0] ?? "";
+
+  it("has a Menu for phones, hidden from lg up, with every page of the desktop menus", () => {
+    expect(phoneMenu).toMatch(/<details[^>]*class="[^"]*lg:hidden/);
+    for (const href of ["/search", "/quotes", "/clients", "/bookings", "/bookings?tab=upcoming", "/bookings?tab=completed", "/bookings?tab=cancelled", "/reporting", "/balance", "/settings"]) {
+      expect(phoneMenu, href).toContain(`href="${href}"`);
+    }
+    expect(phoneMenu).toContain(">New quote</button>");
+    expect(phoneMenu).toMatch(/<form[^>]*action="\/logout"/);
+    expect(phoneMenu).toContain("Test Travel");
+  });
+
+  it("the desktop menus and the agency menu are menus that close on a tap outside (data-menu)", () => {
+    const menus = [...html.matchAll(/<details[^>]*>/g)].map((m) => m[0]);
+    expect(menus.length).toBeGreaterThanOrEqual(5);
+    for (const tag of menus) expect(tag).toMatch(/data-menu="nav"/);
+  });
+
   it("shows the Apolles wordmark", () => {
     expect(html).toContain("Apolles");
   });

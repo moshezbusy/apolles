@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { LedgerEntryType } from "@/generated/prisma/enums";
-import { card, cell, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
+import { card, cell, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { getAgencyWallet } from "@/server/admin/money";
 import { requireAdmin } from "@/server/auth/guards";
@@ -111,14 +111,14 @@ export default async function AgencyWalletPage({ params, searchParams }: Props) 
                 </thead>
                 <tbody className={tbody}>
                   {wallet.entries.map((entry) => (
-                    <tr key={entry.id}>
-                      <td className={`${cell} whitespace-nowrap text-[13px] text-muted`}>{formatWhen(entry.createdAt)}</td>
-                      <td className={`${td} font-semibold`}>{TYPE_LABEL[entry.type]}</td>
-                      <td className={`${td} whitespace-nowrap text-right font-bold tabular-nums`}>
+                    <tr key={entry.id} className={tr}>
+                      <td data-label="Date" className={`${cell} whitespace-nowrap text-[13px] text-muted`}>{formatWhen(entry.createdAt)}</td>
+                      <td data-label="Type" className={`${td} font-semibold`}>{TYPE_LABEL[entry.type]}</td>
+                      <td data-label="Amount" className={`${td} whitespace-nowrap text-right font-bold tabular-nums`}>
                         {formatUsd(entry.amountCents)}
                       </td>
-                      <td className={td}>{entry.reason}</td>
-                      <td className={`${cell} font-mono text-[13px] text-muted`}>{entry.bookingRef ?? ""}</td>
+                      <td data-label="Reason" className={td}>{entry.reason}</td>
+                      <td data-label="Booking" className={`${cell} font-mono text-[13px] text-muted`}>{entry.bookingRef ?? ""}</td>
                     </tr>
                   ))}
                 </tbody>

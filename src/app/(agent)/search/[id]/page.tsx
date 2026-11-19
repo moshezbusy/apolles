@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { alertError, alertInfo, btnPrimary, btnSecondary, card, emptyState, input, label, link } from "@/components/ui";
+import { alertError, alertInfo, btnPrimary, btnSecondary, card, emptyState, input, inputUnsized, label, link } from "@/components/ui";
 import { formatMinor } from "@/lib/supplier-money";
 import { requireAgent } from "@/server/auth/guards";
 import { minorToUsdText, parseListOptions } from "@/server/search/list-options";
@@ -12,6 +12,7 @@ import { dateRange } from "../dates";
 import { HotelPhoto, Stars, formValuesOf, shortDate, stayText } from "../parts";
 import { SearchForm } from "../search-form";
 import { loadMoreAction } from "./actions";
+import { FiltersPanel } from "./filters-panel";
 import { quoteParam } from "../quote-param";
 import { cancellationLabel } from "../../_components/rate-text";
 import { addToQuoteAction } from "../../quotes/actions";
@@ -90,7 +91,7 @@ function CardActions({
         {offer.bedGroups.length === 1 ? (
           <input type="hidden" name="b" value={offer.bedGroups[0]!.id} />
         ) : (
-          <select name="b" aria-label="Bed type" defaultValue={offer.bedGroups[0]?.id} className={`${input} mb-1.5 w-full text-xs`}>
+          <select name="b" aria-label="Bed type" defaultValue={offer.bedGroups[0]?.id} className={`${inputUnsized} mb-1.5 w-full text-base sm:text-xs`}>
             {offer.bedGroups.map((bed) => (
               <option key={bed.id} value={bed.id}>
                 {bed.description}
@@ -170,7 +171,9 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
           </p>
 
           <div className="mt-4 grid gap-5 lg:grid-cols-[250px_1fr]">
-            <aside className={`${card} h-fit p-4`}>
+            <div className="h-fit">
+            <FiltersPanel activeCount={[options.name, options.roomName, options.minPriceMinor !== undefined, options.maxPriceMinor !== undefined, options.stars?.length, options.freeCancellation].filter(Boolean).length}>
+            <aside className={`${card} h-fit p-4 max-lg:mt-2`}>
               <h2 className="text-base font-bold text-ink">Filters</h2>
               <form method="get" action={`/search/${id}`} className="mt-3 flex flex-col gap-4">
                 <label className={label}>
@@ -219,6 +222,8 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                 </Link>
               </form>
             </aside>
+            </FiltersPanel>
+            </div>
 
             <section aria-label="Hotels" className="flex flex-col gap-4">
               {result.hotels.length === 0 ? (
