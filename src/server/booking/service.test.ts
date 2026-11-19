@@ -465,6 +465,43 @@ describe("booking: cancel", () => {
     expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: 0 });
   });
 
+  it("a crash after the move to CANCEL_PENDING, before the cancel is sent: the check sends it once and refunds once", async () => {
+    const { bookingId } = await confirmed(1);
+    const reference = (await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).reference;
+    // The room's claim (the first write after the move) fails: nothing is sent to the supplier.
+    const spy = vi.spyOn(db.bookingRoom, "updateMany").mockRejectedValueOnce(new Error("process killed"));
+    const s = supplier();
+    try {
+      expect((await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: s, now: later(10) })).kind).toBe("pending");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(s.calls.cancelRoom).toBe(0);
+    expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).status).toBe("CANCEL_PENDING");
+    expect(await reconcile(bookingId, { supplier: s, now: later(15) })).toBe("cancelled");
+    expect(s.calls.cancelRoom).toBe(1);
+    expect(await reconcile(bookingId, { supplier: s, now: later(20) })).toBe("nothing");
+    expect(s.calls.cancelRoom).toBe(1);
+    expect(await db.ledgerEntry.count({ where: { type: "REFUND", bookingRef: reference } })).toBe(1);
+    expect(await getBalance("A")).toEqual({ balanceCents: 500_000, heldCents: 0 });
+  });
+
+  it("a booking without room rows is never cancelled online nor refunded by the check: an admin looks at it", async () => {
+    const { bookingId, total } = await confirmed(1);
+    await db.bookingRoom.deleteMany({ where: { bookingId } });
+    const s = supplier();
+    expect((await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: s, now: later(10) })).kind).toBe("not_allowed");
+    expect(s.calls.cancelRoom).toBe(0);
+    // Already cancelling (as if from before plan 10), and the supplier even shows it cancelled.
+    await db.booking.update({ where: { id: bookingId }, data: { status: "CANCEL_PENDING", cancelChargeMinor: 0, cancelRequestedAt: later(10) } });
+    const cancelledThere = supplier({ retrieve: async () => ({ itineraryId: "x", rooms: [{ id: "room-1", status: "cancelled", hotelConfirmationId: null, cancelLink: "fake-cancel:x", givenName: null, familyName: null }] }) });
+    expect(await reconcile(bookingId, { supplier: cancelledThere, now: later(15) })).toBe("retry");
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CANCEL_PENDING", needsAttention: true, refundMinor: null });
+    expect(await db.ledgerEntry.count({ where: { type: "REFUND" } })).toBe(0);
+    expect((await getBalance("A")).balanceCents).toBe(500_000 - total);
+    expect(cancelledThere.calls.cancelRoom).toBe(0);
+  });
+
   it("a charge different from what the agent saw is refused", async () => {
     const { bookingId } = await confirmed(1);
     const s = supplier();

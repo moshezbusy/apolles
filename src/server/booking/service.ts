@@ -661,6 +661,13 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
     }
     // Rooms the supplier shows as cancelled are cancelled here too, each once.
     let rooms = await roomsOf(booking);
+    if (rooms.length === 0) {
+      // No room rows (every booking got one when plan 10 shipped): nothing here can say which
+      // rooms the supplier cancelled, so nothing is refunded automatically; an admin finishes it.
+      await db.$transaction((tx) => flagForAdmin(tx, booking.id));
+      console.error(`booking ${booking.reference}: cancelling without room rows, needs an admin`);
+      return retry(RECONCILE_DELAY_MS * 2);
+    }
     if (itinerary) {
       for (const room of rooms) {
         if (room.status !== "ACTIVE" || supplierRoomFor(booking, rooms, room, itinerary)?.status !== "cancelled") continue;
@@ -741,8 +748,13 @@ export function cancelQuote(booking: Booking, rooms: Pick<BookingRoom, "totalMin
 // Once every room is cancelled at the supplier, and only then: one refund (idempotent key), the
 // booking CANCELLED, one email.
 async function finishCancel(booking: Booking, actorUserId: string | null, reason: string): Promise<void> {
-  // Rooms only ever go from active to cancelled, so this check before the refund holds after it.
-  if ((await db.bookingRoom.count({ where: { bookingId: booking.id, status: "ACTIVE" } })) > 0) throw new Error(`booking ${booking.reference}: rooms still booked, not finishing the cancellation`);
+  // At least one room, and every room cancelled at the supplier. Rooms only ever go from active
+  // to cancelled, so this check before the refund holds after it.
+  const [roomCount, activeCount] = await Promise.all([
+    db.bookingRoom.count({ where: { bookingId: booking.id } }),
+    db.bookingRoom.count({ where: { bookingId: booking.id, status: "ACTIVE" } }),
+  ]);
+  if (roomCount === 0 || activeCount > 0) throw new Error(`booking ${booking.reference}: not every room is cancelled, not finishing the cancellation`);
   const paid = paidMinor(booking);
   const charge = Math.min(booking.cancelChargeMinor ?? paid, paid);
   const refund = paid - charge;
@@ -810,6 +822,7 @@ type RoomCancels = "done" | "unknown" | "stopped" | "restored" | "refused";
 //   cancelled, flagged for an admin.
 async function sendRoomCancels(booking: Booking, supplier: Supplier, context: SupplierContext, actorUserId: string | null, now: Date): Promise<RoomCancels> {
   const rooms = await roomsOf(booking);
+  if (rooms.length === 0) return "stopped"; // no rooms is never "every room cancelled"
   for (const room of rooms) {
     if (room.status !== "ACTIVE") continue;
     const label = `Room ${room.index + 1} of ${rooms.length}`;
