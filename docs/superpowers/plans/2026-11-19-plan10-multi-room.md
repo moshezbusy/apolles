@@ -41,6 +41,8 @@
 3. The order of `rooms[]` in the book request and in the retrieve matches the order of the occupancies.
 4. Per-room `cancel_penalties` amounts after booking (retrieve) against the rate's penalties at shopping.
 5. TR6 logs: book and cancel a 2-room test booking and keep the request/response logs (the supplier call log already stores them).
+6. Guest names in the retrieve: whether Rapid returns `given_name`/`family_name` per room exactly as sent (accents, non-Latin letters). Rooms are matched by order and checked by name; a changed name flags a good booking for an admin.
+7. Penalty timing: rooms after the first (or a cancel sent later by the reconcile job) may reach Expedia after a penalty window started; the agent's charge was fixed when they asked. Check how far apart the calls land and whether an admin flag is needed.
 
 ---
 
