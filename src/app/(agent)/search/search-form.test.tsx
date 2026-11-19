@@ -17,7 +17,10 @@ function render(v: SearchFormValues = values, multiRoomAllowed = false): string 
   return renderToStaticMarkup(<SearchForm action={async () => null} values={v} minDate="2026-11-19" maxDate="2027-11-19" multiRoomAllowed={multiRoomAllowed} />);
 }
 
-const hidden = (html: string, name: string) => [...html.matchAll(new RegExp(`<input type="hidden" name="${name}" value="([^"]*)"/>`, "g"))].map((m) => m[1]);
+// The values of the hidden inputs with this name, in page order (one fixed pattern: no regex
+// built from a string).
+const hidden = (html: string, name: string) =>
+  [...html.matchAll(/<input type="hidden" name="([^"]*)" value="([^"]*)"\/>/g)].filter((m) => m[1] === name).map((m) => m[2]);
 
 describe("search form (plan 9)", () => {
   const html = render();
