@@ -30,6 +30,16 @@ describe("AdminHeader", () => {
   it("has a Sign out POST form to /logout", () => {
     expect(html).toMatch(SIGN_OUT_FORM);
   });
+
+  it("has a Menu for phones (below md) with the four sections and Sign out; the tabs show from md up", () => {
+    const html = renderToStaticMarkup(<AdminHeader active="bookings" />);
+    const phoneMenu = /<details[^>]*data-menu="nav"[^>]*>\s*<summary[^>]*aria-label="Menu"[\s\S]*?<\/details>/.exec(html)?.[0] ?? "";
+    expect(phoneMenu).toMatch(/<details[^>]*class="[^"]*md:hidden/);
+    for (const href of ["/admin/agencies", "/admin/applications", "/admin/bookings", "/admin/supplier-log"]) expect(phoneMenu, href).toContain(`href="${href}"`);
+    expect(phoneMenu).toMatch(/<a[^>]*href="\/admin\/bookings"[^>]*aria-current="page"|<a[^>]*aria-current="page"[^>]*href="\/admin\/bookings"/);
+    expect(phoneMenu).toMatch(SIGN_OUT_FORM);
+    expect(html).toMatch(/<nav[^>]*class="[^"]*hidden[^"]*md:flex/);
+  });
 });
 
 describe("admin pages", () => {

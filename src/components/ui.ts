@@ -19,7 +19,8 @@ export const label = "flex flex-col gap-1.5 text-xs font-semibold text-[#37413d]
 // Size and weight are not in the base, so the code input can set its own without a conflict.
 const inputBase =
   "min-h-10 w-full rounded-lg border border-[#d9e1dc] bg-paper px-3 py-2 text-ink placeholder:text-[#9ba29e] outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/40";
-export const input = `${inputBase} text-sm font-normal`;
+// 16px on a phone: iPhone Safari zooms the page in on any field smaller than that (plan 9).
+export const input = `${inputBase} text-base font-normal sm:text-sm`;
 // The 6-digit 2FA code field: large, bold, spaced digits.
 export const codeInput = `${inputBase} text-center text-xl font-bold tracking-[0.4em]`;
 
@@ -38,16 +39,27 @@ export const sectionTitle = "text-base font-bold text-ink";
 export const eyebrow = "text-xs font-extrabold uppercase tracking-[0.16em] text-brand-2";
 
 // Tables (mockup 13, Bookings): white rounded card, small uppercase headers, dark cell text.
+// Below md (plan 9) a table turns into cards: each row a two-column grid, each cell a block with
+// its column name above the value (the cell's data-label, drawn with ::before); the first cell
+// is the card's title and spans the row. Every <td> needs data-label (ui.test.ts checks).
 export const tableWrap =
   "overflow-x-auto rounded-[18px] border border-line bg-white shadow-[0_14px_36px_rgba(19,47,39,0.08)]";
-export const table = "w-full text-left text-sm";
-export const thead = "border-b border-line";
+export const table = "w-full text-left text-sm max-md:block";
+export const thead = "border-b border-line max-md:hidden";
 export const th = "px-4 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[#5f6863]";
+// A body row.
+export const tr = "max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-3 max-md:px-4 max-md:py-4";
 // `cell` has no colour: use it when a cell sets its own (two colour classes on one element
 // conflict, and the winner depends on CSS order, not class order). `td` is the dark default.
-export const cell = "px-4 py-3.5 align-middle";
+const cellPhone =
+  "max-md:block max-md:min-w-0 max-md:break-words max-md:p-0 max-md:text-left max-md:first:col-span-2 max-md:before:mb-0.5 max-md:before:block max-md:before:text-[10.5px] max-md:before:font-bold max-md:before:uppercase max-md:before:tracking-[0.08em] max-md:before:text-[#5f6863] max-md:before:content-[attr(data-label)]";
+export const cell = `px-4 py-3.5 align-middle ${cellPhone}`;
+// A cell with tall content, aligned to the top of its row (the rooms table on the hotel page).
+export const cellTop = `px-4 py-4 align-top ${cellPhone}`;
+// A cell whose content needs the card's full width on a phone (actions, long text).
+export const cellWide = "max-md:col-span-2";
 export const td = `${cell} text-ink`;
-export const tbody = "divide-y divide-[#f0ece4]";
+export const tbody = "divide-y divide-[#f0ece4] max-md:block";
 
 // Status pills (mockup 13): a dot and a soft background.
 const pillBase = "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold";

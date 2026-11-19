@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { btnPrimary, btnSecondary, cell, emptyState, input, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
+import { btnPrimary, btnSecondary, cell, emptyState, input, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { listAllBookings } from "@/server/admin/bookings";
 import { requireAdmin } from "@/server/auth/guards";
@@ -55,23 +55,23 @@ export default async function AdminBookingsPage({ searchParams }: { searchParams
             </thead>
             <tbody className={tbody}>
               {page.rows.map((r) => (
-                <tr key={r.id}>
-                  <td className={`${cell} font-mono`}>
+                <tr key={r.id} className={tr}>
+                  <td data-label="Reference" className={`${cell} font-mono`}>
                     <Link href={`/admin/bookings/${r.id}`} className={link}>
                       {r.reference}
                     </Link>
                   </td>
-                  <td className={td}>{r.agency.name}</td>
-                  <td className={td}>{r.hotelName}</td>
-                  <td className={td}>
+                  <td data-label="Agency" className={td}>{r.agency.name}</td>
+                  <td data-label="Hotel" className={td}>{r.hotelName}</td>
+                  <td data-label="Stay" className={td}>
                     {r.checkin} to {r.checkout}
                   </td>
-                  <td className={`${td} tabular-nums`}>{formatUsd(r.totalMinor)}</td>
-                  <td className={td}>
+                  <td data-label="Total" className={`${td} tabular-nums`}>{formatUsd(r.totalMinor)}</td>
+                  <td data-label="Status" className={td}>
                     {STATUS_LABEL[r.status]}
                     {r.needsAttention ? <span className="ml-2 rounded-full bg-[#fbecea] px-2 py-0.5 text-[11px] font-bold text-[#9b3b2e]">Needs attention</span> : null}
                   </td>
-                  <td className={`${td} font-mono text-xs`}>{r.supplierItineraryId ?? "—"}</td>
+                  <td data-label="Supplier itinerary" className={`${td} font-mono text-xs`}>{r.supplierItineraryId ?? "—"}</td>
                 </tr>
               ))}
             </tbody>

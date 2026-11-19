@@ -1,21 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import {
-  btnPrimary,
-  emptyState,
-  link,
-  pageTitle,
-  pillDot,
-  pillGreen,
-  pillRed,
-  table,
-  tableWrap,
-  tbody,
-  td,
-  th,
-  thead,
-} from "@/components/ui";
+import { btnPrimary, cellWide, emptyState, link, pageTitle, pillDot, pillGreen, pillRed, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { listAgencies } from "@/server/admin/agencies";
 import { requireAdmin } from "@/server/auth/guards";
@@ -68,23 +54,23 @@ export default async function AgenciesPage({ searchParams }: { searchParams: Sea
                 {page.agencies.map((agency) => {
                   const next = agency.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
                   return (
-                    <tr key={agency.id}>
-                      <td className={td}>
+                    <tr key={agency.id} className={tr}>
+                      <td data-label="Name" className={td}>
                         <span className="font-bold">{agency.name}</span>
                         {agency.agentEmail ? (
                           <span className="block text-xs text-muted">{agency.agentEmail}</span>
                         ) : null}
                       </td>
-                      <td className={td}>{agency.country}</td>
-                      <td className={`${td} font-mono text-[13px]`}>{agency.bankReference}</td>
-                      <td className={td}>
+                      <td data-label="Country" className={td}>{agency.country}</td>
+                      <td data-label="Bank reference" className={`${td} font-mono text-[13px]`}>{agency.bankReference}</td>
+                      <td data-label="Status" className={td}>
                         <span className={agency.status === "ACTIVE" ? pillGreen : pillRed}>
                           <span aria-hidden="true" className={pillDot} />
                           {agency.status === "ACTIVE" ? "Active" : "Suspended"}
                         </span>
                       </td>
-                      <td className={`${td} text-right font-bold tabular-nums`}>{formatUsd(agency.balanceCents)}</td>
-                      <td className={`${td} whitespace-nowrap text-right`}>
+                      <td data-label="Balance" className={`${td} text-right font-bold tabular-nums`}>{formatUsd(agency.balanceCents)}</td>
+                      <td data-label="" className={`${td} ${cellWide} whitespace-nowrap text-right`}>
                         <Link href={`/admin/agencies/${agency.id}/wallet`} className={`mr-4 ${link}`}>
                           Wallet
                         </Link>

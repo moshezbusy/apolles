@@ -12,6 +12,7 @@ import { dateRange } from "../dates";
 import { HotelPhoto, Stars, formValuesOf, shortDate, stayText } from "../parts";
 import { SearchForm } from "../search-form";
 import { loadMoreAction } from "./actions";
+import { FiltersPanel } from "./filters-panel";
 import { quoteParam } from "../quote-param";
 import { cancellationLabel } from "../../_components/rate-text";
 import { addToQuoteAction } from "../../quotes/actions";
@@ -170,7 +171,9 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
           </p>
 
           <div className="mt-4 grid gap-5 lg:grid-cols-[250px_1fr]">
-            <aside className={`${card} h-fit p-4`}>
+            <div className="h-fit">
+            <FiltersPanel activeCount={[options.name, options.roomName, options.minPriceMinor !== undefined, options.maxPriceMinor !== undefined, options.stars?.length, options.freeCancellation].filter(Boolean).length}>
+            <aside className={`${card} h-fit p-4 max-lg:mt-2`}>
               <h2 className="text-base font-bold text-ink">Filters</h2>
               <form method="get" action={`/search/${id}`} className="mt-3 flex flex-col gap-4">
                 <label className={label}>
@@ -219,6 +222,8 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                 </Link>
               </form>
             </aside>
+            </FiltersPanel>
+            </div>
 
             <section aria-label="Hotels" className="flex flex-col gap-4">
               {result.hotels.length === 0 ? (

@@ -1,16 +1,47 @@
 import Link from "next/link";
 import { createQuoteAction } from "@/app/(agent)/quotes/actions";
+import { PhoneMenu, PhoneMenuSection, phoneMenuItem } from "@/components/PhoneMenu";
 import { SignOutButton } from "@/components/SignOutButton";
 import { formatUsd } from "@/lib/money";
 
 // Agent header (mockup 07). Quotes (All quotes, New quote, Clients), Bookings (All, Upcoming
 // stays, Completed, Cancelled) and Reporting (Overview, Balance history) are menus: plain <details> elements, so they need no client JavaScript.
+// Below lg the menus do not fit: a "Menu" button opens one panel with all of them, the agency's
+// settings and Sign out (plan 9). data-menu: MenuCloser closes an open menu on a tap outside.
+
+const BOOKINGS = [
+  { href: "/bookings", label: "All bookings" },
+  { href: "/bookings?tab=upcoming", label: "Upcoming stays" },
+  { href: "/bookings?tab=completed", label: "Completed" },
+  { href: "/bookings?tab=cancelled", label: "Cancelled" },
+] as const;
+
+const REPORTING = [
+  { href: "/reporting", label: "Overview" },
+  { href: "/balance", label: "Balance history" },
+] as const;
+
+const dropdown =
+  "absolute left-0 z-40 mt-2.5 flex w-[170px] flex-col rounded-[11px] border border-[#e1e6e3] bg-white p-[7px] shadow-[0_15px_38px_rgba(19,47,39,0.14)]";
+const dropdownItem = "rounded-[7px] px-2.5 py-2 text-left text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand";
+const menuSummary = "flex cursor-pointer list-none items-center gap-1 font-semibold text-[#4d5a54] hover:text-brand";
 
 // "Test Travel" → "TT", "Caryotrip" → "CA". Shown in the avatar circle.
 export function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   const letters = words.length > 1 ? words.slice(0, 2).map((w) => w[0]).join("") : (words[0] ?? "").slice(0, 2);
   return letters.toUpperCase();
+}
+
+function DesktopMenu({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <details data-menu="nav" className="relative">
+      <summary className={menuSummary}>
+        {label} <span aria-hidden="true" className="text-[11px] text-[#8a938e]">▾</span>
+      </summary>
+      <div className={dropdown}>{children}</div>
+    </details>
+  );
 }
 
 export function Header({ agencyName, balanceCents }: { agencyName: string; balanceCents: number }) {
@@ -23,57 +54,36 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
 
         <nav aria-label="Main" className="hidden h-full items-center gap-6 text-[13px] lg:flex">
           <Link href="/search" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">Search</Link>
-          <details className="relative">
-            <summary className="flex cursor-pointer list-none items-center gap-1 font-semibold text-[#4d5a54] hover:text-brand">
-              Quotes <span aria-hidden="true" className="text-[11px] text-[#8a938e]">▾</span>
-            </summary>
-            <div className="absolute left-0 z-40 mt-2.5 flex w-[170px] flex-col rounded-[11px] border border-[#e1e6e3] bg-white p-[7px] shadow-[0_15px_38px_rgba(19,47,39,0.14)]">
-              <Link href="/quotes" className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
-                All quotes
+          <DesktopMenu label="Quotes">
+            <Link href="/quotes" className={dropdownItem}>
+              All quotes
+            </Link>
+            <form action={createQuoteAction}>
+              <button type="submit" className={`w-full ${dropdownItem}`}>
+                New quote
+              </button>
+            </form>
+            <Link href="/clients" className={dropdownItem}>
+              Clients
+            </Link>
+          </DesktopMenu>
+          <DesktopMenu label="Bookings">
+            {BOOKINGS.map((item) => (
+              <Link key={item.href} href={item.href} className={dropdownItem}>
+                {item.label}
               </Link>
-              <form action={createQuoteAction}>
-                <button type="submit" className="w-full rounded-[7px] px-2.5 py-2 text-left text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
-                  New quote
-                </button>
-              </form>
-              <Link href="/clients" className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
-                Clients
+            ))}
+          </DesktopMenu>
+          <DesktopMenu label="Reporting">
+            {REPORTING.map((item) => (
+              <Link key={item.href} href={item.href} className={dropdownItem}>
+                {item.label}
               </Link>
-            </div>
-          </details>
-          <details className="relative">
-            <summary className="flex cursor-pointer list-none items-center gap-1 font-semibold text-[#4d5a54] hover:text-brand">
-              Bookings <span aria-hidden="true" className="text-[11px] text-[#8a938e]">▾</span>
-            </summary>
-            <div className="absolute left-0 z-40 mt-2.5 flex w-[170px] flex-col rounded-[11px] border border-[#e1e6e3] bg-white p-[7px] shadow-[0_15px_38px_rgba(19,47,39,0.14)]">
-              {[
-                { href: "/bookings", label: "All bookings" },
-                { href: "/bookings?tab=upcoming", label: "Upcoming stays" },
-                { href: "/bookings?tab=completed", label: "Completed" },
-                { href: "/bookings?tab=cancelled", label: "Cancelled" },
-              ].map((item) => (
-                <Link key={item.href} href={item.href} className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          </details>
-          <details className="relative">
-            <summary className="flex cursor-pointer list-none items-center gap-1 font-semibold text-[#4d5a54] hover:text-brand">
-              Reporting <span aria-hidden="true" className="text-[11px] text-[#8a938e]">▾</span>
-            </summary>
-            <div className="absolute left-0 z-40 mt-2.5 flex w-[170px] flex-col rounded-[11px] border border-[#e1e6e3] bg-white p-[7px] shadow-[0_15px_38px_rgba(19,47,39,0.14)]">
-              <Link href="/reporting" className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
-                Overview
-              </Link>
-              <Link href="/balance" className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand">
-                Balance history
-              </Link>
-            </div>
-          </details>
+            ))}
+          </DesktopMenu>
         </nav>
 
-        <div className="ml-auto flex items-center gap-3.5">
+        <div className="ml-auto flex items-center gap-2.5 sm:gap-3.5">
           {/* The amount is the link's first text (screen readers say it first); the small
               "Balance" label is drawn above it with flex-col-reverse, as in the mockup. */}
           <Link
@@ -84,7 +94,7 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
             <small className="text-[11px] font-semibold text-muted">Balance</small>
           </Link>
 
-          <details className="relative">
+          <details data-menu="nav" className="relative hidden lg:block">
             <summary className="flex cursor-pointer list-none items-center gap-2 text-[12.5px] text-[#4d5a54]">
               <span
                 aria-hidden="true"
@@ -96,22 +106,60 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
               </span>
             </summary>
             <div className="absolute right-0 z-40 mt-2.5 flex w-[190px] flex-col rounded-[11px] border border-[#e1e6e3] bg-white p-[7px] shadow-[0_15px_38px_rgba(19,47,39,0.14)]">
-              <Link
-                href="/settings"
-                className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand"
-              >
+              <Link href="/settings" className={dropdownItem}>
                 Agency settings
               </Link>
-              <Link
-                href="/balance"
-                className="rounded-[7px] px-2.5 py-2 text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand"
-              >
+              <Link href="/balance" className={dropdownItem}>
                 Balance &amp; top-ups
               </Link>
               <div className="mx-0.5 my-[5px] h-px bg-[#eeeae5]" />
-              <SignOutButton className="w-full rounded-[7px] px-2.5 py-2 text-left text-[12.5px] text-[#4d5a54] hover:bg-[#f1f6f3] hover:text-brand" />
+              <SignOutButton className={`w-full ${dropdownItem}`} />
             </div>
           </details>
+
+          <PhoneMenu className="lg:hidden">
+            <PhoneMenuSection>
+              <Link href="/search" className={phoneMenuItem}>
+                Search hotels
+              </Link>
+            </PhoneMenuSection>
+            <PhoneMenuSection title="Quotes">
+              <Link href="/quotes" className={phoneMenuItem}>
+                All quotes
+              </Link>
+              <form action={createQuoteAction}>
+                <button type="submit" className={phoneMenuItem}>
+                  New quote
+                </button>
+              </form>
+              <Link href="/clients" className={phoneMenuItem}>
+                Clients
+              </Link>
+            </PhoneMenuSection>
+            <PhoneMenuSection title="Bookings">
+              {BOOKINGS.map((item) => (
+                <Link key={item.href} href={item.href} className={phoneMenuItem}>
+                  {item.label}
+                </Link>
+              ))}
+            </PhoneMenuSection>
+            <PhoneMenuSection title="Reporting">
+              {REPORTING.map((item) => (
+                <Link key={item.href} href={item.href} className={phoneMenuItem}>
+                  {item.label}
+                </Link>
+              ))}
+            </PhoneMenuSection>
+            <PhoneMenuSection title={agencyName}>
+              <Link href="/settings" className={phoneMenuItem}>
+                Agency settings
+              </Link>
+              <Link href="/balance" className={phoneMenuItem}>
+                Balance &amp; top-ups
+              </Link>
+              <SignOutButton className={phoneMenuItem} />
+            </PhoneMenuSection>
+          </PhoneMenu>
         </div>
       </div>
     </header>

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { alertError, card, cell, link, pageTitle, sectionTitle, table, tbody, td, th, thead } from "@/components/ui";
+import { alertError, card, cell, link, pageTitle, sectionTitle, table, tbody, td, th, thead, tr } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { getBookingForAdmin } from "@/server/admin/bookings";
 import { requireAdmin } from "@/server/auth/guards";
@@ -73,14 +73,14 @@ export default async function AdminBookingPage({ params }: { params: Params }) {
           </thead>
           <tbody className={tbody}>
             {b.events.map((e) => (
-              <tr key={e.id}>
-                <td className={`${cell} text-xs`}>{e.createdAt.toISOString().slice(0, 19).replace("T", " ")}</td>
-                <td className={td}>
+              <tr key={e.id} className={tr}>
+                <td data-label="When (UTC)" className={`${cell} text-xs`}>{e.createdAt.toISOString().slice(0, 19).replace("T", " ")}</td>
+                <td data-label="Change" className={td}>
                   {e.fromStatus ? `${STATUS_LABEL[e.fromStatus]} → ` : ""}
                   {STATUS_LABEL[e.toStatus]}
                 </td>
-                <td className={td}>{e.actor?.email ?? "System"}</td>
-                <td className={td}>{e.reason}</td>
+                <td data-label="By" className={td}>{e.actor?.email ?? "System"}</td>
+                <td data-label="Why" className={td}>{e.reason}</td>
               </tr>
             ))}
           </tbody>

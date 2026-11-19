@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { btnSecondary, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead } from "@/components/ui";
+import { btnSecondary, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import type { ApplicationStatus } from "@/generated/prisma/enums";
 import { listApplications } from "@/server/applications";
 import { requireAdmin } from "@/server/auth/guards";
@@ -57,18 +57,18 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
               </thead>
               <tbody className={tbody}>
                 {page.rows.map((a) => (
-                  <tr key={a.id}>
-                    <td className={td}>
+                  <tr key={a.id} className={tr}>
+                    <td data-label="Agency" className={td}>
                       <Link href={`/admin/applications/${a.id}`} className={link}>
                         {a.agencyName}
                       </Link>
                     </td>
-                    <td className={td}>
+                    <td data-label="Contact" className={td}>
                       {a.contactName}
                       <span className="block text-xs text-muted">{a.email}</span>
                     </td>
-                    <td className={td}>{a.country}</td>
-                    <td className={td}>{day.format(a.createdAt)}</td>
+                    <td data-label="Country" className={td}>{a.country}</td>
+                    <td data-label="Applied" className={td}>{day.format(a.createdAt)}</td>
                   </tr>
                 ))}
               </tbody>
