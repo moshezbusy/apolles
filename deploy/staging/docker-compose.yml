@@ -37,7 +37,8 @@ services:
     env_file: .env
     environment:
       # Demo mode: made-up hotels, rates and bookings, with a banner on every page, until
-      # Expedia's test keys are added on the server. Then delete these two lines.
+      # Expedia's test keys are added on the server. Then delete these two lines, and the
+      # worker's below.
       SUPPLIER_MODE: fake
     depends_on:
       apolles-staging-db:
@@ -63,6 +64,11 @@ services:
     init: true
     mem_limit: 256m
     env_file: .env
+    environment:
+      # Same supplier as the app (demo mode): the worker's jobs (booking checks, cancel
+      # follow-ups, reminders) must see the same made-up bookings, not call Expedia without
+      # keys. Delete together with the app's line when Expedia's test keys are added.
+      SUPPLIER_MODE: fake
     entrypoint: ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--import", "./prisma/ts-loader.mjs", "src/worker.ts"]
     depends_on:
       apolles-staging-db:
