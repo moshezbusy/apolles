@@ -1,5 +1,6 @@
 import { db } from "@/server/db";
 import { SupplierRequestRejected } from "./expedia/client";
+import { sumBreakdowns } from "./price";
 import type {
   AvailabilityQuery,
   BookInput,
@@ -8,7 +9,10 @@ import type {
   RetrievedItinerary,
   SupplierLinks,
   ContentSource,
+  Occupancy,
   Offer,
+  PriceBreakdown,
+  PriceCheckRef,
   PriceCheckResult,
   PropertyContent,
   PropertyOffers,
@@ -20,6 +24,9 @@ import type {
 // the same hotel and dates, and covers what the screens must show: a refundable and a
 // non-refundable rate, a choice of bed types, and fees paid at the property in local currency.
 // It never books: price check (plan 3) throws.
+// Several rooms (plan 10): room 1 costs what one room always cost; each other room costs a
+// little more or less by how many more or fewer guests it has than room 1, so different rooms
+// show different prices and identical rooms the same price.
 
 const DAY_MS = 86_400_000;
 
@@ -33,11 +40,40 @@ function nightsOf(q: AvailabilityQuery): number {
   return Math.round((Date.parse(`${q.checkout}T00:00:00Z`) - Date.parse(`${q.checkin}T00:00:00Z`)) / DAY_MS);
 }
 
-function offer(propertyId: string, n: number, nights: number, checkin: string, kind: 0 | 1 | 2): Offer {
-  const nightly = 9_000 + (seed(propertyId) % 40) * 500 + kind * 2_500; // cents
+const usd = (minor: number) => ({ minor, currency: "USD" });
+
+function baseNightly(propertyId: string, kind: 0 | 1 | 2): number {
+  return 9_000 + (seed(propertyId) % 40) * 500 + kind * 2_500; // cents
+}
+
+function roomPrice(nightly: number, nights: number, kind: 0 | 1 | 2): PriceBreakdown {
   const room = nightly * nights;
   const taxes = Math.floor(room / 8);
-  const usd = (minor: number) => ({ minor, currency: "USD" });
+  return {
+    total: usd(room + taxes),
+    lines: [
+      { kind: "room_rate", amount: usd(room) },
+      { kind: "taxes_and_fees", amount: usd(taxes) },
+    ],
+    dueAtProperty: kind === 2 ? [{ kind: "resort_fee", amount: usd(2_000 * nights), localAmount: { minor: 1_850 * nights, currency: "EUR" } }] : [],
+    dueAtPropertyTotal: kind === 2 ? usd(2_000 * nights) : null,
+    nights,
+  };
+}
+
+// Per room: 4 dollars a night for each adult and 2 for each child more (or fewer) than room 1.
+// At most 7 adults and 6 children apart, so a room never costs less than half the base price.
+function roomPrices(propertyId: string, nights: number, kind: 0 | 1 | 2, occupancies: Occupancy[]): PriceBreakdown[] {
+  const first = occupancies[0] ?? { adults: 1, childAges: [] };
+  return occupancies.map((occupancy) => {
+    const delta = (occupancy.adults - first.adults) * 400 + (occupancy.childAges.length - first.childAges.length) * 200;
+    return roomPrice(baseNightly(propertyId, kind) + delta, nights, kind);
+  });
+}
+
+function offer(propertyId: string, n: number, nights: number, checkin: string, kind: 0 | 1 | 2, occupancies: Occupancy[]): Offer {
+  const nightly = baseNightly(propertyId, kind);
+  const rooms = roomPrices(propertyId, nights, kind, occupancies);
   const refundable = kind !== 0;
   const freeUntil = new Date(Date.parse(`${checkin}T00:00:00Z`) - 3 * DAY_MS).toISOString().slice(0, 10);
   return {
@@ -58,17 +94,8 @@ function offer(propertyId: string, n: number, nights: number, checkin: string, k
       : [],
     nonrefundableDateRanges: [],
     amenities: [[], ["Breakfast buffet", "Free WiFi"], ["Breakfast for 2", "Free parking"]][kind]!,
-    price: {
-      total: usd(room + taxes),
-      lines: [
-        { kind: "room_rate", amount: usd(room) },
-        { kind: "taxes_and_fees", amount: usd(taxes) },
-      ],
-      dueAtProperty:
-        kind === 2 ? [{ kind: "resort_fee", amount: usd(2_000 * nights), localAmount: { minor: 1_850 * nights, currency: "EUR" } }] : [],
-      dueAtPropertyTotal: kind === 2 ? usd(2_000 * nights) : null,
-      nights,
-    },
+    price: sumBreakdowns(rooms),
+    roomPrices: rooms,
   };
 }
 
@@ -77,18 +104,18 @@ export class FakeSupplierAdapter implements SupplierAdapter, BookingSupplier {
     const nights = nightsOf(query);
     return query.propertyIds.map((propertyId, n) => ({
       propertyId,
-      offers: ([0, 1, 2] as const).map((kind) => offer(propertyId, n, nights, query.checkin, kind)),
+      offers: ([0, 1, 2] as const).map((kind) => offer(propertyId, n, nights, query.checkin, kind, query.occupancies)),
     }));
   }
 
   // The rate as searched: the fake's prices never change. The price-check token carries what
   // the fake needs to rebuild the same price (it is not a secret here).
-  async priceCheck(ref: { propertyId: string; roomId: string; rateId: string; token: string }): Promise<PriceCheckResult> {
+  async priceCheck(ref: PriceCheckRef): Promise<PriceCheckResult> {
     const match = ref.token.match(/^fake-(.+)-([012])(?:-[a-z]+)?~(\d{4}-\d{2}-\d{2})~(\d{1,2})$/);
     if (!match || match[1] !== ref.propertyId) return { status: "sold_out" };
     const kind = Number(match[2]) as 0 | 1 | 2;
-    const rebuilt = offer(ref.propertyId, 0, Number(match[4]), match[3]!, kind);
-    return { status: "available", price: rebuilt.price, bookToken: `fakebk-${ref.propertyId}-${kind}` };
+    const rebuilt = offer(ref.propertyId, 0, Number(match[4]), match[3]!, kind, ref.occupancies);
+    return { status: "available", price: rebuilt.price, roomPrices: rebuilt.roomPrices, bookToken: `fakebk-${ref.propertyId}-${kind}` };
   }
 
   async book(input: BookInput): Promise<BookResult> {
@@ -98,25 +125,68 @@ export class FakeSupplierAdapter implements SupplierAdapter, BookingSupplier {
 
   // Bookings are looked up in our own database: the fake has nowhere else to keep them.
   async findByAffiliateReference(ref: { affiliateReferenceId: string }): Promise<RetrievedItinerary | null> {
-    const booking = await db.booking.findUnique({ where: { reference: ref.affiliateReferenceId }, select: { reference: true, status: true } });
+    const booking = await db.booking.findUnique({ where: { reference: ref.affiliateReferenceId }, select: FAKE_BOOKING_FIELDS });
     if (!booking) return null;
-    return fakeItinerary(booking.reference, booking.status === "CANCELLED" || booking.status === "CANCEL_PENDING" ? "cancelled" : "booked");
+    return fakeItinerary(booking);
   }
 
   async retrieve(links: SupplierLinks): Promise<RetrievedItinerary> {
     const reference = links.retrieve?.replace(/^fake-retrieve:/, "") ?? "";
-    const booking = await db.booking.findUnique({ where: { reference }, select: { reference: true, status: true } });
+    const booking = await db.booking.findUnique({ where: { reference }, select: FAKE_BOOKING_FIELDS });
     if (!booking) throw new SupplierRequestRejected("Fake supplier: no such itinerary", 404);
-    return fakeItinerary(booking.reference, booking.status === "CANCELLED" || booking.status === "CANCEL_PENDING" ? "cancelled" : "booked");
+    return fakeItinerary(booking);
   }
 
   async cancelRoom(cancelLink: string): Promise<void> {
     if (!cancelLink.startsWith("fake-cancel:")) throw new SupplierRequestRejected("Fake supplier: unknown cancel link", 400);
+    cancelledAtFake.add(cancelLink);
   }
 }
 
-function fakeItinerary(reference: string, status: "booked" | "cancelled"): RetrievedItinerary {
-  return { itineraryId: `FAKE-${reference}`, rooms: [{ id: "room-1", status, hotelConfirmationId: `H-${reference.slice(-6)}`, cancelLink: `fake-cancel:${reference}` }] };
+// Each room is cancelled at the fake on its own, only when its own cancel link was called (as
+// Rapid cancels room by room), so a test can see room 1 cancelled while room 2 is still booked.
+// Kept in memory: the fake is for tests and the staging demo only, and a room our database has
+// as cancelled reads as cancelled anyway (so a restarted demo server still agrees with it).
+const cancelledAtFake = new Set<string>();
+
+const FAKE_BOOKING_FIELDS = {
+  reference: true,
+  status: true,
+  leadGivenName: true,
+  leadFamilyName: true,
+  rooms: { select: { status: true, givenName: true, familyName: true }, orderBy: { index: "asc" } },
+} as const;
+
+type FakeBooking = {
+  reference: string;
+  status: string;
+  leadGivenName: string;
+  leadFamilyName: string;
+  rooms: { status: string; givenName: string; familyName: string }[];
+};
+
+// One supplier room per booked room (plan 10), in room order; room 1 keeps the ids it always had.
+// A booking without rooms (made before plan 10) is one room in the lead guest's name. A room is
+// cancelled once its own cancel link was called (or our database has it, or the whole booking,
+// cancelled); a booking that is only being cancelled is not cancelled here by itself.
+function fakeItinerary(booking: FakeBooking): RetrievedItinerary {
+  const { reference } = booking;
+  const bookingCancelled = booking.status === "CANCELLED";
+  const rooms = booking.rooms.length > 0 ? booking.rooms : [{ status: "ACTIVE", givenName: booking.leadGivenName, familyName: booking.leadFamilyName }];
+  return {
+    itineraryId: `FAKE-${reference}`,
+    rooms: rooms.map((room, i) => {
+      const cancelLink = i === 0 ? `fake-cancel:${reference}` : `fake-cancel:${reference}:${i + 1}`;
+      return {
+        id: `room-${i + 1}`,
+        status: bookingCancelled || room.status === "CANCELLED" || cancelledAtFake.has(cancelLink) ? "cancelled" : "booked",
+        hotelConfirmationId: i === 0 ? `H-${reference.slice(-6)}` : `H-${reference.slice(-6)}-${i + 1}`,
+        cancelLink,
+        givenName: room.givenName,
+        familyName: room.familyName,
+      };
+    }),
+  };
 }
 
 export class FakeContentSource implements ContentSource {

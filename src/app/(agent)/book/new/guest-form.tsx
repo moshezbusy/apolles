@@ -4,7 +4,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useActionState } from "react";
 import { alertError, btnPrimary, input, label } from "@/components/ui";
 import type { GuestPrefill } from "@/server/quotes/quote-booking";
-import type { BookFormState } from "../form-state";
+import { type BookFormState, guestField } from "../form-state";
 
 type Action = (previous: BookFormState, formData: FormData) => Promise<BookFormState>;
 
@@ -15,22 +15,27 @@ const REQUESTS = [
   { id: "HONEYMOON", label: "Honeymoon" },
 ];
 
-// Screen 10: a given and family name for every guest (lead guest first), and the lead guest's
-// email and phone (TR4, TR5). The rate is passed on as ids only.
+// One room of the form: its heading ("Room 1 · 2 adults, 1 child"; none when the booking is one
+// room) and a label for each of its guests, adults first.
+export type GuestFormRoom = { heading: string | null; guests: string[] };
+
+// Screen 10: a given and family name for every guest of every room (lead guest first; each
+// room's first adult is its main guest, TR5), and the lead guest's email and phone (TR4). One
+// contact and one special request for the whole booking. The rate is passed on as ids only.
 export function GuestForm({
   action,
   rate,
-  guests,
+  rooms,
   prefill,
 }: {
   action: Action;
   rate: { s: string; p: string; r: string; b: string; stay?: string };
-  guests: string[];
+  rooms: GuestFormRoom[];
   prefill: GuestPrefill | null;
 }) {
   const [state, formAction, pending] = useActionState<BookFormState, FormData>(action, null);
   // What the agent typed wins (after an error); else the chosen client and companions.
-  const v = state?.values ?? fromPrefill(prefill);
+  const v = state?.values ?? fromPrefill(prefill, rooms);
   return (
     <form key={JSON.stringify(v)} action={formAction} noValidate className="flex flex-col gap-5">
       {state ? (
@@ -41,31 +46,18 @@ export function GuestForm({
       {Object.entries(rate).map(([key, value]) => (
         <input key={key} type="hidden" name={key} value={value} />
       ))}
-      {guests.map((title, i) => (
-        <fieldset key={i} className="grid gap-3 sm:grid-cols-2">
-          <legend className="mb-2 text-sm font-bold text-ink">
-            {title}
-            {i === 0 ? <span className="ml-2 text-xs font-normal text-muted">Lead guest: the booking is in this name</span> : null}
-          </legend>
-          <label className={`${label} sm:col-span-2 sm:max-w-[140px]`}>
-            Title
-            <select name={`title_${i}`} defaultValue={v[`title_${i}`] ?? ""} className={input}>
-              <option value="">—</option>
-              <option value="MR">Mr</option>
-              <option value="MRS">Mrs</option>
-              <option value="MS">Ms</option>
-            </select>
-          </label>
-          <label className={label}>
-            Given name
-            <input type="text" name={`given_${i}`} required maxLength={60} autoComplete="off" defaultValue={v[`given_${i}`] ?? ""} className={input} />
-          </label>
-          <label className={label}>
-            Family name
-            <input type="text" name={`family_${i}`} required maxLength={60} autoComplete="off" defaultValue={v[`family_${i}`] ?? ""} className={input} />
-          </label>
-        </fieldset>
-      ))}
+      {rooms.map((room, r) =>
+        room.heading ? (
+          <section key={r} aria-labelledby={`room-${r}`} className={`flex flex-col gap-4 ${r > 0 ? "border-t border-line pt-4" : ""}`}>
+            <h2 id={`room-${r}`} className="text-base font-bold text-ink">
+              {room.heading}
+            </h2>
+            <RoomGuests room={room} r={r} v={v} />
+          </section>
+        ) : (
+          <RoomGuests key={r} room={room} r={r} v={v} />
+        ),
+      )}
       <fieldset className="grid gap-3 sm:grid-cols-[1fr_110px_1fr]">
         <legend className="mb-2 text-sm font-bold text-ink">Lead guest contact</legend>
         <label className={label}>
@@ -115,12 +107,53 @@ export function GuestForm({
   );
 }
 
-function fromPrefill(prefill: GuestPrefill | null): Record<string, string> {
+// A given and family name (and title) for each guest of one room.
+function RoomGuests({ room, r, v }: { room: GuestFormRoom; r: number; v: Record<string, string> }) {
+  return (
+    <>
+      {room.guests.map((title, i) => {
+        const [given, family, titleField] = [guestField("given", r, i), guestField("family", r, i), guestField("title", r, i)];
+        return (
+          <fieldset key={i} className="grid gap-3 sm:grid-cols-2">
+            <legend className="mb-2 text-sm font-bold text-ink">
+              {title}
+              {i === 0 && r === 0 ? <span className="ml-2 text-xs font-normal text-muted">Lead guest: the booking is in this name</span> : null}
+              {i === 0 && r > 0 ? <span className="ml-2 text-xs font-normal text-muted">Main guest of this room</span> : null}
+            </legend>
+            <label className={`${label} sm:col-span-2 sm:max-w-[140px]`}>
+              Title
+              <select name={titleField} defaultValue={v[titleField] ?? ""} className={input}>
+                <option value="">—</option>
+                <option value="MR">Mr</option>
+                <option value="MRS">Mrs</option>
+                <option value="MS">Ms</option>
+              </select>
+            </label>
+            <label className={label}>
+              Given name
+              <input type="text" name={given} required maxLength={60} autoComplete="off" defaultValue={v[given] ?? ""} className={input} />
+            </label>
+            <label className={label}>
+              Family name
+              <input type="text" name={family} required maxLength={60} autoComplete="off" defaultValue={v[family] ?? ""} className={input} />
+            </label>
+          </fieldset>
+        );
+      })}
+    </>
+  );
+}
+
+// The client and companions fill the guests in order, room after room.
+function fromPrefill(prefill: GuestPrefill | null, rooms: GuestFormRoom[]): Record<string, string> {
   if (!prefill) return {};
   const values: Record<string, string> = { leadEmail: prefill.leadEmail, phoneCountry: prefill.phoneCountry, phoneNumber: prefill.phoneNumber };
-  prefill.guests.forEach((g, i) => {
-    values[`given_${i}`] = g.givenName;
-    values[`family_${i}`] = g.familyName;
+  const fields = rooms.flatMap((room, r) => room.guests.map((_, i) => [guestField("given", r, i), guestField("family", r, i)] as const));
+  prefill.guests.forEach((g, k) => {
+    const field = fields[k];
+    if (!field) return;
+    values[field[0]] = g.givenName;
+    values[field[1]] = g.familyName;
   });
   return values;
 }

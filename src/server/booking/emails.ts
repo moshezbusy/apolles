@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type StoredGuest, guestLines } from "@/lib/guests";
+import { type StoredGuest, guestLines, oneRoomConfirmation, roomGuestLines, roomHeading } from "@/lib/guests";
 import { formatUsd } from "@/lib/money";
 import { db } from "@/server/db";
 import { sendEmail } from "@/server/email/port";
@@ -31,16 +31,31 @@ function longDate(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
+const ROOM_FIELDS = { index: true, adults: true, childAges: true, guests: true, hotelConfirmationId: true } as const;
+type EmailRoom = { index: number; adults: number; childAges: number[]; guests: unknown; hotelConfirmationId: string | null };
+
+// A booking of several rooms (plan 10): each room with its own guests (children matched to their
+// ages within their room) and its own hotel confirmation. Only a confirmed booking shows them: a
+// booking the hotel did not confirm, or one that is cancelled, is never promised one "later".
+function roomsText(rooms: EmailRoom[], withConfirmation = true): string {
+  const blocks = rooms.map((room) => {
+    const confirmation = room.hotelConfirmationId ?? "sent by the hotel later; it will show on the booking page";
+    return [`  ${roomHeading(room.index, room)}`, ...roomGuestLines(room).map((g) => `    ${g}`), ...(withConfirmation ? [`    Hotel confirmation: ${confirmation}`] : [])].join("\n");
+  });
+  return `${rooms.length} rooms:\n${blocks.join("\n")}`;
+}
+
 export async function sendBookingEmail(bookingId: string, event: BookingEmailEvent): Promise<void> {
-  const b = await db.booking.findUnique({ where: { id: bookingId }, include: { user: { select: { email: true, name: true } } } });
+  const b = await db.booking.findUnique({ where: { id: bookingId }, include: { user: { select: { email: true, name: true } }, rooms: { orderBy: { index: "asc" }, select: ROOM_FIELDS } } });
   if (!b) return;
+  const severalRooms = b.rooms.length > 1;
   // The booking may have moved on since the job was queued: never send a message that is no
   // longer true (a newer email follows the newer change).
   if (event !== "needs_attention" && b.status !== STATUS_FOR[event]) return;
   const link = `${appUrl()}/bookings/${b.id}`;
   const stay = `${b.hotelName}, ${b.hotelCity}\n${longDate(b.checkin)} to ${longDate(b.checkout)}\n${b.roomName} · ${b.bedDescription} (bed type is a request)`;
   const names = guestLines(b.guests as StoredGuest[], b.adults, b.childAges);
-  const lead = names.length ? `Guests:\n${names.map((g) => `  ${g}`).join("\n")}` : `Lead guest: ${b.leadGivenName} ${b.leadFamilyName}`;
+  const lead = severalRooms ? roomsText(b.rooms, event === "confirmed") : names.length ? `Guests:\n${names.map((g) => `  ${g}`).join("\n")}` : `Lead guest: ${b.leadGivenName} ${b.leadFamilyName}`;
   const requests = b.specialRequest ? `\nSpecial requests (sent to the hotel, not guaranteed): ${b.specialRequest}\n` : "";
   const paid = formatUsd(b.chargedMinor ?? b.totalMinor);
 
@@ -50,7 +65,10 @@ export async function sendBookingEmail(bookingId: string, event: BookingEmailEve
     await sendEmail({
       to: to.data,
       subject: `Apolles: booking ${b.reference} needs attention`,
-      text: `The automatic check with the supplier gave up for booking ${b.reference} (status ${b.status}).\nCheck it with the supplier and fix it by hand.\n${appUrl()}/admin/bookings/${b.id}\n`,
+      // Sent for any reason a booking is flagged (the supplier check gave up, the supplier's rooms
+      // do not match ours, only some rooms were cancelled): the text names none of them, and no
+      // personal data. The admin page says what happened.
+      text: `Booking ${b.reference} (status ${b.status}) needs an admin to check it with the supplier and fix it by hand.\n${appUrl()}/admin/bookings/${b.id}\n`,
     });
     return;
   }
@@ -63,7 +81,7 @@ export async function sendBookingEmail(bookingId: string, event: BookingEmailEve
       to: b.user.email,
       subject: `Booking confirmed: ${b.hotelName}, ${longDate(b.checkin)} to ${longDate(b.checkout)}, ${b.reference}`,
       text:
-        `${hello}Your booking is confirmed.\n\nApolles reference: ${b.reference}\nHotel confirmation: ${b.hotelConfirmationId ?? "sent by the hotel later; it will show on the booking page"}\n\n` +
+        `${hello}Your booking is confirmed.\n\nApolles reference: ${b.reference}\nHotel confirmation: ${severalRooms ? "one for each room, below" : (oneRoomConfirmation(b, b.rooms) ?? "sent by the hotel later; it will show on the booking page")}\n\n` +
         `${stay}\n${lead}\n${requests}\n${free}\n\nPaid from your balance: ${paid}\nYour balance now: ${formatUsd(balanceCents)}\n\nBooking details, voucher and cancellation:\n${link}\n`,
     });
 
@@ -97,7 +115,7 @@ export async function sendFreeCancelReminders(now: Date = new Date()): Promise<n
   for (const { id } of due) {
     const claimed = await db.booking.updateMany({ where: { id, freeCancelReminderAt: null, status: "CONFIRMED" }, data: { freeCancelReminderAt: now } });
     if (claimed.count === 0) continue;
-    const b = await db.booking.findUniqueOrThrow({ where: { id }, include: { user: { select: { email: true, name: true } } } });
+    const b = await db.booking.findUniqueOrThrow({ where: { id }, include: { user: { select: { email: true, name: true } }, rooms: { orderBy: { index: "asc" }, select: ROOM_FIELDS } } });
     // Booked already inside the 72 hours: the confirmation gave the deadline; no reminder.
     if (b.confirmedAt && b.freeCancelEndsAt && b.freeCancelEndsAt.getTime() - b.confirmedAt.getTime() <= 72 * 3_600_000) continue;
     try {
@@ -106,7 +124,7 @@ export async function sendFreeCancelReminders(now: Date = new Date()): Promise<n
       subject: `Free cancellation ends in 72 hours: ${b.reference}`,
       text:
         `Hello ${b.user.name},\n\nFree cancellation for booking ${b.reference} ends on ${deadline(b.freeCancelEndsAt!)}. After that, cancelling costs a charge (see the booking).\n\n` +
-        `${b.hotelName}, ${b.hotelCity}\n${longDate(b.checkin)} to ${longDate(b.checkout)}\nLead guest: ${b.leadGivenName} ${b.leadFamilyName}\n\nView the booking:\n${appUrl()}/bookings/${b.id}\n`,
+        `${b.hotelName}, ${b.hotelCity}\n${longDate(b.checkin)} to ${longDate(b.checkout)}\n${b.rooms.length > 1 ? roomsText(b.rooms) : `Lead guest: ${b.leadGivenName} ${b.leadFamilyName}`}\n\nView the booking:\n${appUrl()}/bookings/${b.id}\n`,
       });
     } catch (error) {
       // Not sent: the claim is undone, so the next hourly run tries again.

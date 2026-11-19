@@ -63,6 +63,27 @@ describe("booking statement (22, not a tax invoice)", () => {
     expect(text).toContain("A cancellation is waiting for the hotel to confirm.");
   });
 
+  it("one room: no room lines, as before plan 10", async () => {
+    await seed("CONFIRMED");
+    await db.bookingRoom.create({ data: { bookingId: "bk1", index: 0, adults: 2, childAges: [], guests: [], givenName: "Dana", familyName: "Levi", totalMinor: 48_375, price: {}, hotelConfirmationId: "H-ROOM1" } });
+    const text = pdfText(await renderStatement("A", "bk1"));
+    expect(text).not.toContain("Room 1");
+    expect(text).toContain("Hotel confirmation: H-ROOM1");
+  });
+
+  it("several rooms (plan 10): a line per room with its price; the totals are the booking's", async () => {
+    await seed("CANCELLED");
+    await db.bookingRoom.createMany({
+      data: [
+        { bookingId: "bk1", index: 0, adults: 2, childAges: [6], guests: [], givenName: "Dana", familyName: "Levi", totalMinor: 30_000, price: {}, hotelConfirmationId: "H-1", status: "CANCELLED", cancelLink: "secret-cancel-1" },
+        { bookingId: "bk1", index: 1, adults: 1, childAges: [], guests: [], givenName: "Yossi", familyName: "Cohen", totalMinor: 18_375, price: {}, hotelConfirmationId: "H-2", status: "CANCELLED" },
+      ],
+    });
+    const text = pdfText(await renderStatement("A", "bk1"));
+    for (const t of ["Room 1 · 2 adults, 1 child (6) · Dana Levi: USD 300.00", "Room 2 · 1 adult · Yossi Cohen: USD 183.75", "H-1", "H-2", "Cancelled", "Paid from your Apolles balance: USD 483.75", "Cancellation charge: USD 83.75", "Refunded to your balance: USD 400.00"]) expect(text, t).toContain(t);
+    expect(text).not.toContain("secret-cancel");
+  });
+
   it("nothing for a booking that was never paid", async () => {
     await seed("DRAFT");
     await expect(renderStatement("A", "bk1")).rejects.toBeInstanceOf(StatementNotAvailable);

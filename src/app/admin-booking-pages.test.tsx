@@ -39,9 +39,26 @@ describe("admin booking and supplier log pages", () => {
     expect(html).toContain("IT-777");
     const { default: DetailPage } = await import("./admin/bookings/[id]/page");
     const detail = renderToStaticMarkup(await DetailPage({ params: Promise.resolve({ id: "bk1" }) }));
-    expect(detail).toContain("the automatic check with the supplier gave up");
+    // True for every reason a booking is flagged (the check gave up, rooms that do not match, a part-refused cancellation).
+    expect(detail).toContain("Needs attention: this booking needs an admin to check it with the supplier and fix it by hand.");
+    expect(detail).not.toContain("gave up");
+    expect(detail).not.toContain(">Rooms<"); // one room: as before plan 10
     expect(detail).toContain('href="/admin/supplier-log?ref=APL-ADMIN001"');
     await expect(DetailPage({ params: Promise.resolve({ id: "nope" }) })).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+
+  it("several rooms (plan 10): a rooms table with each room's guests, supplier room id, hotel confirmation, status and price; never a cancel link or token", async () => {
+    await db.booking.update({ where: { id: "bk1" }, data: { supplierLinks: { retrieve: "secret-retrieve", cancel: "secret-cancel-0" } } });
+    await db.bookingRoom.createMany({
+      data: [
+        { bookingId: "bk1", index: 0, adults: 2, childAges: [6], guests: [{ givenName: "Dana", familyName: "Levi" }, { givenName: "Avi", familyName: "Levi" }, { givenName: "Noa", familyName: "Levi" }], givenName: "Dana", familyName: "Levi", totalMinor: 6_000, price: {}, supplierRoomId: "SUP-ROOM-1", hotelConfirmationId: "H-1", cancelLink: "secret-cancel-1" },
+        { bookingId: "bk1", index: 1, adults: 1, childAges: [], guests: [{ givenName: "Yossi", familyName: "Cohen" }], givenName: "Yossi", familyName: "Cohen", totalMinor: 4_000, price: {}, supplierRoomId: "SUP-ROOM-2", hotelConfirmationId: null, cancelLink: "secret-cancel-2", status: "CANCELLED" },
+      ],
+    });
+    const { default: DetailPage } = await import("./admin/bookings/[id]/page");
+    const detail = renderToStaticMarkup(await DetailPage({ params: Promise.resolve({ id: "bk1" }) }));
+    for (const t of [">Rooms<", "Room 1 · 2 adults, 1 child (6)", "Room 2 · 1 adult", "Noa Levi (child, age 6)", "Yossi Cohen", "SUP-ROOM-1", "SUP-ROOM-2", "H-1", "USD 60.00", "USD 40.00", "Cancelled", "Active"]) expect(detail, t).toContain(t);
+    for (const t of ["secret-cancel", "secret-retrieve", "tok-a1", "(child, age ?)"]) expect(detail, t).not.toContain(t);
   });
 
   it("supplier log list and one call with its masked bodies", async () => {

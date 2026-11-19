@@ -4,11 +4,22 @@ import type { SearchFormValues } from "./form-state";
 
 // Small pieces shared by the results (08) and hotel (09) pages.
 
-// "2 nights, 2 adults, 1 child": what the price is for (SP1).
-export function stayText(s: Pick<SearchSummary, "nights" | "adults" | "childAges">): string {
-  const parts = [`${s.nights} ${s.nights === 1 ? "night" : "nights"}`, `${s.adults} ${s.adults === 1 ? "adult" : "adults"}`];
-  if (s.childAges.length > 0) parts.push(`${s.childAges.length} ${s.childAges.length === 1 ? "child" : "children"}`);
+// "2 nights, 2 adults, 1 child": what the price is for (SP1). Several rooms (plan 10) name the
+// rooms, then the guests over all of them: "3 nights, 2 rooms, 4 adults, 1 child".
+export function stayText(s: Pick<SearchSummary, "nights" | "rooms">): string {
+  const adults = s.rooms.reduce((n, r) => n + r.adults, 0);
+  const children = s.rooms.reduce((n, r) => n + r.childAges.length, 0);
+  const parts = [`${s.nights} ${s.nights === 1 ? "night" : "nights"}`];
+  if (s.rooms.length > 1) parts.push(`${s.rooms.length} rooms`);
+  parts.push(guestsText(adults, children, ", "));
   return parts.join(", ");
+}
+
+// "4 adults, 1 child" (or with " · " between): the guests, children only when there are some.
+export function guestsText(adults: number, children: number, separator: string): string {
+  const parts = [`${adults} ${adults === 1 ? "adult" : "adults"}`];
+  if (children > 0) parts.push(`${children} ${children === 1 ? "child" : "children"}`);
+  return parts.join(separator);
 }
 
 // "Apr 10" in UTC (stay dates are calendar dates, not moments).
@@ -22,9 +33,7 @@ export function formValuesOf(s: SearchSummary): SearchFormValues {
     destinationLabel: s.destinationLabel,
     checkin: s.checkin,
     checkout: s.checkout,
-    adults: String(s.adults),
-    childCount: String(s.childAges.length),
-    childAges: s.childAges.map(String),
+    rooms: s.rooms.map((r) => ({ adults: String(r.adults), childAges: r.childAges.map(String) })),
   };
 }
 

@@ -1,4 +1,5 @@
 import PDFDocument from "pdfkit";
+import { oneRoomConfirmation, roomHeading } from "@/lib/guests";
 import { formatUsd } from "@/lib/money";
 import { formatMinor } from "@/lib/supplier-money";
 import { db } from "@/server/db";
@@ -7,7 +8,8 @@ import type { PriceBreakdown } from "@/server/supplier/types";
 // The booking statement (mockup 22, owner decision 18.11.2026): a PDF from Apolles to the agency
 // with what was paid from its balance for one booking, and after a cancellation what was charged
 // and refunded. It is NOT a tax invoice (the agency's tax invoice comes from Apolles' accounting).
-// For the agency only (never the client): it shows the net price.
+// For the agency only (never the client): it shows the net price. A booking of several rooms
+// (plan 10) has a line per room with its price; the totals stay the booking's own.
 
 export class StatementNotAvailable extends Error {}
 
@@ -35,7 +37,14 @@ export async function renderStatement(agencyId: string, bookingId: string): Prom
     where: { id: bookingId, agencyId, status: { in: ["CONFIRMED", "CANCEL_PENDING", "CANCELLED", "CANCELLED_BY_SUPPLIER"] }, chargedMinor: { not: null } },
   });
   if (!b) throw new StatementNotAvailable();
-  const agency = await db.agency.findUniqueOrThrow({ where: { id: agencyId }, select: { name: true, bankReference: true, country: true } });
+  const [agency, rooms] = await Promise.all([
+    db.agency.findUniqueOrThrow({ where: { id: agencyId }, select: { name: true, bankReference: true, country: true } }),
+    db.bookingRoom.findMany({
+      where: { bookingId: b.id },
+      orderBy: { index: "asc" },
+      select: { index: true, adults: true, childAges: true, givenName: true, familyName: true, totalMinor: true, hotelConfirmationId: true, status: true },
+    }),
+  ]);
   const cancelled = b.status === "CANCELLED" || b.status === "CANCELLED_BY_SUPPLIER";
   const price = b.price as unknown as PriceBreakdown;
 
@@ -67,10 +76,18 @@ export async function renderStatement(agencyId: string, bookingId: string): Prom
 
   heading("Booking");
   line(`Apolles reference: ${b.reference}`, { bold: true });
-  if (b.hotelConfirmationId) line(`Hotel confirmation: ${b.hotelConfirmationId}`);
+  const confirmation = rooms.length > 1 ? null : oneRoomConfirmation(b, rooms);
+  if (confirmation) line(`Hotel confirmation: ${confirmation}`);
   line(`${b.hotelName}, ${b.hotelCity}`);
   line(`${day(b.checkin)} to ${day(b.checkout)} · ${b.roomName}`);
   line(`Lead guest: ${b.leadGivenName} ${b.leadFamilyName}`);
+  if (rooms.length > 1) {
+    heading("Rooms");
+    for (const room of rooms) {
+      const extra = [room.hotelConfirmationId ? `hotel confirmation ${room.hotelConfirmationId}` : null, room.status === "CANCELLED" ? "Cancelled" : null].filter(Boolean);
+      line(`${roomHeading(room.index, room)} · ${room.givenName} ${room.familyName}: ${formatUsd(room.totalMinor)}${extra.length ? ` · ${extra.join(" · ")}` : ""}`);
+    }
+  }
 
   heading("Payment");
   const paid = b.chargedMinor ?? b.totalMinor;

@@ -41,6 +41,7 @@ function offer(propertyId: string, rateId: string, totalMinor: number, refundabl
     nonrefundableDateRanges: [],
     amenities: ["Breakfast buffet"],
     price: { total: { minor: totalMinor, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 },
+    roomPrices: [{ total: { minor: totalMinor, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 }],
   };
 }
 
@@ -191,6 +192,18 @@ describe("addFromSearch", () => {
     const theirs = await search(agencyB, agentB);
     expect((await addFromSearch(agentB, agencyB, rate(theirs, quoteId), NOW)).ok).toBe(false);
     expect(await db.quote.count({ where: { agencyId: agencyB } })).toBe(0);
+  });
+
+  it("refuses a search of several rooms (plan 10): quotes are for one room for now", async () => {
+    const snapshotId = await search(agencyA, agentA);
+    const half = offer("p1", "rA", 50_000).price;
+    await db.searchSnapshot.update({
+      where: { id: snapshotId },
+      data: { query: { destinationId: "cancun", checkin: "2027-04-10", checkout: "2027-04-12", rooms: [{ adults: 2, childAges: [] }, { adults: 1, childAges: [] }], countryCode: "IL" } },
+    });
+    await db.searchHotel.updateMany({ where: { snapshotId, propertyId: "p1" }, data: { offers: [{ ...offer("p1", "rA", 100_000), roomPrices: [half, half] }] as never } });
+    expect(await addFromSearch(agentA, agencyA, rate(snapshotId), NOW)).toEqual({ ok: false, error: "Quotes are for one room for now." });
+    expect(await db.quote.count()).toBe(0);
   });
 });
 

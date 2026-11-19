@@ -1,0 +1,341 @@
+[
+  {
+    "property_id": "19248",
+    "status": "available",
+    "rooms": [
+      {
+        "id": "123abc",
+        "room_name": "Fancy Queen Room",
+        "rates": [
+          {
+            "id": "333abc",
+            "status": "available",
+            "available_rooms": 4,
+            "refundable": true,
+            "current_refundability": "refundable",
+            "sale_scenario": {
+              "package": false,
+              "member": false,
+              "corporate": false,
+              "distribution": false,
+              "mobile_promotion": false
+            },
+            "merchant_of_record": "expedia",
+            "amenities": {
+              "1234": {
+                "id": "1234",
+                "name": "Free Wireless Internet"
+              }
+            },
+            "bed_groups": {
+              "12345": {
+                "links": {
+                  "price_check": {
+                    "method": "GET",
+                    "href": "/v3/properties/19248/rooms/123abc/rates/tok-mr1?token=tok-mr1",
+                    "expires": "2027-02-01T07:23:14.000Z"
+                  }
+                },
+                "id": "12345",
+                "description": "1 Queen Bed",
+                "configuration": [
+                  {
+                    "type": "Bed",
+                    "size": "Queen",
+                    "quantity": 1
+                  }
+                ]
+              }
+            },
+            "cancel_penalties": [
+              {
+                "currency": "USD",
+                "start": "2027-02-08T11:59:00.000-08:00",
+                "end": "2027-02-10T11:59:00.000-08:00",
+                "amount": "60.00"
+              }
+            ],
+            "nonrefundable_date_ranges": [],
+            "occupancy_pricing": {
+              "2-9,4": {
+                "nightly": [
+                  [
+                    {
+                      "type": "base_rate",
+                      "value": "60.00",
+                      "currency": "USD"
+                    },
+                    {
+                      "type": "tax_and_service_fee",
+                      "value": "9.00",
+                      "currency": "USD"
+                    }
+                  ],
+                  [
+                    {
+                      "type": "base_rate",
+                      "value": "60.00",
+                      "currency": "USD"
+                    },
+                    {
+                      "type": "tax_and_service_fee",
+                      "value": "9.00",
+                      "currency": "USD"
+                    }
+                  ]
+                ],
+                "totals": {
+                  "inclusive": {
+                    "billable_currency": {
+                      "value": "138.00",
+                      "currency": "USD"
+                    },
+                    "request_currency": {
+                      "value": "138.00",
+                      "currency": "USD"
+                    }
+                  },
+                  "exclusive": {
+                    "billable_currency": {
+                      "value": "120.00",
+                      "currency": "USD"
+                    },
+                    "request_currency": {
+                      "value": "120.00",
+                      "currency": "USD"
+                    }
+                  },
+                  "property_fees": {
+                    "billable_currency": {
+                      "value": "20.00",
+                      "currency": "USD"
+                    },
+                    "request_currency": {
+                      "value": "20.00",
+                      "currency": "USD"
+                    }
+                  }
+                },
+                "fees": {
+                  "resort_fee": {
+                    "billable_currency": {
+                      "value": "18.50",
+                      "currency": "EUR"
+                    },
+                    "request_currency": {
+                      "value": "20.00",
+                      "currency": "USD"
+                    }
+                  }
+                }
+              },
+              "2": {
+                "nightly": [
+                  [
+                    {
+                      "type": "base_rate",
+                      "value": "50.00",
+                      "currency": "USD"
+                    },
+                    {
+                      "type": "tax_and_service_fee",
+                      "value": "7.50",
+                      "currency": "USD"
+                    }
+                  ],
+                  [
+                    {
+                      "type": "base_rate",
+                      "value": "50.00",
+                      "currency": "USD"
+                    },
+                    {
+                      "type": "tax_and_service_fee",
+                      "value": "7.50",
+                      "currency": "USD"
+                    }
+                  ]
+                ],
+                "totals": {
+                  "inclusive": {
+                    "billable_currency": {
+                      "value": "115.00",
+                      "currency": "USD"
+                    },
+                    "request_currency": {
+                      "value": "115.00",
+                      "currency": "USD"
+                    }
+                  },
+                  "exclusive": {
+                    "billable_currency": {
+                      "value": "100.00",
+                      "currency": "USD"
+                    },
+                    "request_currency": {
+                      "value": "100.00",
+                      "currency": "USD"
+                    }
+                  },
+                  "property_fees": {
+                    "billable_currency": {
+                      "value": "10.00",
+                      "currency": "USD"
+                    },
+                    "request_currency": {
+                      "value": "10.00",
+                      "currency": "USD"
+                    }
+                  }
+                },
+                "fees": {
+                  "resort_fee": {
+                    "billable_currency": {
+                      "value": "9.25",
+                      "currency": "EUR"
+                    },
+                    "request_currency": {
+                      "value": "10.00",
+                      "currency": "USD"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "444abc",
+            "status": "available",
+            "available_rooms": 4,
+            "refundable": true,
+            "current_refundability": "refundable",
+            "sale_scenario": {
+              "package": false,
+              "member": false,
+              "corporate": false,
+              "distribution": false,
+              "mobile_promotion": false
+            },
+            "merchant_of_record": "expedia",
+            "amenities": {
+              "1234": {
+                "id": "1234",
+                "name": "Free Wireless Internet"
+              }
+            },
+            "bed_groups": {
+              "12345": {
+                "links": {
+                  "price_check": {
+                    "method": "GET",
+                    "href": "/v3/properties/19248/rooms/123abc/rates/tok-mr2?token=tok-mr2",
+                    "expires": "2027-02-01T07:23:14.000Z"
+                  }
+                },
+                "id": "12345",
+                "description": "1 Queen Bed",
+                "configuration": [
+                  {
+                    "type": "Bed",
+                    "size": "Queen",
+                    "quantity": 1
+                  }
+                ]
+              }
+            },
+            "cancel_penalties": [
+              {
+                "currency": "USD",
+                "start": "2027-02-08T11:59:00.000-08:00",
+                "end": "2027-02-10T11:59:00.000-08:00",
+                "amount": "60.00"
+              }
+            ],
+            "nonrefundable_date_ranges": [],
+            "occupancy_pricing": {
+              "2-9,4": {
+                "nightly": [
+                  [
+                    {
+                      "type": "base_rate",
+                      "value": "60.00",
+                      "currency": "USD"
+                    },
+                    {
+                      "type": "tax_and_service_fee",
+                      "value": "9.00",
+                      "currency": "USD"
+                    }
+                  ],
+                  [
+                    {
+                      "type": "base_rate",
+                      "value": "60.00",
+                      "currency": "USD"
+                    },
+                    {
+                      "type": "tax_and_service_fee",
+                      "value": "9.00",
+                      "currency": "USD"
+                    }
+                  ]
+                ],
+                "totals": {
+                  "inclusive": {
+                    "billable_currency": {
+                      "value": "138.00",
+                      "currency": "USD"
+                    },
+                    "request_currency": {
+                      "value": "138.00",
+                      "currency": "USD"
+                    }
+                  },
+                  "exclusive": {
+                    "billable_currency": {
+                      "value": "120.00",
+                      "currency": "USD"
+                    },
+                    "request_currency": {
+                      "value": "120.00",
+                      "currency": "USD"
+                    }
+                  },
+                  "property_fees": {
+                    "billable_currency": {
+                      "value": "20.00",
+                      "currency": "USD"
+                    },
+                    "request_currency": {
+                      "value": "20.00",
+                      "currency": "USD"
+                    }
+                  }
+                },
+                "fees": {
+                  "resort_fee": {
+                    "billable_currency": {
+                      "value": "18.50",
+                      "currency": "EUR"
+                    },
+                    "request_currency": {
+                      "value": "20.00",
+                      "currency": "USD"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "links": {
+      "additional_rates": {
+        "method": "GET",
+        "href": "/v3/properties/19248/availability?token=tok-mr3"
+      }
+    },
+    "score": 10052
+  }
+]

@@ -48,3 +48,11 @@ export function contentSource(): ContentSource {
 export function isDemoSupplier(): boolean {
   return fakeRequested();
 }
+
+// Plan 10: more than one room in a search and booking only while the fake supplier is on (the
+// staging demo and tests). With Expedia it waits for a try on Expedia's test system: the Rapid
+// spec does not say how two rooms of the same guests are priced. The form hides "Add room" and
+// the server refuses more than one room ("Several rooms are not available yet.").
+export function multiRoomAllowed(): boolean {
+  return isDemoSupplier();
+}

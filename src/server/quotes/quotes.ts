@@ -15,6 +15,9 @@ export const QUOTE_PAGE_SIZE = 20;
 export const MAX_STAYS = 10;
 export const MAX_HOTELS_PER_STAY = 20;
 export const MAX_ROOMS_PER_HOTEL = 10;
+// Plan 10: a quote is for one room; a search of several rooms says this instead of "Add to quote"
+// (several-room quotes are plan 10b), and the server refuses with it.
+export const QUOTES_ONE_ROOM = "Quotes are for one room for now.";
 
 export const QUOTE_TABS = ["all", "draft", "sent", "viewed", "selected", "booked"] as const;
 export type QuoteTab = (typeof QUOTE_TABS)[number];
@@ -644,7 +647,9 @@ export async function addFromSearch(
   const input = parsed.data;
   const found = await findOffer(agencyId, { snapshotId: input.snapshotId, propertyId: input.propertyId, rateId: input.rateId, bedGroupId: input.bedGroupId }, now);
   if (!found) return fail("These prices expired (they are kept for 30 minutes). Search again.");
-  const { offer, bedGroup, hotel, query } = found;
+  const { offer, bedGroup, hotel, query, rooms } = found;
+  // Plan 10: a quote is for one room (several-room quotes are plan 10b).
+  if (rooms.length > 1) return fail(QUOTES_ONE_ROOM);
   const destination = await db.destination.findUnique({ where: { id: query.destinationId }, select: { id: true, nameFull: true } });
   if (!destination) return fail("Search again and choose the room.");
   const property = await db.property.findUnique({ where: { id: offer.propertyId }, select: { starRating: true } });

@@ -291,18 +291,21 @@ What to expect:
 
 ## 6. Demo mode (until Expedia's test keys arrive)
 
-`docker-compose.yml` sets `SUPPLIER_MODE: fake` for the app. While it is set:
+`docker-compose.yml` sets `SUPPLIER_MODE: fake` for the app and the worker (both must agree: the
+worker's jobs check and follow up the same demo bookings). While it is set:
 
 - search, hotel pages and bookings use made-up hotels and rates (`src/server/supplier/fake.ts`);
 - every page shows a yellow "Demo mode" banner;
 - each start adds the demo destinations and hotels (Paris, Rome, Barcelona, London, Athens,
   Dubai). Every demo id starts with `demo-`, and real data is never touched;
-- nothing is sent to Expedia or to any hotel.
+- nothing is sent to Expedia or to any hotel;
+- several rooms per booking are allowed (plan 10). With the real supplier they stay off until
+  they are checked on Expedia's test system (plan 10, "Verify with Expedia test keys").
 
 The app refuses the fake supplier whenever `APP_ENV=production`.
 
-When the Expedia test keys are on the server, delete the `environment:` block with `SUPPLIER_MODE` from
-`docker-compose.yml` and restart. The next catalog sync then marks the demo hotels inactive,
+When the Expedia test keys are on the server, delete both `environment:` blocks with `SUPPLIER_MODE`
+(app and worker) from `docker-compose.yml` and restart. The next catalog sync then marks the demo hotels inactive,
 because they are not in Expedia's file.
 
 ### 6.1 Demo login (agent)

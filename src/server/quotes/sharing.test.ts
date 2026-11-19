@@ -15,6 +15,14 @@ let agentA: string;
 let agentB: string;
 let quoteId: string;
 
+const PRICE = (total: number): Offer["price"] => ({
+  total: { minor: total, currency: "USD" },
+  lines: [],
+  dueAtProperty: [{ kind: "mandatory_tax", amount: { minor: 1200, currency: "USD" }, localAmount: { minor: 21000, currency: "MXN" } }],
+  dueAtPropertyTotal: { minor: 1200, currency: "USD" },
+  nights: 2,
+});
+
 const OFFER = (rateId: string, total: number): Offer => ({
   propertyId: "p1",
   roomId: `room-${rateId}`,
@@ -25,13 +33,8 @@ const OFFER = (rateId: string, total: number): Offer => ({
   cancelPenalties: [{ start: "2099-04-03T00:00:00.000+02:00", end: "2099-04-10T00:00:00.000+02:00", amount: null, nights: 1, percent: null }],
   nonrefundableDateRanges: [],
     amenities: [],
-  price: {
-    total: { minor: total, currency: "USD" },
-    lines: [],
-    dueAtProperty: [{ kind: "mandatory_tax", amount: { minor: 1200, currency: "USD" }, localAmount: { minor: 21000, currency: "MXN" } }],
-    dueAtPropertyTotal: { minor: 1200, currency: "USD" },
-    nights: 2,
-  },
+  price: PRICE(total),
+  roomPrices: [PRICE(total)],
 });
 
 const sent: { to: string; subject: string; text: string; fromName?: string; replyTo?: string }[] = [];

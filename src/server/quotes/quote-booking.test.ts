@@ -54,7 +54,7 @@ async function pick(stayId: string, roomId: string): Promise<void> {
 }
 
 async function addStay(checkin: string, checkout: string): Promise<void> {
-  const { snapshotId } = await startSearch(ctx(), { destinationId: "paris", checkin, checkout, adults: 2, childAges: [] }, { adapter: supplier(), now: NOW });
+  const { snapshotId } = await startSearch(ctx(), { destinationId: "paris", checkin, checkout, rooms: [{ adults: 2, childAges: [] }] }, { adapter: supplier(), now: NOW });
   const hotel = await db.searchHotel.findFirstOrThrow({ where: { snapshotId } });
   const offer = (hotel.offers as unknown as Offer[])[0]!;
   const added = await addFromSearch("u-A", "A", { quoteId: quoteId || "new", snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id }, NOW);
@@ -89,7 +89,7 @@ async function bookStay(stayId: string, deps: { supplier?: Supplier } = {}) {
   const { s, p, r, b } = prepared.rate;
   const { bookingId } = await createDraft(
     ctx(),
-    { snapshotId: s, propertyId: p, rateId: r, bedGroupId: b, quoteStayId: stayId, guests, leadEmail: "daniel@example.com", leadPhone: { countryCode: "972", number: "501234567" } },
+    { snapshotId: s, propertyId: p, rateId: r, bedGroupId: b, quoteStayId: stayId, rooms: [{ guests }], leadEmail: "daniel@example.com", leadPhone: { countryCode: "972", number: "501234567" } },
     { now: later(1) },
   );
   const review = await prepareReview(ctx(), bookingId, { supplier: deps.supplier ?? supplier(), now: later(2) });
@@ -108,7 +108,7 @@ describe("book the client's selection from a quote", () => {
     const prepared = await prepareQuoteBooking(ctx(), stay!.id, { adapter: supplier(), now: NOW });
     expect(prepared).toMatchObject({ ok: true, rate: { p: "11", r: room.rateId, b: room.bedGroupId } });
     const snapshot = await db.searchSnapshot.findUniqueOrThrow({ where: { id: prepared.ok ? prepared.rate.s : "" } });
-    expect(snapshot).toMatchObject({ agencyId: "A", candidateIds: ["11"], query: expect.objectContaining({ checkin: "2027-04-10", checkout: "2027-04-12", adults: 2 }) });
+    expect(snapshot).toMatchObject({ agencyId: "A", candidateIds: ["11"], query: expect.objectContaining({ checkin: "2027-04-10", checkout: "2027-04-12", rooms: [{ adults: 2, childAges: [] }] }) });
   });
 
   it("the room is gone at the hotel: says so", async () => {
@@ -180,7 +180,7 @@ describe("book the client's selection from a quote", () => {
     const prepared = await prepareQuoteBooking(ctx(), stay!.id, { adapter: supplier(), now: NOW });
     if (!prepared.ok) throw new Error(prepared.error);
     const { s, p, r, b } = prepared.rate;
-    const input = { snapshotId: s, propertyId: p, rateId: r, bedGroupId: b, quoteStayId: stay!.id, guests, leadEmail: "daniel@example.com", leadPhone: { countryCode: "972", number: "501234567" } };
+    const input = { snapshotId: s, propertyId: p, rateId: r, bedGroupId: b, quoteStayId: stay!.id, rooms: [{ guests }], leadEmail: "daniel@example.com", leadPhone: { countryCode: "972", number: "501234567" } };
     const one = await createDraft(ctx(), input, { now: later(1) });
     const two = await createDraft(ctx(), input, { now: later(1) });
     for (const id of [one.bookingId, two.bookingId]) {
@@ -199,9 +199,9 @@ describe("book the client's selection from a quote", () => {
   it("a draft from a quote must be the stay's own hotel and dates, of the agency's own quote", async () => {
     const [stay] = await quoteStays();
     await pick(stay!.id, stay!.rooms[0]!.id);
-    const other = await startSearch(ctx(), { destinationId: "paris", checkin: "2027-05-01", checkout: "2027-05-03", adults: 2, childAges: [] }, { adapter: supplier(), now: NOW });
+    const other = await startSearch(ctx(), { destinationId: "paris", checkin: "2027-05-01", checkout: "2027-05-03", rooms: [{ adults: 2, childAges: [] }] }, { adapter: supplier(), now: NOW });
     const offer = ((await db.searchHotel.findFirstOrThrow({ where: { snapshotId: other.snapshotId } })).offers as unknown as Offer[])[0]!;
-    const input = { snapshotId: other.snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, quoteStayId: stay!.id, guests, leadEmail: "d@example.com", leadPhone: { countryCode: "972", number: "501234567" } };
+    const input = { snapshotId: other.snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, quoteStayId: stay!.id, rooms: [{ guests }], leadEmail: "d@example.com", leadPhone: { countryCode: "972", number: "501234567" } };
     await expect(createDraft(ctx(), input, { now: later(1) })).rejects.toThrow(/not the dates or hotel of this quote/);
     await db.quote.update({ where: { id: quoteId }, data: { status: "BOOKED" } });
     const prepared = await prepareQuoteBooking(ctx(), stay!.id, { adapter: supplier(), now: NOW });
@@ -232,7 +232,7 @@ describe("a booked destination (review fixes)", () => {
     const { bookingId } = await bookStay(stay!.id);
     expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "BOOKED" });
     const booking = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
-    const charge = cancelQuote(booking, later(10));
+    const charge = cancelQuote(booking, await db.bookingRoom.findMany({ where: { bookingId } }), later(10));
     if (!charge.allowed) throw new Error(charge.reason);
     expect(await cancel(ctx(), bookingId, { expectedChargeMinor: charge.chargeMinor }, { supplier: supplier(), now: later(10) })).toEqual({ kind: "cancelled" });
     expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "SELECTED" });
@@ -265,7 +265,7 @@ describe("a booked destination (review fixes)", () => {
     const prepared = await prepareQuoteBooking(ctx(), stay!.id, { adapter: supplier(), now: NOW });
     if (!prepared.ok) throw new Error(prepared.error);
     const { s, p, r, b } = prepared.rate;
-    const { bookingId } = await createDraft(ctx(), { snapshotId: s, propertyId: p, rateId: r, bedGroupId: b, quoteStayId: stay!.id, guests, leadEmail: "d@example.com", leadPhone: { countryCode: "972", number: "501234567" } }, { now: later(1) });
+    const { bookingId } = await createDraft(ctx(), { snapshotId: s, propertyId: p, rateId: r, bedGroupId: b, quoteStayId: stay!.id, rooms: [{ guests }], leadEmail: "d@example.com", leadPhone: { countryCode: "972", number: "501234567" } }, { now: later(1) });
     const review = await prepareReview(ctx(), bookingId, { supplier: supplier(), now: later(2) });
     if (review.kind !== "ready") throw new Error("not ready");
     // The client now picks a room of another hotel on this destination.
@@ -305,7 +305,7 @@ describe("a booked destination (review fixes)", () => {
     await db.quoteStay.update({ where: { id: stay!.id }, data: { selectedRoomId: null } });
     const { s, p, r, b } = prepared.rate;
     await expect(
-      createDraft(ctx(), { snapshotId: s, propertyId: p, rateId: r, bedGroupId: b, quoteStayId: stay!.id, guests, leadEmail: "d@example.com", leadPhone: { countryCode: "972", number: "501234567" } }, { now: later(1) }),
+      createDraft(ctx(), { snapshotId: s, propertyId: p, rateId: r, bedGroupId: b, quoteStayId: stay!.id, rooms: [{ guests }], leadEmail: "d@example.com", leadPhone: { countryCode: "972", number: "501234567" } }, { now: later(1) }),
     ).rejects.toThrow(/not the dates or hotel of this quote/);
   });
 
@@ -317,7 +317,7 @@ describe("a booked destination (review fixes)", () => {
     const prepared = await prepareQuoteBooking(ctx(), stay!.id, { adapter: supplier(), now: NOW });
     if (!prepared.ok) throw new Error(prepared.error);
     const { s, p, r, b } = prepared.rate;
-    const input = { snapshotId: s, propertyId: p, rateId: r, bedGroupId: b, quoteStayId: stay!.id, guests, leadEmail: "daniel@example.com", leadPhone: { countryCode: "972", number: "501234567" } };
+    const input = { snapshotId: s, propertyId: p, rateId: r, bedGroupId: b, quoteStayId: stay!.id, rooms: [{ guests }], leadEmail: "daniel@example.com", leadPhone: { countryCode: "972", number: "501234567" } };
     const ids = [(await createDraft(ctx(), input, { now: later(1) })).bookingId, (await createDraft(ctx(), input, { now: later(1) })).bookingId];
     for (const id of ids) await prepareReview(ctx(), id, { supplier: supplier(), now: later(2) });
     const total = (await db.booking.findUniqueOrThrow({ where: { id: ids[0]! } })).totalMinor;

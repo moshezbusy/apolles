@@ -50,7 +50,7 @@ export async function prepareQuoteBooking(
   try {
     ({ snapshotId } = await searchOneHotel(
       ctx,
-      { destinationId: stay.destinationId, propertyId, checkin: stay.checkin, checkout: stay.checkout, adults: stay.quote.adults, childAges: stay.quote.childAges },
+      { destinationId: stay.destinationId, propertyId, checkin: stay.checkin, checkout: stay.checkout, rooms: [{ adults: stay.quote.adults, childAges: stay.quote.childAges }] }, // quotes are one room
       deps,
     ));
   } catch (error) {

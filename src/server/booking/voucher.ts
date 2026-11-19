@@ -1,4 +1,4 @@
-import { type StoredGuest, guestLines } from "@/lib/guests";
+import { type StoredGuest, guestLines, oneRoomConfirmation, roomGuestLines, roomHeading } from "@/lib/guests";
 import PDFDocument from "pdfkit";
 import { formatMinor } from "@/lib/supplier-money";
 import { toBlocks } from "@/lib/supplier-text";
@@ -9,7 +9,9 @@ import type { CancelPenalty, PriceBreakdown, PropertyContent } from "@/server/su
 // The voucher PDF (spec section 3 row 10; AP3, BP4, ER2, ER4): in English, in the agency's
 // name and branding, for the agent to give the traveller. It holds what the hotel and the
 // guest need; never the price paid, the supplier's name or its itinerary number. Only for the
-// agency's own confirmed booking. Supplier text is drawn as plain text (toBlocks).
+// agency's own confirmed booking. Supplier text is drawn as plain text (toBlocks). A booking of
+// several rooms (plan 10) is one voucher with a block per room: its guests and its own hotel
+// confirmation (each room has one, TR6).
 //
 // The built-in PDF fonts cover Latin script only: other characters are shown as "?" rather
 // than as broken glyphs.
@@ -51,11 +53,13 @@ export async function renderVoucher(agencyId: string, bookingId: string): Promis
   if (typeof bookingId !== "string" || bookingId.length > 64) throw new VoucherNotAvailable();
   const b = await db.booking.findFirst({ where: { id: bookingId, agencyId, status: "CONFIRMED" } });
   if (!b) throw new VoucherNotAvailable();
-  const [agency, logo, cached] = await Promise.all([
+  const [agency, logo, cached, rooms] = await Promise.all([
     db.agency.findUniqueOrThrow({ where: { id: agencyId }, select: { name: true, email: true, phone: true } }),
     db.agencyLogo.findUnique({ where: { agencyId }, select: { data: true } }),
     db.propertyContentCache.findUnique({ where: { propertyId: b.propertyId }, select: { data: true } }),
+    db.bookingRoom.findMany({ where: { bookingId: b.id }, orderBy: { index: "asc" }, select: { index: true, adults: true, childAges: true, guests: true, hotelConfirmationId: true } }),
   ]);
+  const severalRooms = rooms.length > 1;
   // Hotel content from the cache only: printing a voucher never calls the supplier.
   const parsed = cached ? contentShape.safeParse(cached.data) : null;
   const content: PropertyContent | null = parsed?.success ? parsed.data : null;
@@ -77,6 +81,12 @@ export async function renderVoucher(agencyId: string, bookingId: string): Promis
   const line = (text: string, opts: { muted?: boolean; bold?: boolean } = {}) => {
     doc.font(opts.bold ? "Helvetica-Bold" : "Helvetica").fontSize(9.5).fillColor(opts.muted ? MUTED : INK).text(latin(text), { width });
   };
+  // A block of `lines` lines starts on a new page when it would not fit on this one, so a room's
+  // heading, guests and confirmation are never split over two pages (up to 8 rooms).
+  const keepTogether = (lines: number) => {
+    doc.font("Helvetica").fontSize(9.5);
+    if (doc.y + lines * doc.currentLineHeight(true) + 12 > doc.page.height - doc.page.margins.bottom) doc.addPage();
+  };
   const supplierText = (html: string | null | undefined) => {
     for (const block of toBlocks(html)) line(block.kind === "li" ? `- ${block.text}` : block.text);
   };
@@ -97,7 +107,8 @@ export async function renderVoucher(agencyId: string, bookingId: string): Promis
   doc.font("Helvetica-Bold").fontSize(20).fillColor(INK).text("Hotel voucher", { width });
   doc.moveDown(0.3);
   line(`Booking reference: ${b.reference}`, { bold: true });
-  line(`Hotel confirmation number: ${b.hotelConfirmationId ?? "to be confirmed by the hotel"}`, { bold: true });
+  if (severalRooms) line(`Hotel confirmation numbers: one for each room, under "Rooms and guests"`, { bold: true });
+  else line(`Hotel confirmation number: ${oneRoomConfirmation(b, rooms) ?? "to be confirmed by the hotel"}`, { bold: true });
   line(`Status: Confirmed · Paid${b.confirmedAt ? `   Issued: ${longDate(b.confirmedAt.toISOString().slice(0, 10))}` : ""}`);
   // Screen 21: the hotel must not charge the guest for the room (paid in advance to the supplier).
   line("The room is paid in advance. Do not charge the guest for it. Only the fees under \"To pay at the property\" are paid by the guest.", { bold: true });
@@ -110,13 +121,27 @@ export async function renderVoucher(agencyId: string, bookingId: string): Promis
   heading("Stay");
   line(`Check-in: ${longDate(b.checkin)}${content?.checkin.beginTime ? `, from ${content.checkin.beginTime}${content.checkin.endTime ? ` to ${content.checkin.endTime}` : ""}` : ""}`);
   line(`Check-out: ${longDate(b.checkout)}${content?.checkout.time ? `, by ${content.checkout.time}` : ""}`);
-  line(`Room: ${b.roomName}`);
+  line(severalRooms ? `Rooms: ${rooms.length} x ${b.roomName}` : `Room: ${b.roomName}`);
   if (b.amenities.length > 0) line(`Rate includes: ${b.amenities.join(", ")}`);
   line(`Bed type: ${b.bedDescription}`);
   line("Bed type is a request and not guaranteed.", { muted: true });
 
-  heading("Guests");
-  for (const g of guests) line(g);
+  if (severalRooms) {
+    // Each room's own guests: children are matched to their ages within their room.
+    const blocks = rooms.map((room) => ({ title: roomHeading(room.index, room), guests: roomGuestLines(room), confirmation: room.hotelConfirmationId }));
+    keepTogether(blocks[0]!.guests.length + 5); // the heading stays with the first room
+    heading("Rooms and guests");
+    for (const block of blocks) {
+      keepTogether(block.guests.length + 2);
+      line(block.title, { bold: true });
+      for (const g of block.guests) line(g);
+      line(`Hotel confirmation number: ${block.confirmation ?? "to be confirmed by the hotel"}`);
+      doc.moveDown(0.4);
+    }
+  } else {
+    heading("Guests");
+    for (const g of guests) line(g);
+  }
   line(`Lead guest contact: ${b.leadEmail}, ${b.leadPhone}`, { muted: true });
   if (b.specialRequest) {
     heading("Special requests");

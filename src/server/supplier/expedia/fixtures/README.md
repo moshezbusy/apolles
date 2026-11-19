@@ -14,3 +14,8 @@ Test data for the Expedia adapter.
   the spec's first create example, changed to our payment type: `affiliate_collect`, with
   the billing contact only. The card number, CVV, 3-D Secure data, loyalty id and other
   optional fields were removed, because Apolles never sends card data.
+- `*.multi-room.json` (plan 10): two rooms in one request. `availability.multi-room.json` has a
+  rate priced for both occupancies (`2-9,4` and `2`) and one priced for `2-9,4` only;
+  `price-check.multi-room.json` prices both; `retrieve.multi-room.json` is the retrieve example
+  with two rooms, each with its own main guest and cancel link. Made by hand from the spec's
+  examples and schema (amounts in USD, consistent with the nightly lines).

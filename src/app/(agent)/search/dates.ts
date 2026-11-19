@@ -11,15 +11,13 @@ export function dateRange(now: Date): { minDate: string; maxDate: string } {
   return { minDate: iso(now), maxDate: iso(new Date(now.getTime() + 365 * DAY_MS)) };
 }
 
-// A new search starts two weeks ahead, two nights, two adults.
+// A new search starts two weeks ahead, two nights, one room of two adults.
 export function defaultSearchValues(now: Date): SearchFormValues {
   return {
     destinationId: "",
     destinationLabel: "",
     checkin: iso(new Date(now.getTime() + 14 * DAY_MS)),
     checkout: iso(new Date(now.getTime() + 16 * DAY_MS)),
-    adults: "2",
-    childCount: "0",
-    childAges: [],
+    rooms: [{ adults: "2", childAges: [] }],
   };
 }

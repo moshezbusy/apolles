@@ -14,8 +14,9 @@ function one(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
-// Admin: every agency's bookings, newest first. "Needs attention": bookings whose automatic
-// check with the supplier gave up (pending or cancel-pending for a long time).
+// Admin: every agency's bookings, newest first. "Needs attention": bookings an admin must check
+// with the supplier (the automatic check gave up, the supplier's rooms do not match ours, or only
+// some rooms were cancelled).
 export default async function AdminBookingsPage({ searchParams }: { searchParams: SearchParams }) {
   await requireAdmin();
   const q = await searchParams;

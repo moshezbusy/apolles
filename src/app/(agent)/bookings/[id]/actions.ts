@@ -26,7 +26,7 @@ export async function cancelAction(formData: FormData): Promise<void> {
     throw error;
   }
   revalidatePath("/", "layout"); // the header shows the balance (a refund changes it)
-  const notice = { cancelled: "cancelled", pending: "cancel_pending", refused: "cancel_refused", not_allowed: "cancel_not_allowed" }[outcome.kind];
+  const notice = { cancelled: "cancelled", pending: "cancel_pending", refused: "cancel_refused", part_refused: "cancel_part_refused", not_allowed: "cancel_not_allowed" }[outcome.kind];
   redirect(`/bookings/${bookingId}?notice=${notice}`);
 }
 

@@ -4,11 +4,11 @@ import { getContent } from "@/server/content/content-cache";
 import { db } from "@/server/db";
 import { hitRateLimit } from "@/server/rate-limit";
 import { SupplierError } from "@/server/supplier/expedia/client";
-import { supplierAdapter } from "@/server/supplier";
-import type { Image, Offer, PropertyContent, SupplierAdapter, SupplierContext } from "@/server/supplier/types";
+import { multiRoomAllowed, supplierAdapter } from "@/server/supplier";
+import type { Image, Occupancy, Offer, PropertyContent, SupplierAdapter, SupplierContext } from "@/server/supplier/types";
 import type { Money } from "@/lib/supplier-money";
-import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
-import { type SearchInput, searchInputSchema } from "./input";
+import { SEVERAL_ROOMS_UNAVAILABLE, SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
+import { MAX_ROOMS, type SearchInput, searchInputSchema } from "./input";
 
 // Hotel search (plan 2b, task 6; spec section 3 rows 4-6).
 // - startSearch picks the destination's active, Expedia-collect hotels in rank order and asks
@@ -60,18 +60,70 @@ export type ListOptions = {
   take?: number;
 };
 
-const storedQuery = z.object({
-  destinationId: z.string(),
-  checkin: z.string(),
-  checkout: z.string(),
-  adults: z.number(),
-  childAges: z.array(z.number()),
-  countryCode: z.string(),
-});
+// The search as stored with its snapshot: the rooms in order (plan 10). A search stored before
+// plan 10 has one room's guests at the top (adults, childAges); roomsOfQuery reads both.
+const storedRoom = z.object({ adults: z.number().int(), childAges: z.array(z.number().int()) });
+const storedQuery = z
+  .object({
+    destinationId: z.string(),
+    checkin: z.string(),
+    checkout: z.string(),
+    rooms: z.array(storedRoom).min(1).max(MAX_ROOMS).optional(),
+    adults: z.number().int().optional(),
+    childAges: z.array(z.number().int()).optional(),
+    countryCode: z.string(),
+  })
+  .refine((q) => q.rooms !== undefined || (q.adults !== undefined && q.childAges !== undefined));
+export type StoredQuery = z.infer<typeof storedQuery>;
+type NewQuery = SearchInput & { countryCode: string };
+
+export function roomsOfQuery(query: StoredQuery): Occupancy[] {
+  return query.rooms ?? [{ adults: query.adults ?? 0, childAges: query.childAges ?? [] }];
+}
+
+// The stored search read back, with the totals over every room for the callers that count
+// guests (booking, quotes) as well as the rooms themselves.
+export type SnapshotQuery = { destinationId: string; checkin: string; checkout: string; countryCode: string; adults: number; childAges: number[] };
+
+function readQuery(raw: unknown): { query: SnapshotQuery; rooms: Occupancy[] } | null {
+  const parsed = storedQuery.safeParse(raw);
+  if (!parsed.success) return null;
+  const { destinationId, checkin, checkout, countryCode } = parsed.data;
+  const rooms = roomsOfQuery(parsed.data);
+  return {
+    query: { destinationId, checkin, checkout, countryCode, adults: rooms.reduce((n, r) => n + r.adults, 0), childAges: rooms.flatMap((r) => r.childAges) },
+    rooms,
+  };
+}
+
+// 1 to 8 rooms, and more than one only while multiRoomAllowed (plan 10). Checked before the
+// supplier is asked; the adapter's own check is only a backstop.
+function checkRooms(rooms: Occupancy[]): void {
+  if (rooms.length < 1 || rooms.length > MAX_ROOMS) throw new SearchInputInvalid("Check the destination, dates and guests.");
+  if (rooms.length > 1 && !multiRoomAllowed()) throw new SearchInputInvalid(SEVERAL_ROOMS_UNAVAILABLE);
+}
 
 // Offers are read back from the database before the hotel page and booking use them: a damaged
 // or old-format row gives "not found", never a half-read price.
 const money = z.object({ minor: z.number().int(), currency: z.string().regex(/^[A-Z]{3}$/) }).strict();
+const priceSchema = z
+  .object({
+    total: money,
+    lines: z.array(
+      z
+        .object({
+          kind: z.enum(["room_rate", "extra_person_fee", "taxes_and_fees", "taxes", "discount", "service_fee"]),
+          amount: money,
+        })
+        .strict(),
+    ),
+    dueAtProperty: z.array(
+      z.object({ kind: z.enum(["mandatory_fee", "resort_fee", "mandatory_tax"]), amount: money, localAmount: money.nullable() }).strict(),
+    ),
+    dueAtPropertyTotal: money.nullable(),
+    nights: z.number().int().positive(),
+  })
+  .strict();
 const offerSchema: z.ZodType<Offer> = z
   .object({
     propertyId: z.string(),
@@ -88,27 +140,35 @@ const offerSchema: z.ZodType<Offer> = z
     nonrefundableDateRanges: z.array(z.object({ start: z.string(), end: z.string() }).strict()),
     // Plan 8f: a search stored before this field reads as "nothing listed".
     amenities: z.array(z.string().max(100)).max(10).default([]),
-    price: z
-      .object({
-        total: money,
-        lines: z.array(
-          z
-            .object({
-              kind: z.enum(["room_rate", "extra_person_fee", "taxes_and_fees", "taxes", "discount", "service_fee"]),
-              amount: money,
-            })
-            .strict(),
-        ),
-        dueAtProperty: z.array(
-          z.object({ kind: z.enum(["mandatory_fee", "resort_fee", "mandatory_tax"]), amount: money, localAmount: money.nullable() }).strict(),
-        ),
-        dueAtPropertyTotal: money.nullable(),
-        nights: z.number().int().positive(),
-      })
-      .strict(),
+    price: priceSchema,
+    // Plan 10: a search stored before rooms were counted is one room at the offer's price.
+    roomPrices: z.array(priceSchema).min(1).max(8).optional(),
   })
-  .strict();
+  .strict()
+  .transform(({ roomPrices, ...offer }) => ({ ...offer, roomPrices: roomPrices ?? [offer.price] }));
 const storedOffers = z.array(offerSchema).min(1);
+
+// Plan 10: an offer is priced for every room of its search, one price per room, and the rooms'
+// prices add up to the offer's price (same currency and nights, totals summing exactly).
+function pricedForRooms(offer: Offer, rooms: Occupancy[]): boolean {
+  if (offer.roomPrices.length !== rooms.length) return false;
+  const { total, nights } = offer.price;
+  let sum = 0;
+  for (const room of offer.roomPrices) {
+    if (room.total.currency !== total.currency || room.nights !== nights) return false;
+    sum += room.total.minor;
+  }
+  return Number.isSafeInteger(sum) && sum === total.minor;
+}
+
+// A hotel's stored offers, read back. Offers that do not fit the rooms are dropped before they
+// are stored (fetchBatch), so one here is a damaged row: it gives nothing for the hotel, never
+// a price to show or book (and the rate positions of the results stay as stored).
+function readOffers(raw: unknown, rooms: Occupancy[]): Offer[] | null {
+  const offers = storedOffers.safeParse(raw);
+  if (!offers.success) return null;
+  return offers.data.every((offer) => pricedForRooms(offer, rooms)) ? offers.data : null;
+}
 
 async function rateLimit(agencyId: string): Promise<void> {
   const { allowed } = await hitRateLimit(`search:agency:${agencyId}`, SEARCH_RATE_LIMIT.limit, SEARCH_RATE_LIMIT.windowMs);
@@ -117,10 +177,11 @@ async function rateLimit(agencyId: string): Promise<void> {
 
 // Asks Expedia for the next batch of a snapshot's candidates and stores the priced hotels.
 async function fetchBatch(
-  snapshot: { id: string; candidateIds: string[]; nextIndex: number; query: z.infer<typeof storedQuery> },
+  snapshot: { id: string; candidateIds: string[]; nextIndex: number; query: { checkin: string; checkout: string; countryCode: string }; rooms: Occupancy[] },
   supplierContext: SupplierContext,
   adapter: SupplierAdapter,
 ): Promise<number> {
+  checkRooms(snapshot.rooms);
   const batch = snapshot.candidateIds.slice(snapshot.nextIndex, snapshot.nextIndex + BATCH);
   if (batch.length === 0) return 0;
   const end = snapshot.nextIndex + batch.length;
@@ -135,7 +196,7 @@ async function fetchBatch(
         propertyIds: batch,
         checkin: snapshot.query.checkin,
         checkout: snapshot.query.checkout,
-        occupancy: { adults: snapshot.query.adults, childAges: snapshot.query.childAges },
+        occupancies: snapshot.rooms,
         countryCode: snapshot.query.countryCode,
       },
       supplierContext,
@@ -150,7 +211,8 @@ async function fetchBatch(
   const byId = new Map<string, Offer[]>();
   for (const property of results) {
     if (!asked.has(property.propertyId) || byId.has(property.propertyId)) continue; // stranger or duplicate
-    const offers = property.offers.filter((offer) => offer.propertyId === property.propertyId);
+    // An offer of another hotel, or not priced for exactly the rooms asked, is dropped.
+    const offers = property.offers.filter((offer) => offer.propertyId === property.propertyId && pricedForRooms(offer, snapshot.rooms));
     if (offers.length > 0) byId.set(property.propertyId, offers);
   }
 
@@ -215,6 +277,7 @@ export async function startSearch(ctx: SearchContext, rawInput: unknown, deps: D
   const parsed = searchInputSchema(now).safeParse(rawInput);
   if (!parsed.success) throw new SearchInputInvalid("Check the destination, dates and guests.");
   const input: SearchInput = parsed.data;
+  checkRooms(input.rooms);
   await rateLimit(ctx.agencyId);
 
   const [agency, destination] = await Promise.all([
@@ -239,7 +302,7 @@ export async function startSearch(ctx: SearchContext, rawInput: unknown, deps: D
 // checks and the same rate limit as a destination search.
 export async function searchOneHotel(
   ctx: SearchContext,
-  rawInput: { destinationId: string; propertyId: string; checkin: string; checkout: string; adults: number; childAges: number[] },
+  rawInput: { destinationId: string; propertyId: string; checkin: string; checkout: string; rooms: Occupancy[] },
   deps: Deps = {},
 ): Promise<{ snapshotId: string }> {
   const now = deps.now ?? new Date();
@@ -248,6 +311,7 @@ export async function searchOneHotel(
   if (!parsed.success || typeof propertyId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(propertyId)) {
     throw new SearchInputInvalid("Check the destination, dates and guests.");
   }
+  checkRooms(parsed.data.rooms);
   await rateLimit(ctx.agencyId);
   const [agency, property] = await Promise.all([
     db.agency.findUnique({ where: { id: ctx.agencyId }, select: { country: true } }),
@@ -260,7 +324,7 @@ export async function searchOneHotel(
 
 async function createSnapshot(
   ctx: SearchContext,
-  query: z.infer<typeof storedQuery>,
+  query: NewQuery,
   candidateIds: string[],
   now: Date,
   deps: Deps,
@@ -284,7 +348,7 @@ async function createSnapshot(
   });
   if (older.length > 0) await db.searchSnapshot.deleteMany({ where: { agencyId: ctx.agencyId, id: { in: older.map((o) => o.id) } } });
   if (candidates.length > 0) {
-    await fetchBatch({ ...snapshot, query }, ctx.supplierContext, deps.adapter ?? supplierAdapter());
+    await fetchBatch({ ...snapshot, query, rooms: query.rooms }, ctx.supplierContext, deps.adapter ?? supplierAdapter());
     await prefetchContent(snapshot.id, deps.content ?? getContent, now);
   }
   return { snapshotId: snapshot.id };
@@ -299,10 +363,12 @@ export async function loadMore(ctx: SearchContext, snapshotId: string, deps: Dep
   const now = deps.now ?? new Date();
   const snapshot = await ownSnapshot(ctx.agencyId, snapshotId);
   if (!snapshot || snapshot.expiresAt <= now) return null;
-  const query = storedQuery.parse(snapshot.query);
+  const read = readQuery(snapshot.query);
+  if (!read) throw new Error("loadMore: stored search query does not read");
   if (snapshot.nextIndex >= snapshot.candidateIds.length) return { added: 0, hasMore: false };
+  checkRooms(read.rooms); // before the rate limit, as the other entry points
   await rateLimit(ctx.agencyId);
-  const added = await fetchBatch({ ...snapshot, query }, ctx.supplierContext, deps.adapter ?? supplierAdapter());
+  const added = await fetchBatch({ ...snapshot, ...read }, ctx.supplierContext, deps.adapter ?? supplierAdapter());
   await prefetchContent(snapshot.id, deps.content ?? getContent, now);
   return { added, hasMore: snapshot.nextIndex + added < snapshot.candidateIds.length };
 }
@@ -395,14 +461,15 @@ export async function listResults(
     db.searchHotel.findMany({ where: { snapshotId: snapshot.id, propertyId: { in: ids } }, select: { propertyId: true, offers: true } }),
   ]);
   const offersById = new Map(stored.map((h) => [h.propertyId, h.offers]));
+  const rooms = readQuery(snapshot.query)?.rooms;
   const bestOf = (row: ResultRow): HotelCard["best"] => {
-    const offers = storedOffers.safeParse(offersById.get(row.propertyId));
-    const offer = offers.success ? offers.data[row.rateIndex] : undefined;
-    if (!offer || offer.bedGroups.length === 0) return null;
+    const offers = rooms ? readOffers(offersById.get(row.propertyId), rooms) : null;
+    const offer = offers?.[row.rateIndex];
+    if (!offers || !offer || offer.bedGroups.length === 0) return null;
     return {
       offer: { ...offer, bedGroups: offer.bedGroups.map((b) => ({ id: b.id, description: b.description })) },
       // Every other rate of the hotel, as its page lists them (that page has its own filters).
-      otherRates: offers.success ? offers.data.length - 1 : 0,
+      otherRates: offers.length - 1,
     };
   };
   const heroById = new Map(
@@ -439,17 +506,18 @@ export type SearchSummary = {
   checkin: string;
   checkout: string;
   nights: number;
-  adults: number;
-  childAges: number[];
+  rooms: Occupancy[]; // in room order (plan 10)
+  adults: number; // over all rooms
+  childAges: number[]; // over all rooms, in room order
   expired: boolean;
 };
 
 export async function searchSummary(agencyId: string, snapshotId: string, now: Date = new Date()): Promise<SearchSummary | null> {
   const snapshot = await ownSnapshot(agencyId, snapshotId);
   if (!snapshot) return null;
-  const parsed = storedQuery.safeParse(snapshot.query);
-  if (!parsed.success) return null;
-  const q = parsed.data;
+  const read = readQuery(snapshot.query);
+  if (!read) return null;
+  const q = read.query;
   const destination = await db.destination.findUnique({ where: { id: q.destinationId }, select: { nameFull: true } });
   return {
     destinationId: q.destinationId,
@@ -457,6 +525,7 @@ export async function searchSummary(agencyId: string, snapshotId: string, now: D
     checkin: q.checkin,
     checkout: q.checkout,
     nights: Math.round((Date.parse(`${q.checkout}T00:00:00Z`) - Date.parse(`${q.checkin}T00:00:00Z`)) / 86_400_000),
+    rooms: read.rooms,
     adults: q.adults,
     childAges: q.childAges,
     expired: snapshot.expiresAt <= now,
@@ -475,10 +544,12 @@ export async function getHotelOffers(
   const snapshot = await ownSnapshot(agencyId, snapshotId);
   if (!snapshot || snapshot.expiresAt <= now) return null;
   if (typeof propertyId !== "string" || propertyId.length > 64) return null;
+  const read = readQuery(snapshot.query);
+  if (!read) return null;
   const hotel = await db.searchHotel.findUnique({ where: { snapshotId_propertyId: { snapshotId: snapshot.id, propertyId } } });
   if (!hotel) return null;
-  const offers = storedOffers.safeParse(hotel.offers);
-  if (!offers.success) return null;
+  const offers = readOffers(hotel.offers, read.rooms);
+  if (!offers) return null;
   // Content (photos, policies) is best effort: without it the page still shows the rates.
   let content: PropertyContent | null = null;
   try {
@@ -487,7 +558,7 @@ export async function getHotelOffers(
     console.error(`hotel content failed: ${error instanceof Error ? error.name : "Error"}`);
   }
   return {
-    offers: offers.data,
+    offers,
     content,
     hotel: { name: hotel.name, city: hotel.city, starRating: hotel.starRating?.toString() ?? null },
   };
@@ -499,20 +570,20 @@ export async function findOffer(
   agencyId: string,
   ref: { snapshotId: string; propertyId: string; rateId: string; bedGroupId: string },
   now: Date = new Date(),
-): Promise<{ offer: Offer; bedGroup: Offer["bedGroups"][number]; hotel: { name: string; city: string }; query: z.infer<typeof storedQuery> } | null> {
+): Promise<{ offer: Offer; bedGroup: Offer["bedGroups"][number]; hotel: { name: string; city: string }; query: SnapshotQuery; rooms: Occupancy[] } | null> {
   for (const value of Object.values(ref)) if (typeof value !== "string" || value.length === 0 || value.length > 128) return null;
   const snapshot = await ownSnapshot(agencyId, ref.snapshotId);
   if (!snapshot || snapshot.expiresAt <= now) return null;
-  const query = storedQuery.safeParse(snapshot.query);
-  if (!query.success) return null;
+  const read = readQuery(snapshot.query);
+  if (!read) return null;
   const hotel = await db.searchHotel.findUnique({ where: { snapshotId_propertyId: { snapshotId: snapshot.id, propertyId: ref.propertyId } } });
   if (!hotel) return null;
-  const offers = storedOffers.safeParse(hotel.offers);
-  if (!offers.success) return null;
-  const offer = offers.data.find((o) => o.rateId === ref.rateId);
+  const offers = readOffers(hotel.offers, read.rooms);
+  if (!offers) return null;
+  const offer = offers.find((o) => o.rateId === ref.rateId);
   const bedGroup = offer?.bedGroups.find((b) => b.id === ref.bedGroupId);
   if (!offer || !bedGroup) return null;
-  return { offer, bedGroup, hotel: { name: hotel.name, city: hotel.city }, query: query.data };
+  return { offer, bedGroup, hotel: { name: hotel.name, city: hotel.city }, query: read.query, rooms: read.rooms };
 }
 
 // Every rate of one hotel of the agency's own, unexpired search (no rate limit, no content): for
@@ -520,9 +591,10 @@ export async function findOffer(
 export async function snapshotOffers(agencyId: string, snapshotId: string, propertyId: string, now: Date = new Date()): Promise<Offer[]> {
   const snapshot = await ownSnapshot(agencyId, snapshotId);
   if (!snapshot || snapshot.expiresAt <= now) return [];
+  const read = readQuery(snapshot.query);
+  if (!read) return [];
   const hotel = await db.searchHotel.findUnique({ where: { snapshotId_propertyId: { snapshotId: snapshot.id, propertyId } } });
-  const offers = storedOffers.safeParse(hotel?.offers);
-  return offers.success ? offers.data : [];
+  return readOffers(hotel?.offers, read.rooms) ?? [];
 }
 
 // Deletes searches whose expiry passed more than an hour ago (their hotels go with them).

@@ -13,7 +13,7 @@ import { cancellationLabel } from "../../../../_components/rate-text";
 import { addToQuoteAction } from "../../../../quotes/actions";
 import { AddToQuote } from "../../../../quotes/add-to-quote";
 import { freeCancelEnds } from "@/server/booking/service";
-import { openQuotes, quoteCode } from "@/server/quotes/quotes";
+import { QUOTES_ONE_ROOM, openQuotes, quoteCode } from "@/server/quotes/quotes";
 import { quoteParam } from "../../../quote-param";
 
 type QuoteChoice = { id: string; label: string };
@@ -27,19 +27,22 @@ const KEEP = ["sort", "name", "room", "min", "max", "stars", "free", "cursor", "
 
 // "Book room" opens guest details (screen 10) with the rate and the chosen bed type only; the
 // price and the price-check token stay on the server. The bed choice sits in another cell, so
-// its radios belong to the row's form through the `form` attribute.
+// its radios belong to the row's form through the `form` attribute. A search of several rooms
+// cannot go into a quote (plan 10): the row says so instead of "Add to quote".
 function RateRow({
   offer,
   stay,
   snapshotId,
   quotes,
   quoteId,
+  severalRooms,
 }: {
   offer: Offer;
   stay: string;
   snapshotId: string;
   quotes: QuoteChoice[];
   quoteId: string | null;
+  severalRooms: boolean;
 }) {
   const cancel = cancellationLabel(offer);
   const formId = `book-${offer.roomId}-${offer.rateId}`.replace(/[^A-Za-z0-9_-]/g, "_");
@@ -85,7 +88,7 @@ function RateRow({
             Book room
           </button>
         </form>
-        <AddToQuote formId={formId} quotes={quotes} defaultQuoteId={quoteId} action={addToQuoteAction} />
+        {severalRooms ? <p className="mt-2 text-xs text-muted">{QUOTES_ONE_ROOM}</p> : <AddToQuote formId={formId} quotes={quotes} defaultQuoteId={quoteId} action={addToQuoteAction} />}
       </td>
     </tr>
   );
@@ -154,7 +157,8 @@ export default async function HotelPage({ params, searchParams }: { params: Para
   const filtered = roomText !== "" || freeOnly;
   // Plan 5b: "Add to quote" lists the agency's open quotes; one opened from a quote is preselected.
   const quoteId = quoteParam(query.quote);
-  const quotes = (await openQuotes(agencyId, quoteId)).map((q) => ({ id: q.id, label: `${quoteCode(q.number)} · ${q.title || "Untitled quote"}` }));
+  const severalRooms = summary.rooms.length > 1;
+  const quotes = severalRooms ? [] : (await openQuotes(agencyId, quoteId)).map((q) => ({ id: q.id, label: `${quoteCode(q.number)} · ${q.title || "Untitled quote"}` }));
 
   return (
     <main className="mx-auto flex w-[min(1260px,calc(100%-40px))] flex-col gap-6 py-6">
@@ -222,7 +226,7 @@ export default async function HotelPage({ params, searchParams }: { params: Para
             </thead>
             <tbody className={tbody}>
               {sorted.map((offer) => (
-                <RateRow key={`${offer.roomId}-${offer.rateId}`} offer={offer} stay={stay} snapshotId={id} quotes={quotes} quoteId={quoteId} />
+                <RateRow key={`${offer.roomId}-${offer.rateId}`} offer={offer} stay={stay} snapshotId={id} quotes={quotes} quoteId={quoteId} severalRooms={severalRooms} />
               ))}
             </tbody>
           </table>

@@ -92,11 +92,28 @@ describe("listBookings", () => {
     await make("A", 7, "CONFIRMED", "2027-04-10", { hotelName: "=HYPERLINK(\"x\")", leadFamilyName: "O'Brien, Jr" });
     const csv = await bookingsCsv("A", { tab: "all" }, NOW);
     const lines = csv.trim().split("\r\n");
-    expect(lines[0]).toBe("Reference,Status,Hotel,City,Lead guest,Check-in,Check-out,Total,Currency,Booked at (UTC)");
+    // Plan 10: "Rooms" is appended, so the earlier columns keep their places.
+    expect(lines[0]).toBe("Reference,Status,Hotel,City,Lead guest,Check-in,Check-out,Total,Currency,Booked at (UTC),Rooms");
     expect(lines).toHaveLength(6);
     const row = lines.find((l) => l.startsWith("APL-A0000007"))!;
     expect(row).toContain(`"'=HYPERLINK(""x"")"`);
     expect(row).toContain(`"Dana O'Brien, Jr"`);
     expect(row).toContain(",100.07,USD,");
+    expect(row.endsWith(",1")).toBe(true);
+  });
+
+  it("several rooms (plan 10): each row has its number of rooms, in the list and the CSV", async () => {
+    const two = await db.booking.findUniqueOrThrow({ where: { reference: "APL-A0000001" } });
+    await db.bookingRoom.createMany({
+      data: [0, 1].map((index) => ({ bookingId: two.id, index, adults: 1, childAges: [], guests: [], givenName: "Dana", familyName: "Levi", totalMinor: 5_000, price: {} })),
+    });
+    const one = await db.booking.findUniqueOrThrow({ where: { reference: "APL-A0000002" } });
+    await db.bookingRoom.create({ data: { bookingId: one.id, index: 0, adults: 2, childAges: [], guests: [], givenName: "Dana", familyName: "Levi", totalMinor: 10_002, price: {} } });
+    const rows = (await listBookings("A", { tab: "all" }, NOW)).rows;
+    // A booking made before its rooms were stored (none here) counts as one room.
+    expect(rows.map((r) => [r.reference, r.roomCount])).toEqual([["APL-A0000001", 2], ["APL-A0000002", 1], ["APL-A0000003", 1], ["APL-A0000004", 1]]);
+    const lines = (await bookingsCsv("A", { tab: "all" }, NOW)).trim().split("\r\n");
+    expect(lines.find((l) => l.startsWith("APL-A0000001"))!.endsWith(",2")).toBe(true);
+    expect(lines.find((l) => l.startsWith("APL-A0000002"))!.endsWith(",1")).toBe(true);
   });
 });
