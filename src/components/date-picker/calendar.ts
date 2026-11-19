@@ -77,3 +77,11 @@ export function checkoutLimits(checkin: string, maxDate: string, maxNights = MAX
   const last = addDays(checkin, maxNights);
   return { min: addDays(checkin, 1), max: maxDate !== "" && maxDate < last ? maxDate : last };
 }
+
+// The same day number in another month, clamped to its length ("" → the 1st). Paging months
+// with the arrows moves the focused day this way.
+export function sameDayIn(day: string, { year, month }: Month): string {
+  const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const d = Math.min(Number(day.slice(8, 10)) || 1, last);
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}

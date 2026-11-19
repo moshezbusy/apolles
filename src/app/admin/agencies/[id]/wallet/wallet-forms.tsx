@@ -13,8 +13,13 @@ import {
   link,
 } from "@/components/ui";
 import { DateField } from "@/components/date-picker/DateField";
+import { formatDmy } from "@/components/date-picker/calendar";
 import { formatUsd, parseUsdToCents } from "@/lib/money";
 import type { WalletFormState } from "./form-state";
+
+export function topUpConfirmText(cents: number, agencyName: string, v: Record<string, string>): string {
+  return `Confirm top-up of ${formatUsd(cents)} to ${agencyName}? Bank transfer ${v.bankTransferRef ?? ""}, received ${formatDmy(v.receivedOn ?? "")}.`;
+}
 
 type Action = (previous: WalletFormState, formData: FormData) => Promise<WalletFormState>;
 
@@ -199,9 +204,7 @@ export function TopupForm({ agencyId, agencyName, action }: FormProps) {
       ]}
       hidden={{ agencyId }}
       allowNegative={false}
-      confirmText={(cents, v) =>
-        `Confirm top-up of ${formatUsd(cents)} to ${agencyName}? Bank transfer ${v.bankTransferRef ?? ""}, received ${v.receivedOn ?? ""}.`
-      }
+      confirmText={(cents, v) => topUpConfirmText(cents, agencyName, v)}
       confirmLabel="Confirm top-up"
       action={action}
     />

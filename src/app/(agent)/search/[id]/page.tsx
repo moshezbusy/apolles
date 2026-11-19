@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { alertError, alertInfo, btnPrimary, btnSecondary, card, emptyState, input, label, link } from "@/components/ui";
+import { alertError, alertInfo, btnPrimary, btnSecondary, card, emptyState, input, inputUnsized, label, link } from "@/components/ui";
 import { formatMinor } from "@/lib/supplier-money";
 import { requireAgent } from "@/server/auth/guards";
 import { minorToUsdText, parseListOptions } from "@/server/search/list-options";
@@ -91,7 +91,7 @@ function CardActions({
         {offer.bedGroups.length === 1 ? (
           <input type="hidden" name="b" value={offer.bedGroups[0]!.id} />
         ) : (
-          <select name="b" aria-label="Bed type" defaultValue={offer.bedGroups[0]?.id} className={`${input} mb-1.5 w-full text-xs`}>
+          <select name="b" aria-label="Bed type" defaultValue={offer.bedGroups[0]?.id} className={`${inputUnsized} mb-1.5 w-full text-base sm:text-xs`}>
             {offer.bedGroups.map((bed) => (
               <option key={bed.id} value={bed.id}>
                 {bed.description}

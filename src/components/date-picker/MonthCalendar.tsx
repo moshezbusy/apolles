@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { addDays, monthGrid, monthLabel, monthOf, shiftMonth, type Month } from "./calendar";
+import { addDays, monthGrid, monthLabel, monthOf, sameDayIn, shiftMonth, type Month } from "./calendar";
 
 // The month grid of the date fields (plan 9), in the system's colours. One month on a phone,
 // two side by side from md when `months` is 2. Keyboard: arrows move a day or a week, Page Up /
@@ -27,13 +27,22 @@ export type CalendarProps = {
 export function Calendar(props: CalendarProps) {
   const { view, onView, months, focusDay, onFocusDay, label } = props;
   const root = useRef<HTMLDivElement>(null);
-  const moved = useRef(false);
+  // Focus moves to the focused day only when the calendar opens and after an arrow or Page key,
+  // never after a tap on a month arrow (a second Enter there must not pick a day).
+  const moved = useRef(true);
 
-  // Focus the focused day when the calendar opens and after each keyboard move.
   useEffect(() => {
-    root.current?.querySelector<HTMLButtonElement>(`button[data-day="${focusDay}"]`)?.focus({ preventScroll: !moved.current });
+    if (!moved.current) return;
+    root.current?.querySelector<HTMLButtonElement>(`button[data-day="${focusDay}"]`)?.focus({ preventScroll: true });
     moved.current = false;
   }, [focusDay, view]);
+
+  // A month arrow: show that month and keep the day number there (so Tab still reaches a day).
+  function page(by: number) {
+    const target = shiftMonth(view, by);
+    onView(target);
+    onFocusDay(sameDayIn(focusDay, target));
+  }
 
   function move(day: string) {
     if (day === "") return;
@@ -56,9 +65,7 @@ export function Calendar(props: CalendarProps) {
       move(addDays(focusDay, by[event.key]!));
     } else if (event.key === "PageUp" || event.key === "PageDown") {
       event.preventDefault();
-      const target = shiftMonth(monthOf(focusDay) ?? view, event.key === "PageUp" ? -1 : 1);
-      const day = Math.min(Number(focusDay.slice(8, 10)) || 1, daysIn(target));
-      move(`${target.year}-${String(target.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+      move(sameDayIn(focusDay, shiftMonth(monthOf(focusDay) ?? view, event.key === "PageUp" ? -1 : 1)));
     }
   }
 
@@ -67,10 +74,10 @@ export function Calendar(props: CalendarProps) {
       <div className="flex gap-6">
         {/* With two months, the first one's "next" arrow shows only on a phone, where the
             second month is hidden. */}
-        <MonthTable {...props} month={view} prev={() => onView(shiftMonth(view, -1))} next={() => onView(shiftMonth(view, 1))} nextClassName={months === 2 ? "md:invisible" : ""} />
+        <MonthTable {...props} month={view} prev={() => page(-1)} next={() => page(1)} nextClassName={months === 2 ? "md:invisible" : ""} />
         {months === 2 ? (
           <div className="hidden md:block">
-            <MonthTable {...props} month={shiftMonth(view, 1)} next={() => onView(shiftMonth(view, 1))} />
+            <MonthTable {...props} month={shiftMonth(view, 1)} next={() => page(1)} />
           </div>
         ) : null}
       </div>
@@ -84,9 +91,6 @@ function index({ year, month }: Month): number {
   return year * 12 + month;
 }
 
-function daysIn({ year, month }: Month): number {
-  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-}
 
 function MonthTable({
   month,

@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useCallback, useId, useRef, useState, type ReactNode } from "react";
 import { input, label as labelClass } from "@/components/ui";
 import { Calendar } from "./MonthCalendar";
 import { formatDmy, isIsoDate, isSelectable, monthOf, type Month } from "./calendar";
-import { useDismiss } from "./use-dismiss";
+import { useDismiss, useKeepInView } from "./use-dismiss";
 
 // One date (plan 9): the whole field is a button that opens our calendar; the date shows as
 // DD/MM/YYYY and is sent as ISO YYYY-MM-DD in a hidden input, as the native date input did, so
@@ -37,11 +37,14 @@ export function DateField({
   const [focusDay, setFocusDay] = useState(start);
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  const id = useId();
   const close = useCallback((reason: "outside" | "escape" | "picked") => {
     setOpen(false);
     if (reason !== "outside") trigger.current?.focus();
   }, []);
   useDismiss(box, open, close);
+  useKeepInView(pop, open);
 
   function toggle() {
     if (!open) {
@@ -55,16 +58,24 @@ export function DateField({
   return (
     <div ref={box} className="relative">
       <label className={labelClass}>
-        <span>{label}</span>
+        <span id={`${id}-label`}>{label}</span>
         <input type="hidden" name={name} value={value} />
-        <button ref={trigger} type="button" aria-haspopup="dialog" aria-expanded={open} onClick={toggle} className={`${input} flex items-center justify-between gap-2 text-left`}>
-          <span className={value ? "tabular-nums" : "text-[#9ba29e]"}>{value ? formatDmy(value) : "DD/MM/YYYY"}</span>
+        <button
+          ref={trigger}
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-labelledby={`${id}-label ${id}-value`}
+          onClick={toggle}
+          className={`${input} flex items-center justify-between gap-2 text-left`}
+        >
+          <DateText id={`${id}-value`} value={value} />
           <CalendarIcon />
         </button>
       </label>
       {hint}
       {open ? (
-        <div role="dialog" aria-label="Choose a date" className="absolute left-0 top-full z-50 mt-1.5 w-[min(320px,calc(100vw-40px))]">
+        <div ref={pop} role="dialog" aria-label="Choose a date" className="absolute left-0 top-full z-50 mt-1.5 w-[min(320px,calc(100vw-16px))]">
           <Calendar
             label="Choose a date"
             view={view}
@@ -84,6 +95,20 @@ export function DateField({
         </div>
       ) : null}
     </div>
+  );
+}
+
+// The field's date, DD/MM/YYYY; empty, a grey "DD/MM/YYYY" that screen readers hear as "not chosen".
+export function DateText({ id, value }: { id: string; value: string }) {
+  return value ? (
+    <span id={id} className="tabular-nums">
+      {formatDmy(value)}
+    </span>
+  ) : (
+    <span id={id} className="text-[#9ba29e]">
+      <span aria-hidden="true">DD/MM/YYYY</span>
+      <span className="sr-only">not chosen</span>
+    </span>
   );
 }
 

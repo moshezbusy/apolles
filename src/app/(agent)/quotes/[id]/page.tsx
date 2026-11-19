@@ -4,7 +4,7 @@ import { DateRangeField } from "@/components/date-picker/DateRangeField";
 import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { btnPrimary, btnSecondary, card, input, label, link } from "@/components/ui";
+import { btnPrimary, btnSecondary, card, input, inputUnsized, label, link } from "@/components/ui";
 import { formatMinor } from "@/lib/supplier-money";
 import { requireAgent } from "@/server/auth/guards";
 import { clientOptions } from "@/server/clients";
@@ -75,7 +75,7 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
               maxLength={80}
               defaultValue={quote.title}
               placeholder="Untitled quote"
-              className={`${input} font-serif text-[22px]`}
+              className={`${inputUnsized} font-serif text-[22px]`}
             />
             <p className="mt-2 text-[13px] text-muted">
               {quote.client ? `${quote.client.firstName} ${quote.client.lastName} · ` : ""}

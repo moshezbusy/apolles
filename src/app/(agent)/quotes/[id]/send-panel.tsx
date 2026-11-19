@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { alertError, alertSuccess, btnPrimary, btnSecondary, input } from "@/components/ui";
+import { alertError, alertSuccess, btnPrimary, btnSecondary, inputUnsized } from "@/components/ui";
 import type { SendState } from "../actions";
 
 type Action = (quoteId: string) => Promise<SendState>;
@@ -107,7 +107,7 @@ export function SendPanel({
       </div>
       {url ? (
         <div className="flex gap-2">
-          <input readOnly value={url} aria-label="Client link" className={`${input} min-w-0 flex-1 text-xs`} onFocus={(e) => e.currentTarget.select()} />
+          <input readOnly value={url} aria-label="Client link" className={`${inputUnsized} min-w-0 flex-1 text-base sm:text-xs`} onFocus={(e) => e.currentTarget.select()} />
           <button type="button" onClick={renew} disabled={pending} className={btnSecondary}>
             New link
           </button>

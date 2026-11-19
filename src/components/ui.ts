@@ -21,6 +21,9 @@ const inputBase =
   "min-h-10 w-full rounded-lg border border-[#d9e1dc] bg-paper px-3 py-2 text-ink placeholder:text-[#9ba29e] outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/40";
 // 16px on a phone: iPhone Safari zooms the page in on any field smaller than that (plan 9).
 export const input = `${inputBase} text-base font-normal sm:text-sm`;
+// For a field with its own text size (both sizes: 16px or more on a phone). Never add a size to
+// `input`: its sm:text-sm would win from 640px up (ui.test.ts checks).
+export const inputUnsized = `${inputBase} font-normal`;
 // The 6-digit 2FA code field: large, bold, spaced digits.
 export const codeInput = `${inputBase} text-center text-xl font-bold tracking-[0.4em]`;
 

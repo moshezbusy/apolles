@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 // The header's "Menu" button on phones (plan 9): a <details data-menu="nav"> whose panel spans
 // the header's full width (the sticky header is its positioned parent) and scrolls inside itself
-// when it is taller than the screen. MenuCloser (root layout) closes it after a tap on one of its
+// when it is taller than the screen (140px: the header and, on staging, the demo banner). MenuCloser (root layout) closes it after a tap on one of its
 // links or buttons, or outside it. `className` says from which width it hides (lg:hidden, ...).
 export function PhoneMenu({ className, children }: { className: string; children: ReactNode }) {
   return (
@@ -18,7 +18,7 @@ export function PhoneMenu({ className, children }: { className: string; children
           <path d="M5 5l10 10M15 5L5 15" />
         </svg>
       </summary>
-      <div className="absolute inset-x-0 top-full z-40 max-h-[calc(100dvh-68px)] overflow-y-auto border-b border-line bg-white px-5 pb-6 pt-2 shadow-[0_18px_38px_rgba(19,47,39,0.14)]">
+      <div className="absolute inset-x-0 top-full z-40 max-h-[calc(100dvh-140px)] overflow-y-auto border-b border-line bg-white px-5 pb-6 pt-2 shadow-[0_18px_38px_rgba(19,47,39,0.14)]">
         {children}
       </div>
     </details>

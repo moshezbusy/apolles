@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, checkoutLimits, formatDmy, isSelectable, monthGrid, monthLabel, nightsBetween, shiftMonth } from "./calendar";
+import { addDays, checkoutLimits, sameDayIn, formatDmy, isSelectable, monthGrid, monthLabel, nightsBetween, shiftMonth } from "./calendar";
 
 describe("date helpers of the calendar (plan 9)", () => {
   it("shows dates as day/month/year", () => {
@@ -32,6 +32,12 @@ describe("date helpers of the calendar (plan 9)", () => {
   it("moves the shown month forward and back across years", () => {
     expect(shiftMonth({ year: 2026, month: 11 }, 1)).toEqual({ year: 2027, month: 0 });
     expect(shiftMonth({ year: 2026, month: 0 }, -1)).toEqual({ year: 2025, month: 11 });
+  });
+
+  it("paging months keeps the day number, clamped to the month's length", () => {
+    expect(sameDayIn("2026-12-05", { year: 2027, month: 0 })).toBe("2027-01-05");
+    expect(sameDayIn("2026-01-31", { year: 2026, month: 1 })).toBe("2026-02-28");
+    expect(sameDayIn("", { year: 2026, month: 1 })).toBe("2026-02-01");
   });
 
   it("only days between min and max can be picked", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useId, useState } from "react";
 import { alertError, btnPrimary, input, label } from "@/components/ui";
 import { DateRangeField } from "@/components/date-picker/DateRangeField";
 import { DestinationPicker } from "./destination-picker";
@@ -46,9 +46,8 @@ export function SearchForm({
   );
 }
 
-function ageText(age: string): string {
-  const n = Number(age);
-  return n === 0 ? "Under 1" : n === 1 ? "1 year" : `${n} years`;
+export function ageText(age: string): string {
+  return Number(age) === 1 ? "1 year" : `${Number(age)} years`;
 }
 
 function Fields({ shown, minDate, maxDate, pending, compact }: { shown: SearchFormValues; minDate: string; maxDate: string; pending: boolean; compact: boolean }) {
@@ -105,22 +104,7 @@ function Fields({ shown, minDate, maxDate, pending, compact }: { shown: SearchFo
               </div>
             ))}
             {ages.length < MAX_CHILDREN ? (
-              <select
-                aria-label="Add a child"
-                value=""
-                onChange={(e) => {
-                  const age = e.target.value;
-                  if (age !== "") setAges((current) => [...current, age].slice(0, MAX_CHILDREN));
-                }}
-                className={input}
-              >
-                <option value="">Add a child</option>
-                {AGES.map((n) => (
-                  <option key={n} value={n}>
-                    {ageText(String(n))}
-                  </option>
-                ))}
-              </select>
+              <AddChild onAdd={(age) => setAges((current) => [...current, age].slice(0, MAX_CHILDREN))} />
             ) : (
               <p className="text-xs font-normal text-muted">Up to {MAX_CHILDREN} children.</p>
             )}
@@ -131,6 +115,41 @@ function Fields({ shown, minDate, maxDate, pending, compact }: { shown: SearchFo
       <button type="submit" disabled={pending} className={btnPrimary}>
         {pending ? "Searching…" : "Search"}
       </button>
+    </div>
+  );
+}
+
+// "Add a child" (owner's picture, 19.11): a button that opens the list of ages; a tap on an age
+// adds the child and closes the list. Buttons, not a <select>: arrow keys on a closed select
+// change its value in some browsers, which would add children nobody asked for.
+function AddChild({ onAdd }: { onAdd: (age: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  return (
+    <div>
+      <button type="button" aria-expanded={open} aria-controls={listId} onClick={() => setOpen((o) => !o)} className={`${input} flex items-center justify-between text-left`}>
+        Add a child
+        <span aria-hidden="true" className="text-[11px] text-[#8a938e]">
+          {open ? "▴" : "▾"}
+        </span>
+      </button>
+      {open ? (
+        <div id={listId} role="group" aria-label="Age of the child" className="mt-1.5 max-h-56 overflow-y-auto rounded-[11px] border border-[#e1e6e3] bg-white p-1.5 shadow-[0_10px_26px_rgba(19,47,39,0.12)]">
+          {AGES.map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => {
+                onAdd(String(n));
+                setOpen(false);
+              }}
+              className="flex min-h-10 w-full items-center rounded-[7px] px-2.5 text-left text-sm font-normal text-ink hover:bg-[#f1f6f3] hover:text-brand"
+            >
+              {ageText(String(n))}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

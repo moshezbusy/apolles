@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AdminHeader } from "@/components/AdminHeader";
-import { TopupForm } from "@/app/admin/agencies/[id]/wallet/wallet-forms";
+import { TopupForm, topUpConfirmText } from "@/app/admin/agencies/[id]/wallet/wallet-forms";
 
 const SIGN_OUT_FORM = /<form(?=[^>]*method="post")(?=[^>]*action="\/logout")[^>]*>\s*<button[^>]*type="submit"[^>]*>Sign out<\/button>\s*<\/form>/;
 
@@ -66,6 +66,12 @@ describe("admin pages", () => {
 });
 
 describe("wallet top-up form", () => {
+  it("the confirm step shows the received date as DD/MM/YYYY (plan 9)", () => {
+    expect(topUpConfirmText(100000, "Sunrise", { bankTransferRef: "TR-9", receivedOn: "2026-11-18" })).toBe(
+      "Confirm top-up of USD 1,000.00 to Sunrise? Bank transfer TR-9, received 18/11/2026.",
+    );
+  });
+
   it("asks for the bank's own transfer reference and warns against the agency reference", () => {
     const html = renderToStaticMarkup(
       <TopupForm agencyId="a1" agencyName="Sunrise" action={async () => null} />,

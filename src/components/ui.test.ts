@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { cell, cellTop, input, table, tbody, td, thead, tr } from "./ui";
 
-const appDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "app");
+const srcDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const appDir = path.join(srcDir, "app");
 
 function tsxFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -42,12 +43,23 @@ describe("phone layout of the shared styles (plan 9)", () => {
     expect(missing).toEqual([]);
   });
 
+  it("no field adds its own text size to `input` (sm:text-sm would win; use inputUnsized)", () => {
+    const bad: string[] = [];
+    for (const file of tsxFiles(srcDir)) {
+      for (const match of readFileSync(file, "utf8").matchAll(/\$\{input\}[^`]*/g)) {
+        if (/(^|\s)(sm:|md:|lg:)?text-(xs|sm|base|lg|[2-9]?xl|\[[^\]]+\])(\s|$)/.test(match[0].slice(8))) bad.push(`${path.relative(srcDir, file)}: ${match[0]}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
   it("every body row of a table uses the shared row style", () => {
     const missing: string[] = [];
     for (const file of tsxFiles(appDir)) {
       const source = readFileSync(file, "utf8");
       for (const match of source.matchAll(/<tr\b[^>]*>/g)) {
-        const isHeaderRow = /^<tr>$/.test(match[0]);
+        // A header row has no key; every body row (rendered from a list) has one.
+        const isHeaderRow = !match[0].includes("key=");
         if (!isHeaderRow && !/className=\{`?\$?\{?tr\b|className=\{tr\}/.test(match[0])) missing.push(`${path.relative(appDir, file)}: ${match[0].slice(0, 80)}`);
       }
     }

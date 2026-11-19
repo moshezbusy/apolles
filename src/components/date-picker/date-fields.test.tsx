@@ -11,14 +11,18 @@ describe("DateField (plan 9)", () => {
     expect(html).toContain("03/12/2026");
   });
 
-  it("the whole field is one button that opens the calendar, named by its label", () => {
+  it("the whole field is one button that opens the calendar, named by its label and its date", () => {
     expect(html).toMatch(/<label[^>]*>[\s\S]*Received on[\s\S]*<button type="button"[^>]*aria-haspopup="dialog"[^>]*aria-expanded="false"/);
+    const [labelId, valueId] = (/aria-labelledby="([^"]+)"/.exec(html)?.[1] ?? "").split(" ");
+    expect(html).toContain(`id="${labelId}">Received on<`);
+    expect(html).toMatch(new RegExp(`id="${valueId}"[^>]*>03/12/2026<`));
   });
 
   it("shows DD/MM/YYYY as a hint while empty", () => {
     const empty = renderToStaticMarkup(<DateField name="d" label="Date" />);
     expect(empty).toContain('<input type="hidden" name="d" value=""/>');
     expect(empty).toContain("DD/MM/YYYY");
+    expect(empty).toContain('<span class="sr-only">not chosen</span>');
   });
 
   it("ignores a value that is not a date", () => {
