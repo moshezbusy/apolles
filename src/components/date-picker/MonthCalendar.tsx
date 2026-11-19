@@ -15,8 +15,8 @@ export type CalendarProps = {
   months: 1 | 2;
   isDisabled: (day: string) => boolean;
   selected: string[];
-  rangeStart?: string;
-  rangeEnd?: string;
+  rangeStart?: string | undefined;
+  rangeEnd?: string | undefined;
   today: string;
   focusDay: string;
   onFocusDay: (day: string) => void;
@@ -69,15 +69,25 @@ export function Calendar(props: CalendarProps) {
     }
   }
 
+  const days: DayProps = {
+    isDisabled: props.isDisabled,
+    selected: props.selected,
+    rangeStart: props.rangeStart,
+    rangeEnd: props.rangeEnd,
+    today: props.today,
+    focusDay,
+    onPick: props.onPick,
+  };
+
   return (
     <div ref={root} role="group" aria-label={label} onKeyDown={onKeyDown} className="rounded-[14px] border border-[#e1e6e3] bg-white p-3 shadow-[0_18px_42px_rgba(19,47,39,0.16)]">
       <div className="flex gap-6">
         {/* With two months, the first one's "next" arrow shows only on a phone, where the
             second month is hidden. */}
-        <MonthTable {...props} month={view} prev={() => page(-1)} next={() => page(1)} nextClassName={months === 2 ? "md:invisible" : ""} />
+        <MonthTable days={days} month={view} prev={() => page(-1)} next={() => page(1)} nextClassName={months === 2 ? "md:invisible" : ""} />
         {months === 2 ? (
           <div className="hidden md:block">
-            <MonthTable {...props} month={shiftMonth(view, 1)} next={() => page(1)} />
+            <MonthTable days={days} month={shiftMonth(view, 1)} next={() => page(1)} />
           </div>
         ) : null}
       </div>
@@ -92,19 +102,23 @@ function index({ year, month }: Month): number {
 }
 
 
+// What every month needs to draw its days (passed by name: no props spreading).
+type DayProps = Pick<CalendarProps, "isDisabled" | "selected" | "rangeStart" | "rangeEnd" | "today" | "focusDay" | "onPick">;
+
 function MonthTable({
+  days,
   month,
   prev,
   next,
-  isDisabled,
-  selected,
-  rangeStart,
-  rangeEnd,
-  today,
-  focusDay,
-  onPick,
   nextClassName = "",
-}: CalendarProps & { month: Month; prev?: (() => void) | undefined; next?: (() => void) | undefined; nextClassName?: string }) {
+}: {
+  days: DayProps;
+  month: Month;
+  prev?: (() => void) | undefined;
+  next?: (() => void) | undefined;
+  nextClassName?: string;
+}) {
+  const { isDisabled, selected, rangeStart, rangeEnd, today, focusDay, onPick } = days;
   const title = monthLabel(month.year, month.month);
   return (
     <div className="w-full min-w-[266px]">
