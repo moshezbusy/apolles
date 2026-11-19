@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { SearchForm, ageText } from "./search-form";
 import { childAgesComplete, readSearchForm, toSearchInput, type SearchFormValues } from "./form-state";
 import { stayText } from "./parts";
+import { searchInputSchema } from "@/server/search/input";
 
 const values: SearchFormValues = {
   destinationId: "paris",
@@ -108,9 +109,12 @@ describe("reading the search form (plan 10)", () => {
     expect(childAgesComplete(values)).toBe(true);
   });
 
-  it("reads at most 8 rooms; a child without an age is incomplete; a bad number is never a silent 0", () => {
-    const many = readSearchForm(form(Array.from({ length: 10 }, (): [string, string] => ["room_adults", "1"])));
-    expect(many.rooms).toHaveLength(8);
+  it("reads one room more than the 8 allowed, so 9 rooms are refused, not cut; a child without an age is incomplete; a bad number is never a silent 0", () => {
+    const many = readSearchForm(form([["destinationId", "paris"], ["checkin", "2027-04-10"], ["checkout", "2027-04-12"], ...Array.from({ length: 10 }, (): [string, string] => ["room_adults", "1"])]));
+    expect(many.rooms).toHaveLength(9);
+    expect(searchInputSchema(new Date("2027-03-01T10:00:00Z")).safeParse(toSearchInput(many)).success).toBe(false);
+    const eight = readSearchForm(form([["destinationId", "paris"], ["checkin", "2027-04-10"], ["checkout", "2027-04-12"], ...Array.from({ length: 8 }, (): [string, string] => ["room_adults", "1"])]));
+    expect(searchInputSchema(new Date("2027-03-01T10:00:00Z")).safeParse(toSearchInput(eight)).success).toBe(true);
     expect(childAgesComplete(readSearchForm(form([["room_adults", "2"], ["room_children", "4,"]])))).toBe(false);
     expect(toSearchInput(readSearchForm(form([["room_adults", "two"], ["room_children", "x"]]))).rooms[0]).toEqual({ adults: Number.NaN, childAges: [Number.NaN] });
   });

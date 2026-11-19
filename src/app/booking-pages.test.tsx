@@ -5,6 +5,7 @@ import { db } from "@/server/db";
 import { startSearch } from "@/server/search/search";
 import type { Offer } from "@/server/supplier/types";
 import { credit, getBalance } from "@/server/wallet/ledger";
+import { formatUsd } from "@/lib/money";
 import { resetTestDb } from "@/test/db";
 
 vi.mock("next/navigation", () => ({
@@ -61,12 +62,12 @@ async function seed(balance = 500_000) {
 }
 
 const guestFields = {
-  given_0: "Dana",
-  family_0: "Levi",
-  given_1: "Avi",
-  family_1: "Levi",
-  given_2: "Noa",
-  family_2: "Levi",
+  r0_given_0: "Dana",
+  r0_family_0: "Levi",
+  r0_given_1: "Avi",
+  r0_family_1: "Levi",
+  r0_given_2: "Noa",
+  r0_family_2: "Levi",
   leadEmail: "dana@example.com",
   phoneCountry: "972",
   phoneNumber: "50-123-4567",
@@ -92,12 +93,55 @@ describe("booking screens", () => {
     const offer = offers[1]!;
     const html = renderToStaticMarkup(await GuestPage({ searchParams: Promise.resolve({ s: snapshotId, p: "11", r: offer.rateId, b: offer.bedGroups[1]!.id }) }));
     expect(html).toContain("Guest details");
-    expect(html).toContain('name="given_2"');
+    expect(html).toContain('name="r0_given_2"');
     expect(html).toContain("Child 1 (age 6)");
+    expect(html).not.toContain("Room 1"); // one room: no room heading, as before plan 10
     expect(html).toContain("2 Twin Beds");
     expect(html).toContain("Bed type is a request and not guaranteed");
     expect(html).not.toMatch(/Choose from clients/i);
     expect(html).not.toContain("fake-11");
+  });
+
+  it("several rooms (plan 10): a section per room, the draft keeps each room's guests, review lists every room with its price", async () => {
+    signInAs("A");
+    await seed();
+    const { snapshotId } = await startSearch(
+      { agencyId: "A", userId: "u-A", supplierContext: {} },
+      { destinationId: "paris", checkin: iso(30), checkout: iso(32), rooms: [{ adults: 2, childAges: [6] }, { adults: 1, childAges: [] }] },
+    );
+    const offer = ((await db.searchHotel.findFirstOrThrow({ where: { snapshotId } })).offers as unknown as Offer[])[1]!;
+    const rate = { s: snapshotId, p: "11", r: offer.rateId, b: offer.bedGroups[0]!.id };
+    const { default: GuestPage } = await import("./(agent)/book/new/page");
+    const html = renderToStaticMarkup(await GuestPage({ searchParams: Promise.resolve(rate) }));
+    expect(html).toContain("Room 1 · 2 adults, 1 child");
+    expect(html).toContain("Room 2 · 1 adult");
+    for (const field of ["r0_given_0", "r0_given_2", "r0_title_0", "r1_given_0", "r1_family_0", "r1_title_0"]) expect(html).toContain(`name="${field}"`);
+    expect(html).not.toContain('name="r1_given_1"');
+    expect(html.match(/name="leadEmail"/g)).toHaveLength(1); // one contact for the booking
+    expect(html.match(/name="requestText"/g)).toHaveLength(1); // one special request for the booking
+
+    const { createDraftAction } = await import("./(agent)/book/actions");
+    // A room without its guest is refused and what was typed is kept.
+    const missing = await createDraftAction(null, form({ ...rate, ...guestFields }));
+    expect(missing).toMatchObject({ status: "error", message: "Enter a name for every guest.", values: { r0_given_0: "Dana" } });
+    const id = (await redirectOf(createDraftAction(null, form({ ...rate, ...guestFields, r1_given_0: "Yossi", r1_family_0: "Cohen", r1_title_0: "MR" })))).replace("/book/", "");
+    const rooms = await db.bookingRoom.findMany({ where: { bookingId: id }, orderBy: { index: "asc" } });
+    expect(rooms.map((r) => [r.givenName, r.familyName, (r.guests as unknown[]).length])).toEqual([["Dana", "Levi", 3], ["Yossi", "Cohen", 1]]);
+    expect((rooms[1]!.guests as { title?: string }[])[0]).toMatchObject({ title: "MR" });
+
+    const { default: ReviewPage } = await import("./(agent)/book/[id]/page");
+    const review = renderToStaticMarkup(await ReviewPage({ params: Promise.resolve({ id }) }));
+    expect(review).toContain("Room 1 · 2 adults, 1 child");
+    expect(review).toContain("Room 2 · 1 adult");
+    expect(review).toContain("Noa Levi (child, age 6)");
+    expect(review).toContain("Mr Yossi Cohen");
+    const priced = await db.bookingRoom.findMany({ where: { bookingId: id }, orderBy: { index: "asc" } });
+    for (const room of priced) expect(review).toContain(formatUsd(room.totalMinor));
+    expect(review).toContain("2 rooms");
+    // Another agency gets no rooms, and the rooms read for pages never carry the cancel link.
+    const { getBookingRooms } = await import("@/server/booking/service");
+    expect(await getBookingRooms("B", id)).toEqual([]);
+    expect((await getBookingRooms("A", id))[0]).not.toHaveProperty("cancelLink");
   });
 
   it("guest details: another agency's search, or an expired one, asks to search again", async () => {
@@ -112,8 +156,8 @@ describe("booking screens", () => {
     signInAs("A");
     const { snapshotId, offers } = await seed();
     const { createDraftAction } = await import("./(agent)/book/actions");
-    const state = await createDraftAction(null, form({ s: snapshotId, p: "11", r: offers[0]!.rateId, b: offers[0]!.bedGroups[0]!.id, ...guestFields, given_2: "" }));
-    expect(state).toMatchObject({ status: "error", values: { given_0: "Dana" } });
+    const state = await createDraftAction(null, form({ s: snapshotId, p: "11", r: offers[0]!.rateId, b: offers[0]!.bedGroups[0]!.id, ...guestFields, r0_given_2: "" }));
+    expect(state).toMatchObject({ status: "error", values: { r0_given_0: "Dana" } });
   });
 
   it("guest details: 'Choose from clients' fills the guests from the agency's own client only", async () => {
@@ -140,9 +184,9 @@ describe("booking screens", () => {
     const { default: GuestPage } = await import("./(agent)/book/new/page");
     const rate = { s: snapshotId, p: "11", r: offers[0]!.rateId, b: offers[0]!.bedGroups[0]!.id };
     const html = renderToStaticMarkup(await GuestPage({ searchParams: Promise.resolve(rate) }));
-    for (const t of ["Guest details", "Review &amp; book", 'name="title_0"', 'value="LATE_CHECKOUT"', 'name="requestText"']) expect(html).toContain(t);
+    for (const t of ["Guest details", "Review &amp; book", 'name="r0_title_0"', 'value="LATE_CHECKOUT"', 'name="requestText"']) expect(html).toContain(t);
     const { createDraftAction } = await import("./(agent)/book/actions");
-    const data = form({ ...rate, ...guestFields, title_0: "MRS", requestText: "Quiet room" });
+    const data = form({ ...rate, ...guestFields, r0_title_0: "MRS", requestText: "Quiet room" });
     data.append("requests", "HIGH_FLOOR");
     const id = (await redirectOf(createDraftAction(null, data))).replace("/book/", "");
     expect(await db.booking.findUniqueOrThrow({ where: { id } })).toMatchObject({ specialRequest: "High floor. Quiet room" });
@@ -171,6 +215,7 @@ describe("booking screens", () => {
     expect(html).toContain("Paid at the property");
     expect(html).toContain("Dana Levi");
     expect(html).toContain("Noa Levi (child, age 6)");
+    expect(html).not.toContain("Room 1"); // one room: no room list, as before plan 10
     expect(html).toContain("Supplier Terms &amp; Conditions");
     expect(html).toContain('name="acceptedTerms"');
     expect(html).toMatch(/Book and pay USD [\d,]+\.\d{2} from balance/);

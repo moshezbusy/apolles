@@ -437,7 +437,9 @@ enum BookingStatus {
   EXPIRED // a draft left too long; nothing was held
 }
 
-// One hotel booking of one agency (phase 1: one room). Money in integer minor units (USD).
+// One hotel booking of one agency: 1 to 8 rooms of the same room type and rate (plan 10), in
+// BookingRoom. Money in integer minor units (USD). The booking's own columns keep the totals
+// (every guest, all adults and children, the whole price), so readers of totals stay right.
 // The price-check token and the supplier's links are server-only and never sent to a browser.
 model Booking {
   id                      String        @id @default(cuid())
@@ -462,7 +464,7 @@ model Booking {
   leadFamilyName          String
   leadEmail               String
   leadPhone               String
-  guests                  Json // [{ givenName, familyName }] for every guest, lead first
+  guests                  Json // [{ givenName, familyName, title? }] for every guest, room by room in room order, lead first
   refundable              Boolean
   totalMinor              Int // what the agency pays: the supplier's inclusive total (BP5)
   currency                String
@@ -512,6 +514,7 @@ model Booking {
   quote     Quote?         @relation(fields: [quoteId], references: [id], onDelete: SetNull)
   quoteStay QuoteStay?     @relation(fields: [quoteStayId], references: [id], onDelete: SetNull)
   events    BookingEvent[]
+  rooms     BookingRoom[]
 
   @@index([agencyId, createdAt])
   @@index([quoteId])
@@ -520,6 +523,37 @@ model Booking {
   @@index([agencyId, status, checkin])
   @@index([status, updatedAt])
   @@index([needsAttention])
+}
+
+enum BookingRoomStatus {
+  ACTIVE
+  CANCELLED
+}
+
+// One room of a booking (plan 10), in room order. Its total and price are the supplier's own
+// for this room; the rooms of a booking always add up to the booking's total. The supplier
+// details come from the retrieve after booking, checked against the room's main guest (TR5).
+// The cancel link is the supplier's own href (with its token): server-only, followed as given.
+model BookingRoom {
+  id                  String            @id @default(cuid())
+  bookingId           String
+  index               Int // 0-based room order
+  adults              Int
+  childAges           Int[]
+  guests              Json // [{ givenName, familyName, title? }] this room's guests, main guest first
+  givenName           String // the room's main guest (its first adult), as sent to the supplier
+  familyName          String
+  totalMinor          Int
+  price               Json // PriceBreakdown of this room, as last checked
+  supplierRoomId      String?
+  hotelConfirmationId String?
+  cancelLink          String? // server-only
+  status              BookingRoomStatus @default(ACTIVE)
+  cancelledAt         DateTime?
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  @@unique([bookingId, index])
 }
 
 // The audit trail of a booking: one row per state change (who, from, to, why).

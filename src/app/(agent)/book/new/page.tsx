@@ -11,7 +11,8 @@ import { cancellationLabel } from "../../_components/rate-text";
 import { shortDate, stayText } from "../../search/parts";
 import { createDraftAction } from "../actions";
 import { Steps } from "../../_components/steps";
-import { ClientChooser, GuestForm } from "./guest-form";
+import { roomTitle } from "../../_components/guests";
+import { ClientChooser, GuestForm, type GuestFormRoom } from "./guest-form";
 
 export const metadata: Metadata = { title: "Guest details | Apolles", robots: { index: false, follow: false } };
 
@@ -47,10 +48,11 @@ export default async function GuestDetailsPage({ searchParams }: { searchParams:
     clientOptions(agencyId),
   ]);
   const stay = stayText({ nights: offer.price.nights, rooms: found.rooms });
-  const guests = [
-    ...Array.from({ length: query.adults }, (_, i) => `Adult ${i + 1}`),
-    ...query.childAges.map((age, i) => `Child ${i + 1} (age ${age})`),
-  ];
+  // A section per room when there are several (plan 10); one room looks as it always did.
+  const rooms: GuestFormRoom[] = found.rooms.map((room, r) => ({
+    heading: found.rooms.length > 1 ? roomTitle(r, room) : null,
+    guests: [...Array.from({ length: room.adults }, (_, i) => `Adult ${i + 1}`), ...room.childAges.map((age, i) => `Child ${i + 1} (age ${age})`)],
+  }));
   return (
     <main className="mx-auto grid w-[min(1100px,calc(100%-40px))] gap-6 py-8 lg:grid-cols-[1fr_320px]">
       <section className={`${card} bg-white p-6`}>
@@ -58,7 +60,7 @@ export default async function GuestDetailsPage({ searchParams }: { searchParams:
         <h1 className={pageTitle}>Guest details</h1>
         <p className="mb-5 mt-1 text-sm text-muted">Enter the traveler names exactly as they appear on their travel documents.</p>
         {clients.length > 0 ? <ClientChooser clients={clients} selected={prefill?.clientId ?? ""} /> : null}
-        <GuestForm action={createDraftAction} rate={{ ...rate, ...(stayId ? { stay: stayId } : {}) }} guests={guests} prefill={prefill} />
+        <GuestForm action={createDraftAction} rate={{ ...rate, ...(stayId ? { stay: stayId } : {}) }} rooms={rooms} prefill={prefill} />
       </section>
       <aside className={`${card} h-fit bg-white p-5`}>
         <h2 className="font-serif text-[22px] text-ink">{hotel.name}</h2>

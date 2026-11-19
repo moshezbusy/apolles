@@ -1,15 +1,16 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { Booking, Prisma } from "@/generated/prisma/client";
+import type { Booking, BookingRoom, Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import { enqueue } from "@/server/jobs/queue";
 import { QuoteStayAlreadyBooked, QuoteStayChanged, claimQuoteStay, lockQuoteOfBooking, stayForDraft, syncQuoteOfBooking } from "@/server/quotes/quote-booking";
 import { SEVERAL_ROOMS_UNAVAILABLE } from "@/server/search/errors";
+import { MAX_ROOMS } from "@/server/search/input";
 import { findOffer } from "@/server/search/search";
-import { bookingSupplier } from "@/server/supplier";
+import { bookingSupplier, multiRoomAllowed } from "@/server/supplier";
 import { SupplierAuthError, SupplierError, SupplierRateLimited, SupplierRequestRejected } from "@/server/supplier/expedia/client";
 import { SupplierNotSent } from "@/server/supplier/expedia/booking";
-import type { BookingSupplier, CancelPenalty, RetrievedItinerary, SupplierAdapter, SupplierContext, SupplierLinks } from "@/server/supplier/types";
+import type { BookingSupplier, CancelPenalty, PriceBreakdown, RetrievedItinerary, SupplierAdapter, SupplierContext, SupplierLinks } from "@/server/supplier/types";
 import { captureHold, credit, getBalance, placeHoldInTx, releaseHold, withLedgerTransaction } from "@/server/wallet/ledger";
 import { InsufficientFunds } from "@/server/wallet/errors";
 import { cancelChargeAt } from "./cancel-charge";
@@ -26,6 +27,9 @@ import { BookingStateConflict, transition } from "./states";
 //      by affiliate reference. Never book again.
 //   4. Cancellation refunds (total − today's charge) only after the supplier confirms it.
 // Every read and write is scoped by the session's agencyId.
+// Several rooms (plan 10): a booking has 1 to 8 rooms (BookingRoom), each with its own guests and
+// its own supplier price; the booking keeps the totals. The rooms always add up to the booking's
+// total, and nothing is held or sent when they do not. One hold, one charge for the booking.
 
 export type BookingContext = { agencyId: string; userId: string; supplierContext: SupplierContext };
 type Supplier = SupplierAdapter & BookingSupplier;
@@ -120,7 +124,9 @@ export const draftInputSchema = z
     propertyId: z.string().min(1).max(64),
     rateId: z.string().min(1).max(128),
     bedGroupId: z.string().min(1).max(128),
-    guests: z.array(guestSchema).min(1).max(14),
+    // One entry per searched room, in room order: that room's adults, then its children (TR5:
+    // the first adult is the room's main guest; room 1's is the lead guest).
+    rooms: z.array(z.object({ guests: z.array(guestSchema).min(1).max(14) }).strict()).min(1).max(MAX_ROOMS),
     leadEmail: z.string().trim().toLowerCase().max(254).email(),
     leadPhone: z.object({ countryCode: z.string().regex(/^\d{1,3}$/), number: z.string().regex(/^\d{4,14}$/) }).strict(),
     // Plan 5d: the quote's destination this booking comes from (the agency's own, not yet booked).
@@ -134,11 +140,44 @@ function supplierOf(deps: Deps): Supplier {
   return deps.supplier ?? bookingSupplier();
 }
 
+// Room prices add up to a total exactly, in its currency (addition only, BP5).
+function pricesAddUp(rooms: PriceBreakdown[], total: { minor: number; currency: string }): boolean {
+  let sum = 0;
+  for (const room of rooms) {
+    if (room.total.currency !== total.currency) return false;
+    sum += room.total.minor;
+  }
+  return Number.isSafeInteger(sum) && sum === total.minor;
+}
+
+// A booking's rooms in room order (through the booking, so the agency scope holds).
+function roomsOf(booking: Pick<Booking, "id" | "agencyId">): Promise<BookingRoom[]> {
+  return db.bookingRoom.findMany({ where: { bookingId: booking.id, booking: { agencyId: booking.agencyId } }, orderBy: { index: "asc" } });
+}
+
+// The rooms are exactly the booking: numbered from 0, 1 to 8 of them, the booking's guests
+// counted once, and their totals adding up to the booking's total.
+function roomsMatchBooking(booking: Booking, rooms: BookingRoom[]): boolean {
+  if (rooms.length < 1 || rooms.length > MAX_ROOMS || rooms.some((room, i) => room.index !== i)) return false;
+  if (rooms.reduce((n, room) => n + room.adults, 0) !== booking.adults) return false;
+  if (rooms.flatMap((room) => room.childAges).join(",") !== booking.childAges.join(",")) return false;
+  const sum = rooms.reduce((n, room) => n + room.totalMinor, 0);
+  return Number.isSafeInteger(sum) && sum === booking.totalMinor;
+}
+
 async function ownBooking(agencyId: string, bookingId: string): Promise<Booking> {
   if (typeof bookingId !== "string" || bookingId.length > 64) throw new BookingNotFound();
   const booking = await db.booking.findFirst({ where: { id: bookingId, agencyId } });
   if (!booking) throw new BookingNotFound();
   return booking;
+}
+
+// The rooms of the agency's own booking, in room order (none for another agency's booking), for
+// the pages: without the supplier's cancel link, which stays on the server.
+export type BookingRoomView = Omit<BookingRoom, "cancelLink">;
+export async function getBookingRooms(agencyId: string, bookingId: string): Promise<BookingRoomView[]> {
+  if (typeof bookingId !== "string" || bookingId.length > 64) return [];
+  return db.bookingRoom.findMany({ where: { bookingId, booking: { agencyId } }, orderBy: { index: "asc" }, omit: { cancelLink: true } });
 }
 
 export async function getBooking(agencyId: string, bookingId: string): Promise<Booking | null> {
@@ -164,14 +203,21 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
   const found = await findOffer(ctx.agencyId, { snapshotId: input.snapshotId, propertyId: input.propertyId, rateId: input.rateId, bedGroupId: input.bedGroupId }, now);
   if (!found) throw new BookingRateExpired("These prices expired. Search again for current prices.");
   const { offer, bedGroup, hotel, query, rooms } = found;
-  // A booking is one room until plan 10 task 3 gives bookings their rooms.
-  if (rooms.length > 1) throw new BookingInputInvalid(SEVERAL_ROOMS_UNAVAILABLE);
-  if (input.guests.length !== query.adults + query.childAges.length) {
+  if (rooms.length > 1 && !multiRoomAllowed()) throw new BookingInputInvalid(SEVERAL_ROOMS_UNAVAILABLE);
+  // Every searched room, each with exactly its own adults and children.
+  if (input.rooms.length !== rooms.length || input.rooms.some((room, i) => room.guests.length !== rooms[i]!.adults + rooms[i]!.childAges.length)) {
     throw new BookingInputInvalid("Enter a name for every guest.");
   }
-  const lead = input.guests[0]!;
+  // One stored price per room, adding up to the offer's price (the search read checks it too).
+  if (offer.roomPrices.length !== rooms.length || !pricesAddUp(offer.roomPrices, offer.price.total)) {
+    throw new BookingRateExpired("These prices expired. Search again for current prices.");
+  }
+  const guests = input.rooms.flatMap((room) => room.guests);
+  const lead = guests[0]!;
   let fromQuote: { quoteId: string; quoteStayId: string; sellMarkup: { markupType: "PERCENT" | "FIXED"; markupValue: number } | null } | null = null;
   if (input.quoteStayId) {
+    // Quotes are for one room (plan 10).
+    if (rooms.length > 1) throw new BookingInputInvalid("This rate is not the dates or hotel of this quote. Open the quote and choose Book again.");
     const stay = await stayForDraft(ctx.agencyId, input.quoteStayId, { propertyId: offer.propertyId, ...query });
     if (stay === "not_found") throw new BookingInputInvalid("This quote was not found, or it is already booked.");
     if (stay === "mismatch") throw new BookingInputInvalid("This rate is not the dates or hotel of this quote. Open the quote and choose Book again.");
@@ -203,7 +249,7 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
     leadEmail: input.leadEmail,
     leadPhone: `+${input.leadPhone.countryCode} ${input.leadPhone.number}`,
     specialRequest,
-    guests: input.guests,
+    guests,
     refundable: offer.refundable,
     totalMinor: offer.price.total.minor,
     currency: offer.price.total.currency,
@@ -213,10 +259,25 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
     nonrefundableDateRanges: offer.nonrefundableDateRanges as unknown as Prisma.InputJsonValue,
     priceCheckToken: bedGroup.priceCheckToken,
   };
+  const roomRows = rooms.map((occupancy, index) => {
+    const roomGuests = input.rooms[index]!.guests;
+    const price = offer.roomPrices[index]!;
+    return {
+      index,
+      adults: occupancy.adults,
+      childAges: occupancy.childAges,
+      guests: roomGuests,
+      givenName: roomGuests[0]!.givenName,
+      familyName: roomGuests[0]!.familyName,
+      totalMinor: price.total.minor,
+      price: price as unknown as Prisma.InputJsonValue,
+    };
+  });
   for (let attempt = 0; ; attempt++) {
     try {
       const created = await db.$transaction(async (tx) => {
         const booking = await tx.booking.create({ data: { ...data, reference: newReference() }, select: { id: true } });
+        await tx.bookingRoom.createMany({ data: roomRows.map((room) => ({ ...room, bookingId: booking.id })) });
         await tx.bookingEvent.create({ data: { bookingId: booking.id, toStatus: "DRAFT", actorUserId: ctx.userId, reason: "Guest details entered" } });
         return booking;
       });
@@ -242,6 +303,9 @@ export async function prepareReview(ctx: BookingContext, bookingId: string, deps
   const now = deps.now ?? new Date();
   const booking = await ownBooking(ctx.agencyId, bookingId);
   if (booking.status !== "DRAFT") return { kind: "not_draft", booking };
+  const rooms = await roomsOf(booking);
+  if (!roomsMatchBooking(booking, rooms)) throw new BookingUnavailable("This booking cannot be checked as it is. Search again for current prices.");
+  if (rooms.length > 1 && !multiRoomAllowed()) throw new BookingUnavailable(SEVERAL_ROOMS_UNAVAILABLE);
   let result;
   try {
     result = await supplierOf(deps).priceCheck(
@@ -250,7 +314,7 @@ export async function prepareReview(ctx: BookingContext, bookingId: string, deps
         roomId: booking.roomId,
         rateId: booking.rateId,
         token: booking.priceCheckToken,
-        occupancies: [{ adults: booking.adults, childAges: booking.childAges }], // one room until plan 10 task 3
+        occupancies: rooms.map((room) => ({ adults: room.adults, childAges: room.childAges })),
       },
       ctx.supplierContext,
     );
@@ -259,19 +323,33 @@ export async function prepareReview(ctx: BookingContext, bookingId: string, deps
     throw error;
   }
   if (result.status === "sold_out" || result.price.total.currency !== booking.currency) return { kind: "sold_out", booking };
+  // A price for every room, adding up to the whole price; anything else is never used.
+  const roomPrices = result.roomPrices;
+  if (roomPrices.length !== rooms.length || !pricesAddUp(roomPrices, result.price.total)) {
+    console.error(`price check rooms do not add up: booking ${booking.reference}`);
+    throw new BookingUnavailable("The price could not be checked right now. Try again in a few minutes.");
+  }
   const changed = result.price.total.minor !== booking.totalMinor;
-  const written = await db.booking.updateMany({
-    where: { id: booking.id, status: "DRAFT" },
-    data: {
-      totalMinor: result.price.total.minor,
-      price: result.price as unknown as Prisma.InputJsonValue,
-      bookToken: result.bookToken,
-      priceCheckedAt: now,
-      previousTotalMinor: changed ? booking.totalMinor : booking.previousTotalMinor,
-    },
+  // The booking and its rooms get the new price together, or not at all.
+  const written = await db.$transaction(async (tx) => {
+    const draft = await tx.booking.updateMany({
+      where: { id: booking.id, status: "DRAFT" },
+      data: {
+        totalMinor: result.price.total.minor,
+        price: result.price as unknown as Prisma.InputJsonValue,
+        bookToken: result.bookToken,
+        priceCheckedAt: now,
+        previousTotalMinor: changed ? booking.totalMinor : booking.previousTotalMinor,
+      },
+    });
+    if (draft.count === 0) return 0;
+    for (const [index, price] of roomPrices.entries()) {
+      await tx.bookingRoom.update({ where: { bookingId_index: { bookingId: booking.id, index } }, data: { totalMinor: price.total.minor, price: price as unknown as Prisma.InputJsonValue } });
+    }
+    return draft.count;
   });
   const updated = await db.booking.findUniqueOrThrow({ where: { id: booking.id } });
-  if (written.count === 0) return { kind: "not_draft", booking: updated };
+  if (written === 0) return { kind: "not_draft", booking: updated };
   return { kind: "ready", booking: updated, priceChanged: changed || updated.previousTotalMinor !== null };
 }
 
@@ -312,6 +390,11 @@ export async function book(
   if (confirm.expectedTotalMinor !== booking.totalMinor) {
     return { kind: "review_again", message: "The price changed. Review the new price before booking." };
   }
+  // The rooms sent are the rooms price-checked (the same rows): every one of them, adding up to
+  // the total about to be held. Anything else holds nothing and sends nothing.
+  const rooms = await roomsOf(booking);
+  if (!roomsMatchBooking(booking, rooms)) return { kind: "review_again", message: "This booking's rooms do not match its price. Review the price again before booking." };
+  if (rooms.length > 1 && !multiRoomAllowed()) return { kind: "review_again", message: SEVERAL_ROOMS_UNAVAILABLE };
 
   // One transaction: the hold, the move to PENDING_CONFIRMATION and a safety-net reconcile job
   // are written together or not at all. A crash at any point after this (even during the
@@ -351,7 +434,7 @@ export async function book(
         bookToken: booking.bookToken,
         affiliateReferenceId: booking.reference,
         lead: { givenName: booking.leadGivenName, familyName: booking.leadFamilyName, email: booking.leadEmail, phone: { countryCode, number } },
-        rooms: [{ givenName: booking.leadGivenName, familyName: booking.leadFamilyName }], // one room until plan 10 task 3
+        rooms: rooms.map((room) => ({ givenName: room.givenName, familyName: room.familyName })),
         ...(booking.specialRequest ? { specialRequest: booking.specialRequest } : {}),
       },
       ctx.supplierContext,
@@ -369,12 +452,58 @@ export async function book(
   }
   try {
     await confirmBooking(booking.id, holdId, { itineraryId: result.itineraryId, links: result.links }, ctx.userId, "Supplier confirmed the booking");
-    return { kind: "confirmed", bookingId: booking.id };
   } catch (error) {
     // The supplier said yes but our own write failed: the queued job confirms it from the
     // supplier's side (capture is idempotent).
     console.error(`booking confirm write failed: ${error instanceof Error ? error.name : "Error"}`);
     return { kind: "pending", bookingId: booking.id };
+  }
+  await fillRoomsFromSupplier(booking.id, deps);
+  return { kind: "confirmed", bookingId: booking.id };
+}
+
+function sameName(a: string | null, b: string): boolean {
+  return a !== null && a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+// After a confirmation: each room's supplier room id, hotel confirmation and cancel link, from
+// one retrieve (or the itinerary the caller already has). Matched to our rooms by order and
+// checked against the room's main guest (TR5). Another number of rooms, or a name that differs,
+// flags the booking for an admin and stores nothing for those rooms. Best effort: it never
+// throws (the booking is confirmed either way), and a room already filled is never changed.
+export async function fillRoomsFromSupplier(bookingId: string, deps: Deps = {}, known?: RetrievedItinerary): Promise<void> {
+  try {
+    const booking = await db.booking.findUnique({ where: { id: bookingId } });
+    if (!booking || booking.status !== "CONFIRMED") return;
+    const rooms = await roomsOf(booking);
+    const unfilled = rooms.filter((room) => room.supplierRoomId === null);
+    if (unfilled.length === 0) return;
+    const itinerary = known ?? (await supplierView(booking, supplierOf(deps)));
+    if (!itinerary) return; // not found yet: the safety-net job tries again
+    const sameCount = itinerary.rooms.length === rooms.length;
+    const matched = sameCount
+      ? unfilled.filter((room) => {
+          const theirs = itinerary.rooms[room.index];
+          return theirs !== undefined && sameName(theirs.givenName, room.givenName) && sameName(theirs.familyName, room.familyName);
+        })
+      : [];
+    const mismatch = matched.length < unfilled.length;
+    await db.$transaction(async (tx) => {
+      for (const room of matched) {
+        const theirs = itinerary.rooms[room.index]!;
+        await tx.bookingRoom.updateMany({
+          where: { id: room.id, supplierRoomId: null },
+          data: { supplierRoomId: theirs.id, hotelConfirmationId: theirs.hotelConfirmationId, cancelLink: theirs.cancelLink },
+        });
+      }
+      if (mismatch) {
+        await tx.booking.update({ where: { id: booking.id }, data: { needsAttention: true } });
+        await queueEmail(tx, booking.id, "needs_attention");
+      }
+    });
+    if (mismatch) console.error(`booking ${booking.reference}: the supplier's rooms do not match ours, needs an admin`);
+  } catch (error) {
+    console.error(`booking rooms fill failed: ${error instanceof Error ? error.name : "Error"}`);
   }
 }
 
@@ -461,6 +590,26 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
       throw error;
     }
     if (found) {
+      const rooms = await roomsOf(booking);
+      if (rooms.length > 1) {
+        // Several rooms: confirmed only when the supplier has every room booked. A room cancelled,
+        // missing or unclear there needs an admin; the booking is never failed while some of its
+        // rooms may be booked (the money stays held). A room still pending: look again later.
+        if (found.rooms.length === rooms.length && found.rooms.every((r) => r.status === "booked")) {
+          await confirmBooking(booking.id, booking.holdId, { itineraryId: found.itineraryId, links: {} }, null, `Reconciled: supplier has all ${rooms.length} rooms`);
+          await fillRoomsFromSupplier(booking.id, deps, found);
+          return "confirmed";
+        }
+        const wrong = found.rooms.length !== rooms.length || found.rooms.some((r) => r.status !== "booked" && r.status !== "pending");
+        if (wrong && !booking.needsAttention) {
+          await db.$transaction(async (tx) => {
+            await tx.booking.update({ where: { id: booking.id }, data: { needsAttention: true } });
+            await queueEmail(tx, booking.id, "needs_attention");
+          });
+          console.error(`booking ${booking.reference}: some rooms are not booked at the supplier, needs an admin`);
+        }
+        return retry(RECONCILE_DELAY_MS * 2);
+      }
       const room = found.rooms[0];
       if (room?.status === "cancelled") {
         await failBooking(booking.id, booking.holdId, null, "Supplier shows the booking as cancelled");
@@ -473,6 +622,7 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
         null,
         "Reconciled: supplier has the booking",
       );
+      await fillRoomsFromSupplier(booking.id, deps, found);
       return "confirmed";
     }
     if (booking.lastNotFoundAt && now.getTime() - booking.lastNotFoundAt.getTime() >= NOT_FOUND_CONFIRM_MS) {
@@ -506,6 +656,9 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
     }
     return retry(RECONCILE_DELAY_MS * 2);
   }
+
+  // Confirmed, but the retrieve after booking failed: the safety-net job fills the rooms now.
+  if (booking.status === "CONFIRMED" && !booking.needsAttention) await fillRoomsFromSupplier(booking.id, deps);
   return "nothing";
 }
 

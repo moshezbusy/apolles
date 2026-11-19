@@ -13,7 +13,7 @@ export type SearchFormRoom = { adults: string; childAges: string[] };
 export type SearchFormState = { status: "error"; message: string; values: SearchFormValues } | null;
 
 const MAX_FIELD = 100;
-const MAX_ROOMS = 8;
+const MAX_ROOM_FIELDS = 9; // more than the 8 rooms allowed, so too many is refused, not cut
 const MAX_CHILD_FIELDS = 10; // more than the 6 allowed, so too many is refused, not cut
 
 function text(value: FormDataEntryValue | null): string {
@@ -22,11 +22,12 @@ function text(value: FormDataEntryValue | null): string {
 
 // Only the known fields are read (the form also carries Next.js internals). Each room is a
 // room_adults field and a room_children field ("9,4", or "" for none), paired by order; at most
-// 8 rooms are read. The server checks everything again.
+// 9 rooms are read (one more than allowed, for the schema to refuse). The server checks
+// everything again.
 export function readSearchForm(formData: FormData): SearchFormValues {
   const adults = formData.getAll("room_adults");
   const children = formData.getAll("room_children");
-  const count = Math.min(Math.max(adults.length, children.length), MAX_ROOMS);
+  const count = Math.min(Math.max(adults.length, children.length), MAX_ROOM_FIELDS);
   const rooms = Array.from({ length: count }, (_, i) => {
     const ages = text(children[i] ?? null);
     return { adults: text(adults[i] ?? null), childAges: ages === "" ? [] : ages.split(",").slice(0, MAX_CHILD_FIELDS) };

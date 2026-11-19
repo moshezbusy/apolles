@@ -29,8 +29,8 @@ export async function createDraftAction(_previous: BookFormState, formData: Form
   if (values.saveClient === "on" && !values.clientId) {
     try {
       await createClientFromGuest(userId, agencyId, {
-        givenName: values.given_0 ?? "",
-        familyName: values.family_0 ?? "",
+        givenName: values.r0_given_0 ?? "",
+        familyName: values.r0_family_0 ?? "",
         email: values.leadEmail ?? "",
         phoneCountry: values.phoneCountry ?? "",
         phoneNumber: values.phoneNumber ?? "",

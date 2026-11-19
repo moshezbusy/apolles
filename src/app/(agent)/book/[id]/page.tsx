@@ -7,12 +7,12 @@ import { alertError, alertInfo, card, link, pageTitle, sectionTitle } from "@/co
 import { formatUsd } from "@/lib/money";
 import { supportContact, termsLinks } from "@/server/app-info";
 import { requireAgent } from "@/server/auth/guards";
-import { BookingUnavailable, getBooking, prepareReview } from "@/server/booking/service";
+import { BookingUnavailable, getBooking, getBookingRooms, prepareReview } from "@/server/booking/service";
 import { getContent } from "@/server/content/content-cache";
 import { supplierContextFrom } from "@/server/supplier-context";
 import type { CancelPenalty, PriceBreakdown, PropertyContent } from "@/server/supplier/types";
 import { getBalance } from "@/server/wallet/ledger";
-import { type StoredGuest, guestLines } from "../../_components/guests";
+import { type StoredGuest, guestLines, roomGuestLines, roomTitle } from "../../_components/guests";
 import { CancellationPolicy, Policies, PriceDetails } from "../../_components/hotel-info";
 import { shortDate, stayText } from "../../search/parts";
 import { bookAction } from "../actions";
@@ -72,9 +72,11 @@ export default async function ReviewPage({ params }: { params: Params }) {
   } catch {
     content = null; // the rates and policies of the rate itself are still shown
   }
-  const { balanceCents } = await getBalance(agencyId);
+  const [{ balanceCents }, rooms] = await Promise.all([getBalance(agencyId), getBookingRooms(agencyId, b.id)]);
   const shortfall = Math.max(0, b.totalMinor - balanceCents);
-  const stay = stayText({ nights: (b.price as unknown as PriceBreakdown).nights, rooms: [{ adults: b.adults, childAges: b.childAges }] }); // one room until plan 10 task 3
+  // Several rooms (plan 10) list each room with its guests and price; one room looks as before.
+  const severalRooms = rooms.length > 1;
+  const stay = stayText({ nights: (b.price as unknown as PriceBreakdown).nights, rooms: severalRooms ? rooms : [{ adults: b.adults, childAges: b.childAges }] });
   const support = supportContact();
   const changed = b.previousTotalMinor !== null && b.previousTotalMinor !== b.totalMinor;
 
@@ -120,16 +122,38 @@ export default async function ReviewPage({ params }: { params: Params }) {
                   {shortDate(b.checkin)} to {shortDate(b.checkout)} · {stay}
                 </dd>
               </div>
-              <div>
-                <dt className="font-semibold text-ink">Guests</dt>
-                <dd>
-                  <ul>
-                    {guestLines(b.guests as StoredGuest[], b.adults, b.childAges).map((g) => (
-                      <li key={g}>{g}</li>
-                    ))}
-                  </ul>
-                </dd>
-              </div>
+              {severalRooms ? (
+                <div className="sm:col-span-2">
+                  <dt className="font-semibold text-ink">Rooms and guests</dt>
+                  <dd>
+                    <ol className="mt-1 grid gap-2">
+                      {rooms.map((room) => (
+                        <li key={room.index} className="rounded-lg border border-line p-3">
+                          <p className="flex justify-between gap-3 font-semibold text-ink">
+                            <span>{roomTitle(room.index, room)}</span> <span className="tabular-nums">{formatUsd(room.totalMinor)}</span>
+                          </p>
+                          <ul>
+                            {roomGuestLines(room).map((g, i) => (
+                              <li key={i}>{g}</li>
+                            ))}
+                          </ul>
+                        </li>
+                      ))}
+                    </ol>
+                  </dd>
+                </div>
+              ) : (
+                <div>
+                  <dt className="font-semibold text-ink">Guests</dt>
+                  <dd>
+                    <ul>
+                      {guestLines(b.guests as StoredGuest[], b.adults, b.childAges).map((g) => (
+                        <li key={g}>{g}</li>
+                      ))}
+                    </ul>
+                  </dd>
+                </div>
+              )}
               {b.specialRequest ? (
                 <div className="sm:col-span-2">
                   <dt className="font-semibold text-ink">Special requests</dt>

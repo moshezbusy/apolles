@@ -1,12 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import { startSearch } from "@/server/search/search";
 import { SupplierOutcomeUnknown, SupplierRequestRejected, SupplierUnavailable } from "@/server/supplier/expedia/client";
 import { FakeSupplierAdapter } from "@/server/supplier/fake";
-import type { BookingSupplier, Offer, PriceBreakdown, SupplierAdapter } from "@/server/supplier/types";
+import type { BookingSupplier, Offer, PriceBreakdown, RetrievedItinerary, SupplierAdapter } from "@/server/supplier/types";
 import { credit, getBalance } from "@/server/wallet/ledger";
-import { book, cancel, cancelQuote, createDraft, prepareReview, reconcile } from "./service";
+import { book, cancel, cancelQuote, createDraft, fillRoomsFromSupplier, prepareReview, reconcile } from "./service";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 const later = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
@@ -67,7 +67,7 @@ const guests = [
 async function draft(snapshotId: string, offer: Offer, agency = "A") {
   return createDraft(
     ctx(agency, `u-${agency}`),
-    { snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, guests, leadEmail: "Dana@Example.com", leadPhone: { countryCode: "972", number: "501234567" } },
+    { snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, rooms: [{ guests }], leadEmail: "Dana@Example.com", leadPhone: { countryCode: "972", number: "501234567" } },
     { now: NOW },
   );
 }
@@ -92,20 +92,20 @@ describe("booking: draft and review", () => {
     const offer = offers[0]!;
     const base = { snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, leadEmail: "d@example.com", leadPhone: { countryCode: "972", number: "501234567" } };
     const titled = [{ ...guests[0]!, title: "MRS" as const }, guests[1]!, guests[2]!];
-    const { bookingId } = await createDraft(ctx(), { ...base, guests: titled, specialRequests: { options: ["LATE_CHECKOUT", "HIGH_FLOOR"], text: "Celebrating an anniversary" } }, { now: NOW });
+    const { bookingId } = await createDraft(ctx(), { ...base, rooms: [{ guests: titled }], specialRequests: { options: ["LATE_CHECKOUT", "HIGH_FLOOR"], text: "Celebrating an anniversary" } }, { now: NOW });
     const b = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
     expect(b.specialRequest).toBe("Late check-out. High floor. Celebrating an anniversary");
     expect((b.guests as { title?: string }[])[0]).toMatchObject({ title: "MRS", givenName: "Dana" });
     for (const bad of ["Passport 12345678", "4111.1111.1111.1111", "4111/1111/1111/1111", "+972.50.123.4567", "050_123_4567", "１２３４５６７８", "٠٥٠١٢٣٤٥٦٧", "mail me a@b.com"]) {
-      await expect(createDraft(ctx(), { ...base, guests, specialRequests: { options: [], text: bad } }, { now: NOW }), bad).rejects.toThrow(/no ID, card or phone numbers/i);
+      await expect(createDraft(ctx(), { ...base, rooms: [{ guests }], specialRequests: { options: [], text: bad } }, { now: NOW }), bad).rejects.toThrow(/no ID, card or phone numbers/i);
     }
     // Characters Rapid re-encodes are left out, not refused; the whole text has one limit.
-    const ok = await createDraft(ctx(), { ...base, guests, specialRequests: { options: [], text: "Twin beds (if possible) & quiet" } }, { now: NOW });
+    const ok = await createDraft(ctx(), { ...base, rooms: [{ guests }], specialRequests: { options: [], text: "Twin beds (if possible) & quiet" } }, { now: NOW });
     expect((await db.booking.findUniqueOrThrow({ where: { id: ok.bookingId } })).specialRequest).toBe("Twin beds if possible quiet");
     await expect(
-      createDraft(ctx(), { ...base, guests, specialRequests: { options: ["EARLY_CHECKIN", "LATE_CHECKOUT", "HIGH_FLOOR", "HONEYMOON"], text: "x".repeat(290) } }, { now: NOW }),
+      createDraft(ctx(), { ...base, rooms: [{ guests }], specialRequests: { options: ["EARLY_CHECKIN", "LATE_CHECKOUT", "HIGH_FLOOR", "HONEYMOON"], text: "x".repeat(290) } }, { now: NOW }),
     ).rejects.toThrow(/up to 300 characters/);
-    await expect(createDraft(ctx(), { ...base, guests, specialRequests: { options: ["FREE_UPGRADE"], text: "" } }, { now: NOW })).rejects.toThrow(/Check the guest names/);
+    await expect(createDraft(ctx(), { ...base, rooms: [{ guests }], specialRequests: { options: ["FREE_UPGRADE"], text: "" } }, { now: NOW })).rejects.toThrow(/Check the guest names/);
     // Sent with the booking.
     let sentRequest: string | undefined;
     const s = supplier({ book: async (i) => { sentRequest = i.specialRequest; return new FakeSupplierAdapter().book(i); } });
@@ -132,8 +132,13 @@ describe("booking: draft and review", () => {
       priceCheckToken: offer.bedGroups[0]!.priceCheckToken,
     });
     expect(b.reference).toMatch(/^APL-[A-HJ-NP-Z2-9]{8}$/);
+    // Plan 10: a one-room booking has one room, with all its guests and the whole price.
+    const rooms = await db.bookingRoom.findMany({ where: { bookingId } });
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0]).toMatchObject({ index: 0, adults: 2, childAges: [7], guests, givenName: "Dana", familyName: "Levi", totalMinor: b.totalMinor, status: "ACTIVE", supplierRoomId: null });
+    expect(rooms[0]!.price).toEqual(b.price);
     await expect(
-      createDraft(ctx(), { snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, guests, leadEmail: "a@b.co", leadPhone: { countryCode: "972", number: "501234567" }, totalMinor: 1 }, { now: NOW }),
+      createDraft(ctx(), { snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, rooms: [{ guests }], leadEmail: "a@b.co", leadPhone: { countryCode: "972", number: "501234567" }, totalMinor: 1 }, { now: NOW }),
     ).rejects.toThrow(/Check the guest names/); // unknown fields (a price) are refused
   });
 
@@ -148,23 +153,9 @@ describe("booking: draft and review", () => {
     const { snapshotId, offers } = await setup();
     const offer = offers[0]!;
     await expect(
-      createDraft(ctx(), { snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, guests: guests.slice(0, 2), leadEmail: "a@b.co", leadPhone: { countryCode: "972", number: "501234567" } }, { now: NOW }),
+      createDraft(ctx(), { snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, rooms: [{ guests: guests.slice(0, 2) }], leadEmail: "a@b.co", leadPhone: { countryCode: "972", number: "501234567" } }, { now: NOW }),
     ).rejects.toThrow(/every guest/);
     await expect(draft(snapshotId, offer, "B")).rejects.toThrow(/expired/);
-  });
-
-  it("a search of several rooms cannot be drafted until bookings have rooms (plan 10 task 3)", async () => {
-    await setup();
-    vi.stubEnv("SUPPLIER_MODE", "fake");
-    try {
-      const rooms = [{ adults: 2, childAges: [] }, { adults: 1, childAges: [] }];
-      const { snapshotId } = await startSearch(ctx(), { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", rooms }, { adapter: supplier(), now: NOW });
-      const offer = ((await db.searchHotel.findFirstOrThrow({ where: { snapshotId } })).offers as unknown as Offer[])[0]!;
-      await expect(draft(snapshotId, offer)).rejects.toThrow("Several rooms are not available yet.");
-      expect(await db.booking.count()).toBe(0);
-    } finally {
-      vi.unstubAllEnvs();
-    }
   });
 
   it("review checks the price again and keeps the old one when it changed", async () => {
@@ -449,6 +440,250 @@ describe("booking: cancel", () => {
     const s = supplier();
     expect((await cancel(ctx(), bookingId, { expectedChargeMinor: 5 }, { supplier: s, now: later(10) })).kind).toBe("not_allowed");
     expect(s.calls.cancelRoom).toBe(0);
+  });
+});
+
+// Plan 10: several rooms in one booking (allowed while the fake supplier is on). The fake
+// prices room 1 as one room always cost; each other room 4 dollars a night less for each adult
+// and 2 for each child fewer than room 1.
+describe("booking: several rooms", () => {
+  const TWO_ROOMS = [{ adults: 2, childAges: [7] }, { adults: 1, childAges: [] }];
+  const yossi = { givenName: "Yossi", familyName: "Cohen" };
+  const twoRoomGuests = [{ guests }, { guests: [yossi] }];
+
+  beforeEach(async () => {
+    await resetTestDb();
+    vi.stubEnv("SUPPLIER_MODE", "fake");
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  async function search() {
+    const { offers: oneRoom } = await setup();
+    const { snapshotId } = await startSearch(ctx(), { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", rooms: TWO_ROOMS }, { adapter: supplier(), now: NOW });
+    const offers = (await db.searchHotel.findFirstOrThrow({ where: { snapshotId } })).offers as unknown as Offer[];
+    return { snapshotId, offers, oneRoom };
+  }
+
+  const base = (snapshotId: string, offer: Offer) => ({ snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, leadEmail: "dana@example.com", leadPhone: { countryCode: "972", number: "501234567" } });
+
+  async function drafted(offerIndex = 1) {
+    const found = await search();
+    const offer = found.offers[offerIndex]!;
+    const { bookingId } = await createDraft(ctx(), { ...base(found.snapshotId, offer), rooms: twoRoomGuests }, { now: NOW });
+    return { ...found, offer, bookingId };
+  }
+
+  async function reviewedRooms(offerIndex = 1) {
+    const d = await drafted(offerIndex);
+    const review = await prepareReview(ctx(), d.bookingId, { supplier: supplier(), now: later(1) });
+    if (review.kind !== "ready") throw new Error("not ready");
+    return { ...d, total: review.booking.totalMinor };
+  }
+
+  const roomsOf = (bookingId: string) => db.bookingRoom.findMany({ where: { bookingId }, orderBy: { index: "asc" } });
+
+  it("a draft of two rooms keeps each room's guests and price; the rooms add up to the booking", async () => {
+    const { bookingId, offer, oneRoom } = await drafted();
+    const b = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
+    expect(b).toMatchObject({ adults: 3, childAges: [7], leadGivenName: "Dana", leadFamilyName: "Levi", totalMinor: offer.price.total.minor });
+    expect(b.guests).toEqual([...guests, yossi]); // every room's guests, in room order
+    const rooms = await roomsOf(bookingId);
+    expect(rooms.map((r) => ({ index: r.index, adults: r.adults, childAges: r.childAges, guests: r.guests, givenName: r.givenName, familyName: r.familyName, status: r.status }))).toEqual([
+      { index: 0, adults: 2, childAges: [7], guests, givenName: "Dana", familyName: "Levi", status: "ACTIVE" },
+      { index: 1, adults: 1, childAges: [], guests: [yossi], givenName: "Yossi", familyName: "Cohen", status: "ACTIVE" },
+    ]);
+    // Room 1 is priced as the same guests alone; room 2 has 1 adult and 1 child fewer: 6 dollars a night less.
+    const same = oneRoom.find((o) => o.rateId === offer.rateId)!;
+    expect(rooms[0]!.totalMinor).toBe(same.price.total.minor);
+    const nightly = (same.price.lines.find((l) => l.kind === "room_rate")!.amount.minor) / 2 - 600;
+    expect(rooms[1]!.totalMinor).toBe(nightly * 2 + Math.floor((nightly * 2) / 8));
+    expect(rooms[0]!.totalMinor + rooms[1]!.totalMinor).toBe(b.totalMinor);
+    expect(rooms.map((r) => r.price)).toEqual(offer.roomPrices);
+  });
+
+  it("each room needs exactly its own guests, and every searched room must be there", async () => {
+    const { snapshotId, offers } = await search();
+    const input = base(snapshotId, offers[1]!);
+    const wrong = [
+      [{ guests: guests.slice(0, 2) }, { guests: [yossi, guests[2]!] }], // 4 guests in all, but 2 and 2
+      [{ guests: [...guests, yossi] }], // one room for a two-room search
+      [{ guests }, { guests: [yossi] }, { guests: [yossi] }], // one room too many
+    ];
+    for (const rooms of wrong) await expect(createDraft(ctx(), { ...input, rooms }, { now: NOW })).rejects.toThrow(/every guest/);
+    await expect(createDraft(ctx(), { ...input, guests: [...guests, yossi] }, { now: NOW })).rejects.toThrow(/Check the guest names/); // the old shape is refused
+    expect(await db.booking.count()).toBe(0);
+    expect(await db.bookingRoom.count()).toBe(0);
+  });
+
+  it("with the real supplier a several-room draft is refused", async () => {
+    const { snapshotId, offers } = await search();
+    vi.stubEnv("SUPPLIER_MODE", "expedia");
+    await expect(createDraft(ctx(), { ...base(snapshotId, offers[1]!), rooms: twoRoomGuests }, { now: NOW })).rejects.toThrow("Several rooms are not available yet.");
+    expect(await db.booking.count()).toBe(0);
+  });
+
+  it("a several-room search cannot book a quote's destination (quotes are one room)", async () => {
+    const { snapshotId, offers } = await search();
+    await expect(createDraft(ctx(), { ...base(snapshotId, offers[1]!), rooms: twoRoomGuests, quoteStayId: "c".repeat(25) }, { now: NOW })).rejects.toThrow(/not the dates or hotel of this quote/);
+  });
+
+  it("review checks every room; a new price updates the rooms with the booking, and they still add up", async () => {
+    const { bookingId, offer } = await drafted();
+    const asked: unknown[] = [];
+    const higher = supplier({
+      priceCheck: async (ref) => {
+        asked.push(ref.occupancies);
+        const roomPrices = offer.roomPrices.map((p, i) => ({ ...p, total: { minor: p.total.minor + (i === 1 ? 500 : 0), currency: "USD" } }));
+        const price = { ...offer.price, total: { minor: offer.price.total.minor + 500, currency: "USD" } };
+        return { status: "price_changed", bookToken: "fakebk-11-1", price, roomPrices };
+      },
+    });
+    const review = await prepareReview(ctx(), bookingId, { supplier: higher, now: later(1) });
+    expect(asked).toEqual([TWO_ROOMS]);
+    expect(review).toMatchObject({ kind: "ready", priceChanged: true, booking: { totalMinor: offer.price.total.minor + 500, previousTotalMinor: offer.price.total.minor } });
+    const rooms = await roomsOf(bookingId);
+    expect(rooms.map((r) => r.totalMinor)).toEqual([offer.roomPrices[0]!.total.minor, offer.roomPrices[1]!.total.minor + 500]);
+    expect((rooms[1]!.price as unknown as PriceBreakdown).total.minor).toBe(offer.roomPrices[1]!.total.minor + 500);
+  });
+
+  it("a price check whose rooms do not add up, or miss a room, is not used: nothing is written", async () => {
+    const { bookingId, offer } = await drafted();
+    const bad = [
+      { status: "available" as const, bookToken: "fakebk-11-1", price: offer.price, roomPrices: [offer.roomPrices[0]!] },
+      { status: "available" as const, bookToken: "fakebk-11-1", price: offer.price, roomPrices: [offer.roomPrices[0]!, { ...offer.roomPrices[1]!, total: { minor: 1, currency: "USD" } }] },
+    ];
+    for (const result of bad) {
+      await expect(prepareReview(ctx(), bookingId, { supplier: supplier({ priceCheck: async () => result }), now: later(1) })).rejects.toThrow(/could not be checked/);
+    }
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ bookToken: null, priceCheckedAt: null, totalMinor: offer.price.total.minor });
+  });
+
+  it("book sends each room's main guest in room order, holds the total once, and stores each room's supplier details", async () => {
+    const { bookingId, total } = await reviewedRooms();
+    const sent: { rooms: unknown; specialRequest?: string }[] = [];
+    const s = supplier({ book: async (i) => { sent.push(i); return new FakeSupplierAdapter().book(i); } });
+    expect(await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: s, now: later(2) })).toEqual({ kind: "confirmed", bookingId });
+    expect(sent[0]!.rooms).toEqual([{ givenName: "Dana", familyName: "Levi" }, { givenName: "Yossi", familyName: "Cohen" }]);
+    expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: 0 });
+    expect(await db.ledgerEntry.count({ where: { type: "CHARGE" } })).toBe(1);
+    const b = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
+    expect(b).toMatchObject({ status: "CONFIRMED", needsAttention: false });
+    const ref = b.reference;
+    expect((await roomsOf(bookingId)).map((r) => [r.supplierRoomId, r.hotelConfirmationId, r.cancelLink])).toEqual([
+      ["room-1", `H-${ref.slice(-6)}`, `fake-cancel:${ref}`],
+      ["room-2", `H-${ref.slice(-6)}-2`, `fake-cancel:${ref}:2`],
+    ]);
+  });
+
+  it("a retrieve with the main guests swapped flags the booking for an admin and stores nothing for those rooms", async () => {
+    const { bookingId, total } = await reviewedRooms();
+    const swapped = supplier({
+      retrieve: async () => ({
+        itineraryId: "x",
+        rooms: [
+          { id: "s-1", status: "booked", hotelConfirmationId: "H1", cancelLink: "fake-cancel:1", givenName: "Yossi", familyName: "Cohen" },
+          { id: "s-2", status: "booked", hotelConfirmationId: "H2", cancelLink: "fake-cancel:2", givenName: "Dana", familyName: "Levi" },
+        ],
+      }),
+    });
+    expect((await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: swapped, now: later(2) })).kind).toBe("confirmed");
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CONFIRMED", needsAttention: true });
+    expect((await roomsOf(bookingId)).map((r) => [r.supplierRoomId, r.hotelConfirmationId, r.cancelLink])).toEqual([[null, null, null], [null, null, null]]);
+    expect((await db.job.findMany({ where: { kind: "email.booking" } })).map((j) => j.payload)).toContainEqual({ bookingId, event: "needs_attention" });
+  });
+
+  it("names match ignoring case and spaces; only the room whose name differs is left out", async () => {
+    const { bookingId, total } = await reviewedRooms();
+    const oneWrong = supplier({
+      retrieve: async () => ({
+        itineraryId: "x",
+        rooms: [
+          { id: "s-1", status: "booked", hotelConfirmationId: "H1", cancelLink: "fake-cancel:1", givenName: " DANA ", familyName: "levi" },
+          { id: "s-2", status: "booked", hotelConfirmationId: "H2", cancelLink: "fake-cancel:2", givenName: "Someone", familyName: "Else" },
+        ],
+      }),
+    });
+    await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: oneWrong, now: later(2) });
+    expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).needsAttention).toBe(true);
+    expect((await roomsOf(bookingId)).map((r) => r.supplierRoomId)).toEqual(["s-1", null]);
+  });
+
+  it("a retrieve with another number of rooms flags the booking and stores nothing", async () => {
+    const { bookingId, total } = await reviewedRooms();
+    const one = supplier({ retrieve: async () => ({ itineraryId: "x", rooms: [{ id: "s-1", status: "booked", hotelConfirmationId: "H1", cancelLink: "fake-cancel:1", givenName: "Dana", familyName: "Levi" }] }) });
+    await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: one, now: later(2) });
+    expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).needsAttention).toBe(true);
+    expect((await roomsOf(bookingId)).map((r) => r.supplierRoomId)).toEqual([null, null]);
+  });
+
+  it("a retrieve that fails never fails the booking; the safety-net job fills the rooms later, once", async () => {
+    const { bookingId, total } = await reviewedRooms();
+    const down = supplier({ retrieve: async () => { throw new SupplierUnavailable("down", 503); } });
+    expect((await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: down, now: later(2) })).kind).toBe("confirmed");
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CONFIRMED", needsAttention: false });
+    expect((await roomsOf(bookingId)).map((r) => r.supplierRoomId)).toEqual([null, null]);
+    expect(await reconcile(bookingId, { supplier: supplier(), now: later(8) })).toBe("nothing");
+    expect((await roomsOf(bookingId)).map((r) => r.supplierRoomId)).toEqual(["room-1", "room-2"]);
+    // Filled rooms are kept as they are: a later retrieve with other details changes nothing, and
+    // nothing is asked when every room is filled.
+    let asked = 0;
+    const other = supplier({ retrieve: async (): Promise<RetrievedItinerary> => { asked++; return { itineraryId: "x", rooms: [] }; } });
+    await fillRoomsFromSupplier(bookingId, { supplier: other });
+    expect(asked).toBe(0);
+    expect((await roomsOf(bookingId)).map((r) => r.supplierRoomId)).toEqual(["room-1", "room-2"]);
+    expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).needsAttention).toBe(false);
+  });
+
+  it("rooms that do not add up to the booking's total, or a missing room: review again, nothing held, nothing sent", async () => {
+    const { bookingId, total } = await reviewedRooms();
+    const s = supplier();
+    const [first] = await roomsOf(bookingId);
+    await db.bookingRoom.update({ where: { id: first!.id }, data: { totalMinor: first!.totalMinor - 1 } });
+    expect((await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: s, now: later(2) })).kind).toBe("review_again");
+    await db.bookingRoom.update({ where: { id: first!.id }, data: { totalMinor: first!.totalMinor } });
+    await db.bookingRoom.deleteMany({ where: { bookingId, index: 1 } });
+    await db.booking.update({ where: { id: bookingId }, data: { totalMinor: first!.totalMinor } }); // a sum that holds, but a room short
+    expect((await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: first!.totalMinor }, { supplier: s, now: later(2) })).kind).toBe("review_again");
+    expect(s.calls.book).toBe(0);
+    expect(await getBalance("A")).toEqual({ balanceCents: 500_000, heldCents: 0 });
+    expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).status).toBe("DRAFT");
+  });
+
+  describe("reconcile of a booking with no clear answer", () => {
+    async function pendingRooms() {
+      const r = await reviewedRooms();
+      await book(ctx(), r.bookingId, { acceptedTerms: true, expectedTotalMinor: r.total }, { supplier: supplier({ book: async () => { throw new SupplierOutcomeUnknown("timeout"); } }), now: later(2) });
+      const reference = (await db.booking.findUniqueOrThrow({ where: { id: r.bookingId } })).reference;
+      return { ...r, reference };
+    }
+    const room = (n: number, status: "booked" | "cancelled" | "pending", name = n === 1 ? { givenName: "Dana", familyName: "Levi" } : yossi) => ({ id: `s-${n}`, status, hotelConfirmationId: `H${n}`, cancelLink: `fake-cancel:${n}`, ...name });
+    const at = (rooms: RetrievedItinerary["rooms"]) => supplier({ findByAffiliateReference: async () => ({ itineraryId: "IT-1", rooms }) });
+
+    it("every room booked: CONFIRMED, charged once, each room's details stored", async () => {
+      const { bookingId, total } = await pendingRooms();
+      expect(await reconcile(bookingId, { supplier: at([room(1, "booked"), room(2, "booked")]), now: later(5) })).toBe("confirmed");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CONFIRMED", supplierItineraryId: "IT-1", needsAttention: false });
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: 0 });
+      expect((await roomsOf(bookingId)).map((r) => [r.supplierRoomId, r.hotelConfirmationId])).toEqual([["s-1", "H1"], ["s-2", "H2"]]);
+    });
+
+    it("a room cancelled or missing at the supplier: flagged for an admin, still pending, money held (never failed)", async () => {
+      const { bookingId, total } = await pendingRooms();
+      for (const rooms of [[room(1, "booked"), room(2, "cancelled")], [room(1, "booked")]]) {
+        expect(await reconcile(bookingId, { supplier: at(rooms), now: later(5) })).toBe("retry");
+        expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "PENDING_CONFIRMATION", needsAttention: true });
+        expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: total });
+      }
+      expect((await roomsOf(bookingId)).map((r) => r.supplierRoomId)).toEqual([null, null]);
+    });
+
+    it("a room still pending at the supplier: wait and look again", async () => {
+      const { bookingId, total } = await pendingRooms();
+      expect(await reconcile(bookingId, { supplier: at([room(1, "booked"), room(2, "pending")]), now: later(5) })).toBe("retry");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "PENDING_CONFIRMATION", needsAttention: false });
+      expect((await getBalance("A")).heldCents).toBe(total);
+      expect(await reconcile(bookingId, { supplier: at([room(1, "booked"), room(2, "booked")]), now: later(10) })).toBe("confirmed");
+    });
   });
 });
 

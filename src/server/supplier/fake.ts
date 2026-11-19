@@ -142,23 +142,38 @@ export class FakeSupplierAdapter implements SupplierAdapter, BookingSupplier {
   }
 }
 
-const FAKE_BOOKING_FIELDS = { reference: true, status: true, leadGivenName: true, leadFamilyName: true } as const;
+const FAKE_BOOKING_FIELDS = {
+  reference: true,
+  status: true,
+  leadGivenName: true,
+  leadFamilyName: true,
+  rooms: { select: { status: true, givenName: true, familyName: true }, orderBy: { index: "asc" } },
+} as const;
 
-function fakeItinerary(booking: { reference: string; status: string; leadGivenName: string; leadFamilyName: string }): RetrievedItinerary {
+type FakeBooking = {
+  reference: string;
+  status: string;
+  leadGivenName: string;
+  leadFamilyName: string;
+  rooms: { status: string; givenName: string; familyName: string }[];
+};
+
+// One supplier room per booked room (plan 10), in room order; room 1 keeps the ids it always had.
+// A booking without rooms (made before plan 10) is one room in the lead guest's name.
+function fakeItinerary(booking: FakeBooking): RetrievedItinerary {
   const { reference } = booking;
-  const status = booking.status === "CANCELLED" || booking.status === "CANCEL_PENDING" ? "cancelled" : "booked";
+  const bookingCancelled = booking.status === "CANCELLED" || booking.status === "CANCEL_PENDING";
+  const rooms = booking.rooms.length > 0 ? booking.rooms : [{ status: "ACTIVE", givenName: booking.leadGivenName, familyName: booking.leadFamilyName }];
   return {
     itineraryId: `FAKE-${reference}`,
-    rooms: [
-      {
-        id: "room-1",
-        status,
-        hotelConfirmationId: `H-${reference.slice(-6)}`,
-        cancelLink: `fake-cancel:${reference}`,
-        givenName: booking.leadGivenName,
-        familyName: booking.leadFamilyName,
-      },
-    ],
+    rooms: rooms.map((room, i) => ({
+      id: `room-${i + 1}`,
+      status: bookingCancelled || room.status === "CANCELLED" ? "cancelled" : "booked",
+      hotelConfirmationId: i === 0 ? `H-${reference.slice(-6)}` : `H-${reference.slice(-6)}-${i + 1}`,
+      cancelLink: i === 0 ? `fake-cancel:${reference}` : `fake-cancel:${reference}:${i + 1}`,
+      givenName: room.givenName,
+      familyName: room.familyName,
+    })),
   };
 }
 

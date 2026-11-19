@@ -478,6 +478,17 @@ describe("search service: several rooms", () => {
     await expect(startSearch(ctx(), input, { adapter, now: NOW })).resolves.toMatchObject({ snapshotId: expect.any(String) });
   });
 
+  it("load more of a several-room search with the real supplier is refused before the rate limit and the supplier", async () => {
+    await hotels(300);
+    const { adapter, searchAvailability } = fakeAdapter(forRooms);
+    const { snapshotId } = await startSearch(ctx(), { ...input, rooms: twoRooms }, { adapter, now: NOW });
+    vi.stubEnv("SUPPLIER_MODE", "expedia");
+    await db.rateLimitBucket.deleteMany({ where: { key: "search:agency:A" } });
+    await seedRateLimit("search:agency:A", 30, 60_000); // a rate-limit answer would hide the room check
+    await expect(loadMore(ctx(), snapshotId, { adapter, now: NOW })).rejects.toThrow(new SearchInputInvalid("Several rooms are not available yet."));
+    expect(searchAvailability).toHaveBeenCalledTimes(1); // the first search only
+  });
+
   it("a search stored before rooms (adults and childAges at the top) reads as one room", async () => {
     await hotels(1);
     const snapshot = await db.searchSnapshot.create({

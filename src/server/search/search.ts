@@ -366,6 +366,7 @@ export async function loadMore(ctx: SearchContext, snapshotId: string, deps: Dep
   const read = readQuery(snapshot.query);
   if (!read) throw new Error("loadMore: stored search query does not read");
   if (snapshot.nextIndex >= snapshot.candidateIds.length) return { added: 0, hasMore: false };
+  checkRooms(read.rooms); // before the rate limit, as the other entry points
   await rateLimit(ctx.agencyId);
   const added = await fetchBatch({ ...snapshot, ...read }, ctx.supplierContext, deps.adapter ?? supplierAdapter());
   await prefetchContent(snapshot.id, deps.content ?? getContent, now);
