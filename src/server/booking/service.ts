@@ -488,8 +488,10 @@ function sameName(a: string | null, b: string): boolean {
 // After a confirmation: each room's supplier room id, hotel confirmation and cancel link, from
 // one retrieve (or the itinerary the caller already has). Matched to our rooms by order and
 // checked against the room's main guest (TR5). Another number of rooms, or a name that differs,
-// flags the booking for an admin and stores nothing for those rooms. Best effort: it never
-// throws (the booking is confirmed either way), and a room already filled is never changed.
+// flags the booking for an admin and stores nothing for those rooms. One room here and one at
+// the supplier cannot be in the wrong order, so it is filled without the name check (the
+// supplier may write a name its own way: an accent added, an apostrophe dropped). Best effort:
+// it never throws (the booking is confirmed either way), and a room already filled is never changed.
 export async function fillRoomsFromSupplier(bookingId: string, deps: Deps = {}, known?: RetrievedItinerary): Promise<void> {
   try {
     const booking = await db.booking.findUnique({ where: { id: bookingId } });
@@ -500,10 +502,12 @@ export async function fillRoomsFromSupplier(bookingId: string, deps: Deps = {}, 
     const itinerary = known ?? (await supplierView(booking, supplierOf(deps)));
     if (!itinerary) return; // not found yet: the safety-net job tries again
     const sameCount = itinerary.rooms.length === rooms.length;
+    const oneRoom = sameCount && rooms.length === 1;
     const matched = sameCount
       ? unfilled.filter((room) => {
           const theirs = itinerary.rooms[room.index];
-          return theirs !== undefined && sameName(theirs.givenName, room.givenName) && sameName(theirs.familyName, room.familyName);
+          if (theirs === undefined) return false;
+          return oneRoom || (sameName(theirs.givenName, room.givenName) && sameName(theirs.familyName, room.familyName));
         })
       : [];
     const mismatch = matched.length < unfilled.length;
@@ -515,10 +519,7 @@ export async function fillRoomsFromSupplier(bookingId: string, deps: Deps = {}, 
           data: { supplierRoomId: theirs.id, hotelConfirmationId: theirs.hotelConfirmationId, cancelLink: theirs.cancelLink },
         });
       }
-      if (mismatch) {
-        await tx.booking.update({ where: { id: booking.id }, data: { needsAttention: true } });
-        await queueEmail(tx, booking.id, "needs_attention");
-      }
+      if (mismatch) await flagForAdmin(tx, booking.id, "Rooms at the supplier did not match the booking's rooms");
     });
     if (mismatch) console.error(`booking ${booking.reference}: the supplier's rooms do not match ours, needs an admin`);
   } catch (error) {
@@ -589,8 +590,8 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
     if (attempt >= MAX_RECONCILE_ATTEMPTS) {
       // Gave up: flag it for an admin (the admin bookings list shows it), keep the money as is.
       await db.$transaction(async (tx) => {
-        await tx.booking.update({ where: { id: booking.id }, data: { ...data, reconcileAttempts: attempt, needsAttention: true } });
-        await queueEmail(tx, booking.id, "needs_attention");
+        await tx.booking.update({ where: { id: booking.id }, data: { ...data, reconcileAttempts: attempt } });
+        await flagForAdmin(tx, booking.id, "The supplier check gave up after many tries");
       });
       console.error(`booking ${booking.reference}: reconcile gave up, needs an admin`);
       return "retry" as const;
@@ -620,11 +621,7 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
           return "confirmed";
         }
         const wrong = found.rooms.length !== rooms.length || found.rooms.some((r) => r.status !== "booked" && r.status !== "pending");
-        if (wrong && !booking.needsAttention) {
-          await db.$transaction(async (tx) => {
-            await tx.booking.update({ where: { id: booking.id }, data: { needsAttention: true } });
-            await queueEmail(tx, booking.id, "needs_attention");
-          });
+        if (wrong && (await db.$transaction((tx) => flagForAdmin(tx, booking.id, "Some rooms are missing or cancelled at the supplier")))) {
           console.error(`booking ${booking.reference}: some rooms are not booked at the supplier, needs an admin`);
         }
         return retry(RECONCILE_DELAY_MS * 2);
@@ -664,8 +661,9 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
     if (rooms.length === 0) {
       // No room rows (every booking got one when plan 10 shipped): nothing here can say which
       // rooms the supplier cancelled, so nothing is refunded automatically; an admin finishes it.
-      await db.$transaction((tx) => flagForAdmin(tx, booking.id));
-      console.error(`booking ${booking.reference}: cancelling without room rows, needs an admin`);
+      if (await db.$transaction((tx) => flagForAdmin(tx, booking.id, "Cancelling without room rows: an admin finishes the cancellation"))) {
+        console.error(`booking ${booking.reference}: cancelling without room rows, needs an admin`);
+      }
       return retry(RECONCILE_DELAY_MS * 2);
     }
     if (itinerary) {
@@ -700,8 +698,10 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
         await db.$transaction((tx) => restoreConfirmed(tx, booking.id, null, "Reconciled: the cancellation did not go through"));
         return "restored";
       }
-      await db.$transaction((tx) => flagForAdmin(tx, booking.id));
-      console.error(`booking ${booking.reference}: a room was not cancelled at the supplier while others were, needs an admin`);
+      const label = `Room ${next.index + 1} of ${rooms.length}`;
+      if (await db.$transaction((tx) => flagForAdmin(tx, booking.id, `${label} was not cancelled at the supplier while other rooms were`))) {
+        console.error(`booking ${booking.reference}: a room was not cancelled at the supplier while others were, needs an admin`);
+      }
     }
     return retry(RECONCILE_DELAY_MS * 2);
   }
@@ -771,9 +771,21 @@ async function finishCancel(booking: Booking, actorUserId: string | null, reason
   });
 }
 
-async function flagForAdmin(tx: Prisma.TransactionClient, bookingId: string): Promise<void> {
+// Flags a booking for an admin, and says why: a row in the booking's audit trail under its own
+// status (the admin page shows it; the email names no reason). The reason is plain English with
+// no personal data. One email per booking, as before. A reason already recorded is not written
+// again while the booking stays flagged (a check that retries every few minutes would otherwise
+// fill the trail); a new reason is. The booking row is locked first, so two flags at once write
+// each reason once. True when something new was recorded.
+async function flagForAdmin(tx: Prisma.TransactionClient, bookingId: string, reason: string, actorUserId: string | null = null): Promise<boolean> {
+  const [current] = await tx.$queryRaw<{ status: BookingStatus }[]>`SELECT "status" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
+  if (!current) throw new BookingNotFound();
+  const text = reason.slice(0, 300);
   const flagged = await tx.booking.updateMany({ where: { id: bookingId, needsAttention: false }, data: { needsAttention: true } });
   if (flagged.count > 0) await queueEmail(tx, bookingId, "needs_attention");
+  else if (await tx.bookingEvent.findFirst({ where: { bookingId, reason: text }, select: { id: true } })) return false;
+  await tx.bookingEvent.create({ data: { bookingId, fromStatus: current.status, toStatus: current.status, actorUserId, reason: text } });
+  return true;
 }
 
 // Back to CONFIRMED when nothing of the booking was cancelled: no charge, and every room's
@@ -806,7 +818,7 @@ async function markRoomCancelled(booking: Booking, room: BookingRoom, actorUserI
     if (done.count === 0) return;
     // A booking no longer cancelling (it cannot be, while a room's cancel is out): the room is
     // still recorded as the supplier has it, and an admin looks at the booking.
-    if (current.status !== "CANCEL_PENDING") await flagForAdmin(tx, booking.id);
+    if (current.status !== "CANCEL_PENDING") await flagForAdmin(tx, booking.id, "A room was cancelled at the supplier while the booking was not being cancelled");
     await tx.bookingEvent.create({ data: { bookingId: booking.id, fromStatus: current.status, toStatus: current.status, actorUserId, reason: reason.slice(0, 300) } });
   });
 }
@@ -828,7 +840,7 @@ async function sendRoomCancels(booking: Booking, supplier: Supplier, context: Su
     const label = `Room ${room.index + 1} of ${rooms.length}`;
     if (!room.cancelLink) {
       // Never guessed: an admin cancels it.
-      await db.$transaction((tx) => flagForAdmin(tx, booking.id));
+      await db.$transaction((tx) => flagForAdmin(tx, booking.id, `${label} has no cancel link: an admin cancels it`));
       console.error(`booking ${booking.reference}: ${label} has no cancel link, needs an admin`);
       return "stopped";
     }
@@ -851,8 +863,8 @@ async function sendRoomCancels(booking: Booking, supplier: Supplier, context: Su
         }
         // Some rooms are cancelled: the booking cannot go back, and nothing is refunded for a
         // room the supplier kept. It stays cancelling; an admin finishes it.
-        await flagForAdmin(tx, booking.id);
-        await tx.bookingEvent.create({ data: { bookingId: booking.id, fromStatus: "CANCEL_PENDING", toStatus: "CANCEL_PENDING", actorUserId, reason: `${label}: ${reason}` } });
+        // The refusal is the flag's reason (one row in the audit trail).
+        await flagForAdmin(tx, booking.id, `${label}: ${reason}`, actorUserId);
         return "refused" as const;
       });
     }

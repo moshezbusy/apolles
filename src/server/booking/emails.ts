@@ -35,7 +35,8 @@ const ROOM_FIELDS = { index: true, adults: true, childAges: true, guests: true, 
 type EmailRoom = { index: number; adults: number; childAges: number[]; guests: unknown; hotelConfirmationId: string | null };
 
 // A booking of several rooms (plan 10): each room with its own guests (children matched to their
-// ages within their room) and its own hotel confirmation (none for a booking the hotel did not confirm).
+// ages within their room) and its own hotel confirmation. Only a confirmed booking shows them: a
+// booking the hotel did not confirm, or one that is cancelled, is never promised one "later".
 function roomsText(rooms: EmailRoom[], withConfirmation = true): string {
   const blocks = rooms.map((room) => {
     const confirmation = room.hotelConfirmationId ?? "sent by the hotel later; it will show on the booking page";
@@ -54,7 +55,7 @@ export async function sendBookingEmail(bookingId: string, event: BookingEmailEve
   const link = `${appUrl()}/bookings/${b.id}`;
   const stay = `${b.hotelName}, ${b.hotelCity}\n${longDate(b.checkin)} to ${longDate(b.checkout)}\n${b.roomName} · ${b.bedDescription} (bed type is a request)`;
   const names = guestLines(b.guests as StoredGuest[], b.adults, b.childAges);
-  const lead = severalRooms ? roomsText(b.rooms, event !== "failed") : names.length ? `Guests:\n${names.map((g) => `  ${g}`).join("\n")}` : `Lead guest: ${b.leadGivenName} ${b.leadFamilyName}`;
+  const lead = severalRooms ? roomsText(b.rooms, event === "confirmed") : names.length ? `Guests:\n${names.map((g) => `  ${g}`).join("\n")}` : `Lead guest: ${b.leadGivenName} ${b.leadFamilyName}`;
   const requests = b.specialRequest ? `\nSpecial requests (sent to the hotel, not guaranteed): ${b.specialRequest}\n` : "";
   const paid = formatUsd(b.chargedMinor ?? b.totalMinor);
 

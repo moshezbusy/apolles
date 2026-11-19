@@ -478,6 +478,15 @@ describe("search service: several rooms", () => {
     await expect(startSearch(ctx(), input, { adapter, now: NOW })).resolves.toMatchObject({ snapshotId: expect.any(String) });
   });
 
+  it("one hotel (booking from a quote) with the real supplier: more than one room is refused before the supplier is asked", async () => {
+    await hotels(1);
+    vi.stubEnv("SUPPLIER_MODE", "expedia");
+    const { adapter, searchAvailability } = fakeAdapter(forRooms);
+    await expect(searchOneHotel(ctx(), { ...input, rooms: twoRooms, propertyId: "1" }, { adapter, now: NOW })).rejects.toThrow(new SearchInputInvalid("Several rooms are not available yet."));
+    expect(searchAvailability).not.toHaveBeenCalled();
+    expect(await db.searchSnapshot.count()).toBe(0);
+  });
+
   it("load more of a several-room search with the real supplier is refused before the rate limit and the supplier", async () => {
     await hotels(300);
     const { adapter, searchAvailability } = fakeAdapter(forRooms);

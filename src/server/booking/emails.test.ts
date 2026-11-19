@@ -122,6 +122,17 @@ describe("booking emails (to the agent)", () => {
     expect(sent[3]!.text).not.toContain("Hotel confirmation");
   });
 
+  it("several rooms, cancelled: a room the hotel never confirmed is not promised a confirmation later", async () => {
+    await booking("CANCELLED");
+    await twoRooms();
+    await db.bookingRoom.updateMany({ where: { bookingId: "bk1", index: 1 }, data: { hotelConfirmationId: null } });
+    await sendBookingEmail("bk1", "cancelled");
+    expect(sent[0]!.subject).toBe("Booking cancelled: APL-MAIL0001");
+    expect(sent[0]!.text).toContain("Room 2 · 1 adult");
+    expect(sent[0]!.text).not.toContain("sent by the hotel later");
+    expect(sent[0]!.text).not.toContain("Hotel confirmation");
+  });
+
   it("an email for a status the booking no longer has is skipped (never a wrong message)", async () => {
     await booking("PENDING_CONFIRMATION");
     await sendBookingEmail("bk1", "confirmed");
