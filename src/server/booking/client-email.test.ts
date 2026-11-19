@@ -46,6 +46,42 @@ describe("email the booking to the client (plan 8g)", () => {
     expect(JSON.stringify(row)).not.toContain("client@example.com");
   });
 
+  it("one room: as before plan 10, with the room's own hotel confirmation when the booking has none", async () => {
+    await seed();
+    await db.booking.update({ where: { id: "bk1" }, data: { hotelConfirmationId: null } });
+    await db.bookingRoom.create({ data: { bookingId: "bk1", index: 0, adults: 2, childAges: [6], guests: [], givenName: "Dana", familyName: "Levi", totalMinor: 48_375, price: {}, hotelConfirmationId: "H-ROOM1" } });
+    await emailBookingToClient("u-A", "A", { bookingId: "bk1", email: "c@example.com" });
+    const text = sent()[0]!.text;
+    expect(text).toContain("Hotel confirmation number: H-ROOM1");
+    expect(text).toContain("Noa Levi (child, age 6)");
+    expect(text).not.toContain("Room 1");
+  });
+
+  it("several rooms (plan 10): each room with its guests and hotel confirmation, in English and in Hebrew, still no price", async () => {
+    await seed();
+    await db.booking.update({
+      where: { id: "bk1" },
+      data: { adults: 3, guests: [{ givenName: "Dana", familyName: "Levi" }, { givenName: "Avi", familyName: "Levi" }, { givenName: "Noa", familyName: "Levi" }, { givenName: "Yossi", familyName: "Cohen" }], hotelConfirmationId: null },
+    });
+    await db.bookingRoom.createMany({
+      data: [
+        { bookingId: "bk1", index: 0, adults: 2, childAges: [6], guests: [{ givenName: "Dana", familyName: "Levi" }, { givenName: "Avi", familyName: "Levi" }, { givenName: "Noa", familyName: "Levi" }], givenName: "Dana", familyName: "Levi", totalMinor: 30_000, price: {}, hotelConfirmationId: "H-777", cancelLink: "secret-cancel-1" },
+        { bookingId: "bk1", index: 1, adults: 1, childAges: [], guests: [{ givenName: "Yossi", familyName: "Cohen" }], givenName: "Yossi", familyName: "Cohen", totalMinor: 18_375, price: {}, hotelConfirmationId: "H-778" },
+      ],
+    });
+    await emailBookingToClient("u-A", "A", { bookingId: "bk1", email: "c@example.com" });
+    const en = sent()[0]!.text;
+    for (const t of ["Rooms: 2 x Superior King Room", "Room 1 · 2 adults, 1 child (6)", "Room 2 · 1 adult", "Noa Levi (child, age 6)", "Yossi Cohen", "Hotel confirmation number: H-777", "Hotel confirmation number: H-778"]) expect(en, t).toContain(t);
+    for (const t of ["(child, age ?)", "secret-cancel", "300.00", "183.75", "483.75"]) expect(en, t).not.toContain(t);
+
+    const quote = await db.quote.create({ data: { agencyId: "A", createdById: "u-A", language: "HE" } });
+    await db.booking.update({ where: { id: "bk1" }, data: { quoteId: quote.id } });
+    await emailBookingToClient("u-A", "A", { bookingId: "bk1", email: "c@example.com" });
+    const he = sent()[1]!.text;
+    for (const t of ["חדר 1", "חדר 2", "Yossi Cohen", "מספר אישור במלון: H-777", "מספר אישור במלון: H-778"]) expect(he, t).toContain(t);
+    expect(he).not.toContain("(child, age ?)");
+  });
+
   it("in Hebrew when the booking came from a Hebrew quote; the box starts with the quote's client email", async () => {
     await seed();
     const client = await db.client.create({ data: { agencyId: "A", firstName: "Daniel", lastName: "K", email: "daniel@example.com", phone: "+972 50 555 0100", phoneDigits: "972505550100", nationality: "IL" } });

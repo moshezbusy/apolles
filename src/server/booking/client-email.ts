@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type StoredGuest, guestLines } from "@/lib/guests";
+import { type StoredGuest, guestLines, oneRoomConfirmation, roomGuestLines, roomHeading } from "@/lib/guests";
 import { formatMinor } from "@/lib/supplier-money";
 import { audit } from "@/server/audit";
 import { renderVoucher } from "@/server/booking/voucher";
@@ -11,6 +11,7 @@ import type { PriceBreakdown } from "@/server/supplier/types";
 // Plan 8g (mockups 12, 23 #12): the agent emails the client the hotel voucher, in the agency's
 // name. Only the agency's own confirmed booking. The email holds what the voucher holds for the
 // guest and never a price (not the net price, not the selling price), the supplier or Apolles.
+// A booking of several rooms (plan 10) lists each room with its guests and hotel confirmation.
 
 const input = z
   .object({
@@ -62,6 +63,7 @@ export async function emailBookingToClient(actorUserId: string, agencyId: string
       agency: { select: { name: true, email: true, quoteDisplayName: true, quoteAdvisorEmail: true } },
       user: { select: { email: true } },
       quote: { select: { language: true } },
+      rooms: { orderBy: { index: "asc" }, select: { index: true, adults: true, childAges: true, guests: true, hotelConfirmationId: true } },
     },
   });
   if (!b) return { ok: false, error: NOT_AVAILABLE };
@@ -77,6 +79,12 @@ export async function emailBookingToClient(actorUserId: string, agencyId: string
   const replyTo = b.agency.quoteAdvisorEmail ?? b.agency.email ?? b.user.email;
   const price = b.price as unknown as PriceBreakdown;
   const guests = guestLines(b.guests as StoredGuest[], b.adults, b.childAges);
+  const rooms = b.rooms;
+  const severalRooms = rooms.length > 1;
+  const confirmation = oneRoomConfirmation(b, rooms);
+  // Each room's own guests (children matched to their ages within their room) and confirmation.
+  const roomBlocks = (title: (room: (typeof rooms)[number]) => string, confirmationLine: (id: string | null) => string) =>
+    rooms.flatMap((room) => [title(room), ...roomGuestLines(room).map((g) => `- ${g}`), confirmationLine(room.hotelConfirmationId), ""]);
   const dueLines = (price?.dueAtProperty ?? []).map((d) => {
     const label = DUE_LABEL[d.kind]?.[he ? "he" : "en"] ?? d.kind;
     const local = d.localAmount && d.localAmount.currency !== d.amount.currency ? ` (${formatMinor(d.localAmount.minor, d.localAmount.currency)})` : "";
@@ -94,14 +102,12 @@ export async function emailBookingToClient(actorUserId: string, agencyId: string
         "",
         `מלון: ${b.hotelName}, ${b.hotelCity}`,
         `תאריכים: ${dates}`,
-        `חדר: ${b.roomName} (${b.bedDescription}; סוג המיטה הוא בקשה ואינו מובטח)`,
+        `${severalRooms ? `חדרים: ${rooms.length} x ${b.roomName}` : `חדר: ${b.roomName}`} (${b.bedDescription}; סוג המיטה הוא בקשה ואינו מובטח)`,
         ...(b.amenities.length ? [`התעריף כולל: ${b.amenities.join(", ")}`] : []),
         `מספר הזמנה: ${b.reference}`,
-        `מספר אישור במלון: ${b.hotelConfirmationId ?? "יימסר על ידי המלון"}`,
-        "",
-        "אורחים:",
-        ...guests.map((g) => `- ${g}`),
-        "",
+        ...(severalRooms
+          ? ["", ...roomBlocks((room) => `חדר ${room.index + 1}:`, (id) => `מספר אישור במלון: ${id ?? "יימסר על ידי המלון"}`)]
+          : [`מספר אישור במלון: ${confirmation ?? "יימסר על ידי המלון"}`, "", "אורחים:", ...guests.map((g) => `- ${g}`), ""]),
         ...(dueLines.length ? ["לתשלום במלון (אינו כלול במחיר החדר):", ...dueLines, ""] : []),
         "שעות הצ'ק-אין והצ'ק-אאוט ופרטי המלון נמצאים בשובר המצורף.",
         "",
@@ -114,14 +120,12 @@ export async function emailBookingToClient(actorUserId: string, agencyId: string
         "",
         `Hotel: ${b.hotelName}, ${b.hotelCity}`,
         `Dates: ${dates}`,
-        `Room: ${b.roomName} (${b.bedDescription}; the bed type is a request and not guaranteed)`,
+        `${severalRooms ? `Rooms: ${rooms.length} x ${b.roomName}` : `Room: ${b.roomName}`} (${b.bedDescription}; the bed type is a request and not guaranteed)`,
         ...(b.amenities.length ? [`Rate includes: ${b.amenities.join(", ")}`] : []),
         `Booking reference: ${b.reference}`,
-        `Hotel confirmation number: ${b.hotelConfirmationId ?? "to be confirmed by the hotel"}`,
-        "",
-        "Guests:",
-        ...guests.map((g) => `- ${g}`),
-        "",
+        ...(severalRooms
+          ? ["", ...roomBlocks((room) => `${roomHeading(room.index, room)}:`, (id) => `Hotel confirmation number: ${id ?? "to be confirmed by the hotel"}`)]
+          : [`Hotel confirmation number: ${confirmation ?? "to be confirmed by the hotel"}`, "", "Guests:", ...guests.map((g) => `- ${g}`), ""]),
         ...(dueLines.length ? ["To pay at the property (not included in the room price):", ...dueLines, ""] : []),
         "Check-in and check-out times and the hotel's details are in the attached voucher.",
         "",

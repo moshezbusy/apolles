@@ -28,6 +28,20 @@ async function booking(status: "CONFIRMED" | "FAILED" | "CANCELLED" | "PENDING_C
   });
 }
 
+// Plan 10: the booking as two rooms (the booking keeps every guest, room after room).
+async function twoRooms() {
+  await db.booking.update({
+    where: { id: "bk1" },
+    data: { adults: 3, childAges: [6], guests: [{ givenName: "Dana", familyName: "Levi" }, { givenName: "Avi", familyName: "Levi" }, { givenName: "Noa", familyName: "Levi" }, { givenName: "Yossi", familyName: "Cohen" }], hotelConfirmationId: null },
+  });
+  await db.bookingRoom.createMany({
+    data: [
+      { bookingId: "bk1", index: 0, adults: 2, childAges: [6], guests: [{ givenName: "Dana", familyName: "Levi" }, { givenName: "Avi", familyName: "Levi" }, { givenName: "Noa", familyName: "Levi" }], givenName: "Dana", familyName: "Levi", totalMinor: 30_000, price: {}, hotelConfirmationId: "H-777", cancelLink: "secret-cancel-1" },
+      { bookingId: "bk1", index: 1, adults: 1, childAges: [], guests: [{ givenName: "Yossi", familyName: "Cohen" }], givenName: "Yossi", familyName: "Cohen", totalMinor: 18_375, price: {}, hotelConfirmationId: "H-778", cancelLink: "secret-cancel-2" },
+    ],
+  });
+}
+
 describe("booking emails (to the agent)", () => {
   beforeEach(async () => {
     await resetTestDb();
@@ -61,11 +75,51 @@ describe("booking emails (to the agent)", () => {
     expect(sent[1]!.text).toContain("Your balance now:");
   });
 
-  it("needs attention goes to the admin, not the agent", async () => {
+  it("needs attention goes to the admin, not the agent, true for every reason and without personal data", async () => {
     await booking("PENDING_CONFIRMATION");
     await sendBookingEmail("bk1", "needs_attention");
     expect(sent[0]!.to).toBe("alerts@apolles.example");
     expect(sent[0]!.subject).toBe("Apolles: booking APL-MAIL0001 needs attention");
+    // Sent when the supplier check gave up, when the supplier's rooms do not match ours, or when
+    // only some rooms were cancelled: the text claims none of these.
+    expect(sent[0]!.text).toContain("Booking APL-MAIL0001 (status PENDING_CONFIRMATION) needs an admin to check it with the supplier");
+    expect(sent[0]!.text).not.toContain("gave up");
+    for (const t of ["Dana", "Levi", "dana@example.com", "501234567"]) expect(sent[0]!.text).not.toContain(t);
+  });
+
+  it("one room: the room's own hotel confirmation when the booking has none, and no room headings", async () => {
+    await booking("CONFIRMED");
+    await db.booking.update({ where: { id: "bk1" }, data: { hotelConfirmationId: null } });
+    await db.bookingRoom.create({ data: { bookingId: "bk1", index: 0, adults: 2, childAges: [], guests: [], givenName: "Dana", familyName: "Levi", totalMinor: 48_375, price: {}, hotelConfirmationId: "H-ROOM1" } });
+    await sendBookingEmail("bk1", "confirmed");
+    expect(sent[0]!.text).toContain("Hotel confirmation: H-ROOM1");
+    expect(sent[0]!.text).not.toContain("Room 1");
+  });
+
+  it("several rooms (plan 10): confirmed, cancelled and the reminder list every room with its guests and hotel confirmation", async () => {
+    await booking("CONFIRMED");
+    await twoRooms();
+    await db.booking.update({ where: { id: "bk1" }, data: { freeCancelEndsAt: new Date("2099-04-07T12:00:00Z") } });
+    await sendBookingEmail("bk1", "confirmed");
+    await sendFreeCancelReminders(new Date("2099-04-05T12:00:00Z"));
+    await db.booking.update({ where: { id: "bk1" }, data: { status: "CANCELLED", refundMinor: 48_375, cancelChargeMinor: 0 } });
+    await sendBookingEmail("bk1", "cancelled");
+    expect(sent.map((m) => m.subject)).toEqual([
+      "Booking confirmed: Hotel Lumiere, Apr 10, 2027 to Apr 12, 2027, APL-MAIL0001",
+      "Free cancellation ends in 72 hours: APL-MAIL0001",
+      "Booking cancelled: APL-MAIL0001",
+    ]);
+    for (const m of sent) {
+      for (const t of ["2 rooms", "Room 1 · 2 adults, 1 child (6)", "Room 2 · 1 adult", "Yossi Cohen"]) expect(m.text, `${m.subject}: ${t}`).toContain(t);
+      expect(m.text).not.toContain("(child, age ?)");
+      expect(m.text).not.toContain("secret-cancel");
+    }
+    for (const t of ["Noa Levi (child, age 6)", "Hotel confirmation: H-777", "Hotel confirmation: H-778"]) expect(sent[0]!.text, t).toContain(t);
+    // Not confirmed: the rooms and their guests, no hotel confirmation.
+    await db.booking.update({ where: { id: "bk1" }, data: { status: "FAILED" } });
+    await sendBookingEmail("bk1", "failed");
+    expect(sent[3]!.text).toContain("Room 2 · 1 adult");
+    expect(sent[3]!.text).not.toContain("Hotel confirmation");
   });
 
   it("an email for a status the booking no longer has is skipped (never a wrong message)", async () => {

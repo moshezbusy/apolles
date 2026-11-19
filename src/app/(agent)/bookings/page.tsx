@@ -110,6 +110,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Sea
                   <td data-label="Hotel" className={td}>
                     {r.hotelName}
                     <span className="block text-xs text-muted">{r.hotelCity}</span>
+                    {r.roomCount > 1 ? <span className="block text-xs font-semibold text-[#37413d]">{`${r.roomCount} rooms`}</span> : null}
                   </td>
                   <td data-label="Lead guest" className={td}>
                     {r.leadGivenName} {r.leadFamilyName}

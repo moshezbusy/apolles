@@ -67,9 +67,17 @@ const SELECT = {
   cancelPenalties: true,
   currency: true,
   createdAt: true,
+  // Plan 10: how many rooms (counted in the same query; the rooms' bookingId is indexed).
+  _count: { select: { rooms: true } },
 } satisfies Prisma.BookingSelect;
 
-export type BookingRow = Prisma.BookingGetPayload<{ select: typeof SELECT }>;
+type SelectedRow = Prisma.BookingGetPayload<{ select: typeof SELECT }>;
+export type BookingRow = Omit<SelectedRow, "_count"> & { roomCount: number };
+
+// A booking is at least one room (one made before its rooms were stored counts as one).
+function withRoomCount({ _count, ...row }: SelectedRow): BookingRow {
+  return { ...row, roomCount: Math.max(1, _count.rooms) };
+}
 
 export async function listBookings(agencyId: string, opts: Options, now: Date = new Date()): Promise<{ rows: BookingRow[]; nextCursor: string | null }> {
   const take = Math.min(Math.max(1, Math.trunc(opts.take ?? DEFAULT_TAKE)), MAX_TAKE);
@@ -87,7 +95,7 @@ export async function listBookings(agencyId: string, opts: Options, now: Date = 
     take: take + 1,
     ...(cursor ? { cursor, skip: 1 } : {}),
   });
-  return { rows: rows.slice(0, take), nextCursor: rows.length > take ? (rows[take - 1]?.id ?? null) : null };
+  return { rows: rows.slice(0, take).map(withRoomCount), nextCursor: rows.length > take ? (rows[take - 1]?.id ?? null) : null };
 }
 
 export function decimal(minor: number, currency: string): string {
@@ -104,8 +112,9 @@ export function cell(value: string): string {
 }
 
 export async function bookingsCsv(agencyId: string, opts: Omit<Options, "cursor" | "take">, now: Date = new Date()): Promise<string> {
-  const rows = await db.booking.findMany({ where: whereFor(agencyId, opts, now), select: SELECT, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: CSV_MAX_ROWS });
-  const header = ["Reference", "Status", "Hotel", "City", "Lead guest", "Check-in", "Check-out", "Total", "Currency", "Booked at (UTC)"].join(",");
+  const rows = (await db.booking.findMany({ where: whereFor(agencyId, opts, now), select: SELECT, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: CSV_MAX_ROWS })).map(withRoomCount);
+  // "Rooms" is the last column (plan 10), so the earlier columns keep their places.
+  const header = ["Reference", "Status", "Hotel", "City", "Lead guest", "Check-in", "Check-out", "Total", "Currency", "Booked at (UTC)", "Rooms"].join(",");
   const lines = rows.map((r) =>
     [
       r.reference,
@@ -118,6 +127,7 @@ export async function bookingsCsv(agencyId: string, opts: Omit<Options, "cursor"
       decimal(r.totalMinor, r.currency),
       r.currency,
       r.createdAt.toISOString().slice(0, 16).replace("T", " "),
+      String(r.roomCount),
     ].join(","),
   );
   return `${[header, ...lines].join("\r\n")}\r\n`;

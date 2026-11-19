@@ -41,6 +41,17 @@ describe("admin bookings and supplier log", () => {
     expect(await getBookingForAdmin("x".repeat(65))).toBeNull();
   });
 
+  it("one booking's rooms in room order (plan 10), never with the supplier's cancel link", async () => {
+    const b = await db.booking.findUniqueOrThrow({ where: { reference: "APL-AAAAAAA1" } });
+    await db.bookingRoom.createMany({
+      data: [1, 0].map((index) => ({ bookingId: b.id, index, adults: 1, childAges: [], guests: [], givenName: "Dana", familyName: "Levi", totalMinor: 5_000, price: {}, supplierRoomId: `room-${index + 1}`, cancelLink: `secret-cancel-${index}` })),
+    });
+    const found = await getBookingForAdmin(b.id);
+    expect(found!.rooms.map((r) => r.supplierRoomId)).toEqual(["room-1", "room-2"]);
+    expect(found!.rooms[0]).not.toHaveProperty("cancelLink");
+    expect(JSON.stringify(found)).not.toContain("secret-cancel");
+  });
+
   it("supplier log: newest first, filter by our reference; rows older than 90 days are deleted", async () => {
     await db.supplierCallLog.create({ data: { supplier: "expedia", method: "POST", path: "/itineraries", status: 201, durationMs: 900, affiliateReferenceId: "APL-AAAAAAA1", createdAt: new Date(NOW.getTime() - 1000) } });
     await db.supplierCallLog.create({ data: { supplier: "expedia", method: "GET", path: "/regions", status: 200, durationMs: 100, createdAt: new Date(NOW.getTime() - 91 * 86_400_000) } });

@@ -1,1 +1,1 @@
-export { type StoredGuest, guestLines, guestName, roomGuestLines, roomTitle } from "@/lib/guests";
+export { type StoredGuest, guestLines, guestName, oneRoomConfirmation, roomGuestLines, roomHeading, roomTitle } from "@/lib/guests";

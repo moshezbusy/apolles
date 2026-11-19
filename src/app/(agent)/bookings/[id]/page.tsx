@@ -10,7 +10,7 @@ import { STATUS_LABEL } from "@/server/booking/list";
 import { cancelQuote, getBooking, getBookingRooms } from "@/server/booking/service";
 import { getContent } from "@/server/content/content-cache";
 import type { CancelPenalty, PriceBreakdown, PropertyContent } from "@/server/supplier/types";
-import { type StoredGuest, guestLines } from "../../_components/guests";
+import { type StoredGuest, guestLines, oneRoomConfirmation, roomGuestLines, roomHeading } from "../../_components/guests";
 import { CancellationPolicy, Policies, PriceDetails } from "../../_components/hotel-info";
 import { shortDate, stayText } from "../../search/parts";
 import { SellingPrice } from "../../_components/selling-price";
@@ -44,7 +44,9 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 // Screen 12: one booking of the agency, with its status, references, stay, price and policy,
-// and cancellation (today's charge first). Voucher and invoice PDFs come in plan 4.
+// and cancellation (today's charge first). Voucher and invoice PDFs come in plan 4. A booking of
+// several rooms (plan 10) has a Rooms card (each room's guests, hotel confirmation and price); a
+// one-room booking looks as before.
 export default async function BookingPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   const { agencyId } = await requireAgent();
   const { id } = await params;
@@ -53,9 +55,11 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
   if (!b || b.status === "DRAFT" || b.status === "EXPIRED") notFound();
   const notice = typeof q.notice === "string" ? NOTICES[q.notice] : undefined;
   const price = b.price as unknown as PriceBreakdown;
-  const stay = stayText({ nights: price.nights, rooms: [{ adults: b.adults, childAges: b.childAges }] }); // one room until plan 10 task 3
   // Plan 10: the charge is every room's own charge, added up (the rooms read without their supplier links).
   const rooms = await getBookingRooms(agencyId, b.id);
+  const severalRooms = rooms.length > 1;
+  const stay = stayText({ nights: price.nights, rooms: severalRooms ? rooms : [{ adults: b.adults, childAges: b.childAges }] });
+  const waitingText = b.status === "CONFIRMED" ? "Shown here once the hotel sends it" : "—";
   const quote = cancelQuote(b, rooms, new Date());
   const support = supportContact();
   // Hotel policies after booking too (EXP), best effort: the booking page works without them.
@@ -103,10 +107,12 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
                 <dt className="font-semibold text-ink">Apolles reference</dt>
                 <dd className="font-mono">{b.reference}</dd>
               </div>
-              <div>
-                <dt className="font-semibold text-ink">Hotel confirmation</dt>
-                <dd className="font-mono">{b.hotelConfirmationId ?? (b.status === "CONFIRMED" ? "Shown here once the hotel sends it" : "—")}</dd>
-              </div>
+              {severalRooms ? null : (
+                <div>
+                  <dt className="font-semibold text-ink">Hotel confirmation</dt>
+                  <dd className="font-mono">{oneRoomConfirmation(b, rooms) ?? waitingText}</dd>
+                </div>
+              )}
               <div>
                 <dt className="font-semibold text-ink">Room</dt>
                 <dd>
@@ -126,16 +132,18 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
                   {shortDate(b.checkin)} to {shortDate(b.checkout)} · {stay}
                 </dd>
               </div>
-              <div>
-                <dt className="font-semibold text-ink">Guests</dt>
-                <dd>
-                  <ul>
-                    {guestLines(b.guests as StoredGuest[], b.adults, b.childAges).map((g) => (
-                      <li key={g}>{g}</li>
-                    ))}
-                  </ul>
-                </dd>
-              </div>
+              {severalRooms ? null : (
+                <div>
+                  <dt className="font-semibold text-ink">Guests</dt>
+                  <dd>
+                    <ul>
+                      {guestLines(b.guests as StoredGuest[], b.adults, b.childAges).map((g) => (
+                        <li key={g}>{g}</li>
+                      ))}
+                    </ul>
+                  </dd>
+                </div>
+              )}
               {b.specialRequest ? (
                 <div className="sm:col-span-2">
                   <dt className="font-semibold text-ink">Special requests</dt>
@@ -178,6 +186,43 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
               ) : null}
             </dl>
           </section>
+          {severalRooms ? (
+            <section aria-labelledby="rooms-title" className={`${card} bg-white p-5`}>
+              <h2 id="rooms-title" className={sectionTitle}>
+                Rooms
+              </h2>
+              <ol className="mt-3 grid gap-3 text-[13.5px]">
+                {rooms.map((room) => (
+                  <li key={room.index} className="rounded-lg border border-line p-3">
+                    <p className="flex flex-wrap justify-between gap-3 font-semibold text-ink">
+                      <span>
+                        {roomHeading(room.index, room)}
+                        {room.status === "CANCELLED" ? <span className="ml-2 rounded-full bg-[#f1efe9] px-2 py-0.5 text-xs font-bold text-[#5f6863]">Cancelled</span> : null}
+                      </span>
+                      <span className="tabular-nums">{formatUsd(room.totalMinor)}</span>
+                    </p>
+                    <ul className="mt-1">
+                      {roomGuestLines(room).map((g, i) => (
+                        <li key={i}>{g}</li>
+                      ))}
+                    </ul>
+                    <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <div>
+                        <dt className="font-semibold text-ink">Main guest</dt>
+                        <dd>
+                          {room.givenName} {room.familyName}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="font-semibold text-ink">Hotel confirmation</dt>
+                        <dd className="font-mono">{room.hotelConfirmationId ?? waitingText}</dd>
+                      </div>
+                    </dl>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
           <section aria-labelledby="policy-title" className={`${card} bg-white p-5`}>
             <h2 id="policy-title" className={sectionTitle}>
               Cancellation policy

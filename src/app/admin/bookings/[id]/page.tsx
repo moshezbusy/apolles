@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { alertError, card, cell, link, pageTitle, sectionTitle, table, tbody, td, th, thead, tr } from "@/components/ui";
+import { oneRoomConfirmation, roomGuestLines, roomHeading } from "@/lib/guests";
 import { formatUsd } from "@/lib/money";
 import { getBookingForAdmin } from "@/server/admin/bookings";
 import { requireAdmin } from "@/server/auth/guards";
@@ -12,12 +13,14 @@ export const metadata: Metadata = { title: "Booking · Admin · Apolles", robots
 type Params = Promise<{ id: string }>;
 
 // Admin: one booking with everything support needs, including the supplier's own itinerary
-// number (ER1, admin only), and its full event trail. Read-only in phase 1.
+// number (ER1, admin only), and its full event trail. Read-only in phase 1. A booking of several
+// rooms (plan 10) has a table of its rooms; the supplier's cancel links are never read here.
 export default async function AdminBookingPage({ params }: { params: Params }) {
   await requireAdmin();
   const { id } = await params;
   const b = await getBookingForAdmin(id);
   if (!b) notFound();
+  const severalRooms = b.rooms.length > 1;
   const rows: [string, string][] = [
     ["Status", STATUS_LABEL[b.status]],
     ["Agency", b.agency.name],
@@ -28,7 +31,7 @@ export default async function AdminBookingPage({ params }: { params: Params }) {
     ["Lead guest", `${b.leadGivenName} ${b.leadFamilyName} · ${b.leadEmail} · ${b.leadPhone}`],
     ["Total (as booked)", formatUsd(b.chargedMinor ?? b.totalMinor)],
     ["Supplier itinerary", b.supplierItineraryId ?? "—"],
-    ["Hotel confirmation", b.hotelConfirmationId ?? "—"],
+    ["Hotel confirmation", severalRooms ? "One for each room, under Rooms" : (oneRoomConfirmation(b, b.rooms) ?? "—")],
     ["Cancellation charge / refund", b.refundMinor !== null ? `${formatUsd(b.cancelChargeMinor ?? 0)} / ${formatUsd(b.refundMinor)}` : "—"],
     ["Reconcile attempts", String(b.reconcileAttempts)],
   ];
@@ -40,7 +43,7 @@ export default async function AdminBookingPage({ params }: { params: Params }) {
       <h1 className={`${pageTitle} mt-3`}>Booking {b.reference}</h1>
       {b.needsAttention ? (
         <p role="alert" className={`${alertError} mt-4`}>
-          Needs attention: the automatic check with the supplier gave up. Check the booking with the supplier and fix it by hand. {b.failureReason ?? ""}
+          Needs attention: this booking needs an admin to check it with the supplier and fix it by hand. {b.failureReason ?? ""}
         </p>
       ) : null}
       <section className={`${card} mt-5 bg-white p-5`}>
@@ -58,6 +61,46 @@ export default async function AdminBookingPage({ params }: { params: Params }) {
           </Link>
         </p>
       </section>
+      {severalRooms ? (
+        <section aria-labelledby="rooms-title" className={`${card} mt-5 bg-white p-5`}>
+          <h2 id="rooms-title" className={sectionTitle}>
+            Rooms
+          </h2>
+          <table className={`${table} mt-3`}>
+            <thead className={thead}>
+              <tr>
+                <th className={th}>Room</th>
+                <th className={th}>Guests</th>
+                <th className={th}>Supplier room</th>
+                <th className={th}>Hotel confirmation</th>
+                <th className={th}>Status</th>
+                <th className={th}>Price</th>
+              </tr>
+            </thead>
+            <tbody className={tbody}>
+              {b.rooms.map((room) => (
+                <tr key={room.id} className={tr}>
+                  <td data-label="Room" className={cell}>{roomHeading(room.index, room)}</td>
+                  <td data-label="Guests" className={td}>
+                    <ul>
+                      {roomGuestLines(room).map((g, i) => (
+                        <li key={i}>{g}</li>
+                      ))}
+                    </ul>
+                  </td>
+                  <td data-label="Supplier room" className={`${td} font-mono text-[13px]`}>{room.supplierRoomId ?? "—"}</td>
+                  <td data-label="Hotel confirmation" className={`${td} font-mono text-[13px]`}>{room.hotelConfirmationId ?? "—"}</td>
+                  <td data-label="Status" className={td}>
+                    {room.status === "CANCELLED" ? "Cancelled" : room.cancelRequestedAt ? "Active · cancel sent" : "Active"}
+                    {room.cancelledAt ? <span className="block text-xs text-muted">{room.cancelledAt.toISOString().slice(0, 16).replace("T", " ")} UTC</span> : null}
+                  </td>
+                  <td data-label="Price" className={`${td} tabular-nums`}>{formatUsd(room.totalMinor)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
       <section aria-labelledby="events-title" className={`${card} mt-5 bg-white p-5`}>
         <h2 id="events-title" className={sectionTitle}>
           History

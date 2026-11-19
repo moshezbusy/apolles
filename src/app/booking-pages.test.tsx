@@ -267,6 +267,12 @@ describe("booking screens", () => {
     expect(html).toContain(booking.reference);
     expect(html).toContain("Confirmed");
     expect(html).toContain("Hotel confirmation");
+    // One room (plan 10): no rooms card, the room's hotel confirmation on the one line, the stay as before.
+    expect(html).toContain(`H-${booking.reference.slice(-6)}`);
+    expect(html).not.toContain("Room 1");
+    expect(html).not.toContain(">Rooms<");
+    expect(html).toContain("2 nights, 2 adults, 1 child");
+    expect(html).toContain("Noa Levi (child, age 6)");
     expect(html).toContain("Cancel booking");
     expect(html).toContain(`href="/bookings/${id}/voucher"`);
     expect(html).toContain("Email to client"); // plan 8g
@@ -335,6 +341,43 @@ describe("booking screens", () => {
     expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - charge, heldCents: 0 });
   });
 
+  it("several rooms (plan 10): the booking page lists every room; the bookings list says 2 rooms", async () => {
+    signInAs("A");
+    await seed();
+    const { snapshotId } = await startSearch(
+      { agencyId: "A", userId: "u-A", supplierContext: {} },
+      { destinationId: "paris", checkin: iso(30), checkout: iso(32), rooms: [{ adults: 2, childAges: [6] }, { adults: 1, childAges: [] }] },
+    );
+    const offer = ((await db.searchHotel.findFirstOrThrow({ where: { snapshotId } })).offers as unknown as Offer[])[1]!;
+    const { createDraftAction, bookAction } = await import("./(agent)/book/actions");
+    const id = (await redirectOf(createDraftAction(null, form({ s: snapshotId, p: "11", r: offer.rateId, b: offer.bedGroups[0]!.id, ...guestFields, r1_given_0: "Yossi", r1_family_0: "Cohen", r1_title_0: "MR" })))).replace("/book/", "");
+    const { default: ReviewPage } = await import("./(agent)/book/[id]/page");
+    renderToStaticMarkup(await ReviewPage({ params: Promise.resolve({ id }) })); // runs the price check
+    const booking = await db.booking.findUniqueOrThrow({ where: { id } });
+    await redirectOf(bookAction(null, form({ bookingId: id, expectedTotal: String(booking.totalMinor), acceptedTerms: "on" })));
+    const rooms = await db.bookingRoom.findMany({ where: { bookingId: id }, orderBy: { index: "asc" } });
+    expect(rooms.map((r) => r.hotelConfirmationId)).toEqual([`H-${booking.reference.slice(-6)}`, `H-${booking.reference.slice(-6)}-2`]);
+
+    const { default: SummaryPage } = await import("./(agent)/bookings/[id]/page");
+    const html = renderToStaticMarkup(await SummaryPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({}) }));
+    for (const t of [
+      ">Rooms<", "Room 1 · 2 adults, 1 child (6)", "Room 2 · 1 adult", "Dana Levi", "Noa Levi (child, age 6)", "Mr Yossi Cohen", "Main guest",
+      `H-${booking.reference.slice(-6)}-2`, formatUsd(rooms[0]!.totalMinor), formatUsd(rooms[1]!.totalMinor), "2 nights, 2 rooms, 3 adults, 1 child",
+    ]) expect(html, t).toContain(t);
+    // Children are labelled per room (never by their place in the whole booking); no supplier links.
+    expect(html).not.toContain("(child, age ?)");
+    expect(html).not.toContain("fake-cancel");
+
+    const { default: ListPage } = await import("./(agent)/bookings/page");
+    expect(renderToStaticMarkup(await ListPage({ searchParams: Promise.resolve({}) }))).toContain("2 rooms");
+
+    // After the cancellation each room says so.
+    const { cancelAction } = await import("./(agent)/bookings/[id]/actions");
+    await redirectOf(cancelAction(form({ bookingId: id, expectedCharge: "0", confirmFinal: "on" })));
+    const after = renderToStaticMarkup(await SummaryPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({}) }));
+    expect(after.match(/>Cancelled</g)?.length).toBeGreaterThanOrEqual(3); // the status, and each of the 2 rooms
+  });
+
   it("another agency's booking id gives not found everywhere (no IDOR)", async () => {
     signInAs("A");
     const { snapshotId, offers } = await seed();
@@ -363,6 +406,7 @@ describe("booking screens", () => {
     expect(html).toContain(booking.reference);
     for (const tab of ["All", "Upcoming", "Pending", "Cancelled"]) expect(html).toContain(`>${tab}<`);
     expect(html).toContain('href="/bookings/export?tab=all"');
+    expect(html).not.toContain("1 room"); // one room: as before plan 10
     signInAs("B");
     const other = renderToStaticMarkup(await ListPage({ searchParams: Promise.resolve({}) }));
     expect(other).not.toContain(booking.reference);

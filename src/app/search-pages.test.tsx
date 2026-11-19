@@ -228,6 +228,10 @@ describe("results page (screen 08)", () => {
     expect(html).toContain("2 nights, 2 rooms, 4 adults, 1 child");
     expect([...html.matchAll(/name="room_adults" value="(\d+)"/g)].map((m) => m[1])).toEqual(["2", "2"]);
     expect(html).toContain("2 rooms · 5 guests");
+    // Quotes are for one room (plan 10): the card says so instead of offering "Add to quote".
+    expect(html).toContain("Quotes are for one room for now.");
+    expect(html).not.toContain("Add to quote");
+    expect(html).toContain("Book this room");
   });
 
   it("each card shows the room behind its price, with Book this room and Add to quote for that rate (no price-check token)", async () => {
@@ -345,5 +349,19 @@ describe("hotel page (screen 09)", () => {
 
   it("another agency's search gives not found (no IDOR)", async () => {
     await expect(searchAndRender("A", "B")).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+
+  it("one room: Add to quote on every rate; several rooms (plan 10): Quotes are for one room for now", async () => {
+    const { html } = await searchAndRender("A");
+    expect(html).toContain("Add to quote");
+    expect(html).not.toContain("Quotes are for one room for now.");
+    const { startSearch } = await import("@/server/search/search");
+    const input = { destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), rooms: [{ adults: 2, childAges: [] }, { adults: 1, childAges: [] }] };
+    const { snapshotId } = await startSearch({ agencyId: "A", userId: "user-1", supplierContext: {} }, input);
+    const { default: HotelPage } = await import("./(agent)/search/[id]/hotels/[propertyId]/page");
+    const several = renderToStaticMarkup(await HotelPage({ params: Promise.resolve({ id: snapshotId, propertyId: "11" }), searchParams: Promise.resolve({}) }));
+    expect(several).toContain("Quotes are for one room for now.");
+    expect(several).not.toContain("Add to quote");
+    expect(several).toContain("Book room");
   });
 });

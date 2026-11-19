@@ -28,3 +28,16 @@ export function roomTitle(index: number, room: { adults: number; childAges: numb
   if (children > 0) guests.push(`${children} ${children === 1 ? "child" : "children"}`);
   return `Room ${index + 1} · ${guests.join(", ")}`;
 }
+
+// "Room 2 · 1 adult, 1 child (7)": the title with the children's ages, for a booked room on the
+// booking's pages and documents.
+export function roomHeading(index: number, room: { adults: number; childAges: number[] }): string {
+  const title = roomTitle(index, room);
+  return room.childAges.length > 0 ? `${title} (${room.childAges.join(", ")})` : title;
+}
+
+// The one hotel confirmation of a one-room booking: the booking's own (set when a reconcile
+// confirmed it, and on bookings made before plan 10), else its room's (filled after booking).
+export function oneRoomConfirmation(booking: { hotelConfirmationId: string | null }, rooms: { hotelConfirmationId: string | null }[]): string | null {
+  return booking.hotelConfirmationId ?? rooms[0]?.hotelConfirmationId ?? null;
+}

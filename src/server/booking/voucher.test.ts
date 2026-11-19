@@ -55,6 +55,21 @@ async function seed(status: "CONFIRMED" | "PENDING_CONFIRMATION" = "CONFIRMED") 
   });
 }
 
+// Plan 10: the booking of seed() as two rooms (the booking keeps the totals and every guest, room
+// after room; each room has its own guests and hotel confirmation).
+async function twoRooms() {
+  await db.booking.update({
+    where: { id: "bk1" },
+    data: { adults: 3, guests: [{ givenName: "Dana", familyName: "Levi" }, { givenName: "Avi", familyName: "Levi" }, { givenName: "Noa", familyName: "Levi" }, { givenName: "Yossi", familyName: "Cohen", title: "MR" }], hotelConfirmationId: null },
+  });
+  await db.bookingRoom.createMany({
+    data: [
+      { bookingId: "bk1", index: 0, adults: 2, childAges: [6], guests: [{ givenName: "Dana", familyName: "Levi" }, { givenName: "Avi", familyName: "Levi" }, { givenName: "Noa", familyName: "Levi" }], givenName: "Dana", familyName: "Levi", totalMinor: 30_000, price: {}, hotelConfirmationId: "H-777", cancelLink: "secret-cancel-1" },
+      { bookingId: "bk1", index: 1, adults: 1, childAges: [], guests: [{ givenName: "Yossi", familyName: "Cohen", title: "MR" }], givenName: "Yossi", familyName: "Cohen", totalMinor: 18_375, price: {}, hotelConfirmationId: null, cancelLink: "secret-cancel-2" },
+    ],
+  });
+}
+
 describe("voucher PDF", () => {
   beforeEach(async () => {
     await resetTestDb();
@@ -79,6 +94,42 @@ describe("voucher PDF", () => {
     expect(text).not.toContain("483.75");
     expect(text).not.toMatch(/expedia/i);
     expect(text).not.toContain("IT-999");
+  });
+
+  it("one room: no room headings, as before plan 10; the room's own hotel confirmation when the booking has none", async () => {
+    await seed();
+    await db.booking.update({ where: { id: "bk1" }, data: { hotelConfirmationId: null } });
+    await db.bookingRoom.create({ data: { bookingId: "bk1", index: 0, adults: 2, childAges: [6], guests: [], givenName: "Dana", familyName: "Levi", totalMinor: 48_375, price: {}, hotelConfirmationId: "H-ROOM1" } });
+    const text = pdfText(await renderVoucher("A", "bk1"));
+    expect(text).not.toContain("Room 1");
+    expect(text).toContain("Hotel confirmation number: H-ROOM1");
+    expect(text).toContain("Noa Levi (child, age 6)");
+  });
+
+  it("several rooms (plan 10): one voucher, a block per room with its guests and hotel confirmation", async () => {
+    await seed();
+    await twoRooms();
+    const text = pdfText(await renderVoucher("A", "bk1"));
+    for (const t of ["Rooms: 2 x Superior King Room", "Room 1 · 2 adults, 1 child (6)", "Room 2 · 1 adult", "Dana Levi", "Noa Levi (child, age 6)", "Mr Yossi Cohen", "Hotel confirmation number: H-777", "Hotel confirmation number: to be confirmed by the hotel"]) expect(text, t).toContain(t);
+    // Children are labelled per room, never by their place in the whole booking.
+    expect(text).not.toContain("(child, age ?)");
+    expect(text).not.toContain("secret-cancel");
+    expect(text).not.toContain("300.00");
+  });
+
+  it("eight rooms: every room's block is printed, a block is never split over two pages", async () => {
+    await seed();
+    const room = (i: number) => ({
+      bookingId: "bk1", index: i, adults: 4, childAges: [3, 5], givenName: `Guest${i + 1}`, familyName: "Levi", totalMinor: 6_000, price: {}, hotelConfirmationId: `H-8-${i + 1}`,
+      guests: [1, 2, 3, 4, 5, 6].map((g) => ({ givenName: `Guest${i + 1}x${g}`, familyName: "Levi" })),
+    });
+    await db.bookingRoom.createMany({ data: Array.from({ length: 8 }, (_, i) => room(i)) });
+    const pdf = await renderVoucher("A", "bk1");
+    const text = pdfText(pdf);
+    for (let i = 1; i <= 8; i++) expect(text, `room ${i}`).toContain(`H-8-${i}`);
+    // Each page's text is its own content stream: a room's heading and its last guest are on the same page.
+    const pages = text.split("\n");
+    for (let i = 1; i <= 8; i++) expect(pages.some((p) => p.includes(`Room ${i} · 4 adults`) && p.includes(`Guest${i}x6 Levi`)), `room ${i} on one page`).toBe(true);
   });
 
   it("only for the agency's own confirmed booking", async () => {

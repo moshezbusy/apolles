@@ -17,7 +17,7 @@ import { quoteParam } from "../quote-param";
 import { cancellationLabel } from "../../_components/rate-text";
 import { addToQuoteAction } from "../../quotes/actions";
 import { AddToQuote } from "../../quotes/add-to-quote";
-import { openQuotes, quoteCode } from "@/server/quotes/quotes";
+import { QUOTES_ONE_ROOM, openQuotes, quoteCode } from "@/server/quotes/quotes";
 import { multiRoomAllowed } from "@/server/supplier";
 import type { HotelCard } from "@/server/search/search";
 
@@ -52,6 +52,7 @@ function priceField(minor: number | undefined): string {
 
 // The rate behind the card's price, as on the hotel page: "Book this room" opens guest details and
 // "Add to quote" adds it; the server reads the room and the price from the search (plan 8d-3).
+// A search of several rooms cannot go into a quote (plan 10): the card says so instead.
 function CardRoom({ best, href }: { best: NonNullable<HotelCard["best"]>; href: string }) {
   const cancel = cancellationLabel(best.offer);
   return (
@@ -75,11 +76,13 @@ function CardActions({
   snapshotId,
   quotes,
   quoteId,
+  severalRooms,
 }: {
   best: NonNullable<HotelCard["best"]>;
   snapshotId: string;
   quotes: { id: string; label: string }[];
   quoteId: string | null;
+  severalRooms: boolean;
 }) {
   const { offer } = best;
   const formId = `card-${offer.propertyId}`.replace(/[^A-Za-z0-9_-]/g, "_");
@@ -104,7 +107,7 @@ function CardActions({
           Book this room
         </button>
       </form>
-      <AddToQuote formId={formId} quotes={quotes} defaultQuoteId={quoteId} action={addToQuoteAction} />
+      {severalRooms ? <p className="mt-2 text-xs text-muted">{QUOTES_ONE_ROOM}</p> : <AddToQuote formId={formId} quotes={quotes} defaultQuoteId={quoteId} action={addToQuoteAction} />}
     </div>
   );
 }
@@ -140,7 +143,8 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
   if (options.cursor) back.set("cursor", options.cursor);
   const backTo = back.toString();
   // Plan 5b: "Add to quote" lists the agency's open quotes; one opened from a quote is preselected.
-  const quotes = summary.expired ? [] : (await openQuotes(agencyId, quoteId)).map((q) => ({ id: q.id, label: `${quoteCode(q.number)} · ${q.title || "Untitled quote"}` }));
+  const severalRooms = summary.rooms.length > 1;
+  const quotes = summary.expired || severalRooms ? [] : (await openQuotes(agencyId, quoteId)).map((q) => ({ id: q.id, label: `${quoteCode(q.number)} · ${q.title || "Untitled quote"}` }));
 
   return (
     <main className="mx-auto w-[min(1260px,calc(100%-40px))] py-6">
@@ -262,7 +266,7 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                           {hotel.feesAtProperty ? "Total, taxes included; more to pay at the property" : "Total, taxes and fees included"}
                         </span>
                         {hotel.best ? (
-                          <CardActions best={hotel.best} snapshotId={id} quotes={quotes} quoteId={quoteId} />
+                          <CardActions best={hotel.best} snapshotId={id} quotes={quotes} quoteId={quoteId} severalRooms={severalRooms} />
                         ) : (
                           <Link href={href} className={`${btnPrimary} mt-2 w-full`}>
                             View rooms

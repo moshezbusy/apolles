@@ -61,6 +61,8 @@ export async function getBookingForAdmin(id: string) {
       agency: { select: { id: true, name: true } },
       user: { select: { email: true, name: true } },
       events: { orderBy: { createdAt: "asc" }, include: { actor: { select: { email: true } } } },
+      // Plan 10: the rooms in room order, without the supplier's cancel link (server-only).
+      rooms: { orderBy: { index: "asc" }, omit: { cancelLink: true } },
     },
   });
 }
