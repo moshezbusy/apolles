@@ -9,7 +9,7 @@ export type AvailabilityQuery = {
   propertyIds: string[]; // 1 to 250
   checkin: string; // YYYY-MM-DD
   checkout: string; // YYYY-MM-DD
-  occupancy: Occupancy; // one room in phase 1
+  occupancies: Occupancy[]; // one per room, in room order: 1 to 8 rooms (plan 10)
   countryCode: string; // the agency's country: the point of sale (TR2)
 };
 
@@ -54,24 +54,26 @@ export type Offer = {
   cancelPenalties: CancelPenalty[];
   nonrefundableDateRanges: { start: string; end: string }[];
   amenities: string[]; // what the rate includes (meal plan, perks), as the supplier names it
-  price: PriceBreakdown;
+  price: PriceBreakdown; // the whole stay: the sum of roomPrices
+  roomPrices: PriceBreakdown[]; // one per occupancy asked, in the same order
 };
 
 export type PropertyOffers = { propertyId: string; offers: Offer[] };
 
+// price is the sum of roomPrices (one per occupancy checked, in the same order).
 export type PriceCheckResult =
-  | { status: "available"; price: PriceBreakdown; bookToken: string }
-  | { status: "price_changed"; price: PriceBreakdown; bookToken: string }
+  | { status: "available"; price: PriceBreakdown; roomPrices: PriceBreakdown[]; bookToken: string }
+  | { status: "price_changed"; price: PriceBreakdown; roomPrices: PriceBreakdown[]; bookToken: string }
   | { status: "sold_out" };
+
+// The rate to check again, with the rooms it is for (the same occupancies as the search).
+export type PriceCheckRef = { propertyId: string; roomId: string; rateId: string; token: string; occupancies: Occupancy[] };
 
 export type SupplierContext = { customerIp?: string; userAgent?: string; sessionId?: string };
 
 export interface SupplierAdapter {
   searchAvailability(query: AvailabilityQuery, context: SupplierContext): Promise<PropertyOffers[]>;
-  priceCheck(
-    ref: { propertyId: string; roomId: string; rateId: string; token: string },
-    context: SupplierContext,
-  ): Promise<PriceCheckResult>;
+  priceCheck(ref: PriceCheckRef, context: SupplierContext): Promise<PriceCheckResult>;
 }
 
 // ---------- content (plan 2b) ----------
@@ -124,8 +126,8 @@ export interface ContentSource {
 }
 
 // ---------- booking (plan 3) ----------
-// One room per booking in phase 1. Links are the supplier's own hrefs (with their tokens),
-// kept server-side and followed exactly as given.
+// 1 to 8 rooms per booking (plan 10), all of the same room type and rate. Links are the
+// supplier's own hrefs (with their tokens), kept server-side and followed exactly as given.
 
 export type Phone = { countryCode: string; number: string }; // digits only, e.g. "972", "501234567"
 
@@ -133,7 +135,8 @@ export type BookInput = {
   bookToken: string; // from the latest price check
   affiliateReferenceId: string; // the Apolles reference (TR1), unique per booking
   lead: { givenName: string; familyName: string; email: string; phone: Phone };
-  specialRequest?: string; // to the hotel, not guaranteed; never personal or payment details
+  rooms: { givenName: string; familyName: string }[]; // each room's main guest, in room order (TR5)
+  specialRequest?: string; // to the hotel (on room 1), not guaranteed; never personal or payment details
 };
 
 export type SupplierLinks = { retrieve?: string; cancel?: string };
@@ -144,7 +147,14 @@ export type SupplierRoomStatus = "booked" | "pending" | "cancelled" | "other";
 
 export type RetrievedItinerary = {
   itineraryId: string;
-  rooms: { id: string; status: SupplierRoomStatus; hotelConfirmationId: string | null; cancelLink: string | null }[];
+  rooms: {
+    id: string;
+    status: SupplierRoomStatus;
+    hotelConfirmationId: string | null;
+    cancelLink: string | null;
+    givenName: string | null; // the room's main guest, as the supplier has it
+    familyName: string | null;
+  }[];
 };
 
 export interface BookingSupplier {

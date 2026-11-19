@@ -23,6 +23,7 @@ function offer(propertyId: string, totalMinor: number, refundable = true): Offer
     nonrefundableDateRanges: [],
     amenities: [],
     price: { total: { minor: totalMinor, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 },
+    roomPrices: [{ total: { minor: totalMinor, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 }],
   };
 }
 
@@ -85,7 +86,7 @@ describe("search service", () => {
     await hotels(2);
     const { adapter, searchAvailability } = fakeAdapter(everyone);
     await startSearch(ctx(), input, { adapter, now: NOW });
-    expect(searchAvailability.mock.calls[0]![0]).toMatchObject({ countryCode: "IL", propertyIds: ["1", "2"], occupancy: { adults: 2, childAges: [] } });
+    expect(searchAvailability.mock.calls[0]![0]).toMatchObject({ countryCode: "IL", propertyIds: ["1", "2"], occupancies: [{ adults: 2, childAges: [] }] });
     await expect(startSearch(ctx(), { ...input, countryCode: "US" }, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchInputInvalid);
   });
 

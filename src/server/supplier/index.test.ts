@@ -53,7 +53,7 @@ describe("supplier factory", () => {
 });
 
 describe("FakeSupplierAdapter", () => {
-  const query = { propertyIds: ["101", "102"], checkin: "2027-04-10", checkout: "2027-04-12", occupancy: { adults: 2, childAges: [] }, countryCode: "IL" };
+  const query = { propertyIds: ["101", "102"], checkin: "2027-04-10", checkout: "2027-04-12", occupancies: [{ adults: 2, childAges: [] }], countryCode: "IL" };
 
   it("gives every asked hotel the same offers each time: refundable, non-refundable, two bed types, fees at the property", async () => {
     const a = await fake().searchAvailability(query, {});
@@ -76,11 +76,11 @@ describe("FakeSupplierAdapter", () => {
   it("price check rebuilds the searched price from the token, and booking returns an itinerary", async () => {
     const [hotel] = await fake().searchAvailability(query, {});
     const offer = hotel!.offers[1]!;
-    const checked = await fake().priceCheck({ propertyId: "101", roomId: offer.roomId, rateId: offer.rateId, token: offer.bedGroups[0]!.priceCheckToken }, {});
+    const checked = await fake().priceCheck({ propertyId: "101", roomId: offer.roomId, rateId: offer.rateId, token: offer.bedGroups[0]!.priceCheckToken, occupancies: query.occupancies }, {});
     expect(checked).toMatchObject({ status: "available", price: offer.price });
     if (checked.status === "sold_out") throw new Error("unexpected");
-    const booked = await new FakeSupplierAdapter().book({ bookToken: checked.bookToken, affiliateReferenceId: "APL-X", lead: { givenName: "A", familyName: "B", email: "a@b.c", phone: { countryCode: "972", number: "501234567" } } });
+    const booked = await new FakeSupplierAdapter().book({ bookToken: checked.bookToken, affiliateReferenceId: "APL-X", lead: { givenName: "A", familyName: "B", email: "a@b.c", phone: { countryCode: "972", number: "501234567" } }, rooms: [{ givenName: "A", familyName: "B" }] });
     expect(booked.itineraryId).toBe("FAKE-APL-X");
-    expect(await fake().priceCheck({ propertyId: "999", roomId: "r", rateId: "x", token: offer.bedGroups[0]!.priceCheckToken }, {})).toEqual({ status: "sold_out" });
+    expect(await fake().priceCheck({ propertyId: "999", roomId: "r", rateId: "x", token: offer.bedGroups[0]!.priceCheckToken, occupancies: query.occupancies }, {})).toEqual({ status: "sold_out" });
   });
 });

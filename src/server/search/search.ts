@@ -72,6 +72,24 @@ const storedQuery = z.object({
 // Offers are read back from the database before the hotel page and booking use them: a damaged
 // or old-format row gives "not found", never a half-read price.
 const money = z.object({ minor: z.number().int(), currency: z.string().regex(/^[A-Z]{3}$/) }).strict();
+const priceSchema = z
+  .object({
+    total: money,
+    lines: z.array(
+      z
+        .object({
+          kind: z.enum(["room_rate", "extra_person_fee", "taxes_and_fees", "taxes", "discount", "service_fee"]),
+          amount: money,
+        })
+        .strict(),
+    ),
+    dueAtProperty: z.array(
+      z.object({ kind: z.enum(["mandatory_fee", "resort_fee", "mandatory_tax"]), amount: money, localAmount: money.nullable() }).strict(),
+    ),
+    dueAtPropertyTotal: money.nullable(),
+    nights: z.number().int().positive(),
+  })
+  .strict();
 const offerSchema: z.ZodType<Offer> = z
   .object({
     propertyId: z.string(),
@@ -88,26 +106,12 @@ const offerSchema: z.ZodType<Offer> = z
     nonrefundableDateRanges: z.array(z.object({ start: z.string(), end: z.string() }).strict()),
     // Plan 8f: a search stored before this field reads as "nothing listed".
     amenities: z.array(z.string().max(100)).max(10).default([]),
-    price: z
-      .object({
-        total: money,
-        lines: z.array(
-          z
-            .object({
-              kind: z.enum(["room_rate", "extra_person_fee", "taxes_and_fees", "taxes", "discount", "service_fee"]),
-              amount: money,
-            })
-            .strict(),
-        ),
-        dueAtProperty: z.array(
-          z.object({ kind: z.enum(["mandatory_fee", "resort_fee", "mandatory_tax"]), amount: money, localAmount: money.nullable() }).strict(),
-        ),
-        dueAtPropertyTotal: money.nullable(),
-        nights: z.number().int().positive(),
-      })
-      .strict(),
+    price: priceSchema,
+    // Plan 10: a search stored before rooms were counted is one room at the offer's price.
+    roomPrices: z.array(priceSchema).min(1).max(8).optional(),
   })
-  .strict();
+  .strict()
+  .transform(({ roomPrices, ...offer }) => ({ ...offer, roomPrices: roomPrices ?? [offer.price] }));
 const storedOffers = z.array(offerSchema).min(1);
 
 async function rateLimit(agencyId: string): Promise<void> {
@@ -135,7 +139,7 @@ async function fetchBatch(
         propertyIds: batch,
         checkin: snapshot.query.checkin,
         checkout: snapshot.query.checkout,
-        occupancy: { adults: snapshot.query.adults, childAges: snapshot.query.childAges },
+        occupancies: [{ adults: snapshot.query.adults, childAges: snapshot.query.childAges }], // one room until plan 10 task 2
         countryCode: snapshot.query.countryCode,
       },
       supplierContext,

@@ -51,6 +51,7 @@ const OFFER: Offer = {
   nonrefundableDateRanges: [],
     amenities: [],
   price: { total: { minor: 100_000, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 },
+  roomPrices: [{ total: { minor: 100_000, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 }],
 };
 
 beforeEach(async () => {

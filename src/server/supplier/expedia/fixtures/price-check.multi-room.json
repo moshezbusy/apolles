@@ -1,0 +1,157 @@
+{
+  "status": "available",
+  "holdable": true,
+  "occupancy_pricing": {
+    "2-9,4": {
+      "nightly": [
+        [
+          {
+            "type": "base_rate",
+            "value": "60.00",
+            "currency": "USD"
+          },
+          {
+            "type": "tax_and_service_fee",
+            "value": "9.00",
+            "currency": "USD"
+          }
+        ],
+        [
+          {
+            "type": "base_rate",
+            "value": "60.00",
+            "currency": "USD"
+          },
+          {
+            "type": "tax_and_service_fee",
+            "value": "9.00",
+            "currency": "USD"
+          }
+        ]
+      ],
+      "totals": {
+        "inclusive": {
+          "billable_currency": {
+            "value": "138.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "138.00",
+            "currency": "USD"
+          }
+        },
+        "exclusive": {
+          "billable_currency": {
+            "value": "120.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "120.00",
+            "currency": "USD"
+          }
+        },
+        "property_fees": {
+          "billable_currency": {
+            "value": "20.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "20.00",
+            "currency": "USD"
+          }
+        }
+      },
+      "fees": {
+        "resort_fee": {
+          "billable_currency": {
+            "value": "18.50",
+            "currency": "EUR"
+          },
+          "request_currency": {
+            "value": "20.00",
+            "currency": "USD"
+          }
+        }
+      }
+    },
+    "2": {
+      "nightly": [
+        [
+          {
+            "type": "base_rate",
+            "value": "50.00",
+            "currency": "USD"
+          },
+          {
+            "type": "tax_and_service_fee",
+            "value": "7.50",
+            "currency": "USD"
+          }
+        ],
+        [
+          {
+            "type": "base_rate",
+            "value": "50.00",
+            "currency": "USD"
+          },
+          {
+            "type": "tax_and_service_fee",
+            "value": "7.50",
+            "currency": "USD"
+          }
+        ]
+      ],
+      "totals": {
+        "inclusive": {
+          "billable_currency": {
+            "value": "115.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "115.00",
+            "currency": "USD"
+          }
+        },
+        "exclusive": {
+          "billable_currency": {
+            "value": "100.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "100.00",
+            "currency": "USD"
+          }
+        },
+        "property_fees": {
+          "billable_currency": {
+            "value": "10.00",
+            "currency": "USD"
+          },
+          "request_currency": {
+            "value": "10.00",
+            "currency": "USD"
+          }
+        }
+      },
+      "fees": {
+        "resort_fee": {
+          "billable_currency": {
+            "value": "9.25",
+            "currency": "EUR"
+          },
+          "request_currency": {
+            "value": "10.00",
+            "currency": "USD"
+          }
+        }
+      }
+    }
+  },
+  "links": {
+    "book": {
+      "method": "POST",
+      "href": "/v3/itineraries?token=tok-mr4",
+      "expires": "2027-02-01T07:23:14.000Z"
+    }
+  }
+}

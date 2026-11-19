@@ -14,6 +14,7 @@ function json(status: number, body: unknown): Response {
 
 const expedia = new ExpediaBooking();
 const lead = { givenName: "Dana", familyName: "Levi", email: "dana@example.com", phone: { countryCode: "972", number: "501234567" } };
+const rooms = [{ givenName: "Dana", familyName: "Levi" }];
 
 describe("ExpediaBooking", () => {
   let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
@@ -37,7 +38,7 @@ describe("ExpediaBooking", () => {
 
   it("books with affiliate collect, our reference, the lead guest and the Test header; reads the itinerary id", async () => {
     fetchMock.mockResolvedValue(json(201, fixture("book.response.json")));
-    const result = await expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead }, { customerIp: "203.0.113.9" });
+    const result = await expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms }, { customerIp: "203.0.113.9" });
     expect(result).toEqual({ itineraryId: "8999989898988", links: { retrieve: "/v3/itineraries/8999989898988?token=tok-bk1" } });
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toBe("https://test.ean.com/v3/itineraries?token=tok-bk1");
@@ -55,7 +56,7 @@ describe("ExpediaBooking", () => {
 
   it("special requests go to the hotel in the room's special_request (not guaranteed)", async () => {
     fetchMock.mockResolvedValue(json(201, fixture("book.response.json")));
-    await expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, specialRequest: "Late check-out. High floor." }, {});
+    await expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms, specialRequest: "Late check-out. High floor." }, {});
     expect(JSON.parse(String(fetchMock.mock.calls[0]![1]?.body)).rooms).toEqual([
       { given_name: "Dana", family_name: "Levi", smoking: false, special_request: "Late check-out. High floor." },
     ]);
@@ -63,22 +64,22 @@ describe("ExpediaBooking", () => {
 
   it("without the billing contact set, nothing is sent", async () => {
     vi.stubEnv("EXPEDIA_BILLING_CITY", "");
-    await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead }, {})).rejects.toBeInstanceOf(SupplierNotSent);
+    await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms }, {})).rejects.toBeInstanceOf(SupplierNotSent);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("price mismatch (409) and sold out (410) are a definite no; 500 is not known", async () => {
     fetchMock.mockResolvedValueOnce(json(409, fixture("book.error-409.json")));
-    await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead }, {})).rejects.toBeInstanceOf(SupplierRequestRejected);
+    await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms }, {})).rejects.toBeInstanceOf(SupplierRequestRejected);
     fetchMock.mockResolvedValueOnce(json(410, fixture("book.error-410.json")));
-    await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead }, {})).rejects.toBeInstanceOf(SupplierRequestRejected);
+    await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms }, {})).rejects.toBeInstanceOf(SupplierRequestRejected);
     fetchMock.mockResolvedValueOnce(json(500, fixture("book.error-500.json")));
-    await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead }, {})).rejects.toBeInstanceOf(SupplierOutcomeUnknown);
+    await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms }, {})).rejects.toBeInstanceOf(SupplierOutcomeUnknown);
   });
 
   it("a 201 that cannot be read is 'not known', never 'failed'", async () => {
     fetchMock.mockResolvedValue(json(201, { unexpected: true }));
-    await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead }, {})).rejects.toBeInstanceOf(SupplierOutcomeUnknown);
+    await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms }, {})).rejects.toBeInstanceOf(SupplierOutcomeUnknown);
   });
 
   it("finds a booking by affiliate reference; an empty list means none", async () => {
@@ -102,6 +103,70 @@ describe("ExpediaBooking", () => {
       status: "booked",
       hotelConfirmationId: "BEF23123AA",
       cancelLink: "/v3/itineraries/8999989898988/rooms/d08572fc-82d2-4d5d-ad30-60f5be7fb53e?token=tok-rn2",
+      givenName: "Givenne",
+      familyName: "Nameo",
+    });
+  });
+
+  describe("several rooms (plan 10)", () => {
+    const two = [
+      { givenName: "Dana", familyName: "Levi" },
+      { givenName: "Avi", familyName: "Cohen" },
+    ];
+
+    it("sends one room per guest name, in room order; the special request only on room 1", async () => {
+      fetchMock.mockResolvedValue(json(201, fixture("book.response.json")));
+      await expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms: two }, {});
+      expect(JSON.parse(String(fetchMock.mock.calls[0]![1]?.body)).rooms).toEqual([
+        { given_name: "Dana", family_name: "Levi", smoking: false },
+        { given_name: "Avi", family_name: "Cohen", smoking: false },
+      ]);
+      fetchMock.mockResolvedValue(json(201, fixture("book.response.json")));
+      await expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms: two, specialRequest: "Adjoining rooms." }, {});
+      expect(JSON.parse(String(fetchMock.mock.calls[1]![1]?.body)).rooms).toEqual([
+        { given_name: "Dana", family_name: "Levi", smoking: false, special_request: "Adjoining rooms." },
+        { given_name: "Avi", family_name: "Cohen", smoking: false },
+      ]);
+    });
+
+    it("refuses no rooms, more than 8, or a bad name in any room: nothing is sent", async () => {
+      const send = (r: { givenName: string; familyName: string }[]) => expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms: r }, {});
+      await expect(send([])).rejects.toBeInstanceOf(SupplierNotSent);
+      await expect(send(Array.from({ length: 9 }, () => two[1]!))).rejects.toBeInstanceOf(SupplierNotSent);
+      await expect(send([two[0]!, { givenName: "Avi", familyName: "<Cohen>" }])).rejects.toBeInstanceOf(SupplierNotSent);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("reads each room's main guest name from the itinerary", async () => {
+      fetchMock.mockResolvedValue(json(200, fixture("retrieve.multi-room.json")));
+      const itinerary = await expedia.retrieve({ retrieve: "/v3/itineraries/8999989898988?token=tok-rt1" }, {});
+      expect(itinerary.rooms).toEqual([
+        {
+          id: "926784314",
+          status: "booked",
+          hotelConfirmationId: "BEF23123AA",
+          cancelLink: "/v3/itineraries/8999989898988/rooms/d08572fc-82d2-4d5d-ad30-60f5be7fb53e?token=tok-mr5",
+          givenName: "Dana",
+          familyName: "Levi",
+        },
+        {
+          id: "926784315",
+          status: "booked",
+          hotelConfirmationId: "BEF23123AB",
+          cancelLink: "/v3/itineraries/8999989898988/rooms/5b2c1a8e-3f4d-4e6a-9c1b-7d8e9f0a1b2c?token=tok-mr6",
+          givenName: "Avi",
+          familyName: "Cohen",
+        },
+      ]);
+    });
+
+    it("a room without a guest name reads as null", async () => {
+      const data = fixture("retrieve.multi-room.json") as { rooms: Record<string, unknown>[] };
+      delete data.rooms[1]!.given_name;
+      delete data.rooms[1]!.family_name;
+      fetchMock.mockResolvedValue(json(200, data));
+      const itinerary = await expedia.retrieve({ retrieve: "/v3/itineraries/8999989898988?token=tok-rt1" }, {});
+      expect(itinerary.rooms[1]).toMatchObject({ givenName: null, familyName: null });
     });
   });
 

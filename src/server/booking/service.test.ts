@@ -157,7 +157,10 @@ describe("booking: draft and review", () => {
     const { snapshotId, offers } = await setup();
     const { bookingId } = await draft(snapshotId, offers[0]!);
     const higher = supplier({
-      priceCheck: async () => ({ status: "price_changed", bookToken: "fakebk-11-0", price: { ...offers[0]!.price, total: { minor: offers[0]!.price.total.minor + 1_000, currency: "USD" } } }),
+      priceCheck: async () => {
+        const price = { ...offers[0]!.price, total: { minor: offers[0]!.price.total.minor + 1_000, currency: "USD" } };
+        return { status: "price_changed", bookToken: "fakebk-11-0", price, roomPrices: [price] };
+      },
     });
     const review = await prepareReview(ctx(), bookingId, { supplier: higher, now: later(1) });
     expect(review).toMatchObject({ kind: "ready", priceChanged: true, booking: { totalMinor: offers[0]!.price.total.minor + 1_000, previousTotalMinor: offers[0]!.price.total.minor, bookToken: "fakebk-11-0" } });
@@ -275,7 +278,8 @@ describe("booking: book", () => {
       priceCheck: async () => {
         await gate;
         const current = (await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).price as unknown as PriceBreakdown;
-        return { status: "price_changed", bookToken: "fakebk-11-1", price: { ...current, total: { minor: total + 5_000, currency: "USD" } } };
+        const price = { ...current, total: { minor: total + 5_000, currency: "USD" } };
+        return { status: "price_changed", bookToken: "fakebk-11-1", price, roomPrices: [price] };
       },
     });
     const reviewing = prepareReview(ctx(), bookingId, { supplier: slow, now: later(2) });
@@ -419,7 +423,7 @@ describe("booking: cancel", () => {
     const { bookingId, total } = await confirmed(1);
     const unclear = supplier({ cancelRoom: async () => { throw new SupplierOutcomeUnknown("202"); } });
     await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: unclear, now: later(10) });
-    const stillBooked = supplier({ retrieve: async () => ({ itineraryId: "x", rooms: [{ id: "room-1", status: "booked", hotelConfirmationId: null, cancelLink: "fake-cancel:x" }] }) });
+    const stillBooked = supplier({ retrieve: async () => ({ itineraryId: "x", rooms: [{ id: "room-1", status: "booked", hotelConfirmationId: null, cancelLink: "fake-cancel:x", givenName: null, familyName: null }] }) });
     expect(await reconcile(bookingId, { supplier: stillBooked, now: later(15) })).toBe("retry");
     expect(await reconcile(bookingId, { supplier: stillBooked, now: later(45) })).toBe("restored");
     expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).status).toBe("CONFIRMED");

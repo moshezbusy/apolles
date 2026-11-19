@@ -8,6 +8,7 @@ import type {
   Occupancy,
   Offer,
   PriceBreakdown,
+  PriceCheckRef,
   PriceCheckResult,
   PriceLine,
   PriceLineKind,
@@ -15,6 +16,7 @@ import type {
   SupplierAdapter,
   SupplierContext,
 } from "@/server/supplier/types";
+import { PriceSumInvalid, sumBreakdowns } from "@/server/supplier/price";
 import { SupplierError, expediaRequest, recordUnknownFields } from "./client";
 import { type ObjectFactory, ParseNotes, check } from "./parse";
 
@@ -31,11 +33,16 @@ import { type ObjectFactory, ParseNotes, check } from "./parse";
 // - Only rates billed in USD (wallets are USD, BP5 forbids conversion). Others are dropped.
 // - No package rates (AP4) and no property-collect rates (GR5/BP8): Expedia is the merchant.
 // - The total is Expedia's inclusive total, never recomputed from the lines (BP5).
+// - Several rooms (plan 10): one occupancy per room, sent once each in room order. Each room's
+//   price is read from occupancy_pricing under that room's occupancy string; the stay's price is
+//   the rooms' totals added (nothing else). Two identical rooms read the same key once each
+//   (assumed; to be verified with Expedia's test system).
 
 export class SupplierResponseInvalid extends SupplierError {}
 
 const SHOPPING_TIMEOUT_MS = 15_000;
 const MAX_PROPERTIES_PER_CALL = 250;
+const MAX_ROOMS = 8; // Rapid: "Up to 8 rooms may be requested or booked at once"
 const CURRENCY = "USD";
 const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/; // property, room and rate ids and tokens in a path or query
 
@@ -189,6 +196,24 @@ function add(sum: number, minor: number): number {
   return next;
 }
 
+// One Rapid occupancy string per room, in room order.
+function occupancyKeys(occupancies: Occupancy[]): string[] {
+  if (occupancies.length < 1 || occupancies.length > MAX_ROOMS) throw new Error(`Expedia takes 1 to ${MAX_ROOMS} rooms`);
+  return occupancies.map(occupancyKey);
+}
+
+// The rooms' prices, and the stay's price as their sum. Rooms that do not add up (e.g. priced
+// for different nights) make the rate unsellable.
+function roomsPriced(pricings: Pricing[]): { price: PriceBreakdown; roomPrices: PriceBreakdown[] } {
+  const roomPrices = pricings.map(toBreakdown);
+  try {
+    return { price: sumBreakdowns(roomPrices), roomPrices };
+  } catch (error) {
+    if (error instanceof PriceSumInvalid) throw new DropRate(error.message);
+    throw error;
+  }
+}
+
 function tokenOf(href: string): string {
   const token = new URL(href, "https://test.ean.com").searchParams.get("token");
   if (!token) throw new DropRate("link has no token");
@@ -251,11 +276,11 @@ export function amenityNames(raw: unknown): string[] {
   return names;
 }
 
-function toOffer(propertyId: string, room: { id: string; room_name: string }, rate: Rate, occupancy: string): Offer | null {
+function toOffer(propertyId: string, room: { id: string; room_name: string }, rate: Rate, occupancies: string[]): Offer | null {
   if (rate.sale_scenario?.package) return null; // AP4: no package rates
   if (rate.merchant_of_record !== undefined && rate.merchant_of_record !== "expedia") return null; // no property collect
-  const pricing = rate.occupancy_pricing[occupancy];
-  if (!pricing) return null;
+  const pricings = occupancies.map((key) => rate.occupancy_pricing[key]);
+  if (!pricings.every((pricing): pricing is Pricing => pricing !== undefined)) return null; // a room without a price: no offer
   try {
     const bedGroups: BedGroup[] = Object.values(rate.bed_groups).map((group) => ({
       id: group.id,
@@ -282,12 +307,22 @@ function toOffer(propertyId: string, room: { id: string; room_name: string }, ra
       cancelPenalties,
       nonrefundableDateRanges: rate.nonrefundable_date_ranges ?? [],
       amenities: amenityNames(rate.amenities),
-      price: toBreakdown(pricing),
+      ...roomsPriced(pricings),
     };
   } catch (error) {
     if (error instanceof DropRate) return null;
     throw error;
   }
+}
+
+// The price check's pricing for each room, in room order; null if a room has none. One room
+// with one price in the answer takes that price whatever its key says (as before plan 10: the
+// answer is for the rate checked); otherwise every room's own key must be there.
+function pricingsFor(keys: string[], map: Record<string, Pricing>): Pricing[] | null {
+  const values = Object.values(map);
+  if (keys.length === 1 && values.length === 1) return values;
+  const pricings = keys.map((key) => map[key]);
+  return pricings.every((pricing): pricing is Pricing => pricing !== undefined) ? pricings : null;
 }
 
 // ---------- adapter ----------
@@ -296,7 +331,7 @@ export class ExpediaAdapter implements SupplierAdapter {
     if (query.propertyIds.length < 1 || query.propertyIds.length > MAX_PROPERTIES_PER_CALL) {
       throw new Error(`searchAvailability takes 1 to ${MAX_PROPERTIES_PER_CALL} property ids`);
     }
-    const occupancy = occupancyKey(query.occupancy);
+    const occupancy = occupancyKeys(query.occupancies);
     const { data, logId } = await expediaRequest({
       method: "GET",
       path: "/properties/availability",
@@ -339,13 +374,11 @@ export class ExpediaAdapter implements SupplierAdapter {
     return result;
   }
 
-  async priceCheck(
-    ref: { propertyId: string; roomId: string; rateId: string; token: string },
-    context: SupplierContext,
-  ): Promise<PriceCheckResult> {
+  async priceCheck(ref: PriceCheckRef, context: SupplierContext): Promise<PriceCheckResult> {
     for (const value of [ref.propertyId, ref.roomId, ref.rateId, ref.token]) {
       if (!SAFE_ID.test(value)) throw new Error("priceCheck: invalid id or token");
     }
+    const keys = occupancyKeys(ref.occupancies);
     const { data, logId } = await expediaRequest({
       method: "GET",
       path: `/properties/${ref.propertyId}/rooms/${ref.roomId}/rates/${ref.rateId}`,
@@ -359,14 +392,12 @@ export class ExpediaAdapter implements SupplierAdapter {
     if (!value) throw new SupplierResponseInvalid("Expedia price check response is invalid");
 
     if (value.status === "sold_out") return { status: "sold_out" };
-    // Phase 1 books one room, so the response holds one occupancy.
-    const pricing = Object.values(value.occupancy_pricing ?? {})[0];
+    const pricings = pricingsFor(keys, value.occupancy_pricing ?? {});
     const book = value.links?.book;
-    if (!pricing || !book) throw new SupplierResponseInvalid("Expedia price check has no pricing or book link");
+    if (!pricings || !book) throw new SupplierResponseInvalid("Expedia price check has no pricing for every room or no book link");
     try {
-      const price = toBreakdown(pricing);
       const status = value.status === "price_changed" ? "price_changed" : "available";
-      return { status, price, bookToken: tokenOf(book.href) };
+      return { status, ...roomsPriced(pricings), bookToken: tokenOf(book.href) };
     } catch (error) {
       // A rate that cannot be sold as priced now (e.g. no longer USD) is treated as sold out.
       if (error instanceof DropRate) return { status: "sold_out" };

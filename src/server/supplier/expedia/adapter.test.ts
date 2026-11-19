@@ -18,7 +18,7 @@ const query = {
   propertyIds: ["19248"],
   checkin: "2027-02-10",
   checkout: "2027-02-12",
-  occupancy: { adults: 2, childAges: [] },
+  occupancies: [{ adults: 2, childAges: [] }],
   countryCode: "IL",
 };
 
@@ -47,7 +47,7 @@ describe("ExpediaAdapter", () => {
   describe("searchAvailability", () => {
     it("sends the required parameters: point-of-sale country, USD, agent tool, hotel only", async () => {
       fetchMock.mockResolvedValue(json(200, []));
-      await adapter.searchAvailability({ ...query, occupancy: { adults: 1, childAges: [7, 10] } }, context);
+      await adapter.searchAvailability({ ...query, occupancies: [{ adults: 1, childAges: [7, 10] }] }, context);
       const url = new URL(String(fetchMock.mock.calls[0]![0]));
       expect(url.pathname).toBe("/v3/properties/availability");
       expect(Object.fromEntries(url.searchParams)).toMatchObject({
@@ -190,10 +190,72 @@ describe("ExpediaAdapter", () => {
         adapter.searchAvailability({ ...query, propertyIds: Array.from({ length: 251 }, (_, i) => String(i)) }, context),
       ).rejects.toThrow(/250/);
     });
+
+    describe("several rooms (plan 10)", () => {
+      const twoRooms = { ...query, occupancies: [{ adults: 2, childAges: [9, 4] }, { adults: 2, childAges: [] }] };
+
+      it("sends one occupancy per room, in room order", async () => {
+        fetchMock.mockResolvedValue(json(200, []));
+        await adapter.searchAvailability(twoRooms, context);
+        const url = new URL(String(fetchMock.mock.calls[0]![0]));
+        expect(url.searchParams.getAll("occupancy")).toEqual(["2-9,4", "2"]);
+      });
+
+      it("an offer has each room's price in room order, and the total is their sum", async () => {
+        fetchMock.mockResolvedValue(json(200, fixture("availability.multi-room.json")));
+        const [property] = await adapter.searchAvailability(twoRooms, context);
+        expect(property!.offers.map((o) => o.rateId)).toEqual(["333abc"]); // 444abc has no price for room 2
+        const offer = property!.offers[0]!;
+        expect(offer.roomPrices.map((p) => p.total.minor)).toEqual([13800, 11500]);
+        expect(offer.roomPrices[0]!.lines).toEqual([
+          { kind: "room_rate", amount: { minor: 12000, currency: "USD" } },
+          { kind: "taxes_and_fees", amount: { minor: 1800, currency: "USD" } },
+        ]);
+        expect(offer.price.total).toEqual({ minor: 25300, currency: "USD" });
+        expect(offer.price.lines).toEqual([
+          { kind: "room_rate", amount: { minor: 22000, currency: "USD" } },
+          { kind: "taxes_and_fees", amount: { minor: 3300, currency: "USD" } },
+        ]);
+        expect(offer.price.dueAtProperty).toEqual([
+          { kind: "resort_fee", amount: { minor: 3000, currency: "USD" }, localAmount: { minor: 2775, currency: "EUR" } },
+        ]);
+        expect(offer.price.dueAtPropertyTotal).toEqual({ minor: 3000, currency: "USD" });
+        expect(offer.price.nights).toBe(2);
+      });
+
+      it("the rooms' order is the order asked, not the order of the supplier's map", async () => {
+        fetchMock.mockResolvedValue(json(200, fixture("availability.multi-room.json")));
+        const [property] = await adapter.searchAvailability({ ...query, occupancies: [twoRooms.occupancies[1]!, twoRooms.occupancies[0]!] }, context);
+        expect(property!.offers[0]!.roomPrices.map((p) => p.total.minor)).toEqual([11500, 13800]);
+      });
+
+      it("two identical rooms read the same occupancy price once per room", async () => {
+        fetchMock.mockResolvedValue(json(200, fixture("availability.multi-room.json")));
+        const same = { ...query, occupancies: [{ adults: 2, childAges: [] }, { adults: 2, childAges: [] }] };
+        const [property] = await adapter.searchAvailability(same, context);
+        expect(new URL(String(fetchMock.mock.calls[0]![0])).searchParams.getAll("occupancy")).toEqual(["2", "2"]);
+        const offer = property!.offers[0]!;
+        expect(offer.roomPrices.map((p) => p.total.minor)).toEqual([11500, 11500]);
+        expect(offer.price.total.minor).toBe(23000);
+      });
+
+      it("one room gives roomPrices of one, equal to the price", async () => {
+        fetchMock.mockResolvedValue(json(200, fixture("availability.usd.json")));
+        const offer = (await adapter.searchAvailability(query, context))[0]!.offers[0]!;
+        expect(offer.roomPrices).toEqual([offer.price]);
+      });
+
+      it("refuses no rooms or more than 8 before calling Expedia", async () => {
+        await expect(adapter.searchAvailability({ ...query, occupancies: [] }, context)).rejects.toThrow(/1 to 8/);
+        const nine = Array.from({ length: 9 }, () => ({ adults: 1, childAges: [] }));
+        await expect(adapter.searchAvailability({ ...query, occupancies: nine }, context)).rejects.toThrow(/1 to 8/);
+        expect(fetchMock).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe("priceCheck", () => {
-    const ref = { propertyId: "19248", roomId: "abc123", rateId: "abc123", token: "tok-a1" };
+    const ref = { propertyId: "19248", roomId: "abc123", rateId: "abc123", token: "tok-a1", occupancies: [{ adults: 2, childAges: [] }] };
 
     it("calls the price-check link with the token and returns the new breakdown and book token", async () => {
       fetchMock.mockResolvedValue(json(200, fixture("price-check.usd-available.json")));
@@ -224,6 +286,54 @@ describe("ExpediaAdapter", () => {
       expect((await adapter.priceCheck(ref, context)).status).toBe("price_changed");
       fetchMock.mockResolvedValueOnce(json(200, fixture("price-check.sold-out-example.json")));
       expect(await adapter.priceCheck(ref, context)).toEqual({ status: "sold_out" });
+    });
+
+    it("one room: the one price in the answer is used even if its key is written differently (as before)", async () => {
+      fetchMock.mockResolvedValue(json(200, fixture("price-check.usd-available.json"))); // key "2"
+      const result = await adapter.priceCheck({ ...ref, occupancies: [{ adults: 3, childAges: [] }] }, context);
+      if (result.status === "sold_out") throw new Error("unexpected");
+      expect(result.price.total.minor).toBe(21500);
+      expect(result.roomPrices).toEqual([result.price]);
+    });
+
+    describe("several rooms (plan 10)", () => {
+      const twoRooms = { ...ref, occupancies: [{ adults: 2, childAges: [9, 4] }, { adults: 2, childAges: [] }] };
+
+      it("returns each room's price in room order and their sum", async () => {
+        fetchMock.mockResolvedValue(json(200, fixture("price-check.multi-room.json")));
+        const result = await adapter.priceCheck(twoRooms, context);
+        expect(result.status).toBe("available");
+        if (result.status === "sold_out") throw new Error("unexpected");
+        expect(result.roomPrices.map((p) => p.total.minor)).toEqual([13800, 11500]);
+        expect(result.price.total).toEqual({ minor: 25300, currency: "USD" });
+        expect(result.bookToken).toBe("tok-mr4");
+
+        fetchMock.mockResolvedValue(json(200, fixture("price-check.multi-room.json")));
+        const reversed = await adapter.priceCheck({ ...ref, occupancies: [twoRooms.occupancies[1]!, twoRooms.occupancies[0]!] }, context);
+        if (reversed.status === "sold_out") throw new Error("unexpected");
+        expect(reversed.roomPrices.map((p) => p.total.minor)).toEqual([11500, 13800]);
+      });
+
+      it("an answer without the price of one of the rooms is invalid", async () => {
+        fetchMock.mockResolvedValue(json(200, fixture("price-check.multi-room.json")));
+        await expect(adapter.priceCheck({ ...ref, occupancies: [{ adults: 1, childAges: [] }, { adults: 2, childAges: [] }] }, context)).rejects.toBeInstanceOf(
+          SupplierResponseInvalid,
+        );
+      });
+
+      it("one room asked, but the answer has several prices: the room's own key must be there", async () => {
+        fetchMock.mockResolvedValue(json(200, fixture("price-check.multi-room.json")));
+        await expect(adapter.priceCheck({ ...ref, occupancies: [{ adults: 3, childAges: [] }] }, context)).rejects.toBeInstanceOf(SupplierResponseInvalid);
+        fetchMock.mockResolvedValue(json(200, fixture("price-check.multi-room.json")));
+        const result = await adapter.priceCheck({ ...ref, occupancies: [{ adults: 2, childAges: [] }] }, context);
+        if (result.status === "sold_out") throw new Error("unexpected");
+        expect(result.price.total.minor).toBe(11500);
+      });
+
+      it("refuses no rooms or more than 8 before calling Expedia", async () => {
+        await expect(adapter.priceCheck({ ...ref, occupancies: [] }, context)).rejects.toThrow(/1 to 8/);
+        expect(fetchMock).not.toHaveBeenCalled();
+      });
     });
   });
 });

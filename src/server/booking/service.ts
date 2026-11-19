@@ -242,7 +242,13 @@ export async function prepareReview(ctx: BookingContext, bookingId: string, deps
   let result;
   try {
     result = await supplierOf(deps).priceCheck(
-      { propertyId: booking.propertyId, roomId: booking.roomId, rateId: booking.rateId, token: booking.priceCheckToken },
+      {
+        propertyId: booking.propertyId,
+        roomId: booking.roomId,
+        rateId: booking.rateId,
+        token: booking.priceCheckToken,
+        occupancies: [{ adults: booking.adults, childAges: booking.childAges }], // one room until plan 10 task 3
+      },
       ctx.supplierContext,
     );
   } catch (error) {
@@ -342,6 +348,7 @@ export async function book(
         bookToken: booking.bookToken,
         affiliateReferenceId: booking.reference,
         lead: { givenName: booking.leadGivenName, familyName: booking.leadFamilyName, email: booking.leadEmail, phone: { countryCode, number } },
+        rooms: [{ givenName: booking.leadGivenName, familyName: booking.leadFamilyName }], // one room until plan 10 task 3
         ...(booking.specialRequest ? { specialRequest: booking.specialRequest } : {}),
       },
       ctx.supplierContext,

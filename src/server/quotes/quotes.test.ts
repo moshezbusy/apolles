@@ -41,6 +41,7 @@ function offer(propertyId: string, rateId: string, totalMinor: number, refundabl
     nonrefundableDateRanges: [],
     amenities: ["Breakfast buffet"],
     price: { total: { minor: totalMinor, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 },
+    roomPrices: [{ total: { minor: totalMinor, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 }],
   };
 }
 

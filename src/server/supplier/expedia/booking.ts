@@ -25,6 +25,8 @@ function schemas(object: ObjectFactory) {
   const room = object({
     id: z.string(),
     status: z.string(),
+    given_name: z.string().optional(),
+    family_name: z.string().optional(),
     confirmation_id: object({ expedia: z.string().optional(), property: z.string().optional() }).optional(),
     links: object({ cancel: link.optional(), change: unused, shop_for_change: unused, conversation: unused }).optional(),
   });
@@ -92,31 +94,35 @@ function toItinerary(value: z.infer<typeof lenient.itinerary>): RetrievedItinera
       status: statusOf(r.status),
       hotelConfirmationId: r.confirmation_id?.property ?? null,
       cancelLink: r.links?.cancel?.href ?? null,
+      givenName: r.given_name ?? null,
+      familyName: r.family_name ?? null,
     })),
   };
 }
 
 const TOKEN_IN_QUERY = /^[A-Za-z0-9._~-]{1,512}$/;
 const NAME = /^[^<>()&]{1,60}$/;
+const MAX_ROOMS = 8; // Rapid: "Up to 8 rooms may be requested or booked at once"
 
 export class ExpediaBooking implements BookingSupplier {
   async book(input: BookInput, context: SupplierContext): Promise<BookResult> {
     if (!TOKEN_IN_QUERY.test(input.bookToken)) throw new SupplierNotSent("Invalid book token");
     if (!/^[A-Za-z0-9-]{3,28}$/.test(input.affiliateReferenceId)) throw new SupplierNotSent("Invalid affiliate reference");
-    if (!NAME.test(input.lead.givenName) || !NAME.test(input.lead.familyName)) throw new SupplierNotSent("Invalid guest name");
+    if (input.rooms.length < 1 || input.rooms.length > MAX_ROOMS) throw new SupplierNotSent(`A booking has 1 to ${MAX_ROOMS} rooms`);
+    if (!input.rooms.every((room) => NAME.test(room.givenName) && NAME.test(room.familyName))) throw new SupplierNotSent("Invalid guest name");
     const body = {
       affiliate_reference_id: input.affiliateReferenceId,
       hold: false,
       email: input.lead.email,
       phone: { country_code: input.lead.phone.countryCode, number: input.lead.phone.number },
-      rooms: [
-        {
-          given_name: input.lead.givenName,
-          family_name: input.lead.familyName,
-          smoking: false,
-          ...(input.specialRequest ? { special_request: input.specialRequest.slice(0, 300) } : {}),
-        },
-      ],
+      // One entry per room, in room order, named for the guest checking in to it (TR5). The
+      // special request goes with room 1 only: it is one request for the whole booking.
+      rooms: input.rooms.map((room, i) => ({
+        given_name: room.givenName,
+        family_name: room.familyName,
+        smoking: false,
+        ...(i === 0 && input.specialRequest ? { special_request: input.specialRequest.slice(0, 300) } : {}),
+      })),
       payments: [{ type: "affiliate_collect", billing_contact: billingContact() }],
     };
     const { data, logId } = await expediaRequest({
