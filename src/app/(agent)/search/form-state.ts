@@ -5,29 +5,38 @@ export type SearchFormValues = {
   destinationLabel: string;
   checkin: string;
   checkout: string;
-  adults: string;
-  childCount: string;
-  childAges: string[];
+  rooms: SearchFormRoom[]; // in room order, 1 to 8 (plan 10)
 };
+
+export type SearchFormRoom = { adults: string; childAges: string[] };
 
 export type SearchFormState = { status: "error"; message: string; values: SearchFormValues } | null;
 
 const MAX_FIELD = 100;
+const MAX_ROOMS = 8;
+const MAX_CHILD_FIELDS = 10; // more than the 6 allowed, so too many is refused, not cut
 
 function text(value: FormDataEntryValue | null): string {
   return typeof value === "string" ? value.slice(0, MAX_FIELD) : "";
 }
 
-// Only the known fields are read (the form also carries Next.js internals).
+// Only the known fields are read (the form also carries Next.js internals). Each room is a
+// room_adults field and a room_children field ("9,4", or "" for none), paired by order; at most
+// 8 rooms are read. The server checks everything again.
 export function readSearchForm(formData: FormData): SearchFormValues {
+  const adults = formData.getAll("room_adults");
+  const children = formData.getAll("room_children");
+  const count = Math.min(Math.max(adults.length, children.length), MAX_ROOMS);
+  const rooms = Array.from({ length: count }, (_, i) => {
+    const ages = text(children[i] ?? null);
+    return { adults: text(adults[i] ?? null), childAges: ages === "" ? [] : ages.split(",").slice(0, MAX_CHILD_FIELDS) };
+  });
   return {
     destinationId: text(formData.get("destinationId")),
     destinationLabel: text(formData.get("destinationLabel")),
     checkin: text(formData.get("checkin")),
     checkout: text(formData.get("checkout")),
-    adults: text(formData.get("adults")),
-    childCount: text(formData.get("childCount")),
-    childAges: formData.getAll("childAge").slice(0, 10).map(text),
+    rooms,
   };
 }
 
@@ -39,14 +48,12 @@ export function toSearchInput(values: SearchFormValues) {
     destinationId: values.destinationId,
     checkin: values.checkin,
     checkout: values.checkout,
-    adults: int(values.adults),
-    childAges: values.childAges.map(int),
+    rooms: values.rooms.map((room) => ({ adults: int(room.adults), childAges: room.childAges.map(int) })),
   };
 }
 
-// Every child the agent added must have an age: a missing one is refused, never dropped
+// Every child the agent added must have an age: a missing one ("4,") is refused, never dropped
 // (it would price the room for fewer guests).
 export function childAgesComplete(values: SearchFormValues): boolean {
-  const count = values.childCount === "" ? 0 : /^\d{1,2}$/.test(values.childCount) ? Number(values.childCount) : -1;
-  return count === values.childAges.length && values.childAges.every((age) => age !== "");
+  return values.rooms.every((room) => room.childAges.every((age) => age.trim() !== ""));
 }

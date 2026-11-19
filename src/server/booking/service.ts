@@ -4,6 +4,7 @@ import type { Booking, Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import { enqueue } from "@/server/jobs/queue";
 import { QuoteStayAlreadyBooked, QuoteStayChanged, claimQuoteStay, lockQuoteOfBooking, stayForDraft, syncQuoteOfBooking } from "@/server/quotes/quote-booking";
+import { SEVERAL_ROOMS_UNAVAILABLE } from "@/server/search/errors";
 import { findOffer } from "@/server/search/search";
 import { bookingSupplier } from "@/server/supplier";
 import { SupplierAuthError, SupplierError, SupplierRateLimited, SupplierRequestRejected } from "@/server/supplier/expedia/client";
@@ -162,7 +163,9 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
   if (specialRequest.length > REQUEST_MAX) throw new BookingInputInvalid(`Special requests can be up to ${REQUEST_MAX} characters in all. Shorten the additional request.`);
   const found = await findOffer(ctx.agencyId, { snapshotId: input.snapshotId, propertyId: input.propertyId, rateId: input.rateId, bedGroupId: input.bedGroupId }, now);
   if (!found) throw new BookingRateExpired("These prices expired. Search again for current prices.");
-  const { offer, bedGroup, hotel, query } = found;
+  const { offer, bedGroup, hotel, query, rooms } = found;
+  // A booking is one room until plan 10 task 3 gives bookings their rooms.
+  if (rooms.length > 1) throw new BookingInputInvalid(SEVERAL_ROOMS_UNAVAILABLE);
   if (input.guests.length !== query.adults + query.childAges.length) {
     throw new BookingInputInvalid("Enter a name for every guest.");
   }

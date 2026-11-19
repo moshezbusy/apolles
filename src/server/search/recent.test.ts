@@ -5,7 +5,7 @@ import { clearRecentSearches, recentSearches, rememberSearch } from "./recent";
 
 const A = { agencyId: "A", userId: "u-A" };
 const B = { agencyId: "B", userId: "u-B" };
-const S = (n: number) => ({ destinationId: `d${n}`, destinationName: `City ${n}`, checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [] as number[] });
+const S = (n: number) => ({ destinationId: `d${n}`, destinationName: `City ${n}`, checkin: "2027-04-10", checkout: "2027-04-12", rooms: [{ adults: 2, childAges: [] as number[] }] });
 
 beforeEach(async () => {
   await resetTestDb();
@@ -25,5 +25,23 @@ describe("recent searches (screen 07)", () => {
     await clearRecentSearches(A);
     expect(await recentSearches(A)).toEqual([]);
     expect(await recentSearches(B)).toHaveLength(1);
+  });
+
+  it("several rooms (plan 10): kept with the search, totals in adults and childAges; another split of the same guests is another search", async () => {
+    const rooms = [{ adults: 2, childAges: [9] }, { adults: 1, childAges: [4] }];
+    await rememberSearch(A, { ...S(1), rooms });
+    await rememberSearch(A, { ...S(1), rooms: [{ adults: 3, childAges: [9, 4] }] });
+    await rememberSearch(A, { ...S(1), rooms }); // the same rooms again: moved to the top, not repeated
+    const list = await recentSearches(A);
+    expect(list.map((r) => r.rooms)).toEqual([rooms, [{ adults: 3, childAges: [9, 4] }]]);
+    expect(list[0]).toMatchObject({ adults: 3, childAges: [9, 4] });
+    expect(await db.recentSearch.findFirstOrThrow({ where: { id: list[0]!.id } })).toMatchObject({ rooms, adults: 3, childAges: [9, 4] });
+  });
+
+  it("a row saved before rooms reads as one room; the same one-room search again replaces it", async () => {
+    await db.recentSearch.create({ data: { ...A, destinationId: "d1", destinationName: "City 1", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [5] } });
+    expect((await recentSearches(A)).map((r) => r.rooms)).toEqual([[{ adults: 2, childAges: [5] }]]);
+    await rememberSearch(A, { ...S(1), rooms: [{ adults: 2, childAges: [5] }] });
+    expect(await db.recentSearch.count({ where: { userId: A.userId } })).toBe(1);
   });
 });

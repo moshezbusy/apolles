@@ -3,10 +3,11 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
-import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "@/server/search/errors";
+import { SEVERAL_ROOMS_UNAVAILABLE, SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "@/server/search/errors";
 import { destinationById } from "@/server/search/destinations";
 import { clearRecentSearches, rememberSearch } from "@/server/search/recent";
 import { startSearch } from "@/server/search/search";
+import { multiRoomAllowed } from "@/server/supplier";
 import { supplierContextFrom } from "@/server/supplier-context";
 import { childAgesComplete, readSearchForm, toSearchInput, type SearchFormState } from "./form-state";
 import { quoteParam } from "./quote-param";
@@ -22,6 +23,8 @@ export async function startSearchAction(_previous: SearchFormState, formData: Fo
   const values = readSearchForm(formData);
   if (!values.destinationId) return { status: "error", message: "Choose a destination from the list.", values };
   if (!childAgesComplete(values)) return { status: "error", message: "Choose the age of each child.", values };
+  // Plan 10: several rooms only while multiRoomAllowed (the search service checks it again).
+  if (values.rooms.length > 1 && !multiRoomAllowed()) return { status: "error", message: SEVERAL_ROOMS_UNAVAILABLE, values };
 
   const supplierContext = supplierContextFrom(await headers());
 
@@ -42,7 +45,7 @@ export async function startSearchAction(_previous: SearchFormState, formData: Fo
     await rememberSearch(
       { agencyId, userId },
       // The name is read on the server, never taken from the form.
-      { destinationId: input.destinationId, destinationName: (await destinationById(input.destinationId))?.label ?? input.destinationId, checkin: input.checkin, checkout: input.checkout, adults: input.adults, childAges: input.childAges },
+      { destinationId: input.destinationId, destinationName: (await destinationById(input.destinationId))?.label ?? input.destinationId, checkin: input.checkin, checkout: input.checkout, rooms: input.rooms },
     );
   } catch (error) {
     console.error("recent search not saved", { error: error instanceof Error ? error.name : "Error" });

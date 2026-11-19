@@ -74,7 +74,7 @@ export default async function ReviewPage({ params }: { params: Params }) {
   }
   const { balanceCents } = await getBalance(agencyId);
   const shortfall = Math.max(0, b.totalMinor - balanceCents);
-  const stay = stayText({ nights: (b.price as unknown as PriceBreakdown).nights, adults: b.adults, childAges: b.childAges });
+  const stay = stayText({ nights: (b.price as unknown as PriceBreakdown).nights, rooms: [{ adults: b.adults, childAges: b.childAges }] }); // one room until plan 10 task 3
   const support = supportContact();
   const changed = b.previousTotalMinor !== null && b.previousTotalMinor !== b.totalMinor;
 

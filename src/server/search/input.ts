@@ -1,12 +1,22 @@
 import { z } from "zod";
 
 // What an agent searches by (spec section 3, row 4), with Rapid's limits: check-in from today
-// to 365 days ahead (UTC), 1 to 28 nights, one room, 1 to 8 adults, up to 6 children aged 0-17.
+// to 365 days ahead (UTC), 1 to 28 nights, 1 to 8 rooms (plan 10; Rapid: "Up to 8 rooms may be
+// requested or booked at once"), and in each room 1 to 8 adults and up to 6 children aged 0-17.
 // There is no nationality: Rapid takes only the point of sale (the agency's country, TR2).
+// Whether more than one room is allowed at all is the search service's check (multiRoomAllowed).
 
 const MAX_DAYS_AHEAD = 365;
 const MAX_NIGHTS = 28;
+export const MAX_ROOMS = 8;
 const DAY_MS = 86_400_000;
+
+export const roomSchema = z
+  .object({
+    adults: z.number().int().min(1).max(8),
+    childAges: z.array(z.number().int().min(0).max(17)).max(6),
+  })
+  .strict();
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -20,8 +30,7 @@ export function searchInputSchema(now: Date) {
       destinationId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
       checkin: isoDate,
       checkout: isoDate,
-      adults: z.number().int().min(1).max(8),
-      childAges: z.array(z.number().int().min(0).max(17)).max(6),
+      rooms: z.array(roomSchema).min(1).max(MAX_ROOMS),
     })
     .strict()
     .superRefine((value, ctx) => {

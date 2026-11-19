@@ -709,8 +709,9 @@ model RecentSearch {
   destinationName String
   checkin         String // YYYY-MM-DD
   checkout        String
-  adults          Int
-  childAges       Int[]
+  adults          Int // over all rooms
+  childAges       Int[] // over all rooms, in room order
+  rooms           Json? // plan 10: [{ adults, childAges }] in room order; null on older rows (one room)
   createdAt       DateTime @default(now())
 
   agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)

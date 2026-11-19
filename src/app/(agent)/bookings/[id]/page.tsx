@@ -52,7 +52,7 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
   if (!b || b.status === "DRAFT" || b.status === "EXPIRED") notFound();
   const notice = typeof q.notice === "string" ? NOTICES[q.notice] : undefined;
   const price = b.price as unknown as PriceBreakdown;
-  const stay = stayText({ nights: price.nights, adults: b.adults, childAges: b.childAges });
+  const stay = stayText({ nights: price.nights, rooms: [{ adults: b.adults, childAges: b.childAges }] }); // one room until plan 10 task 3
   const quote = cancelQuote(b, new Date());
   const support = supportContact();
   // Hotel policies after booking too (EXP), best effort: the booking page works without them.

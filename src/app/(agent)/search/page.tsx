@@ -6,9 +6,11 @@ import { requireAgent } from "@/server/auth/guards";
 import { destinationById } from "@/server/search/destinations";
 import { getQuote, listQuotes, quoteCode } from "@/server/quotes/quotes";
 import { recentSearches } from "@/server/search/recent";
+import { multiRoomAllowed } from "@/server/supplier";
 import { clearRecentAction, startSearchAction } from "./actions";
 import { SearchForm } from "./search-form";
 import { dateRange, defaultSearchValues } from "./dates";
+import { guestsText } from "./parts";
 import { quoteParam } from "./quote-param";
 
 export const metadata: Metadata = { title: "Search | Apolles" };
@@ -20,7 +22,8 @@ function one(v: string | string[] | undefined): string {
 }
 
 // Screen 07: hotel search. Opened from a quote ("+ Add hotel", plan 5b), it is filled with that
-// destination, its dates and the quote's guests, and the results offer "Add to quote" for it.
+// destination, its dates and the quote's guests (one room: quotes are for one room), and the
+// results offer "Add to quote" for it.
 export default async function SearchPage({ searchParams }: { searchParams: SearchParams }) {
   const { agencyId, userId } = await requireAgent();
   const now = new Date();
@@ -32,9 +35,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   const quote = quoteId ? await getQuote(agencyId, quoteId) : null;
   const stay = quote?.stays.find((s) => s.id === one(params.stay));
   if (quote) {
-    values.adults = String(quote.adults);
-    values.childCount = String(quote.childAges.length);
-    values.childAges = quote.childAges.map(String);
+    values.rooms = [{ adults: String(quote.adults), childAges: quote.childAges.map(String) }];
   }
   const [recent, selected] = await Promise.all([recentSearches({ agencyId, userId }), quote ? null : listQuotes(agencyId, { tab: "selected" })]);
   // "Search again" (?again=<id>): the agent's own recent search; dates already past fall back.
@@ -42,9 +43,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   if (again && !quote) {
     values.destinationId = again.destinationId;
     values.destinationLabel = again.destinationName;
-    values.adults = String(again.adults);
-    values.childCount = String(again.childAges.length);
-    values.childAges = again.childAges.map(String);
+    values.rooms = again.rooms.map((r) => ({ adults: String(r.adults), childAges: r.childAges.map(String) }));
     if (again.checkin >= minDate) {
       values.checkin = again.checkin;
       values.checkout = again.checkout;
@@ -72,7 +71,15 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
         </p>
       ) : null}
       <section className={`${card} mt-6 p-5`}>
-        <SearchForm key={again?.id ?? "new"} action={startSearchAction} values={values} minDate={minDate} maxDate={maxDate} quoteId={quote?.id ?? null} />
+        <SearchForm
+          key={again?.id ?? "new"}
+          action={startSearchAction}
+          values={values}
+          minDate={minDate}
+          maxDate={maxDate}
+          quoteId={quote?.id ?? null}
+          multiRoomAllowed={multiRoomAllowed()}
+        />
       </section>
       {!quote ? (
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
@@ -98,8 +105,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                     <span>
                       <strong className="block text-ink">{r.destinationName}</strong>
                       <span className="text-muted">
-                        {formatDmy(r.checkin)} to {formatDmy(r.checkout)} · {r.adults} {r.adults === 1 ? "adult" : "adults"}
-                        {r.childAges.length ? ` · ${r.childAges.length} ${r.childAges.length === 1 ? "child" : "children"}` : ""}
+                        {formatDmy(r.checkin)} to {formatDmy(r.checkout)} · {`${r.rooms.length > 1 ? `${r.rooms.length} rooms · ` : ""}${guestsText(r.adults, r.childAges.length, " · ")}`}
                       </span>
                     </span>
                     <Link href={`/search?again=${r.id}`} className={link}>

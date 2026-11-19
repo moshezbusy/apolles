@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import { seedRateLimit } from "@/test/rate-limit";
@@ -9,7 +9,8 @@ import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./erro
 import { cleanupSnapshots, findOffer, getHotelOffers, listResults, loadMore, searchOneHotel, searchSummary, snapshotOffers, startSearch } from "./search";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
-const input = { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [] as number[] };
+const input = { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", rooms: [{ adults: 2, childAges: [] as number[] }] };
+const twoRooms = [{ adults: 2, childAges: [9] }, { adults: 1, childAges: [] }];
 
 function offer(propertyId: string, totalMinor: number, refundable = true): Offer {
   return {
@@ -95,9 +96,15 @@ describe("search service", () => {
     ["check-in in the past", { checkin: "2027-02-27", checkout: "2027-03-02" }],
     ["check-in more than 365 days ahead", { checkin: "2028-03-02", checkout: "2028-03-04" }],
     ["checkout before check-in", { checkout: "2027-04-09" }],
-    ["no adults", { adults: 0 }],
-    ["a child of 18", { childAges: [18] }],
-    ["7 children", { childAges: [1, 2, 3, 4, 5, 6, 7] }],
+    ["no adults", { rooms: [{ adults: 0, childAges: [] }] }],
+    ["9 adults in a room", { rooms: [{ adults: 9, childAges: [] }] }],
+    ["a child of 18", { rooms: [{ adults: 2, childAges: [18] }] }],
+    ["7 children", { rooms: [{ adults: 2, childAges: [1, 2, 3, 4, 5, 6, 7] }] }],
+    ["no rooms", { rooms: [] }],
+    ["9 rooms", { rooms: Array.from({ length: 9 }, () => ({ adults: 1, childAges: [] })) }],
+    ["a room with 0 adults among others", { rooms: [{ adults: 2, childAges: [] }, { adults: 0, childAges: [3] }] }],
+    ["an unknown field in a room", { rooms: [{ adults: 2, childAges: [], extra: 1 }] }],
+    ["the old one-room fields", { rooms: undefined, adults: 2, childAges: [] }],
     ["a date that does not exist", { checkin: "2027-02-30" }],
   ])("refuses %s", async (_label, patch) => {
     await hotels(1);
@@ -288,6 +295,7 @@ describe("search service", () => {
       checkin: "2027-04-10",
       checkout: "2027-04-12",
       nights: 2,
+      rooms: [{ adults: 2, childAges: [] }],
       adults: 2,
       childAges: [],
       expired: false,
@@ -389,7 +397,7 @@ describe("search service", () => {
     const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
     const ref = { snapshotId, propertyId: "1", rateId: "rt1", bedGroupId: "b1" };
     const found = await findOffer("A", ref, NOW);
-    expect(found).toMatchObject({ offer: { rateId: "rt1" }, bedGroup: { id: "b1", priceCheckToken: "tok-a1" }, hotel: { name: "Hotel 1" }, query: { adults: 2 } });
+    expect(found).toMatchObject({ offer: { rateId: "rt1" }, bedGroup: { id: "b1", priceCheckToken: "tok-a1" }, hotel: { name: "Hotel 1" }, query: { adults: 2 }, rooms: [{ adults: 2, childAges: [] }] });
     expect(await findOffer("B", ref, NOW)).toBeNull();
     expect(await findOffer("A", { ...ref, bedGroupId: "nope" }, NOW)).toBeNull();
     expect(await findOffer("A", ref, new Date(NOW.getTime() + 31 * 60_000))).toBeNull();
@@ -402,6 +410,123 @@ describe("search service", () => {
     expect(await cleanupSnapshots(new Date(NOW.getTime() + 60 * 60_000))).toBe(0);
     expect(await cleanupSnapshots(new Date(NOW.getTime() + 2 * 60 * 60_000))).toBe(1);
     expect(await db.searchHotel.count()).toBe(0);
+  });
+});
+
+// Plan 10: several rooms in one search. More than one room only while the fake supplier is on
+// (the staging demo and tests): with Expedia it is refused before Expedia is asked.
+describe("search service: several rooms", () => {
+  beforeEach(async () => {
+    await resetTestDb();
+    await agency("A", "IL");
+    vi.stubEnv("SUPPLIER_MODE", "fake");
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  // An offer priced for the rooms asked: one price per room, the total their sum.
+  const forRooms = (q: AvailabilityQuery) =>
+    q.propertyIds.map((id) => {
+      const base = offer(id, 0);
+      const roomPrices = q.occupancies.map((_, i) => ({ ...base.price, total: { minor: 10_000 + i * 1_000, currency: "USD" } }));
+      const total = roomPrices.reduce((sum, p) => sum + p.total.minor, 0);
+      return { propertyId: id, offers: [{ ...base, price: { ...base.price, total: { minor: total, currency: "USD" } }, roomPrices }] };
+    });
+
+  it("asks the supplier for every room, in order, and keeps the rooms with the search", async () => {
+    await hotels(1);
+    const { adapter, searchAvailability } = fakeAdapter(forRooms);
+    const { snapshotId } = await startSearch(ctx(), { ...input, rooms: twoRooms }, { adapter, now: NOW });
+    expect(searchAvailability.mock.calls[0]![0].occupancies).toEqual(twoRooms);
+    expect((await db.searchSnapshot.findUniqueOrThrow({ where: { id: snapshotId } })).query).toMatchObject({ rooms: twoRooms });
+    expect(await searchSummary("A", snapshotId, NOW)).toMatchObject({ rooms: twoRooms, adults: 3, childAges: [9] });
+    const found = await findOffer("A", { snapshotId, propertyId: "1", rateId: "rt1", bedGroupId: "b1" }, NOW);
+    expect(found?.rooms).toEqual(twoRooms);
+    expect(found?.offer.roomPrices.map((p) => p.total.minor)).toEqual([10_000, 11_000]);
+    expect(found?.offer.price.total.minor).toBe(21_000);
+  });
+
+  it("load more asks for the same rooms", async () => {
+    await hotels(300);
+    const { adapter, searchAvailability } = fakeAdapter(forRooms);
+    const { snapshotId } = await startSearch(ctx(), { ...input, rooms: twoRooms }, { adapter, now: NOW });
+    await loadMore(ctx(), snapshotId, { adapter, now: NOW });
+    expect(searchAvailability.mock.calls[1]![0].occupancies).toEqual(twoRooms);
+  });
+
+  it("an offer from the supplier that is not priced for exactly the rooms asked is not kept", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter((q) => {
+      const [good] = forRooms(q)[0]!.offers;
+      const wrongSum = { ...good!, rateId: "sum", price: { ...good!.price, total: { minor: 1, currency: "USD" } } };
+      const oneRoom = { ...good!, rateId: "one", roomPrices: [good!.roomPrices[0]!], price: good!.roomPrices[0]! };
+      return [{ propertyId: "1", offers: [wrongSum, good!, oneRoom] }];
+    });
+    const { snapshotId } = await startSearch(ctx(), { ...input, rooms: twoRooms }, { adapter, now: NOW });
+    expect((await snapshotOffers("A", snapshotId, "1", NOW)).map((o) => o.rateId)).toEqual(["rt1"]);
+    const page = await listResults("A", snapshotId, { sort: "recommended" }, NOW);
+    expect(page?.hotels[0]).toMatchObject({ minTotal: { minor: 21_000 }, best: { offer: expect.objectContaining({ rateId: "rt1" }), otherRates: 0 } });
+  });
+
+  it("with the real supplier, more than one room is refused before the supplier is asked", async () => {
+    await hotels(1);
+    vi.stubEnv("SUPPLIER_MODE", "expedia");
+    const { adapter, searchAvailability } = fakeAdapter(forRooms);
+    await expect(startSearch(ctx(), { ...input, rooms: twoRooms }, { adapter, now: NOW })).rejects.toThrow(new SearchInputInvalid("Several rooms are not available yet."));
+    expect(searchAvailability).not.toHaveBeenCalled();
+    expect(await db.searchSnapshot.count()).toBe(0);
+    // One room is still fine.
+    await expect(startSearch(ctx(), input, { adapter, now: NOW })).resolves.toMatchObject({ snapshotId: expect.any(String) });
+  });
+
+  it("a search stored before rooms (adults and childAges at the top) reads as one room", async () => {
+    await hotels(1);
+    const snapshot = await db.searchSnapshot.create({
+      data: {
+        agencyId: "A",
+        userId: "u1",
+        query: { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [], countryCode: "IL" },
+        candidateIds: ["1"],
+        nextIndex: 1,
+        createdAt: NOW,
+        expiresAt: new Date(NOW.getTime() + 30 * 60_000),
+      },
+    });
+    const oldOffer: Partial<Offer> = offer("1", 20_000);
+    delete oldOffer.roomPrices; // stored before plan 10
+    await db.searchHotel.create({
+      data: { snapshotId: snapshot.id, propertyId: "1", position: 0, name: "Hotel 1", city: "Paris", minTotalMinor: 20_000, currency: "USD", refundableAvailable: true, offers: [oldOffer] },
+    });
+    expect(await searchSummary("A", snapshot.id, NOW)).toMatchObject({ rooms: [{ adults: 2, childAges: [] }], adults: 2, childAges: [] });
+    const found = await findOffer("A", { snapshotId: snapshot.id, propertyId: "1", rateId: "rt1", bedGroupId: "b1" }, NOW);
+    expect(found?.rooms).toEqual([{ adults: 2, childAges: [] }]);
+    expect(found?.offer.roomPrices).toEqual([found?.offer.price]);
+  });
+
+  it("a stored offer whose room prices do not add up to its total, or that has a price for another number of rooms, gives nothing", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(forRooms);
+    const { snapshotId } = await startSearch(ctx(), { ...input, rooms: twoRooms }, { adapter, now: NOW });
+    const ref = { snapshotId, propertyId: "1", rateId: "rt1", bedGroupId: "b1" };
+    const none = async () => new Map();
+    const stored = (await db.searchHotel.findFirstOrThrow({ where: { snapshotId } })).offers as unknown as Offer[];
+    const good = stored[0]!;
+    const save = (o: Offer) => db.searchHotel.updateMany({ where: { snapshotId }, data: { offers: [o] as never } });
+
+    await save({ ...good, price: { ...good.price, total: { minor: 21_001, currency: "USD" } } }); // 10,000 + 11,000 ≠ 21,001
+    expect(await findOffer("A", ref, NOW)).toBeNull();
+    expect(await getHotelOffers("A", snapshotId, "1", NOW, { content: none })).toBeNull();
+    expect(await snapshotOffers("A", snapshotId, "1", NOW)).toEqual([]);
+    expect((await listResults("A", snapshotId, { sort: "recommended" }, NOW))?.hotels[0]?.best).toBeNull();
+
+    await save({ ...good, roomPrices: [good.roomPrices[0]!, { ...good.roomPrices[1]!, total: { minor: 11_000, currency: "EUR" } }] }); // another currency
+    expect(await findOffer("A", ref, NOW)).toBeNull();
+
+    await save({ ...good, price: { ...good.price, total: { minor: 10_000, currency: "USD" } }, roomPrices: [good.roomPrices[0]!] }); // one room's price, two rooms searched
+    expect(await findOffer("A", ref, NOW)).toBeNull();
+    expect(await getHotelOffers("A", snapshotId, "1", NOW, { content: none })).toBeNull();
+
+    await save(good);
+    expect(await findOffer("A", ref, NOW)).not.toBeNull();
   });
 });
 

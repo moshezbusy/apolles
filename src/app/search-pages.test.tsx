@@ -58,11 +58,11 @@ describe("search action and destinations (screen 07)", () => {
   it("a valid search goes to its results page", async () => {
     signInAs("A");
     const { startSearchAction } = await import("./(agent)/search/actions");
-    const fields = { destinationId: "paris", destinationLabel: "Paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "2", childCount: "2", childAge: ["4", "9"] };
+    const fields = { destinationId: "paris", destinationLabel: "Paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), room_adults: "2", room_children: "4,9" };
     await expect(startSearchAction(null, form(fields))).rejects.toThrow(/NEXT_REDIRECT:\/search\/[a-z0-9]+$/);
     const snapshot = await db.searchSnapshot.findFirstOrThrow();
     expect(snapshot.agencyId).toBe("A");
-    expect(snapshot.query).toMatchObject({ destinationId: "paris", adults: 2, childAges: [4, 9], countryCode: "IL" });
+    expect(snapshot.query).toMatchObject({ destinationId: "paris", rooms: [{ adults: 2, childAges: [4, 9] }], countryCode: "IL" });
     expect(await db.searchHotel.count({ where: { snapshotId: snapshot.id } })).toBe(2);
   });
 
@@ -70,7 +70,7 @@ describe("search action and destinations (screen 07)", () => {
     await db.user.create({ data: { id: "user-1", email: "a@t.local", name: "A", role: "AGENT", agencyId: "A" } });
     signInAs("A");
     const { startSearchAction, clearRecentAction } = await import("./(agent)/search/actions");
-    const fields = { destinationId: "paris", destinationLabel: "Paris, France", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "3", childCount: "0" };
+    const fields = { destinationId: "paris", destinationLabel: "Paris, France", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), room_adults: "3", room_children: "" };
     await expect(startSearchAction(null, form(fields))).rejects.toThrow(/NEXT_REDIRECT/);
     const recent = await db.recentSearch.findFirstOrThrow();
     await db.quote.create({ data: { agencyId: "A", createdById: "user-1", title: "Paris Spring", status: "SELECTED", selectedAt: new Date() } });
@@ -98,7 +98,7 @@ describe("search action and destinations (screen 07)", () => {
     it("an agencyId in the form is never read: the search belongs to the session's agency", async () => {
     signInAs("B");
     const { startSearchAction } = await import("./(agent)/search/actions");
-    const fields = { agencyId: "A", destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "2" };
+    const fields = { agencyId: "A", destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), room_adults: "2" };
     await expect(startSearchAction(null, form(fields))).rejects.toThrow(/NEXT_REDIRECT/);
     expect((await db.searchSnapshot.findFirstOrThrow()).agencyId).toBe("B");
   });
@@ -106,15 +106,15 @@ describe("search action and destinations (screen 07)", () => {
   it("bad input gives a message and keeps what was typed", async () => {
     signInAs("A");
     const { startSearchAction } = await import("./(agent)/search/actions");
-    const state = await startSearchAction(null, form({ destinationId: "paris", destinationLabel: "Paris", checkin: isoDaysFromNow(12), checkout: isoDaysFromNow(10), adults: "two" }));
-    expect(state).toMatchObject({ status: "error", values: { destinationLabel: "Paris", adults: "two" } });
+    const state = await startSearchAction(null, form({ destinationId: "paris", destinationLabel: "Paris", checkin: isoDaysFromNow(12), checkout: isoDaysFromNow(10), room_adults: "two" }));
+    expect(state).toMatchObject({ status: "error", values: { destinationLabel: "Paris", rooms: [{ adults: "two", childAges: [] }] } });
     expect(await db.searchSnapshot.count()).toBe(0);
   });
 
   it("a child without an age is refused, never dropped from the search", async () => {
     signInAs("A");
     const { startSearchAction } = await import("./(agent)/search/actions");
-    const fields = { destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "2", childCount: "2", childAge: ["4"] };
+    const fields = { destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), room_adults: "2", room_children: "4," };
     const state = await startSearchAction(null, form(fields));
     expect(state?.message).toMatch(/age of each child/i);
     expect(await db.searchSnapshot.count()).toBe(0);
@@ -123,7 +123,7 @@ describe("search action and destinations (screen 07)", () => {
   it("no destination chosen from the list gives its own message", async () => {
     signInAs("A");
     const { startSearchAction } = await import("./(agent)/search/actions");
-    const state = await startSearchAction(null, form({ destinationId: "", destinationLabel: "Pari", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "2" }));
+    const state = await startSearchAction(null, form({ destinationId: "", destinationLabel: "Pari", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), room_adults: "2" }));
     expect(state?.message).toMatch(/destination/i);
   });
 
@@ -132,7 +132,7 @@ describe("search action and destinations (screen 07)", () => {
     vi.stubEnv("SUPPLIER_MODE", "");
     vi.stubEnv("EXPEDIA_API_KEY", "");
     const { startSearchAction } = await import("./(agent)/search/actions");
-    const state = await startSearchAction(null, form({ destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: "2" }));
+    const state = await startSearchAction(null, form({ destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), room_adults: "2" }));
     expect(state?.message).toMatch(/unavailable/i);
   });
 
@@ -152,8 +152,37 @@ describe("search action and destinations (screen 07)", () => {
     const html = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({}) }));
     expect(html).toContain("Hotel search");
     expect(html).toContain('name="checkin"');
-    expect(html).toContain('name="adults"');
+    expect(html).toContain('name="room_adults"');
     expect(html).not.toMatch(/nationality/i);
+    expect(html).toContain(">Add room<"); // the fake supplier is on: several rooms are allowed
+  });
+
+  it("several rooms (plan 10): the search, its recent line and Search again keep every room", async () => {
+    await db.user.create({ data: { id: "user-1", email: "a@t.local", name: "A", role: "AGENT", agencyId: "A" } });
+    signInAs("A");
+    const { startSearchAction } = await import("./(agent)/search/actions");
+    const fields = { destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), room_adults: ["2", "2"], room_children: ["7", ""] };
+    await expect(startSearchAction(null, form(fields))).rejects.toThrow(/NEXT_REDIRECT/);
+    expect((await db.searchSnapshot.findFirstOrThrow()).query).toMatchObject({ rooms: [{ adults: 2, childAges: [7] }, { adults: 2, childAges: [] }] });
+    const recent = await db.recentSearch.findFirstOrThrow();
+    const { default: SearchPage } = await import("./(agent)/search/page");
+    const html = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("2 rooms · 4 adults · 1 child");
+    const again = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({ again: recent.id }) }));
+    expect([...again.matchAll(/name="room_adults" value="(\d+)"/g)].map((m) => m[1])).toEqual(["2", "2"]);
+    expect([...again.matchAll(/name="room_children" value="([\d,]*)"/g)].map((m) => m[1])).toEqual(["7", ""]);
+  });
+
+  it("with the real supplier, more than one room is refused and the form offers no 'Add room'", async () => {
+    signInAs("A");
+    vi.stubEnv("SUPPLIER_MODE", "");
+    const { startSearchAction } = await import("./(agent)/search/actions");
+    const fields = { destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), room_adults: ["2", "1"], room_children: ["", ""] };
+    const state = await startSearchAction(null, form(fields));
+    expect(state).toMatchObject({ status: "error", message: "Several rooms are not available yet." });
+    expect(await db.searchSnapshot.count()).toBe(0);
+    const { default: SearchPage } = await import("./(agent)/search/page");
+    expect(renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({}) }))).not.toContain(">Add room<");
   });
 });
 
@@ -165,9 +194,9 @@ describe("results page (screen 08)", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  async function search(agencyId: string): Promise<string> {
+  async function search(agencyId: string, rooms = [{ adults: 2, childAges: [5] }]): Promise<string> {
     const { startSearch } = await import("@/server/search/search");
-    const input = { destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: 2, childAges: [5] };
+    const input = { destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), rooms };
     return (await startSearch({ agencyId, userId: "user-1", supplierContext: {} }, input)).snapshotId;
   }
 
@@ -190,6 +219,15 @@ describe("results page (screen 08)", () => {
     expect(html).toContain('name="room"');
     expect(html).toContain('name="free"');
     expect(html).not.toMatch(/per night/i); // no divided (rounded) price, BP5
+  });
+
+  it("several rooms: the stay names the rooms and the form keeps every room", async () => {
+    signInAs("A");
+    const id = await search("A", [{ adults: 2, childAges: [5] }, { adults: 2, childAges: [] }]);
+    const html = await renderResults(id);
+    expect(html).toContain("2 nights, 2 rooms, 4 adults, 1 child");
+    expect([...html.matchAll(/name="room_adults" value="(\d+)"/g)].map((m) => m[1])).toEqual(["2", "2"]);
+    expect(html).toContain("2 rooms · 5 guests");
   });
 
   it("each card shows the room behind its price, with Book this room and Add to quote for that rate (no price-check token)", async () => {
@@ -248,7 +286,7 @@ describe("hotel page (screen 09)", () => {
 
   async function searchAndRender(agencyId: string, viewer = agencyId): Promise<{ html: string; id: string }> {
     const { startSearch } = await import("@/server/search/search");
-    const input = { destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), adults: 2, childAges: [] };
+    const input = { destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), rooms: [{ adults: 2, childAges: [] }] };
     const { snapshotId } = await startSearch({ agencyId, userId: "user-1", supplierContext: {} }, input);
     signInAs(viewer);
     const { renderToStaticMarkup } = await import("react-dom/server");

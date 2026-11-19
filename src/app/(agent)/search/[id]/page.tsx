@@ -18,6 +18,7 @@ import { cancellationLabel } from "../../_components/rate-text";
 import { addToQuoteAction } from "../../quotes/actions";
 import { AddToQuote } from "../../quotes/add-to-quote";
 import { openQuotes, quoteCode } from "@/server/quotes/quotes";
+import { multiRoomAllowed } from "@/server/supplier";
 import type { HotelCard } from "@/server/search/search";
 
 export const metadata: Metadata = { title: "Search results | Apolles", robots: { index: false, follow: false } };
@@ -144,7 +145,7 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
   return (
     <main className="mx-auto w-[min(1260px,calc(100%-40px))] py-6">
       <section className={`${card} p-4`}>
-        <SearchForm action={startSearchAction} values={formValuesOf(summary)} minDate={minDate} maxDate={maxDate} compact quoteId={quoteId} />
+        <SearchForm action={startSearchAction} values={formValuesOf(summary)} minDate={minDate} maxDate={maxDate} compact quoteId={quoteId} multiRoomAllowed={multiRoomAllowed()} />
       </section>
 
       {summary.expired ? (

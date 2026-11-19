@@ -54,7 +54,7 @@ async function pick(stayId: string, roomId: string): Promise<void> {
 }
 
 async function addStay(checkin: string, checkout: string): Promise<void> {
-  const { snapshotId } = await startSearch(ctx(), { destinationId: "paris", checkin, checkout, adults: 2, childAges: [] }, { adapter: supplier(), now: NOW });
+  const { snapshotId } = await startSearch(ctx(), { destinationId: "paris", checkin, checkout, rooms: [{ adults: 2, childAges: [] }] }, { adapter: supplier(), now: NOW });
   const hotel = await db.searchHotel.findFirstOrThrow({ where: { snapshotId } });
   const offer = (hotel.offers as unknown as Offer[])[0]!;
   const added = await addFromSearch("u-A", "A", { quoteId: quoteId || "new", snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id }, NOW);
@@ -108,7 +108,7 @@ describe("book the client's selection from a quote", () => {
     const prepared = await prepareQuoteBooking(ctx(), stay!.id, { adapter: supplier(), now: NOW });
     expect(prepared).toMatchObject({ ok: true, rate: { p: "11", r: room.rateId, b: room.bedGroupId } });
     const snapshot = await db.searchSnapshot.findUniqueOrThrow({ where: { id: prepared.ok ? prepared.rate.s : "" } });
-    expect(snapshot).toMatchObject({ agencyId: "A", candidateIds: ["11"], query: expect.objectContaining({ checkin: "2027-04-10", checkout: "2027-04-12", adults: 2 }) });
+    expect(snapshot).toMatchObject({ agencyId: "A", candidateIds: ["11"], query: expect.objectContaining({ checkin: "2027-04-10", checkout: "2027-04-12", rooms: [{ adults: 2, childAges: [] }] }) });
   });
 
   it("the room is gone at the hotel: says so", async () => {
@@ -199,7 +199,7 @@ describe("book the client's selection from a quote", () => {
   it("a draft from a quote must be the stay's own hotel and dates, of the agency's own quote", async () => {
     const [stay] = await quoteStays();
     await pick(stay!.id, stay!.rooms[0]!.id);
-    const other = await startSearch(ctx(), { destinationId: "paris", checkin: "2027-05-01", checkout: "2027-05-03", adults: 2, childAges: [] }, { adapter: supplier(), now: NOW });
+    const other = await startSearch(ctx(), { destinationId: "paris", checkin: "2027-05-01", checkout: "2027-05-03", rooms: [{ adults: 2, childAges: [] }] }, { adapter: supplier(), now: NOW });
     const offer = ((await db.searchHotel.findFirstOrThrow({ where: { snapshotId: other.snapshotId } })).offers as unknown as Offer[])[0]!;
     const input = { snapshotId: other.snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, quoteStayId: stay!.id, guests, leadEmail: "d@example.com", leadPhone: { countryCode: "972", number: "501234567" } };
     await expect(createDraft(ctx(), input, { now: later(1) })).rejects.toThrow(/not the dates or hotel of this quote/);

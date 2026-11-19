@@ -55,7 +55,7 @@ async function seed(balance = 500_000) {
   await db.destination.create({ data: { id: "paris", name: "Paris", nameFull: "Paris, France", type: "city", countryCode: "FR", propertyCount: 1, seenRunId: "r" } });
   await db.property.create({ data: { id: "11", name: "Hotel 11", city: "Paris", countryCode: "FR", rank: 1, expediaCollect: true, active: true, catalogSeenRunId: "r" } });
   await db.destinationProperty.create({ data: { destinationId: "paris", propertyId: "11" } });
-  const { snapshotId } = await startSearch({ agencyId: "A", userId: "u-A", supplierContext: {} }, { destinationId: "paris", checkin: iso(30), checkout: iso(32), adults: 2, childAges: [6] });
+  const { snapshotId } = await startSearch({ agencyId: "A", userId: "u-A", supplierContext: {} }, { destinationId: "paris", checkin: iso(30), checkout: iso(32), rooms: [{ adults: 2, childAges: [6] }] });
   const hotel = await db.searchHotel.findFirstOrThrow({ where: { snapshotId } });
   return { snapshotId, offers: hotel.offers as unknown as Offer[] };
 }

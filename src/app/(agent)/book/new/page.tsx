@@ -46,7 +46,7 @@ export default async function GuestDetailsPage({ searchParams }: { searchParams:
     chosen === "none" ? Promise.resolve(null) : bookingPrefill(agencyId, chosen ? { clientId: chosen } : stayId ? { stayId } : {}),
     clientOptions(agencyId),
   ]);
-  const stay = stayText({ nights: offer.price.nights, adults: query.adults, childAges: query.childAges });
+  const stay = stayText({ nights: offer.price.nights, rooms: found.rooms });
   const guests = [
     ...Array.from({ length: query.adults }, (_, i) => `Adult ${i + 1}`),
     ...query.childAges.map((age, i) => `Child ${i + 1} (age ${age})`),

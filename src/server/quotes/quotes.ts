@@ -644,7 +644,9 @@ export async function addFromSearch(
   const input = parsed.data;
   const found = await findOffer(agencyId, { snapshotId: input.snapshotId, propertyId: input.propertyId, rateId: input.rateId, bedGroupId: input.bedGroupId }, now);
   if (!found) return fail("These prices expired (they are kept for 30 minutes). Search again.");
-  const { offer, bedGroup, hotel, query } = found;
+  const { offer, bedGroup, hotel, query, rooms } = found;
+  // Plan 10: a quote is for one room (several-room quotes are plan 10b).
+  if (rooms.length > 1) return fail("Quotes are for one room for now.");
   const destination = await db.destination.findUnique({ where: { id: query.destinationId }, select: { id: true, nameFull: true } });
   if (!destination) return fail("Search again and choose the room.");
   const property = await db.property.findUnique({ where: { id: offer.propertyId }, select: { starRating: true } });

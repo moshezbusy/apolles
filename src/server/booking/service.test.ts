@@ -51,7 +51,7 @@ async function setup(balanceCents = 500_000) {
   await db.property.create({ data: { id: "11", name: "Hotel 11", city: "Paris", countryCode: "FR", rank: 1, expediaCollect: true, active: true, catalogSeenRunId: "r" } });
   await db.destinationProperty.create({ data: { destinationId: "paris", propertyId: "11" } });
   const s = supplier();
-  const input = { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [7] };
+  const input = { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", rooms: [{ adults: 2, childAges: [7] }] };
   const { snapshotId } = await startSearch(ctx(), input, { adapter: s, now: NOW });
   const hotel = await db.searchHotel.findFirstOrThrow({ where: { snapshotId } });
   const offers = hotel.offers as unknown as Offer[];
@@ -151,6 +151,20 @@ describe("booking: draft and review", () => {
       createDraft(ctx(), { snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, guests: guests.slice(0, 2), leadEmail: "a@b.co", leadPhone: { countryCode: "972", number: "501234567" } }, { now: NOW }),
     ).rejects.toThrow(/every guest/);
     await expect(draft(snapshotId, offer, "B")).rejects.toThrow(/expired/);
+  });
+
+  it("a search of several rooms cannot be drafted until bookings have rooms (plan 10 task 3)", async () => {
+    await setup();
+    vi.stubEnv("SUPPLIER_MODE", "fake");
+    try {
+      const rooms = [{ adults: 2, childAges: [] }, { adults: 1, childAges: [] }];
+      const { snapshotId } = await startSearch(ctx(), { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", rooms }, { adapter: supplier(), now: NOW });
+      const offer = ((await db.searchHotel.findFirstOrThrow({ where: { snapshotId } })).offers as unknown as Offer[])[0]!;
+      await expect(draft(snapshotId, offer)).rejects.toThrow("Several rooms are not available yet.");
+      expect(await db.booking.count()).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("review checks the price again and keeps the old one when it changed", async () => {
