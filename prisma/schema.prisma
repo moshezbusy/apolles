@@ -550,6 +550,10 @@ model BookingRoom {
   cancelLink          String? // server-only
   status              BookingRoomStatus @default(ACTIVE)
   cancelledAt         DateTime?
+  // When this room's cancel was sent to the supplier (claimed just before the call): a room's
+  // cancel is sent once, never again by a retry or a second check. Cleared only when the whole
+  // booking is confirmed again (nothing of it was cancelled).
+  cancelRequestedAt   DateTime?
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
 

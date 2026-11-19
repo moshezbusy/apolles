@@ -294,6 +294,35 @@ describe("booking: book", () => {
     expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ totalMinor: total, chargedMinor: total, status: "CONFIRMED" });
   });
 
+  it("a price check that commits between book's read and the hold: review again, nothing held, nothing sent", async () => {
+    const { bookingId, total } = await reviewed();
+    const higher = supplier({
+      priceCheck: async () => {
+        const current = (await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).price as unknown as PriceBreakdown;
+        const price = { ...current, total: { minor: total + 5_000, currency: "USD" } };
+        return { status: "price_changed", bookToken: "fakebk-11-1-new", price, roomPrices: [price] };
+      },
+    });
+    // book() reads the booking and its rooms, then (before its hold) a price check commits.
+    const original = db.bookingRoom.findMany.bind(db.bookingRoom);
+    const spy = vi.spyOn(db.bookingRoom, "findMany").mockImplementationOnce((async (args: Parameters<typeof original>[0]) => {
+      const rows = await original(args);
+      expect((await prepareReview(ctx(), bookingId, { supplier: higher, now: later(2) })).kind).toBe("ready");
+      return rows;
+    }) as unknown as typeof db.bookingRoom.findMany);
+    const s = supplier();
+    try {
+      expect(await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: s, now: later(2) })).toMatchObject({ kind: "review_again" });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(s.calls.book).toBe(0);
+    expect(await getBalance("A")).toEqual({ balanceCents: 500_000, heldCents: 0 });
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "DRAFT", totalMinor: total + 5_000, holdId: null });
+    // Booked at the new price once the agent saw it.
+    expect((await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total + 5_000 }, { supplier: s, now: later(3) })).kind).toBe("confirmed");
+  });
+
   it("two clicks at the same moment: one hold, one supplier call", async () => {
     const { bookingId, total } = await reviewed();
     const s = supplier();
@@ -378,7 +407,7 @@ describe("booking: cancel", () => {
   it("free cancellation: the full amount is refunded after the supplier confirms", async () => {
     const { bookingId } = await confirmed(1);
     const b = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
-    expect(cancelQuote(b, later(10))).toEqual({ allowed: true, chargeMinor: 0, refundMinor: b.totalMinor });
+    expect(cancelQuote(b, await db.bookingRoom.findMany({ where: { bookingId } }), later(10))).toEqual({ allowed: true, chargeMinor: 0, refundMinor: b.totalMinor });
     const s = supplier();
     expect(await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: s, now: later(10) })).toEqual({ kind: "cancelled" });
     expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CANCELLED", refundMinor: b.totalMinor, cancelChargeMinor: 0 });
@@ -401,7 +430,8 @@ describe("booking: cancel", () => {
 
   it("no clear answer (202): CANCEL_PENDING, no refund yet; reconcile refunds once the supplier shows it cancelled", async () => {
     const { bookingId, total } = await confirmed(1);
-    const s = supplier({ cancelRoom: async () => { throw new SupplierOutcomeUnknown("202"); } });
+    // The supplier does cancel it, but its answer is not clear to us.
+    const s = supplier({ cancelRoom: async (l) => { await new FakeSupplierAdapter().cancelRoom(l); throw new SupplierOutcomeUnknown("202"); } });
     expect((await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: s, now: later(10) })).kind).toBe("pending");
     expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).status).toBe("CANCEL_PENDING");
     expect((await getBalance("A")).balanceCents).toBe(500_000 - total);
@@ -416,7 +446,7 @@ describe("booking: cancel", () => {
     const r = await reviewed(1);
     await book(ctx(), r.bookingId, { acceptedTerms: true, expectedTotalMinor: r.total }, { supplier: supplier({ book: async () => { throw new SupplierOutcomeUnknown("timeout"); } }), now: later(2) });
     expect(await reconcile(r.bookingId, { supplier: supplier(), now: later(5) })).toBe("confirmed");
-    const unclear = supplier({ cancelRoom: async () => { throw new SupplierOutcomeUnknown("202"); } });
+    const unclear = supplier({ cancelRoom: async (l) => { await new FakeSupplierAdapter().cancelRoom(l); throw new SupplierOutcomeUnknown("202"); } });
     expect((await cancel(ctx(), r.bookingId, { expectedChargeMinor: 0 }, { supplier: unclear, now: later(10) })).kind).toBe("pending");
     const jobs = await db.job.count({ where: { kind: "booking.reconcile" } });
     expect(jobs).toBeGreaterThan(2); // the cancellation got its own job (never skipped as a repeat)
@@ -683,6 +713,202 @@ describe("booking: several rooms", () => {
       expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "PENDING_CONFIRMATION", needsAttention: false });
       expect((await getBalance("A")).heldCents).toBe(total);
       expect(await reconcile(bookingId, { supplier: at([room(1, "booked"), room(2, "booked")]), now: later(10) })).toBe("confirmed");
+    });
+  });
+
+  // Cancelling cancels every room: one supplier call per room, with that room's own link, in
+  // room order, and one refund once every room is cancelled.
+  describe("cancel", () => {
+    async function confirmedRooms() {
+      const r = await reviewedRooms();
+      await book(ctx(), r.bookingId, { acceptedTerms: true, expectedTotalMinor: r.total }, { supplier: supplier(), now: later(2) });
+      const booking = await db.booking.findUniqueOrThrow({ where: { id: r.bookingId } });
+      expect(booking.status).toBe("CONFIRMED");
+      return { ...r, booking, reference: booking.reference, link1: `fake-cancel:${booking.reference}`, link2: `fake-cancel:${booking.reference}:2` };
+    }
+    // Room 2's cancel gets no clear answer, and the supplier has not done it (yet).
+    const room2Unclear = (sent: string[] = []) =>
+      supplier({
+        cancelRoom: async (link) => {
+          sent.push(link);
+          if (link.endsWith(":2")) throw new SupplierOutcomeUnknown("202");
+          return new FakeSupplierAdapter().cancelRoom(link);
+        },
+      });
+    const refunds = (bookingRef: string) => db.ledgerEntry.findMany({ where: { type: "REFUND", bookingRef } });
+    const roomEvents = async (bookingId: string) => (await db.bookingEvent.findMany({ where: { bookingId, reason: { contains: "room", mode: "insensitive" } }, orderBy: { createdAt: "asc" } })).map((e) => e.reason);
+
+    it("calls the supplier once per room with each room's own link; both rooms cancelled, one refund, booking cancelled", async () => {
+      const { bookingId, booking, link1, link2 } = await confirmedRooms();
+      const quote = cancelQuote(booking, await roomsOf(bookingId), later(10));
+      expect(quote).toEqual({ allowed: true, chargeMinor: 0, refundMinor: booking.totalMinor });
+      const sent: string[] = [];
+      const s = supplier({ cancelRoom: async (link) => { sent.push(link); return new FakeSupplierAdapter().cancelRoom(link); } });
+      expect(await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: s, now: later(10) })).toEqual({ kind: "cancelled" });
+      expect(sent).toEqual([link1, link2]);
+      const rooms = await roomsOf(bookingId);
+      expect(rooms.map((r) => r.status)).toEqual(["CANCELLED", "CANCELLED"]);
+      expect(rooms.every((r) => r.cancelledAt !== null)).toBe(true);
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CANCELLED", cancelChargeMinor: 0, refundMinor: booking.totalMinor });
+      expect((await refunds(booking.reference)).map((e) => e.amountCents)).toEqual([booking.totalMinor]);
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000, heldCents: 0 });
+      // Each room's cancellation is in the booking's audit trail, under the booking's own state.
+      const events = await db.bookingEvent.findMany({ where: { bookingId, reason: { contains: "Room" } }, orderBy: { createdAt: "asc" } });
+      expect(events.map((e) => [e.fromStatus, e.toStatus, e.reason])).toEqual([
+        ["CANCEL_PENDING", "CANCEL_PENDING", "Room 1 of 2 cancelled at the supplier"],
+        ["CANCEL_PENDING", "CANCEL_PENDING", "Room 2 of 2 cancelled at the supplier"],
+      ]);
+      expect((await db.job.findMany({ where: { kind: "email.booking" } })).map((j) => j.payload)).toContainEqual({ bookingId, event: "cancelled" });
+    });
+
+    it("room 1 cancelled and room 2's answer unclear: CANCEL_PENDING, no refund; reconcile finishes with one refund once the supplier shows both cancelled", async () => {
+      const { bookingId, booking, link1, link2 } = await confirmedRooms();
+      const sent: string[] = [];
+      expect((await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: room2Unclear(sent), now: later(10) })).kind).toBe("pending");
+      expect(sent).toEqual([link1, link2]);
+      expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).status).toBe("CANCEL_PENDING");
+      expect((await roomsOf(bookingId)).map((r) => r.status)).toEqual(["CANCELLED", "ACTIVE"]);
+      expect(await refunds(booking.reference)).toHaveLength(0);
+      // The supplier (the fake) has room 1 cancelled and room 2 still booked.
+      const theirs = await new FakeSupplierAdapter().retrieve({ retrieve: `fake-retrieve:${booking.reference}` });
+      expect(theirs.rooms.map((r) => r.status)).toEqual(["cancelled", "booked"]);
+
+      // Still booked a few minutes later: wait, and never send room 2's cancel again.
+      const s = supplier();
+      expect(await reconcile(bookingId, { supplier: s, now: later(15) })).toBe("retry");
+      expect(s.calls.cancelRoom).toBe(0);
+      // The supplier finishes room 2's cancellation; the next check refunds once.
+      await new FakeSupplierAdapter().cancelRoom(link2);
+      expect(await reconcile(bookingId, { supplier: s, now: later(20) })).toBe("cancelled");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CANCELLED", refundMinor: booking.totalMinor });
+      expect((await roomsOf(bookingId)).map((r) => r.status)).toEqual(["CANCELLED", "CANCELLED"]);
+      expect(await reconcile(bookingId, { supplier: s, now: later(25) })).toBe("nothing");
+      expect(s.calls.cancelRoom).toBe(0);
+      expect((await refunds(booking.reference)).map((e) => e.amountCents)).toEqual([booking.totalMinor]);
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000, heldCents: 0 });
+      expect(await roomEvents(bookingId)).toEqual(["Room 1 of 2 cancelled at the supplier", "Reconciled: room 2 of 2 cancelled at the supplier"]);
+    });
+
+    it("a retry of the cancel, or a second check, never cancels a room twice", async () => {
+      const { bookingId, total } = await confirmedRooms();
+      const sent: string[] = [];
+      const unclear = room2Unclear(sent);
+      await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: unclear, now: later(10) });
+      expect(await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: unclear, now: later(11) })).toMatchObject({ kind: "not_allowed" });
+      expect(await reconcile(bookingId, { supplier: unclear, now: later(12) })).toBe("retry");
+      expect(await reconcile(bookingId, { supplier: unclear, now: later(13) })).toBe("retry");
+      expect(sent).toHaveLength(2); // room 1 once, room 2 once
+      expect(await roomEvents(bookingId)).toEqual(["Room 1 of 2 cancelled at the supplier"]);
+      expect((await getBalance("A")).balanceCents).toBe(500_000 - total);
+    });
+
+    it("two cancels at the same moment: each room is sent once", async () => {
+      const { bookingId } = await confirmedRooms();
+      const s = supplier();
+      const results = await Promise.all([
+        cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: s, now: later(10) }),
+        cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: s, now: later(10) }),
+      ]);
+      expect(results.map((r) => r.kind).sort()).toEqual(["cancelled", "not_allowed"]);
+      expect(s.calls.cancelRoom).toBe(2);
+      expect(await db.ledgerEntry.count({ where: { type: "REFUND" } })).toBe(1);
+    });
+
+    it("rooms after an unclear answer are left to reconcile, which sends them once the rooms before them are cancelled", async () => {
+      const { bookingId, booking, link1, link2 } = await confirmedRooms();
+      const sent: string[] = [];
+      const room1Unclear = supplier({ cancelRoom: async (link) => { sent.push(link); if (!link.endsWith(":2")) throw new SupplierOutcomeUnknown("202"); return new FakeSupplierAdapter().cancelRoom(link); } });
+      expect((await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: room1Unclear, now: later(10) })).kind).toBe("pending");
+      expect(sent).toEqual([link1]); // the loop stopped at room 1
+      // Room 1 not cancelled at the supplier yet: wait, send nothing.
+      expect(await reconcile(bookingId, { supplier: room1Unclear, now: later(15) })).toBe("retry");
+      expect(sent).toEqual([link1]);
+      // The supplier finishes room 1: the check marks it and sends room 2, once.
+      await new FakeSupplierAdapter().cancelRoom(link1);
+      expect(await reconcile(bookingId, { supplier: room1Unclear, now: later(20) })).toBe("cancelled");
+      expect(sent).toEqual([link1, link2]);
+      expect((await refunds(booking.reference)).map((e) => e.amountCents)).toEqual([booking.totalMinor]);
+      expect(await roomEvents(bookingId)).toEqual(["Reconciled: room 1 of 2 cancelled at the supplier", "Room 2 of 2 cancelled at the supplier"]);
+    });
+
+    it("the charge is each room's own charge, summed; the refund is the rest of what was paid", async () => {
+      const { bookingId, booking } = await confirmedRooms();
+      const rooms = await roomsOf(bookingId);
+      const inPenalty = new Date("2027-04-08T10:00:00.000Z"); // after free cancellation ends, before check-in
+      const [penalty] = booking.cancelPenalties as unknown as { amount: { minor: number } }[];
+      // The fake's penalty is one room's base nightly price, whatever the room: each room is charged it (at most its own total).
+      const expected = rooms.reduce((n, r) => n + Math.min(penalty!.amount.minor, r.totalMinor), 0);
+      expect(expected).toBeGreaterThan(penalty!.amount.minor);
+      const paid = booking.chargedMinor!;
+      expect(cancelQuote(booking, rooms, inPenalty)).toEqual({ allowed: true, chargeMinor: expected, refundMinor: paid - expected });
+      // The browser's number must be the server's sum: one room's charge is refused.
+      const s = supplier();
+      expect((await cancel(ctx(), bookingId, { expectedChargeMinor: penalty!.amount.minor }, { supplier: s, now: inPenalty })).kind).toBe("not_allowed");
+      expect(s.calls.cancelRoom).toBe(0);
+      expect(await cancel(ctx(), bookingId, { expectedChargeMinor: expected }, { supplier: s, now: inPenalty })).toEqual({ kind: "cancelled" });
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CANCELLED", cancelChargeMinor: expected, refundMinor: paid - expected });
+      expect((await refunds(booking.reference)).map((e) => e.amountCents)).toEqual([paid - expected]);
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - expected, heldCents: 0 });
+    });
+
+    it("rooms that do not add up to what was paid cannot be cancelled online", async () => {
+      const { bookingId, booking } = await confirmedRooms();
+      const rooms = await roomsOf(bookingId);
+      expect(cancelQuote(booking, rooms.slice(0, 1), later(10))).toMatchObject({ allowed: false, reason: expect.stringMatching(/Apolles support/) });
+      expect(cancelQuote(booking, [], later(10))).toMatchObject({ allowed: false });
+    });
+
+    it("the supplier refuses room 1: nothing was cancelled, so the booking is confirmed again and no money moves", async () => {
+      const { bookingId, total } = await confirmedRooms();
+      const s = supplier({ cancelRoom: async () => { throw new SupplierRequestRejected("no", 400); } });
+      expect((await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: s, now: later(10) })).kind).toBe("refused");
+      expect(s.calls.cancelRoom).toBe(1);
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CONFIRMED", cancelChargeMinor: null });
+      expect((await roomsOf(bookingId)).map((r) => [r.status, r.cancelRequestedAt])).toEqual([["ACTIVE", null], ["ACTIVE", null]]);
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: 0 });
+      // It can be cancelled again later, every room sent afresh.
+      expect(await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: supplier(), now: later(20) })).toEqual({ kind: "cancelled" });
+    });
+
+    it("the supplier refuses room 2 after room 1 was cancelled: still cancelling, flagged for an admin, nothing refunded", async () => {
+      const { bookingId, booking, total } = await confirmedRooms();
+      const s = supplier({ cancelRoom: async (link) => { if (link.endsWith(":2")) throw new SupplierRequestRejected("no", 400); return new FakeSupplierAdapter().cancelRoom(link); } });
+      expect((await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: s, now: later(10) })).kind).toBe("part_refused");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CANCEL_PENDING", needsAttention: true });
+      expect(await roomEvents(bookingId)).toEqual(["Room 1 of 2 cancelled at the supplier", "Room 2 of 2: Supplier refused the cancellation: no"]);
+      expect((await roomsOf(bookingId)).map((r) => r.status)).toEqual(["CANCELLED", "ACTIVE"]);
+      expect(await refunds(booking.reference)).toHaveLength(0);
+      expect((await getBalance("A")).balanceCents).toBe(500_000 - total);
+      expect((await db.job.findMany({ where: { kind: "email.booking" } })).map((j) => j.payload)).toContainEqual({ bookingId, event: "needs_attention" });
+      // The checks never send it again, and never put a part-cancelled booking back.
+      expect(await reconcile(bookingId, { supplier: s, now: later(50) })).toBe("retry");
+      expect(s.calls.cancelRoom).toBe(2);
+      expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).status).toBe("CANCEL_PENDING");
+    });
+
+    it("room 2 still booked 30 minutes after its cancel, with room 1 cancelled: never put back, flagged for an admin", async () => {
+      const { bookingId, booking } = await confirmedRooms();
+      await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: room2Unclear(), now: later(10) });
+      const s = supplier();
+      expect(await reconcile(bookingId, { supplier: s, now: later(45) })).toBe("retry");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CANCEL_PENDING", needsAttention: true });
+      expect(s.calls.cancelRoom).toBe(0);
+      expect(await refunds(booking.reference)).toHaveLength(0);
+    });
+
+    it("rooms without their cancel link: one retrieve fills them before anything is sent; still missing: nothing sent, still confirmed", async () => {
+      const r = await reviewedRooms();
+      const down = supplier({ retrieve: async () => { throw new SupplierUnavailable("down", 503); } });
+      await book(ctx(), r.bookingId, { acceptedTerms: true, expectedTotalMinor: r.total }, { supplier: down, now: later(2) });
+      expect((await roomsOf(r.bookingId)).map((x) => x.cancelLink)).toEqual([null, null]);
+      // The supplier still cannot be reached: nothing is sent, the booking stays as it is.
+      expect((await cancel(ctx(), r.bookingId, { expectedChargeMinor: 0 }, { supplier: down, now: later(10) })).kind).toBe("not_allowed");
+      expect(down.calls.cancelRoom).toBe(0);
+      expect((await db.booking.findUniqueOrThrow({ where: { id: r.bookingId } })).status).toBe("CONFIRMED");
+      // Reachable again: the links are filled, then every room is cancelled.
+      const s = supplier();
+      expect(await cancel(ctx(), r.bookingId, { expectedChargeMinor: 0 }, { supplier: s, now: later(11) })).toEqual({ kind: "cancelled" });
+      expect(s.calls.cancelRoom).toBe(2);
     });
   });
 });

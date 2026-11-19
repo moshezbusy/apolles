@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cancelChargeAt } from "./cancel-charge";
+import { cancelChargeAt, cancelChargeForRooms } from "./cancel-charge";
 
 const base = { refundable: true, totalMinor: 50_000, currency: "USD", checkin: "2027-04-10" };
 const penalty = (start: string, end: string, extra: object) => ({ start, end, amount: null, nights: null, percent: null, ...extra });
@@ -47,5 +47,34 @@ describe("cancelChargeAt", () => {
   it("a charge never exceeds the total", () => {
     const big = [penalty("2027-04-01T00:00:00Z", "2027-04-11T00:00:00Z", { amount: { minor: 99_999, currency: "USD" } })];
     expect(cancelChargeAt({ ...base, penalties: big }, at("2027-04-05T00:00:00Z"))).toEqual({ kind: "charge", minor: 50_000 });
+  });
+});
+
+// Plan 10: a booking of several rooms is charged room by room, from each room's own total.
+describe("cancelChargeForRooms", () => {
+  const rate = { refundable: base.refundable, currency: base.currency, checkin: base.checkin };
+  const fixed = [penalty("2027-04-07T00:00:00+02:00", "2027-04-10T23:59:00+02:00", { amount: { minor: 12_000, currency: "USD" } })];
+
+  it("each room is charged the penalty, at most its own total, and the charges are added", () => {
+    expect(cancelChargeForRooms({ ...rate, penalties: fixed, roomTotalsMinor: [25_000, 25_000] }, at("2027-04-08T12:00:00Z"))).toEqual({ kind: "charge", minor: 24_000 });
+    expect(cancelChargeForRooms({ ...rate, penalties: fixed, roomTotalsMinor: [10_000, 40_000] }, at("2027-04-08T12:00:00Z"))).toEqual({ kind: "charge", minor: 22_000 });
+    expect(cancelChargeForRooms({ ...rate, penalties: fixed, roomTotalsMinor: [25_000, 25_000] }, at("2027-04-05T12:00:00Z"))).toEqual({ kind: "charge", minor: 0 });
+  });
+
+  it("one room is exactly the one-room charge", () => {
+    expect(cancelChargeForRooms({ ...rate, penalties: fixed, roomTotalsMinor: [50_000] }, at("2027-04-08T12:00:00Z"))).toEqual(cancelChargeAt({ ...base, penalties: fixed }, at("2027-04-08T12:00:00Z")));
+  });
+
+  it("a percentage is exact on every room's own total, or the whole charge is unknown", () => {
+    const half = [penalty("2027-04-01T00:00:00Z", "2027-04-11T00:00:00Z", { percent: "50%" })];
+    expect(cancelChargeForRooms({ ...rate, penalties: half, roomTotalsMinor: [30_000, 20_000] }, at("2027-04-05T00:00:00Z"))).toEqual({ kind: "charge", minor: 25_000 });
+    // 50,000 in all would divide, but room 2's 20,001 does not: never rounded.
+    expect(cancelChargeForRooms({ ...rate, penalties: half, roomTotalsMinor: [29_999, 20_001] }, at("2027-04-05T00:00:00Z"))).toEqual({ kind: "unknown" });
+  });
+
+  it("non-refundable: every room's total; after check-in: the stay started; no rooms: unknown", () => {
+    expect(cancelChargeForRooms({ ...rate, refundable: false, penalties: [], roomTotalsMinor: [30_000, 20_000] }, at("2027-04-01T00:00:00Z"))).toEqual({ kind: "charge", minor: 50_000 });
+    expect(cancelChargeForRooms({ ...rate, penalties: fixed, roomTotalsMinor: [30_000, 20_000] }, at("2027-04-11T12:00:00Z"))).toEqual({ kind: "stay_started" });
+    expect(cancelChargeForRooms({ ...rate, penalties: fixed, roomTotalsMinor: [] }, at("2027-04-05T12:00:00Z"))).toEqual({ kind: "unknown" });
   });
 });

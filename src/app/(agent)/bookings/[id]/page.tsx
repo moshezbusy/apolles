@@ -7,7 +7,7 @@ import { formatUsd } from "@/lib/money";
 import { supportContact } from "@/server/app-info";
 import { requireAgent } from "@/server/auth/guards";
 import { STATUS_LABEL } from "@/server/booking/list";
-import { cancelQuote, getBooking } from "@/server/booking/service";
+import { cancelQuote, getBooking, getBookingRooms } from "@/server/booking/service";
 import { getContent } from "@/server/content/content-cache";
 import type { CancelPenalty, PriceBreakdown, PropertyContent } from "@/server/supplier/types";
 import { type StoredGuest, guestLines } from "../../_components/guests";
@@ -27,6 +27,7 @@ const NOTICES: Record<string, { tone: "ok" | "info" | "error"; text: string }> =
   cancelled: { tone: "ok", text: "The booking is cancelled. The refund is in your balance." },
   cancel_pending: { tone: "info", text: "The cancellation was sent. We are waiting for the hotel to confirm it; the refund follows." },
   cancel_refused: { tone: "error", text: "The hotel did not accept the cancellation. Contact Apolles support." },
+  cancel_part_refused: { tone: "error", text: "The hotel did not cancel every room. Apolles support will finish the cancellation; the refund follows once every room is cancelled." },
   cancel_not_allowed: { tone: "error", text: "This booking cannot be cancelled online right now. Contact Apolles support." },
   cancel_confirm: { tone: "info", text: "Nothing was cancelled. Tick \"I understand\" to confirm the cancellation." },
 };
@@ -53,7 +54,9 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
   const notice = typeof q.notice === "string" ? NOTICES[q.notice] : undefined;
   const price = b.price as unknown as PriceBreakdown;
   const stay = stayText({ nights: price.nights, rooms: [{ adults: b.adults, childAges: b.childAges }] }); // one room until plan 10 task 3
-  const quote = cancelQuote(b, new Date());
+  // Plan 10: the charge is every room's own charge, added up (the rooms read without their supplier links).
+  const rooms = await getBookingRooms(agencyId, b.id);
+  const quote = cancelQuote(b, rooms, new Date());
   const support = supportContact();
   // Hotel policies after booking too (EXP), best effort: the booking page works without them.
   let content: PropertyContent | null = null;
@@ -233,6 +236,7 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
                     <dt className="text-muted">Returned to your balance</dt>
                     <dd className="text-right font-bold tabular-nums text-brand">{formatUsd(quote.refundMinor)}</dd>
                   </dl>
+                  {rooms.length > 1 ? <p className="text-muted">{`Cancelling cancels all ${rooms.length} rooms of this booking.`}</p> : null}
                   <p className="text-muted">The refund is added once the hotel confirms the cancellation.</p>
                   <input type="hidden" name="bookingId" value={b.id} />
                   <input type="hidden" name="expectedCharge" value={quote.chargeMinor} />

@@ -295,6 +295,46 @@ describe("booking screens", () => {
     expect(await getBalance("A")).toEqual({ balanceCents: 500_000, heldCents: 0 });
   });
 
+  it("several rooms (plan 10): the cancel box shows every room's charge added up, and cancelling cancels every room with one refund", async () => {
+    signInAs("A");
+    await seed();
+    // Check-in in 2 days: free cancellation (until 3 days before) has ended, so each room has a charge.
+    const { snapshotId } = await startSearch(
+      { agencyId: "A", userId: "u-A", supplierContext: {} },
+      { destinationId: "paris", checkin: iso(2), checkout: iso(4), rooms: [{ adults: 2, childAges: [6] }, { adults: 1, childAges: [] }] },
+    );
+    const offer = ((await db.searchHotel.findFirstOrThrow({ where: { snapshotId } })).offers as unknown as Offer[])[1]!;
+    const { createDraftAction, bookAction } = await import("./(agent)/book/actions");
+    const id = (await redirectOf(createDraftAction(null, form({ s: snapshotId, p: "11", r: offer.rateId, b: offer.bedGroups[0]!.id, ...guestFields, r1_given_0: "Yossi", r1_family_0: "Cohen" })))).replace("/book/", "");
+    const { default: ReviewPage } = await import("./(agent)/book/[id]/page");
+    renderToStaticMarkup(await ReviewPage({ params: Promise.resolve({ id }) })); // runs the price check
+    const booking = await db.booking.findUniqueOrThrow({ where: { id } });
+    expect(await redirectOf(bookAction(null, form({ bookingId: id, expectedTotal: String(booking.totalMinor), acceptedTerms: "on" })))).toBe(`/bookings/${id}`);
+
+    const rooms = await db.bookingRoom.findMany({ where: { bookingId: id }, orderBy: { index: "asc" } });
+    const [penalty] = booking.cancelPenalties as unknown as { amount: { minor: number } }[];
+    const charge = rooms.reduce((n, r) => n + Math.min(penalty!.amount.minor, r.totalMinor), 0); // each room's own charge
+    const { default: SummaryPage } = await import("./(agent)/bookings/[id]/page");
+    const html = renderToStaticMarkup(await SummaryPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({}) }));
+    expect(html).toContain("Cancelling cancels all 2 rooms of this booking.");
+    expect(html).toContain(`name="expectedCharge" value="${charge}"`);
+    expect(html).toContain(formatUsd(charge));
+    expect(html).toContain(formatUsd(booking.totalMinor - charge));
+    expect(html).not.toContain("fake-cancel");
+    const partNotice = renderToStaticMarkup(await SummaryPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({ notice: "cancel_part_refused" }) }));
+    expect(partNotice).toContain("The hotel did not cancel every room.");
+
+    const { cancelAction } = await import("./(agent)/bookings/[id]/actions");
+    // One room's charge is not the booking's charge: refused, nothing cancelled.
+    expect(await redirectOf(cancelAction(form({ bookingId: id, expectedCharge: String(penalty!.amount.minor), confirmFinal: "on" })))).toBe(`/bookings/${id}?notice=cancel_not_allowed`);
+    expect((await db.booking.findUniqueOrThrow({ where: { id } })).status).toBe("CONFIRMED");
+    expect(await redirectOf(cancelAction(form({ bookingId: id, expectedCharge: String(charge), confirmFinal: "on" })))).toBe(`/bookings/${id}?notice=cancelled`);
+    expect(await db.booking.findUniqueOrThrow({ where: { id } })).toMatchObject({ status: "CANCELLED", refundMinor: booking.totalMinor - charge });
+    expect((await db.bookingRoom.findMany({ where: { bookingId: id } })).map((r) => r.status)).toEqual(["CANCELLED", "CANCELLED"]);
+    expect(await db.ledgerEntry.count({ where: { type: "REFUND", bookingRef: booking.reference } })).toBe(1);
+    expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - charge, heldCents: 0 });
+  });
+
   it("another agency's booking id gives not found everywhere (no IDOR)", async () => {
     signInAs("A");
     const { snapshotId, offers } = await seed();

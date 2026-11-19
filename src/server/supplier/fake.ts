@@ -139,8 +139,15 @@ export class FakeSupplierAdapter implements SupplierAdapter, BookingSupplier {
 
   async cancelRoom(cancelLink: string): Promise<void> {
     if (!cancelLink.startsWith("fake-cancel:")) throw new SupplierRequestRejected("Fake supplier: unknown cancel link", 400);
+    cancelledAtFake.add(cancelLink);
   }
 }
+
+// Each room is cancelled at the fake on its own, only when its own cancel link was called (as
+// Rapid cancels room by room), so a test can see room 1 cancelled while room 2 is still booked.
+// Kept in memory: the fake is for tests and the staging demo only, and a room our database has
+// as cancelled reads as cancelled anyway (so a restarted demo server still agrees with it).
+const cancelledAtFake = new Set<string>();
 
 const FAKE_BOOKING_FIELDS = {
   reference: true,
@@ -159,21 +166,26 @@ type FakeBooking = {
 };
 
 // One supplier room per booked room (plan 10), in room order; room 1 keeps the ids it always had.
-// A booking without rooms (made before plan 10) is one room in the lead guest's name.
+// A booking without rooms (made before plan 10) is one room in the lead guest's name. A room is
+// cancelled once its own cancel link was called (or our database has it, or the whole booking,
+// cancelled); a booking that is only being cancelled is not cancelled here by itself.
 function fakeItinerary(booking: FakeBooking): RetrievedItinerary {
   const { reference } = booking;
-  const bookingCancelled = booking.status === "CANCELLED" || booking.status === "CANCEL_PENDING";
+  const bookingCancelled = booking.status === "CANCELLED";
   const rooms = booking.rooms.length > 0 ? booking.rooms : [{ status: "ACTIVE", givenName: booking.leadGivenName, familyName: booking.leadFamilyName }];
   return {
     itineraryId: `FAKE-${reference}`,
-    rooms: rooms.map((room, i) => ({
-      id: `room-${i + 1}`,
-      status: bookingCancelled || room.status === "CANCELLED" ? "cancelled" : "booked",
-      hotelConfirmationId: i === 0 ? `H-${reference.slice(-6)}` : `H-${reference.slice(-6)}-${i + 1}`,
-      cancelLink: i === 0 ? `fake-cancel:${reference}` : `fake-cancel:${reference}:${i + 1}`,
-      givenName: room.givenName,
-      familyName: room.familyName,
-    })),
+    rooms: rooms.map((room, i) => {
+      const cancelLink = i === 0 ? `fake-cancel:${reference}` : `fake-cancel:${reference}:${i + 1}`;
+      return {
+        id: `room-${i + 1}`,
+        status: bookingCancelled || room.status === "CANCELLED" || cancelledAtFake.has(cancelLink) ? "cancelled" : "booked",
+        hotelConfirmationId: i === 0 ? `H-${reference.slice(-6)}` : `H-${reference.slice(-6)}-${i + 1}`,
+        cancelLink,
+        givenName: room.givenName,
+        familyName: room.familyName,
+      };
+    }),
   };
 }
 

@@ -58,3 +58,18 @@ export function cancelChargeAt(input: Input, now: Date): ChargeResult {
   if (t >= lastEnd) return { kind: "stay_started" };
   return { kind: "charge", minor: 0 }; // before every penalty: free
 }
+
+// Several rooms (plan 10): every room is charged on its own total, from the rate's penalties
+// (all rooms share one rate), and the charges are added. Any room whose charge cannot be worked
+// out exactly makes the whole charge unknown; no rooms at all is unknown too.
+export function cancelChargeForRooms(input: Omit<Input, "totalMinor"> & { roomTotalsMinor: number[] }, now: Date): ChargeResult {
+  const { roomTotalsMinor, ...rate } = input;
+  if (roomTotalsMinor.length === 0) return { kind: "unknown" };
+  let sum = 0;
+  for (const totalMinor of roomTotalsMinor) {
+    const charge = cancelChargeAt({ ...rate, totalMinor }, now);
+    if (charge.kind !== "charge") return charge;
+    sum += charge.minor;
+  }
+  return Number.isSafeInteger(sum) ? { kind: "charge", minor: sum } : { kind: "unknown" };
+}

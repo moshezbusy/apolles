@@ -232,7 +232,7 @@ describe("a booked destination (review fixes)", () => {
     const { bookingId } = await bookStay(stay!.id);
     expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "BOOKED" });
     const booking = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
-    const charge = cancelQuote(booking, later(10));
+    const charge = cancelQuote(booking, await db.bookingRoom.findMany({ where: { bookingId } }), later(10));
     if (!charge.allowed) throw new Error(charge.reason);
     expect(await cancel(ctx(), bookingId, { expectedChargeMinor: charge.chargeMinor }, { supplier: supplier(), now: later(10) })).toEqual({ kind: "cancelled" });
     expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "SELECTED" });
