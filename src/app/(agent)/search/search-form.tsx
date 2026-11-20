@@ -89,6 +89,7 @@ function Fields({
   const panel = useRef<HTMLDetailsElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const added = useRef(false);
+  const done = useRef<HTMLButtonElement>(null);
   const guests = rooms.reduce((n, room) => n + room.adults + room.ages.length, 0);
   const update = (index: number, change: (room: Room) => Room) => setRooms((current) => current.map((room, i) => (i === index ? change(room) : room)));
 
@@ -96,7 +97,10 @@ function Fields({
   useEffect(() => {
     if (!added.current) return;
     added.current = false;
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+    // At the 8th room "+ Add a room" goes away: keep the keyboard focus in the panel.
+    if (rooms.length >= MAX_ROOMS) done.current?.focus();
   }, [rooms.length]);
 
   return (
@@ -151,6 +155,7 @@ function Fields({
               </button>
             ) : null}
             <button
+              ref={done}
               type="button"
               onClick={() => {
                 if (panel.current) panel.current.open = false;
@@ -276,6 +281,11 @@ function RoomFields({
 function AddChild({ onAdd, label: name, compact }: { onAdd: (age: string) => void; label: string; compact: boolean }) {
   const [open, setOpen] = useState(false);
   const listId = useId();
+  const list = useRef<HTMLDivElement>(null);
+  // The list opens inside the scrolling room list: bring it into view if it opened below it.
+  useEffect(() => {
+    if (open) list.current?.scrollIntoView({ block: "nearest" });
+  }, [open]);
   return (
     <>
       {compact ? (
@@ -305,7 +315,7 @@ function AddChild({ onAdd, label: name, compact }: { onAdd: (age: string) => voi
         </button>
       )}
       {open ? (
-        <div id={listId} role="group" aria-label="Age of the child" className="mt-1.5 max-h-56 basis-full overflow-y-auto rounded-[11px] border border-[#e1e6e3] bg-white p-1.5 shadow-[0_10px_26px_rgba(19,47,39,0.12)]">
+        <div ref={list} id={listId} role="group" aria-label="Age of the child" className="mt-1.5 max-h-56 basis-full overflow-y-auto rounded-[11px] border border-[#e1e6e3] bg-white p-1.5 shadow-[0_10px_26px_rgba(19,47,39,0.12)]">
           {AGES.map((n) => (
             <button
               key={n}
