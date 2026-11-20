@@ -33,8 +33,11 @@ describe("search form (plan 9)", () => {
     expect(html).not.toContain('type="date"');
   });
 
-  it("children are added straight by age: an 'Add a child' button opens the list of ages, no number-of-children box", () => {
-    expect(html).toMatch(/<button type="button" aria-expanded="false"[^>]*>Add a child/);
+  it("children are added straight by age: 'Add a child' (a small + once there are children) opens the list of ages, no number-of-children box", () => {
+    // This room has children: a small "+" after the chips, named for screen readers.
+    expect(html).toMatch(/<button type="button" aria-expanded="false"[^>]*aria-label="Add a child"[^>]*>/);
+    const none = render({ ...values, rooms: [{ adults: "2", childAges: [] }] });
+    expect(none).toMatch(/<button type="button" aria-expanded="false"[^>]*>Add a child/);
     expect(html).not.toMatch(/name="childCount"/);
     expect(html).not.toMatch(/<select[^>]*aria-label="Add a child"/); // arrow keys on a closed select would add children
   });
@@ -45,17 +48,29 @@ describe("search form (plan 9)", () => {
     expect(ageText("17")).toBe("17 years");
   });
 
-  it("each child is a chip with its age and a remove button; the room is sent as room_adults and room_children", () => {
-    expect(html).toContain("Child 1 · 4 years");
-    expect(html).toContain("Child 2 · 0 years");
+  it("each child is a small chip with its age and a remove button, side by side; the room is sent as room_adults and room_children", () => {
+    expect(html).toMatch(/>4 years<[\s\S]*>0 years</);
+    expect(html).not.toContain("Child 1 ·");
+    expect(html).toMatch(/<div class="[^"]*flex-wrap[^"]*"[^>]*>[\s\S]*4 years/); // chips wrap, one line each is gone
     expect(html).toMatch(/<button[^>]*aria-label="Remove child 1"/);
     expect(hidden(html, "room_adults")).toEqual(["2"]);
     expect(hidden(html, "room_children")).toEqual(["4,0"]);
     expect(html).not.toMatch(/name="childAge"/);
   });
 
+  it("adults are a - / + stepper (1 to 8), not a list", () => {
+    expect(html).toMatch(/<button type="button"[^>]*aria-label="Fewer adults"/);
+    expect(html).toMatch(/<button type="button"[^>]*aria-label="More adults"/);
+    expect(html).not.toMatch(/<select/);
+    const one = render({ ...values, rooms: [{ adults: "1", childAges: [] }] });
+    expect(one).toMatch(/<button type="button"[^>]*disabled=""[^>]*aria-label="Fewer adults"|<button type="button"[^>]*aria-label="Fewer adults"[^>]*disabled=""/);
+    const eight = render({ ...values, rooms: [{ adults: "8", childAges: [] }] });
+    expect(eight).toMatch(/<button type="button"[^>]*disabled=""[^>]*aria-label="More adults"|<button type="button"[^>]*aria-label="More adults"[^>]*disabled=""/);
+  });
+
   it("hides 'Add a child' at six children (the search limit)", () => {
     const six = render({ ...values, rooms: [{ adults: "2", childAges: ["1", "2", "3", "4", "5", "6"] }] });
+    expect(six).not.toContain('aria-label="Add a child"');
     expect(six).not.toContain(">Add a child");
     expect(six).toContain("Up to 6 children.");
   });
@@ -78,17 +93,24 @@ describe("search form: rooms (plan 10)", () => {
     expect(html).toContain("Same room type for all rooms.");
   });
 
-  it("'Remove room' from room 2 on; 'Add room' only when several rooms are allowed, up to 8", () => {
+  it("'Remove' from room 2 on; '+ Add a room' only when several rooms are allowed, up to 8", () => {
     const html = render(two, true);
-    expect(html).toMatch(/<button[^>]*aria-label="Remove room 2"/);
+    expect(html).toMatch(/<button[^>]*aria-label="Remove room 2"[^>]*>Remove</);
     expect(html).not.toMatch(/aria-label="Remove room 1"/);
-    expect(html).toMatch(/<button type="button"[^>]*>Add room</);
-    expect(render(values, false)).not.toContain(">Add room<");
+    expect(html).toMatch(/<button type="button"[^>]*>\+ Add a room</);
+    expect(html).toMatch(/aria-label="More adults in room 2"/);
+    expect(render(values, false)).not.toContain("Add a room");
     expect(render(values, false)).toContain("1 room · 4 guests");
     expect(render(values, false)).not.toContain("Same room type for all rooms.");
     const eight = render({ ...values, rooms: Array.from({ length: 8 }, () => ({ adults: "1", childAges: [] })) }, true);
-    expect(eight).not.toContain(">Add room<");
+    expect(eight).not.toContain("Add a room");
     expect(hidden(eight, "room_adults")).toHaveLength(8);
+  });
+
+  it("the rooms scroll inside the panel (fixed height: adding rooms never moves the page) and Done closes it", () => {
+    const html = render(two, true);
+    expect(html).toMatch(/data-rooms-scroll="true"[^>]*class="[^"]*overflow-y-auto|class="[^"]*overflow-y-auto[^"]*"[^>]*data-rooms-scroll="true"/);
+    expect(html).toMatch(/<button type="button"[^>]*>Done</);
   });
 
   it("with no rooms (a refused post), the form shows one room of two adults", () => {
