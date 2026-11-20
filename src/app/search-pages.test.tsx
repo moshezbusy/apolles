@@ -154,7 +154,7 @@ describe("search action and destinations (screen 07)", () => {
     expect(html).toContain('name="checkin"');
     expect(html).toContain('name="room_adults"');
     expect(html).not.toMatch(/nationality/i);
-    expect(html).toContain(">Add room<"); // the fake supplier is on: several rooms are allowed
+    expect(html).toContain(">+ Add a room<"); // the fake supplier is on: several rooms are allowed
   });
 
   it("several rooms (plan 10): the search, its recent line and Search again keep every room", async () => {
@@ -182,7 +182,7 @@ describe("search action and destinations (screen 07)", () => {
     expect(state).toMatchObject({ status: "error", message: "Several rooms are not available yet." });
     expect(await db.searchSnapshot.count()).toBe(0);
     const { default: SearchPage } = await import("./(agent)/search/page");
-    expect(renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({}) }))).not.toContain(">Add room<");
+    expect(renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({}) }))).not.toContain("+ Add a room");
   });
 });
 
