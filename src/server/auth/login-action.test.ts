@@ -1,6 +1,6 @@
 import { DEVICE_COOKIE, trustDevice } from "@/server/auth/signin-code";
 import { generateSecret } from "otplib";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
@@ -10,6 +10,7 @@ import { requireAdmin } from "@/server/auth/guards";
 import { loginAction } from "@/app/login/actions";
 import { RATE_LIMITS } from "@/server/rate-limit";
 import { seedRateLimit } from "@/test/rate-limit";
+import { DEMO_AGENT_EMAIL } from "@/server/content/demo-seed";
 
 type SetCall = { name: string; value: string; options: Record<string, unknown> };
 const setCalls: SetCall[] = [];
@@ -92,6 +93,44 @@ describe("loginAction", () => {
     });
     const session = await getSession(call.value);
     expect(session?.user.id).toBe(agent.id);
+  });
+
+  describe("staging demo agent", () => {
+    async function createDemoAgent() {
+      const agency = await db.agency.create({ data: { name: "Demo", country: "IL", bankReference: "APL-DEMO" } });
+      return createUser({ email: DEMO_AGENT_EMAIL, name: "Demo Agent", role: "AGENT", agencyId: agency.id, passwordHash });
+    }
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("with the demo supplier on → no email code, a verified session and /search", async () => {
+      vi.stubEnv("SUPPLIER_MODE", "fake");
+      const agent = await createDemoAgent();
+      await expect(loginAction(null, form({ email: DEMO_AGENT_EMAIL, password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/search");
+      const session = await getSession(setCalls[0]!.value);
+      expect(session?.user.id).toBe(agent.id);
+      expect(session?.emailVerifiedAt).not.toBeNull();
+      expect((await db.session.findUniqueOrThrow({ where: { id: session!.sessionId } })).codeHash).toBeNull();
+    });
+
+    it("with the real supplier → the demo agent still gets the email code", async () => {
+      vi.stubEnv("SUPPLIER_MODE", "expedia");
+      await createDemoAgent();
+      await expect(loginAction(null, form({ email: DEMO_AGENT_EMAIL, password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/login/verify");
+    });
+
+    it("with the demo supplier on → any other agent still gets the email code", async () => {
+      vi.stubEnv("SUPPLIER_MODE", "fake");
+      await createAgent();
+      await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/login/verify");
+    });
+
+    it("demo supplier asked for in production → the sign-in fails, no code skipped", async () => {
+      vi.stubEnv("SUPPLIER_MODE", "fake");
+      vi.stubEnv("APP_ENV", "production");
+      await createDemoAgent();
+      await expect(loginAction(null, form({ email: DEMO_AGENT_EMAIL, password: GOOD }))).rejects.toThrow("only for development");
+      expect(await db.session.count({ where: { emailVerifiedAt: { not: null } } })).toBe(0);
+    });
   });
 
   it("known device: the sign-in is complete, so earlier wrong passwords stop counting", async () => {
