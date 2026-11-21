@@ -47,6 +47,17 @@ export function parseListOptions(params: Params): ListOptions {
   return options;
 }
 
+// The price boxes are dropped when unreadable (above), so the page says why instead of showing
+// an empty box: not a number, or a minimum above the maximum. Empty boxes are fine.
+export function priceProblem(params: Params): string | null {
+  const typed = (v: string | string[] | undefined) => (one(v)?.trim() ?? "") !== "";
+  const min = usdToMinor(params.min);
+  const max = usdToMinor(params.max);
+  if ((typed(params.min) && min === undefined) || (typed(params.max) && max === undefined)) return "Enter prices as numbers, for example 250.";
+  if (min !== undefined && max !== undefined && min > max) return "The minimum price is above the maximum.";
+  return null;
+}
+
 // Cents → "250", "250.5" style text for the filter box, with integer math (no float division).
 export function minorToUsdText(minor: number): string {
   const cents = minor % 100;

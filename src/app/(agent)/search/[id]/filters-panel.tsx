@@ -25,3 +25,13 @@ export function FiltersPanel({ activeCount, children }: { activeCount: number; c
     </>
   );
 }
+
+// "Sort by" applies at once (the other filters wait for "Apply filters"): it sends the filters
+// form with what is in it now. Without JavaScript it waits for "Apply filters" like the rest.
+export function SortSelect({ defaultValue, className, children }: { defaultValue: string; className: string; children: ReactNode }) {
+  return (
+    <select name="sort" defaultValue={defaultValue} className={className} onChange={(event) => event.currentTarget.form?.requestSubmit()}>
+      {children}
+    </select>
+  );
+}

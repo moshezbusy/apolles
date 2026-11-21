@@ -64,7 +64,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   return (
     <main className="mx-auto w-[min(1260px,calc(100%-40px))] py-10">
       <h1 className={pageTitle}>Hotel search</h1>
-      <p className="mt-1 text-sm text-muted">Search live hotel availability and rates.</p>
+      <p className="mt-1 text-sm text-muted">Search hotel availability and rates.</p>
       {quote ? (
         <p className={`${alertInfo} mt-4`}>
           Adding hotels to {quoteCode(quote.number)} {quote.title ? `· ${quote.title}` : ""}. Choose a room, then &quot;Add to quote&quot;.

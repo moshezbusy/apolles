@@ -5,14 +5,14 @@ import { notFound } from "next/navigation";
 import { alertError, alertInfo, btnPrimary, btnSecondary, card, emptyState, input, inputUnsized, label, link } from "@/components/ui";
 import { formatMinor } from "@/lib/supplier-money";
 import { requireAgent } from "@/server/auth/guards";
-import { minorToUsdText, parseListOptions } from "@/server/search/list-options";
+import { minorToUsdText, parseListOptions, priceProblem } from "@/server/search/list-options";
 import { listResults, searchSummary, type ListOptions } from "@/server/search/search";
 import { startSearchAction } from "../actions";
 import { dateRange } from "../dates";
 import { HotelPhoto, Stars, formValuesOf, shortDate, stayText } from "../parts";
 import { SearchForm } from "../search-form";
 import { loadMoreAction } from "./actions";
-import { FiltersPanel } from "./filters-panel";
+import { FiltersPanel, SortSelect } from "./filters-panel";
 import { quoteParam } from "../quote-param";
 import { cancellationLabel } from "../../_components/rate-text";
 import { addToQuoteAction } from "../../quotes/actions";
@@ -124,6 +124,7 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
   if (!summary) notFound();
   const { minDate, maxDate } = dateRange(now);
   const options = parseListOptions(query);
+  const priceMessage = priceProblem(query);
   const result = await listResults(agencyId, id, options, now);
   if (!result) notFound();
   const kept = filterParams(options);
@@ -183,13 +184,13 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
               <form method="get" action={`/search/${id}`} className="mt-3 flex flex-col gap-4">
                 <label className={label}>
                   Sort by
-                  <select name="sort" defaultValue={options.sort} className={input}>
+                  <SortSelect defaultValue={options.sort} className={input}>
                     {SORTS.map((s) => (
                       <option key={s.value} value={s.value}>
                         {s.label}
                       </option>
                     ))}
-                  </select>
+                  </SortSelect>
                 </label>
                 <label className={label}>
                   Hotel name
@@ -205,6 +206,11 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                     <input type="text" inputMode="decimal" name="min" aria-label="Minimum price" placeholder="Min" defaultValue={priceField(options.minPriceMinor)} className={input} />
                     <input type="text" inputMode="decimal" name="max" aria-label="Maximum price" placeholder="Max" defaultValue={priceField(options.maxPriceMinor)} className={input} />
                   </div>
+                  {priceMessage ? (
+                    <p role="alert" className="text-xs font-semibold text-[#9b3b2e]">
+                      {priceMessage}
+                    </p>
+                  ) : null}
                 </fieldset>
                 <fieldset className="flex flex-col gap-1.5">
                   <legend className="mb-1.5 text-xs font-semibold text-[#37413d]">Star rating</legend>
@@ -253,7 +259,9 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                         <p className="text-[13px] text-muted">{hotel.city}</p>
                         {hotel.refundableAvailable ? (
                           <p>
-                            <span className="inline-block rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand">Free cancellation available</span>
+                            <span className="inline-block rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand">
+                              {hotel.best && !cancellationLabel(hotel.best.offer).refundable ? "Free cancellation on other rooms" : "Free cancellation available"}
+                            </span>
                           </p>
                         ) : null}
                         {hotel.best ? <CardRoom best={hotel.best} href={href} /> : null}
