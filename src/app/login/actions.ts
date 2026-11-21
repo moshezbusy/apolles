@@ -16,6 +16,7 @@ import {
 } from "@/server/auth/session";
 import { completeSignIn } from "@/server/auth/lockout";
 import { DEVICE_COOKIE, isTrustedDevice, sendSignInCode } from "@/server/auth/signin-code";
+import { isDemoAgentWithoutCode } from "@/server/content/demo-seed";
 
 export type LoginFormState = { error: string } | null;
 
@@ -51,7 +52,10 @@ export async function loginAction(
   if (previousToken) await destroySession(previousToken);
 
   // Plan 8e: an agent on a device Apolles does not know must enter an email code first.
-  const knownDevice = !result.needsTotp && (await isTrustedDevice(result.userId, cookieStore.get(DEVICE_COOKIE)?.value));
+  // The staging demo agent counts as a known device (demo-seed.ts).
+  const knownDevice =
+    !result.needsTotp &&
+    ((await isTrustedDevice(result.userId, cookieStore.get(DEVICE_COOKIE)?.value)) || (await isDemoAgentWithoutCode(result.userId)));
   // A known agent device completes the sign-in now (the run of failures is over).
   if (knownDevice && !(await completeSignIn(result.userId))) return { error: LOGIN_ERROR_COPY.LOCKED };
   // Admins: verified here (their second step is TOTP, checked by requireAdmin).

@@ -1,5 +1,6 @@
 import { issuePasswordToken } from "@/server/auth/password-tokens";
 import { db } from "@/server/db";
+import { isDemoSupplier } from "@/server/supplier";
 import { createUser } from "@/server/users";
 import { credit } from "@/server/wallet/ledger";
 
@@ -50,6 +51,15 @@ export async function seedDemoContent(): Promise<{ destinations: number; hotels:
 export const DEMO_AGENT_EMAIL = "demo-agent@apolles.test";
 const DEMO_AGENCY_ID = "demo-agency";
 const DEMO_BALANCE_CENTS = 1_000_000;
+
+// Staging demo only (SUPPLIER_MODE=fake, which is refused in production): the demo agent signs in
+// without the email code on a new device, so the owner can test without a mailbox. Every other
+// user, and the demo agent anywhere the fake supplier is off, still gets the code.
+export async function isDemoAgentWithoutCode(userId: string): Promise<boolean> {
+  if (!isDemoSupplier()) return false;
+  const user = await db.user.findUnique({ where: { id: userId }, select: { email: true } });
+  return user?.email === DEMO_AGENT_EMAIL;
+}
 
 export async function seedDemoAgent(appUrl: string): Promise<{ email: string; setPasswordLink: string | null }> {
   const agency = await db.agency.upsert({
