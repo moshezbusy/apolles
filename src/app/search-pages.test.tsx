@@ -151,6 +151,7 @@ describe("search action and destinations (screen 07)", () => {
     const { default: SearchPage } = await import("./(agent)/search/page");
     const html = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({}) }));
     expect(html).toContain("Hotel search");
+    expect(html).toContain("Search hotel availability and rates."); // not "live": the demo shows sample data
     expect(html).toContain('name="checkin"');
     expect(html).toContain('name="room_adults"');
     expect(html).not.toMatch(/nationality/i);
@@ -254,6 +255,26 @@ describe("results page (screen 08)", () => {
     const id = await search("A");
     const html = await renderResults(id, { sort: "price_asc", cursor: "0" });
     expect(html).toContain(`href="/search/${id}/hotels/11?sort=price_asc&amp;cursor=0"`);
+  });
+
+  it("free cancellation badge: says 'on other rooms' when the room shown is non-refundable", async () => {
+    signInAs("A");
+    const id = await search("A");
+    const html = await renderResults(id);
+    expect(html).toContain("Non-refundable");
+    expect(html).toContain("Free cancellation on other rooms");
+    expect(html).not.toContain("Free cancellation available");
+    const free = await renderResults(id, { free: "1" });
+    expect(free).toContain("Free cancellation available");
+    expect(free).not.toContain("on other rooms");
+  });
+
+  it("a price filter that cannot be read gives a message, not a silently emptied box", async () => {
+    signInAs("A");
+    const id = await search("A");
+    expect(await renderResults(id, { min: "abc" })).toContain("Enter prices as numbers, for example 250.");
+    expect(await renderResults(id, { min: "500", max: "100" })).toContain("The minimum price is above the maximum.");
+    expect(await renderResults(id, { min: "100" })).not.toContain("Enter prices as numbers");
   });
 
   it("filters come from the URL", async () => {

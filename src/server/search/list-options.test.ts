@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { minorToUsdText, parseListOptions, usdToMinor } from "./list-options";
+import { minorToUsdText, parseListOptions, priceProblem, usdToMinor } from "./list-options";
 
 describe("parseListOptions (results page URL → list options)", () => {
   it("reads every filter; prices in USD become cents with integer math", () => {
@@ -33,5 +33,22 @@ describe("minorToUsdText", () => {
   ])("%i → %s, and reads back to the same cents", (minor, text) => {
     expect(minorToUsdText(minor)).toBe(text);
     expect(usdToMinor(text)).toBe(minor);
+  });
+});
+
+describe("priceProblem (a message instead of a price box silently emptied)", () => {
+  it("a price that is not a number says so", () => {
+    expect(priceProblem({ min: "abc" })).toBe("Enter prices as numbers, for example 250.");
+    expect(priceProblem({ max: "-5" })).toBe("Enter prices as numbers, for example 250.");
+  });
+
+  it("a minimum above the maximum says so", () => {
+    expect(priceProblem({ min: "500", max: "100" })).toBe("The minimum price is above the maximum.");
+  });
+
+  it("good or empty prices: no message", () => {
+    expect(priceProblem({ min: "100", max: "250.50" })).toBeNull();
+    expect(priceProblem({ min: "", max: " " })).toBeNull();
+    expect(priceProblem({})).toBeNull();
   });
 });
