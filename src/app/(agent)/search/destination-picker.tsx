@@ -5,9 +5,18 @@ import { input } from "@/components/ui";
 
 // "Destination or hotel" box (screen 07): type two letters, pick a city or area from the list.
 // Only a destination picked from the list is sent (its id, in a hidden field); free text is
-// not a destination. Keyboard: arrows move, Enter picks, Escape closes.
+// not a destination. Keyboard: arrows move, Enter picks (the first one when none is highlighted),
+// Escape closes. A text with no match says so.
 
 type Destination = { id: string; label: string; type: string };
+
+export function enterChoice(options: Destination[], active: number): Destination | null {
+  return options[active >= 0 ? active : 0] ?? null;
+}
+
+export function noMatchText(typed: string): string {
+  return `No destination matches "${typed}". Check the spelling.`;
+}
 
 export function DestinationPicker({ defaultId, defaultLabel }: { defaultId: string; defaultLabel: string }) {
   const [text, setText] = useState(defaultLabel);
@@ -15,6 +24,8 @@ export function DestinationPicker({ defaultId, defaultLabel }: { defaultId: stri
   const [options, setOptions] = useState<Destination[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
+  // The text the shown list (or "no match") answers, so an old answer is never shown as current.
+  const [answered, setAnswered] = useState("");
   const listId = useId();
   const request = useRef<AbortController | null>(null);
 
@@ -30,6 +41,7 @@ export function DestinationPicker({ defaultId, defaultLabel }: { defaultId: stri
         if (!response.ok) return;
         const body = (await response.json()) as { destinations?: Destination[] };
         setOptions(Array.isArray(body.destinations) ? body.destinations : []);
+        setAnswered(q);
         setActive(-1);
         setOpen(true);
       } catch {
@@ -47,6 +59,7 @@ export function DestinationPicker({ defaultId, defaultLabel }: { defaultId: stri
 
   const searching = !(chosen?.label === text || text.trim().length < 2);
   const showList = open && searching && options.length > 0;
+  const showNoMatch = open && searching && options.length === 0 && answered === text.trim();
 
   return (
     <div className="relative">
@@ -71,16 +84,19 @@ export function DestinationPicker({ defaultId, defaultLabel }: { defaultId: stri
         }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onKeyDown={(event) => {
-          if (!showList) return;
+          if (!showList) {
+            if (event.key === "Escape") setOpen(false);
+            return;
+          }
           if (event.key === "ArrowDown") {
             event.preventDefault();
             setActive((i) => Math.min(i + 1, options.length - 1));
           } else if (event.key === "ArrowUp") {
             event.preventDefault();
             setActive((i) => Math.max(i - 1, 0));
-          } else if (event.key === "Enter" && active >= 0) {
+          } else if (event.key === "Enter") {
             event.preventDefault();
-            const option = options[active];
+            const option = enterChoice(options, active);
             if (option) pick(option);
           } else if (event.key === "Escape") {
             setOpen(false);
@@ -110,6 +126,14 @@ export function DestinationPicker({ defaultId, defaultLabel }: { defaultId: stri
             </li>
           ))}
         </ul>
+      ) : null}
+      {showNoMatch ? (
+        <p
+          role="status"
+          className="absolute left-0 right-0 z-40 mt-1.5 rounded-[11px] border border-[#e1e6e3] bg-white px-4 py-3 text-[13px] text-muted shadow-[0_15px_38px_rgba(19,47,39,0.14)]"
+        >
+          {noMatchText(text.trim())}
+        </p>
       ) : null}
     </div>
   );
