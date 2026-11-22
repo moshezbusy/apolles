@@ -146,6 +146,37 @@ describe("search service", () => {
     expect(await db.searchSnapshot.count({ where: { agencyId: "A" } })).toBe(50);
   });
 
+  it("an assistant search keeps its own cap and never deletes the agent's searches", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    for (let i = 0; i < 50; i++) {
+      await db.searchSnapshot.create({
+        data: { agencyId: "A", userId: "u1", query: {}, candidateIds: [], createdAt: new Date(NOW.getTime() - (100 - i) * 1000), expiresAt: NOW },
+      });
+    }
+    for (let i = 0; i < 25; i++) {
+      await db.rateLimitBucket.deleteMany({ where: { key: "ai-search:agency:A" } }); // the cap is under test, not the rate
+      await startSearch(ctx(), input, { adapter, now: new Date(NOW.getTime() + i * 1000), source: "AI" });
+    }
+    expect(await db.searchSnapshot.count({ where: { agencyId: "A", source: "WEB" } })).toBe(50);
+    expect(await db.searchSnapshot.count({ where: { agencyId: "A", source: "AI" } })).toBe(20);
+  });
+
+  it("assistant searches use their own rate bucket", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    // 10 assistant searches already made this minute (seedRateLimit covers the next window too).
+    await seedRateLimit("ai-search:agency:A", 10, 60_000);
+    await expect(startSearch(ctx(), input, { adapter, now: NOW, source: "AI" })).rejects.toBeInstanceOf(SearchRateLimited);
+    // The agent's own 30 a minute are untouched; the 31st is the web limit.
+    for (let i = 0; i < 30; i++) await startSearch(ctx(), input, { adapter, now: NOW });
+    await expect(startSearch(ctx(), input, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchRateLimited);
+    // And one below the assistant limit still works.
+    await db.rateLimitBucket.deleteMany({ where: { key: "ai-search:agency:A" } });
+    await seedRateLimit("ai-search:agency:A", 9, 60_000);
+    await expect(startSearch(ctx(), input, { adapter, now: NOW, source: "AI" })).resolves.toMatchObject({ snapshotId: expect.any(String) });
+  });
+
   it("stored offers are checked when read back; a damaged row gives nothing instead of a broken page", async () => {
     await hotels(1);
     const { adapter } = fakeAdapter(everyone);

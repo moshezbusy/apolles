@@ -65,6 +65,7 @@ model Agency {
   quotes         Quote[]
   application    AgencyApplication?
   recentSearches RecentSearch[]
+  aiConnections  AiConnection[]
 
   @@index([createdAt, id])
 }
@@ -155,6 +156,9 @@ model User {
   reviewedApplications AgencyApplication[]
   recentSearches       RecentSearch[]
   trustedDevices       TrustedDevice[]
+  aiConnections        AiConnection[]
+  aiAuthCodes          AiAuthCode[]
+  aiConnectWindows     AiConnectWindow[]
 
   @@index([agencyId])
 }
@@ -382,9 +386,18 @@ model SearchSnapshot {
   expiresAt    DateTime
   hotels       SearchHotel[]
   rates        SearchRate[]
+  // Who started the search. Assistant (AI) searches have their own cap, so they never push an
+  // agent's own searches out (plan 11).
+  source       SearchSource  @default(WEB)
 
   @@index([agencyId, createdAt])
+  @@index([agencyId, source, createdAt])
   @@index([expiresAt])
+}
+
+enum SearchSource {
+  WEB
+  AI
 }
 
 // One priced hotel in a search snapshot: its cheapest total and all its offers (Offer[]).
@@ -767,6 +780,90 @@ model TrustedDevice {
   tokenHash String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Search-only AI connector (plan 11). Only hashes of codes and tokens are stored, never the raw value.
+
+// An AI app that may ask to connect: registered by URL (client id metadata) or by dynamic registration.
+model AiClient {
+  id           String   @id @default(cuid())
+  clientIdUrl  String?  @unique
+  name         String
+  redirectUris String[]
+  createdAt    DateTime @default(now())
+
+  connections AiConnection[]
+  authCodes   AiAuthCode[]
+}
+
+// One agent's approval of one AI app. Revoking it stops every token under it.
+model AiConnection {
+  id            String    @id @default(cuid())
+  userId        String
+  agencyId      String
+  clientId      String
+  scope         String
+  resource      String
+  createdAt     DateTime  @default(now())
+  lastUsedAt    DateTime?
+  revokedAt     DateTime?
+  revokedReason String?
+
+  user   User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  agency Agency    @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  client AiClient  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  tokens AiToken[]
+
+  @@index([agencyId, revokedAt])
+  @@index([userId])
+  @@index([clientId])
+}
+
+// A one-time authorization code (PKCE), exchanged for tokens.
+model AiAuthCode {
+  id            String    @id @default(cuid())
+  codeHash      String    @unique
+  userId        String
+  clientId      String
+  redirectUri   String
+  codeChallenge String
+  resource      String
+  expiresAt     DateTime
+  usedAt        DateTime?
+
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client AiClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// An access and refresh token pair. A refresh token is used once (usedAt), then replaced.
+model AiToken {
+  id               String    @id @default(cuid())
+  connectionId     String
+  accessHash       String    @unique
+  refreshHash      String    @unique
+  accessExpiresAt  DateTime
+  refreshExpiresAt DateTime
+  usedAt           DateTime?
+
+  connection AiConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId])
+}
+
+// A short window opened by the agent's own signed-in session, in which an AI app may connect.
+model AiConnectWindow {
+  id        String    @id @default(cuid())
+  userId    String
+  sessionId String
+  expiresAt DateTime
+  usedAt    DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
