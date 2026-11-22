@@ -813,10 +813,11 @@ model AiConnection {
   revokedAt     DateTime?
   revokedReason String?
 
-  user   User      @relation(fields: [userId], references: [id], onDelete: Restrict)
-  agency Agency    @relation(fields: [agencyId], references: [id], onDelete: Restrict)
-  client AiClient  @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  tokens AiToken[]
+  user      User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  agency    Agency       @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  client    AiClient     @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  tokens    AiToken[]
+  authCodes AiAuthCode[]
 
   @@index([agencyId, revokedAt])
   @@index([userId])
@@ -834,9 +835,12 @@ model AiAuthCode {
   resource      String
   expiresAt     DateTime
   usedAt        DateTime?
+  // Set when the code is exchanged: a second use of the code revokes exactly this connection.
+  connectionId  String?
 
-  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  client AiClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client     AiClient      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  connection AiConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([expiresAt])

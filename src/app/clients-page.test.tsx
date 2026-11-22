@@ -30,7 +30,7 @@ let agentB: string;
 let daniel: string;
 
 function signInAs(agencyId: string, userId: string): void {
-  vi.mocked(requireAgent).mockResolvedValue({ userId, agencyId });
+  vi.mocked(requireAgent).mockResolvedValue({ userId, agencyId, sessionId: "session-1" });
 }
 
 async function render(params: Record<string, string> = {}): Promise<string> {

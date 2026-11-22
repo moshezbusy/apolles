@@ -28,7 +28,7 @@ async function createAgency(name: string, bankReference: string): Promise<string
 }
 
 function signInAs(agencyId: string): void {
-  vi.mocked(requireAgent).mockResolvedValue({ userId: "user-1", agencyId });
+  vi.mocked(requireAgent).mockResolvedValue({ userId: "user-1", agencyId, sessionId: "session-1" });
 }
 
 async function renderBalance(cursor?: string): Promise<string> {

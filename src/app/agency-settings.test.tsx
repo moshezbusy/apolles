@@ -36,7 +36,7 @@ let agencyB: string;
 let agentA: string;
 
 function signInAs(agencyId: string, userId = agentA): void {
-  vi.mocked(requireAgent).mockResolvedValue({ userId, agencyId });
+  vi.mocked(requireAgent).mockResolvedValue({ userId, agencyId, sessionId: "session-1" });
 }
 
 describe("agency settings", () => {

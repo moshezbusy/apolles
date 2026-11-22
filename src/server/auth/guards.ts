@@ -22,13 +22,14 @@ async function signInPath(): Promise<string> {
 
 // For every agent page and server action. The agencyId comes only from the session,
 // never from the request. Anyone else (no session, expired, suspended, admin) goes to /login.
-export async function requireAgent(): Promise<{ userId: string; agencyId: string }> {
+// `sessionId` lets the AI assistants tab tie a connect window to this browser's session.
+export async function requireAgent(): Promise<{ userId: string; agencyId: string; sessionId: string }> {
   const session = await currentSession();
   if (!session) redirect(await signInPath());
   if (session.user.role !== "AGENT" || !session.agency) redirect("/login");
   // Plan 8e: a new device must enter the email sign-in code first.
   if (!session.emailVerifiedAt) redirect("/login/verify");
-  return { userId: session.user.id, agencyId: session.agency.id };
+  return { userId: session.user.id, agencyId: session.agency.id, sessionId: session.sessionId };
 }
 
 // Only for /login/verify and its actions: an agent session still waiting for its sign-in code.

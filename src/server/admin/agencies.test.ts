@@ -143,6 +143,53 @@ describe("admin agencies", () => {
       });
     });
 
+    it("suspending an agency revokes its assistant connections in the same transaction", async () => {
+      const { agencyId, userId } = await createAgency(adminId, input);
+      const other = await createAgency(adminId, { ...input, agentEmail: "other@example.com" });
+      const client = await db.aiClient.create({ data: { name: "Claude", redirectUris: [] } });
+      const open = (u: string, a: string) =>
+        db.aiConnection.create({
+          data: {
+            userId: u,
+            agencyId: a,
+            clientId: client.id,
+            scope: "search:read",
+            resource: "https://mcp.example.test/mcp",
+            tokens: {
+              create: {
+                accessHash: `a-${u}`,
+                refreshHash: `r-${u}`,
+                accessExpiresAt: new Date(Date.now() + 3600_000),
+                refreshExpiresAt: new Date(Date.now() + 86_400_000),
+              },
+            },
+          },
+        });
+      const mine = await open(userId, agencyId);
+      const theirs = await open(other.userId, other.agencyId);
+
+      // A failure later in the same transaction (the suspension's audit row with an unknown
+      // actor) must roll the revocation back too.
+      await expect(setAgencyStatus("no-such-admin", agencyId, "SUSPENDED")).rejects.toThrow();
+      expect((await db.aiConnection.findUniqueOrThrow({ where: { id: mine.id } })).revokedAt).toBeNull();
+      expect(await db.aiToken.count({ where: { connectionId: mine.id } })).toBe(1);
+
+      await setAgencyStatus(adminId, agencyId, "SUSPENDED");
+      const revoked = await db.aiConnection.findUniqueOrThrow({ where: { id: mine.id } });
+      expect(revoked.revokedAt).not.toBeNull();
+      expect(revoked.revokedReason).toBe("agency_suspended");
+      expect(await db.aiToken.count({ where: { connectionId: mine.id } })).toBe(0);
+      const row = await db.auditLog.findFirstOrThrow({ where: { action: "ai.revoke_all" } });
+      expect(row).toMatchObject({ actorUserId: adminId, targetType: "Agency", targetId: agencyId });
+      // Another agency's connection is untouched.
+      expect((await db.aiConnection.findUniqueOrThrow({ where: { id: theirs.id } })).revokedAt).toBeNull();
+
+      // Reactivating does not bring the connection back: the agent connects again.
+      await setAgencyStatus(adminId, agencyId, "ACTIVE");
+      expect((await db.aiConnection.findUniqueOrThrow({ where: { id: mine.id } })).revokedAt).not.toBeNull();
+      expect(await db.aiToken.count({ where: { connectionId: mine.id } })).toBe(0);
+    });
+
     it("reactivate → ACTIVE + audit row agency.reactivate", async () => {
       const { agencyId } = await createAgency(adminId, input);
       await setAgencyStatus(adminId, agencyId, "SUSPENDED");

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { PasswordTokenPurpose, Role, AccountStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
+import { audit } from "@/server/audit";
+import { revokeUserConnections } from "@/server/ai/tokens";
 import { sendEmail, type EmailMessage } from "@/server/email/port";
 import { normalizeEmail } from "@/server/users";
 import { hashPassword, isValidPassword } from "@/server/auth/password";
@@ -84,8 +86,8 @@ export async function findUsablePasswordToken(raw: string): Promise<PasswordToke
 // Sets a new password through a link. The password rule is checked first, so a weak
 // password does not use up the link. The link is then claimed with one conditional UPDATE
 // (unused and unexpired) inside the same transaction that saves the password, clears any
-// lockout (agents only) and ends every session of the user: two parallel submits of one
-// link cannot both succeed, and a failure leaves nothing half-done.
+// lockout (agents only) and ends every session and AI assistant connection of the user: two
+// parallel submits of one link cannot both succeed, and a failure leaves nothing half-done.
 export async function consumePasswordToken(
   raw: string,
   newPassword: string,
@@ -136,6 +138,11 @@ export async function consumePasswordToken(
       data: { usedAt: now },
     });
     await destroyUserSessions(userId, tx);
+    // Plan 11: a new password also ends every AI assistant connection (same rule as sessions).
+    const revoked = await revokeUserConnections(userId, "password_set", tx);
+    if (revoked > 0) {
+      await audit(userId, "ai.revoke_all", "User", userId, undefined, { reason: "password_set", connections: revoked }, tx);
+    }
     // Plan 8e: every device is forgotten too; the next sign-in asks for an email code.
     await forgetDevices(userId, tx);
     return "OK";

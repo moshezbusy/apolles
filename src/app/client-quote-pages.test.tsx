@@ -43,7 +43,7 @@ const OFFER: Offer = {
 };
 
 function signInAs(agencyId: string, userId: string): void {
-  vi.mocked(requireAgent).mockResolvedValue({ userId, agencyId });
+  vi.mocked(requireAgent).mockResolvedValue({ userId, agencyId, sessionId: "session-1" });
 }
 
 beforeEach(async () => {

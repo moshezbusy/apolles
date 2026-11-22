@@ -26,7 +26,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/server/auth/guards", () => ({ requireAgent: vi.fn() }));
 
 function signInAs(agencyId: string): void {
-  vi.mocked(requireAgent).mockResolvedValue({ userId: `u-${agencyId}`, agencyId });
+  vi.mocked(requireAgent).mockResolvedValue({ userId: `u-${agencyId}`, agencyId, sessionId: "session-1" });
 }
 function iso(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);

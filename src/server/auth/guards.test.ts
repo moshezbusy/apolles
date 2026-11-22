@@ -68,9 +68,10 @@ describe("auth guards", () => {
     await expect(requireAgentPendingCode()).rejects.toThrow("NEXT_REDIRECT:/search");
   });
 
-    it("requireAgent with a valid agent session → userId and agencyId", async () => {
+    it("requireAgent with a valid agent session → userId, agencyId and this session's id", async () => {
     const { agent, agency } = await agentSession();
-    expect(await requireAgent()).toEqual({ userId: agent.id, agencyId: agency.id });
+    const { id: sessionId } = await db.session.findFirstOrThrow({ where: { userId: agent.id } });
+    expect(await requireAgent()).toEqual({ userId: agent.id, agencyId: agency.id, sessionId });
   });
 
   it("requireAgent with no cookie redirects to /login", async () => {
