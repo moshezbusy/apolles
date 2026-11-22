@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import {
   LOGO_MAX_BYTES,
   LOGO_RULE_COPY,
@@ -10,6 +11,7 @@ import {
   updateAgencyProfile,
 } from "@/server/agency-profile";
 import { headers } from "next/headers";
+import { openConnectWindow, revokeConnection } from "@/server/ai/tokens";
 import { requireAgent } from "@/server/auth/guards";
 import { requestResetWithinLimits } from "@/server/auth/password-tokens";
 import { getClientIp } from "@/server/client-ip";
@@ -106,4 +108,25 @@ export async function changePasswordAction(): Promise<SettingsFormState> {
   const account = await getAccount(userId, agencyId);
   if (account) await requestResetWithinLimits(account.email, getClientIp(await headers()));
   return { status: "success", message: "We emailed you a link to set a new password. It works for 1 hour." };
+}
+
+// ---------- AI assistants tab (search-only connector) ----------
+
+// "Connect assistant": opens the 10-minute window in which this browser session may click Allow,
+// then shows the connection link. No secret is in the redirect; the link is the public MCP address.
+export async function connectAssistantAction(): Promise<void> {
+  const { userId, sessionId } = await requireAgent();
+  await openConnectWindow(userId, sessionId);
+  redirect("/settings?tab=ai&connect=1");
+}
+
+const CONNECTION_ID = /^[a-z0-9]{1,64}$/; // cuid
+
+// "Revoke": only this agency's open connections can change (revokeConnection scopes by agencyId);
+// another agency's, an unknown or a malformed id changes nothing and gets the same answer.
+export async function revokeAssistantAction(formData: FormData): Promise<void> {
+  const { userId, agencyId } = await requireAgent();
+  const id = formData.get("connectionId");
+  if (typeof id === "string" && CONNECTION_ID.test(id)) await revokeConnection(agencyId, id, userId);
+  redirect("/settings?tab=ai&revoked=1");
 }

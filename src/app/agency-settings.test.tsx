@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Header } from "@/components/Header";
 import { requireAgent } from "@/server/auth/guards";
 import { getAgencyProfile, setAgencyLogo } from "@/server/agency-profile";
@@ -211,6 +211,139 @@ describe("agency settings", () => {
       const { requestResetWithinLimits } = await import("@/server/auth/password-tokens");
       expect(await changePasswordAction()).toMatchObject({ status: "success" });
       expect(vi.mocked(requestResetWithinLimits)).toHaveBeenCalledWith("a@sunrise.example", expect.any(String));
+    });
+  });
+
+  describe("AI assistants tab", () => {
+    const REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
+    async function aiTab(params: Record<string, string> = {}): Promise<string> {
+      const { default: Page } = await import("./(agent)/settings/page");
+      return renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tab: "ai", ...params }) }));
+    }
+    async function connection(agencyId: string, userId: string, name: string, extra: { createdAt?: Date; lastUsedAt?: Date | null } = {}) {
+      const client = await db.aiClient.create({ data: { name, redirectUris: [REDIRECT_URI] } });
+      return db.aiConnection.create({
+        data: { userId, agencyId, clientId: client.id, scope: "search:read", resource: "https://mcp.example.test/mcp", ...extra },
+      });
+    }
+
+    beforeEach(() => {
+      vi.stubEnv("AI_SEARCH_ENABLED", "true");
+      vi.stubEnv("MCP_PUBLIC_URL", "https://mcp.example.test/");
+      vi.stubEnv("APP_URL", "https://app.example.test");
+    });
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("the tab is hidden when the switch is off, and ?tab=ai then shows the profile", async () => {
+      vi.stubEnv("AI_SEARCH_ENABLED", "false");
+      const html = await aiTab();
+      expect(html).not.toContain("AI assistants");
+      expect(html).toContain('value="Sunrise Travel"');
+    });
+
+    it("the tab is listed when the switch is on", async () => {
+      const { default: Page } = await import("./(agent)/settings/page");
+      expect(renderToStaticMarkup(await Page())).toContain('href="/settings?tab=ai"');
+    });
+
+    it("empty state, the can / can't lists and the notice, as in mockup 20", async () => {
+      const html = await aiTab();
+      expect(html).toContain("Search hotels from Claude or ChatGPT. Search only: bookings, cancellations and your balance can&#x27;t be reached from an AI assistant.");
+      expect(html).toContain("Connect assistant");
+      expect(html).toContain("No assistants connected.");
+      for (const t of ["What the assistant can do", "Search hotels and rates", "Open a result in Apolles to book", "What it can&#x27;t do", "Book, cancel or issue vouchers", "See guests or your balance"]) expect(html).toContain(t);
+      expect(html).toContain("Revoking disconnects the assistant right away. To book, open the result in Apolles.");
+      expect(html).not.toContain("Your connection link");
+    });
+
+    it("lists Claude and ChatGPT with UTC dates, 'last used today' / a date / never used, and Revoke", async () => {
+      const now = new Date();
+      const claude = await connection(agencyA, agentA, "Claude", { createdAt: new Date("2026-11-12T23:30:00Z"), lastUsedAt: now });
+      await connection(agencyA, agentA, "ChatGPT", { createdAt: new Date("2026-11-03T08:00:00Z"), lastUsedAt: new Date("2026-11-18T10:00:00Z") });
+      await connection(agencyA, agentA, "Other", { createdAt: new Date("2026-11-01T08:00:00Z") });
+      const html = await aiTab();
+      expect(html).toContain("Connected Nov 12, 2026 · last used today");
+      expect(html).toContain("Connected Nov 3, 2026 · last used Nov 18, 2026");
+      expect(html).toContain("Connected Nov 1, 2026 · never used");
+      expect(html).toContain("AI assistant");
+      expect(html.match(/>Revoke</g)).toHaveLength(3);
+      expect(html).toContain(`value="${claude.id}"`);
+      expect(html).not.toContain("No assistants connected.");
+    });
+
+    it("does not list another agency's assistants", async () => {
+      const userB = (await createUser({ email: "b@other.example", name: "Ben", role: "AGENT", agencyId: agencyB })).id;
+      await connection(agencyB, userB, "ChatGPT");
+      expect(await aiTab()).toContain("No assistants connected.");
+    });
+
+    it("pages with a Show more link", async () => {
+      for (let i = 0; i < 21; i += 1) await connection(agencyA, agentA, "Claude", { createdAt: new Date(Date.UTC(2026, 10, 1, 0, i)) });
+      const html = await aiTab();
+      expect(html.match(/>Revoke</g)).toHaveLength(20);
+      const m = html.match(/href="\/settings\?tab=ai&amp;cursor=([a-z0-9]+)"/);
+      expect(m).not.toBeNull();
+      const next = await aiTab({ cursor: m![1]! });
+      expect(next.match(/>Revoke</g)).toHaveLength(1);
+      expect(next).not.toContain("Show more");
+      // A made-up cursor falls back to the first page instead of an error page.
+      expect((await aiTab({ cursor: "nope" })).match(/>Revoke</g)).toHaveLength(20);
+    });
+
+    it("Connect assistant opens a window for this session and redirects to the panel", async () => {
+      const { connectAssistantAction } = await import("./(agent)/settings/actions");
+      await expect(connectAssistantAction()).rejects.toThrow("NEXT_REDIRECT:/settings?tab=ai&connect=1");
+      expect(await db.aiConnectWindow.count({ where: { userId: agentA, sessionId: "session-1", usedAt: null } })).toBe(1);
+    });
+
+    it("connect=1 shows the link and the steps for Claude and ChatGPT", async () => {
+      const html = await aiTab({ connect: "1" });
+      expect(html).toContain("Your connection link");
+      expect(html).toMatch(/<input[^>]*readOnly=""[^>]*value="https:\/\/mcp\.example\.test\/mcp"/);
+      expect(html).toContain("This link works for the next 10 minutes. Start the connection in Claude or ChatGPT now.");
+      for (const t of [
+        "In Claude, open Settings → Connectors → Add custom connector.",
+        "Paste the link above and click Add.",
+        "In ChatGPT, open Settings → Connectors (or Apps) and add a custom connector.",
+        "Paste the link above as the server URL, with OAuth sign-in.",
+      ]) expect(html).toContain(t);
+      expect(html.match(/Sign in to Apolles when asked and click Allow\./g)).toHaveLength(2);
+    });
+
+    it("Connect assistant without an agent session opens nothing", async () => {
+      vi.mocked(requireAgent).mockRejectedValue(new Error("NEXT_REDIRECT:/login"));
+      const { connectAssistantAction } = await import("./(agent)/settings/actions");
+      await expect(connectAssistantAction()).rejects.toThrow("NEXT_REDIRECT:/login");
+      expect(await db.aiConnectWindow.count()).toBe(0);
+    });
+
+    it("Revoke disconnects the assistant: audit row, and its token stops working", async () => {
+      const { exchangeCode, issueAuthCode, verifyAiToken } = await import("@/server/ai/tokens");
+      const { createHash, randomBytes } = await import("node:crypto");
+      const client = await db.aiClient.create({ data: { name: "Claude", redirectUris: [REDIRECT_URI] } });
+      const verifier = randomBytes(32).toString("base64url");
+      const resource = "https://mcp.example.test/mcp";
+      const code = await issueAuthCode({ userId: agentA, clientId: client.id, redirectUri: REDIRECT_URI, codeChallenge: createHash("sha256").update(verifier).digest("base64url"), resource });
+      const pair = await exchangeCode({ code, clientId: client.id, redirectUri: REDIRECT_URI, codeVerifier: verifier, resource });
+      if (!("accessToken" in pair)) throw new Error("exchange failed");
+      expect(await verifyAiToken(pair.accessToken, resource)).not.toBeNull();
+      const conn = await db.aiConnection.findFirstOrThrow({ where: { userId: agentA } });
+
+      const { revokeAssistantAction } = await import("./(agent)/settings/actions");
+      await expect(revokeAssistantAction(form({ connectionId: conn.id }))).rejects.toThrow("NEXT_REDIRECT:/settings?tab=ai&revoked=1");
+      expect(await verifyAiToken(pair.accessToken, resource)).toBeNull();
+      expect(await db.auditLog.count({ where: { action: "ai.revoke", targetId: conn.id } })).toBe(1);
+      expect(await aiTab({ revoked: "1" })).toContain("Assistant disconnected.");
+    });
+
+    it("Revoke of another agency's connection changes nothing; bad ids are ignored", async () => {
+      const userB = (await createUser({ email: "b@other.example", name: "Ben", role: "AGENT", agencyId: agencyB })).id;
+      const theirs = await connection(agencyB, userB, "ChatGPT");
+      const { revokeAssistantAction } = await import("./(agent)/settings/actions");
+      await expect(revokeAssistantAction(form({ connectionId: theirs.id }))).rejects.toThrow("NEXT_REDIRECT:/settings?tab=ai&revoked=1");
+      await expect(revokeAssistantAction(form({ connectionId: "../x'; DROP" }))).rejects.toThrow("NEXT_REDIRECT:/settings?tab=ai&revoked=1");
+      expect((await db.aiConnection.findUniqueOrThrow({ where: { id: theirs.id } })).revokedAt).toBeNull();
+      expect(await db.auditLog.count({ where: { action: "ai.revoke" } })).toBe(0);
     });
   });
 
