@@ -325,3 +325,76 @@ docker compose -p apolles-staging exec apolles-staging node --disable-warning=MO
 ```
 
 No password is ever written in code.
+
+## 7. AI search connector (MCP)
+
+**What it is.** An agent can connect Claude to Apolles and ask it to search hotels in plain
+words. It is **search only**: the assistant cannot book, cancel or see balances, and it only
+sees what that agent could see on the search page. The connector is a small extra container,
+`apolles-staging-mcp` (same image, 128 MB, no database and no Expedia keys). It reaches the
+app only through the app's internal AI API, on the private Docker network.
+
+**The switch.** `AI_SEARCH_ENABLED` in `deploy/staging/.env`. It is **off unless the value is
+exactly `true`**. Owner decision: it stays off on production until Expedia has answered. To
+test on staging, add `AI_SEARCH_ENABLED=true`.
+
+Add these three lines to `deploy/staging/.env` (they are also listed, without values, in
+`.env.example`), then recreate the containers:
+
+```sh
+AI_SEARCH_ENABLED=true
+MCP_PUBLIC_URL=https://mcp-staging.<domain>
+AI_MCP_SERVICE_KEY=<run: openssl rand -base64 48>
+```
+
+- `MCP_PUBLIC_URL` is the connector's own public address: a new subdomain, `https`, no path.
+- `AI_MCP_SERVICE_KEY` is the secret the connector uses to talk to the app. Generate it on the
+  server with `openssl rand -base64 48`, paste it into `.env`, and never print or share it.
+  The app container and the connector container both get it from `.env`. The connector gets
+  nothing else from that file, only `MCP_PUBLIC_URL`, `AI_MCP_SERVICE_KEY` and `APP_URL`
+  (passed on as `APP_PUBLIC_URL`). A test (`src/server/ai/compose.test.ts`) fails if the
+  database or Expedia settings ever reach it.
+
+```sh
+cd /home/moshezbusy/apolles-staging/deploy/staging
+docker compose -p apolles-staging up -d --build
+docker compose -p apolles-staging logs --tail 50 apolles-staging-mcp
+```
+
+If `MCP_PUBLIC_URL` or `AI_MCP_SERVICE_KEY` is missing, compose stops and names the variable.
+
+**Caddy.** Two edits to the Caddyfile (back it up and edit in place, as in section 2):
+
+1. A new site block for the subdomain, with the same `header` lines as staging:
+
+   ```caddy
+   mcp-staging.<domain> {
+   	import cf_only
+   	reverse_proxy apolles-staging-mcp:8080
+   }
+   ```
+
+2. In the existing `staging.apolles.com` block, **before** its `reverse_proxy`, hide the
+   app's internal AI API, so it can never be reached from the internet:
+
+   ```caddy
+   	@aiapi path /api/ai/*
+   	respond @aiapi 404
+   ```
+
+Validate and reload as in section 2. The new subdomain needs a proxied (orange-cloud) DNS record
+in Cloudflare. Claude connects from Anthropic's addresses, `160.79.104.0/21` and
+`153.61.208.0/20`: do not block them in a firewall.
+
+**How to test.**
+
+1. Log in to staging as an agent, open **Settings**, then the AI assistants tab, and click **Connect assistant**. It shows a connection link, valid for 10 minutes.
+2. In Claude: Settings, Connectors, **Add custom connector**. Use the address
+   `<MCP_PUBLIC_URL>/mcp` (for example `https://mcp-staging.<domain>/mcp`).
+3. Click **Connect**, log in to Apolles if asked, and approve. Then ask Claude to search for
+   hotels, for example "hotels in Paris, 2 adults, 10 to 12 December".
+
+**How to revoke.** The agent clicks revoke next to the assistant in the same Settings tab (it then shows
+"Assistant disconnected."). To stop everything at once, remove `AI_SEARCH_ENABLED`
+from `.env` (or set it to anything but `true`) and recreate the containers: every connector
+call is then refused. Changing `AI_MCP_SERVICE_KEY` cuts the connector off from the app.

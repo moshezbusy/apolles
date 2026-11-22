@@ -85,6 +85,37 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # The AI search connector (plan 11): a small MCP server that lets Claude search hotels for an
+  # agent. Same image, no database and no supplier keys: it has NO env file on purpose, and only
+  # the five settings below. Compose fills the ${...} values from ./.env on the server, so no
+  # other value of that file enters this container. It talks to the app only through the app's
+  # internal AI API (on this network, never through Caddy).
+  apolles-staging-mcp:
+    image: apolles-staging-app
+    restart: unless-stopped
+    init: true
+    mem_limit: 128m
+    environment:
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:?set MCP_PUBLIC_URL in deploy/staging/.env}
+      APOLLES_INTERNAL_URL: http://apolles-staging:3000
+      AI_MCP_SERVICE_KEY: ${AI_MCP_SERVICE_KEY:?set AI_MCP_SERVICE_KEY in deploy/staging/.env}
+      APP_PUBLIC_URL: ${APP_URL:?set APP_URL in deploy/staging/.env}
+      PORT: "8080"
+    entrypoint: ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--import", "./prisma/ts-loader.mjs", "src/mcp/server.ts"]
+    depends_on:
+      apolles-staging:
+        condition: service_started
+    networks:
+      - apolles_staging_net
+      # Caddy reaches it as apolles-staging-mcp:8080.
+      - n8n_default
+    # No published ports: traffic comes only through Caddy.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   apolles_staging_db:
 
