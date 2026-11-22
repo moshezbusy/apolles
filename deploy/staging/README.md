@@ -338,6 +338,9 @@ app only through the app's internal AI API, on the private Docker network.
 exactly `true`**. Owner decision: it stays off on production until Expedia has answered. To
 test on staging, add `AI_SEARCH_ENABLED=true`.
 
+`APP_URL` must also be set in `deploy/staging/.env` (it already is, for the app; the connector
+now needs it too, as its login server address, and compose stops if it is missing).
+
 Add these three lines to `deploy/staging/.env` (they are also listed, without values, in
 `.env.example`), then recreate the containers:
 
@@ -365,11 +368,16 @@ If `MCP_PUBLIC_URL` or `AI_MCP_SERVICE_KEY` is missing, compose stops and names 
 
 **Caddy.** Two edits to the Caddyfile (back it up and edit in place, as in section 2):
 
-1. A new site block for the subdomain, with the same `header` lines as staging:
+1. A new site block for the subdomain, with the same `header` lines as the staging block in section 2:
 
    ```caddy
    mcp-staging.<domain> {
    	import cf_only
+   	header {
+   		Strict-Transport-Security "max-age=31536000"
+   		X-Content-Type-Options "nosniff"
+   		-Server
+   	}
    	reverse_proxy apolles-staging-mcp:8080
    }
    ```
@@ -393,6 +401,12 @@ in Cloudflare. Claude connects from Anthropic's addresses, `160.79.104.0/21` and
    `<MCP_PUBLIC_URL>/mcp` (for example `https://mcp-staging.<domain>/mcp`).
 3. Click **Connect**, log in to Apolles if asked, and approve. Then ask Claude to search for
    hotels, for example "hotels in Paris, 2 adults, 10 to 12 December".
+
+**ChatGPT (optional test).** In ChatGPT: Settings, Connectors (called Apps in some versions),
+add a custom connector, use the same address `<MCP_PUBLIC_URL>/mcp`, choose OAuth as the
+sign-in, then approve in Apolles as above. Full MCP connectors need ChatGPT Business or
+Enterprise; on Pro only read actions work, which is all the connector has (search only). These
+facts come from search summaries, not from the real screens: confirm them on the real screen.
 
 **How to revoke.** The agent clicks revoke next to the assistant in the same Settings tab (it then shows
 "Assistant disconnected."). To stop everything at once, remove `AI_SEARCH_ENABLED`
