@@ -77,6 +77,13 @@ export function parseAuthorizeRequest(params: Params, config: AssistantConfig): 
   };
 }
 
+export class AuthCodeRefused extends Error {
+  constructor() {
+    super("The agent's session ended before the code was issued");
+    this.name = "AuthCodeRefused";
+  }
+}
+
 // The agent pressed "Allow". The caller has checked the agent session (requireAgent) and gives
 // the userId and agencyId from it. Returns the raw code for the redirect.
 export async function issueAuthCode(
@@ -84,8 +91,16 @@ export async function issueAuthCode(
   request: AuthorizeRequest,
   now: Date = new Date(),
 ): Promise<string> {
+  // Throws AuthCodeRefused when the agent has no live, verified session any more.
   const raw = generateRawToken();
-  await db.assistantAuthCode.create({
+  const issued = await db.$transaction(async (tx) => {
+    // The session checked by the caller must still exist: a password change or suspension that
+    // ended it a moment ago (it deletes sessions and spends codes in one transaction, after
+    // locking the user row) leaves no code behind.
+    await tx.$queryRaw`SELECT 1 FROM "User" WHERE id = ${agent.userId} FOR UPDATE`;
+    const live = await tx.session.findFirst({ where: { userId: agent.userId, emailVerifiedAt: { not: null }, expiresAt: { gt: now } }, select: { id: true } });
+    if (!live) return false;
+    await tx.assistantAuthCode.create({
     data: {
       codeHash: hashToken(raw),
       clientId: request.clientId,
@@ -97,7 +112,10 @@ export async function issueAuthCode(
       expiresAt: new Date(now.getTime() + AUTH_CODE_TTL_MS),
       createdAt: now,
     },
+    });
+    return true;
   });
+  if (!issued) throw new AuthCodeRefused();
   // Old codes are of no use: drop the ones that expired over an hour ago.
   await db.assistantAuthCode.deleteMany({ where: { expiresAt: { lt: new Date(now.getTime() - 60 * 60_000) } } });
   return raw;
@@ -150,11 +168,20 @@ export async function exchangeCode(form: Record<string, string | undefined>, con
   return db.$transaction(async (tx): Promise<ExchangeResult> => {
     const row = await tx.assistantAuthCode.findUnique({ where: { codeHash: hashToken(code) } });
     if (!row) return INVALID_GRANT;
-    // Spend the code first: whatever is wrong below, it cannot be tried again.
+    // Lock the user and the agency first, so a password change, lockout or suspension running at
+    // this moment is either fully before this exchange (the code is then spent and refused
+    // below) or fully after it (and revokes the connection made here).
+    await tx.$queryRaw`SELECT 1 FROM "User" WHERE id = ${row.userId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT 1 FROM "Agency" WHERE id = ${row.agencyId} FOR SHARE`;
+    // Spend the code: whatever is wrong below, it cannot be tried again.
     const spent = await tx.assistantAuthCode.updateMany({ where: { id: row.id, usedAt: null }, data: { usedAt: now } });
     if (spent.count === 0) {
       // A code used twice was probably stolen: the connection it made is ended too.
-      await tx.assistantConnection.updateMany({ where: { authCodeId: row.id, revokedAt: null }, data: { revokedAt: now } });
+      const revoked = await tx.assistantConnection.findFirst({ where: { authCodeId: row.id, revokedAt: null }, select: { id: true } });
+      if (revoked) {
+        await tx.assistantConnection.updateMany({ where: { id: revoked.id }, data: { revokedAt: now } });
+        await audit(row.userId, "assistant.code_reuse_revoke", "AssistantConnection", revoked.id, undefined, undefined, tx);
+      }
       return INVALID_GRANT;
     }
     if (row.expiresAt <= now) return INVALID_GRANT;

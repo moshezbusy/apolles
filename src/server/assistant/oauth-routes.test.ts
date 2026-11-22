@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
+import { createSession } from "@/server/auth/session";
 import { GET as metadata } from "@/app/.well-known/oauth-authorization-server/route";
 import { POST as register } from "@/app/oauth/register/route";
 import { POST as token } from "@/app/oauth/token/route";
@@ -77,6 +78,7 @@ describe("OAuth routes of the assistant connector", () => {
   it("token endpoint exchanges a code once, with no-store, and answers OAuth errors as JSON", async () => {
     const agency = await db.agency.create({ data: { name: "Sunrise Travel", country: "IL", bankReference: "APL-0001" } });
     const agent = await createUser({ email: "a@sunrise.example", name: "Dana", role: "AGENT", agencyId: agency.id });
+    await createSession(agent.id, { verified: true });
     const verifier = randomBytes(32).toString("base64url");
     const challenge = createHash("sha256").update(verifier).digest("base64url");
     const config = assistantConfig()!;

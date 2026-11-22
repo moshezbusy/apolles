@@ -5,14 +5,13 @@
 //
 // Claude: https://claude.ai/api/mcp/auth_callback, checked 2026-11-22 against
 //   claude.com/docs/connectors/building/authentication (claude.ai web, Desktop and mobile).
-// ChatGPT: NOT checked (OpenAI's docs could not be reached from the build session). If the URI
-//   is wrong, ChatGPT cannot connect; nothing else is opened.
+// ChatGPT: not listed yet. Its redirect URI could not be checked against OpenAI's docs from the
+//   build session; it is added only once checked (owner decision, safest option).
 
 export type AssistantClient = { clientId: string; name: string; redirectUris: readonly string[] };
 
 export const ASSISTANT_CLIENTS: readonly AssistantClient[] = [
   { clientId: "apolles-claude", name: "Claude", redirectUris: ["https://claude.ai/api/mcp/auth_callback"] },
-  { clientId: "apolles-chatgpt", name: "ChatGPT", redirectUris: ["https://chatgpt.com/connector_platform_oauth_redirect"] },
 ];
 
 export function clientById(clientId: unknown): AssistantClient | null {

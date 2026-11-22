@@ -41,6 +41,9 @@ CREATE UNIQUE INDEX "AssistantAuthCode_codeHash_key" ON "AssistantAuthCode"("cod
 CREATE INDEX "AssistantAuthCode_userId_idx" ON "AssistantAuthCode"("userId");
 
 -- CreateIndex
+CREATE INDEX "AssistantAuthCode_agencyId_idx" ON "AssistantAuthCode"("agencyId");
+
+-- CreateIndex
 CREATE INDEX "AssistantAuthCode_expiresAt_idx" ON "AssistantAuthCode"("expiresAt");
 
 -- CreateIndex

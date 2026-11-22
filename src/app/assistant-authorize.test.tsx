@@ -6,6 +6,7 @@ import { requireAgent } from "@/server/auth/guards";
 import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
+import { createSession, destroyUserSessions } from "@/server/auth/session";
 import { ASSISTANT_CLIENTS } from "@/server/assistant/clients";
 
 vi.mock("next/navigation", () => ({
@@ -60,6 +61,7 @@ describe("/oauth/authorize (assistant consent)", () => {
     vi.mocked(redirect).mockClear();
     agencyId = (await db.agency.create({ data: { name: "Sunrise Travel", country: "IL", bankReference: "APL-0001" } })).id;
     userId = (await createUser({ email: "a@sunrise.example", name: "Dana", role: "AGENT", agencyId })).id;
+    await createSession(userId, { verified: true });
     vi.mocked(requireAgent).mockResolvedValue({ userId, agencyId });
   });
   afterEach(() => vi.unstubAllEnvs());
@@ -110,6 +112,19 @@ describe("/oauth/authorize (assistant consent)", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ agencyId, userId, clientId: CLAUDE.clientId, codeChallenge: challenge });
     expect(rows[0]!.codeHash).not.toBe(code);
+  });
+
+  it("Allow after the session ended (e.g. a password change a moment ago) issues nothing and goes to sign-in", async () => {
+    await destroyUserSessions(userId);
+    const { allowAssistantAction } = await import("./oauth/authorize/actions");
+    expect(await redirectOf(() => allowAssistantAction(form(params)))).toBe("/login");
+    expect(await db.assistantAuthCode.count()).toBe(0);
+  });
+
+  it("warns the agent to allow only a connection they started themselves", async () => {
+    const { default: Page } = await import("./oauth/authorize/page");
+    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve(params) }));
+    expect(html).toContain("Only allow this if you just pressed Connect in Claude yourself.");
   });
 
   it("Allow with a tampered redirect URI issues nothing", async () => {

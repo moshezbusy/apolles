@@ -796,6 +796,7 @@ model AssistantAuthCode {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([agencyId])
   @@index([expiresAt])
 }
 

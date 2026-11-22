@@ -3,7 +3,7 @@
 import { notFound, redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
 import { assistantConfig } from "@/server/assistant/config";
-import { issueAuthCode, parseAuthorizeRequest, redirectWith } from "@/server/assistant/oauth";
+import { AuthCodeRefused, issueAuthCode, parseAuthorizeRequest, redirectWith } from "@/server/assistant/oauth";
 import { authorizeParamsFrom } from "./params";
 
 // The agent's answer on the consent page. Both actions check the agent session themselves and
@@ -19,7 +19,13 @@ export async function allowAssistantAction(formData: FormData): Promise<void> {
     if (parsed.redirectable) redirect(redirectWith(parsed.redirectUri, { error: parsed.error, state: parsed.state }, config.issuer));
     redirect("/search"); // never send anything to an untrusted address
   }
-  const code = await issueAuthCode(agent, parsed.request);
+  let code: string;
+  try {
+    code = await issueAuthCode(agent, parsed.request);
+  } catch (error) {
+    if (error instanceof AuthCodeRefused) redirect("/login"); // the session ended meanwhile
+    throw error;
+  }
   redirect(redirectWith(parsed.request.redirectUri, { code, state: parsed.request.state }, config.issuer));
 }
 

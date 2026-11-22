@@ -231,7 +231,7 @@ function AssistantsTab({ mcpUrl, connections }: { mcpUrl: string | null; connect
         AI assistants
       </h2>
       <p className="mb-5 mt-1 text-[13px] text-muted">
-        Search hotels from Claude or ChatGPT. Search only: bookings, cancellations and your balance can&apos;t be reached from an AI assistant.
+        Search hotels from Claude. Search only: bookings, cancellations and your balance can&apos;t be reached from an AI assistant.
       </p>
       {mcpUrl === null ? (
         <p className="text-sm text-muted">AI assistants are not available yet.</p>

@@ -61,7 +61,8 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Se
           </ul>
         </div>
       </div>
-      <p className="mt-4 text-[13px] text-muted">
+      <p className="mt-4 text-[13px] font-semibold text-ink">Only allow this if you just pressed Connect in {clientName} yourself.</p>
+      <p className="mt-2 text-[13px] text-muted">
         The connection lasts {days} days. You can remove it any time in Agency settings, AI assistants.
       </p>
       <form action={allowAssistantAction} className="mt-5 flex flex-wrap gap-3">

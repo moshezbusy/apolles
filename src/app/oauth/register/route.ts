@@ -11,6 +11,8 @@ import { ipAllowed, jsonResponse, notFound, readCapped } from "@/server/assistan
 const MAX_BODY = 8_000;
 const LIMIT = { limit: 20, windowMs: 60 * 60_000 }; // per IP
 
+// Unknown fields are allowed here on purpose (RFC 7591: clients send many metadata fields, and
+// the server ignores what it does not use). Only redirect_uris is read.
 const registration = z.object({ redirect_uris: z.array(z.string().max(2000)).min(1).max(5) }).passthrough();
 
 export async function POST(request: Request): Promise<Response> {

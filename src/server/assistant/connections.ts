@@ -70,13 +70,17 @@ export async function revokeConnection(actorUserId: string, agencyId: string, co
 // With every session of the user (password change, lockout): see destroyUserSessions.
 export async function revokeUserConnections(userId: string, client: Prisma.TransactionClient = db): Promise<void> {
   const now = new Date();
-  await client.assistantConnection.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now } });
+  // Codes first: an exchange running at this moment then waits for this transaction, and the
+  // next statement sees (and revokes) the connection it made.
   await client.assistantAuthCode.updateMany({ where: { userId, usedAt: null }, data: { usedAt: now } });
+  await client.assistantConnection.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now } });
 }
 
 // Agency suspended: see setAgencyStatus.
 export async function revokeAgencyConnections(agencyId: string, client: Prisma.TransactionClient = db): Promise<void> {
   const now = new Date();
-  await client.assistantConnection.updateMany({ where: { agencyId, revokedAt: null }, data: { revokedAt: now } });
+  // Codes first: an exchange running at this moment then waits for this transaction, and the
+  // next statement sees (and revokes) the connection it made.
   await client.assistantAuthCode.updateMany({ where: { agencyId, usedAt: null }, data: { usedAt: now } });
+  await client.assistantConnection.updateMany({ where: { agencyId, revokedAt: null }, data: { revokedAt: now } });
 }

@@ -7,7 +7,7 @@ import { setAgencyStatus } from "@/server/admin/agencies";
 import { createSession, destroyUserSessions, getSession } from "@/server/auth/session";
 import { assistantConfig } from "./config";
 import { ASSISTANT_CLIENTS, clientById, clientForRedirects } from "./clients";
-import { ACCESS_TOKEN_TTL_MS, exchangeCode, issueAuthCode, parseAuthorizeRequest } from "./oauth";
+import { ACCESS_TOKEN_TTL_MS, AuthCodeRefused, exchangeCode, issueAuthCode, parseAuthorizeRequest } from "./oauth";
 import { listConnections, revokeConnection, verifyAccessToken } from "./connections";
 
 const config = { issuer: "https://app.example.com", mcpUrl: "https://mcp.example.com/mcp" };
@@ -137,6 +137,28 @@ describe("assistant connector: tokens", () => {
     agentA = (await createUser({ email: "a@sunrise.example", name: "Dana", role: "AGENT", agencyId: agencyA })).id;
     agentB = (await createUser({ email: "b@other.example", name: "Ben", role: "AGENT", agencyId: agencyB })).id;
     adminId = (await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN" })).id;
+    // "Allow" is pressed in a live, verified session (issueAuthCode checks it again).
+    await createSession(agentA, { verified: true });
+    await createSession(agentB, { verified: true });
+  });
+
+  it("issues no code once the agent's sessions have ended (password change, lockout, suspension)", async () => {
+    const { challenge } = pkce();
+    const parsed = parseAuthorizeRequest(authorizeParams(challenge), config);
+    if (!parsed.ok) throw new Error("parse");
+    await destroyUserSessions(agentA);
+    await expect(issueAuthCode({ userId: agentA, agencyId: agencyA }, parsed.request)).rejects.toBeInstanceOf(AuthCodeRefused);
+    expect(await db.assistantAuthCode.count()).toBe(0);
+  });
+
+  it("a code issued before a password change can no longer be exchanged", async () => {
+    const { verifier, challenge } = pkce();
+    const parsed = parseAuthorizeRequest(authorizeParams(challenge), config);
+    if (!parsed.ok) throw new Error("parse");
+    const code = await issueAuthCode({ userId: agentA, agencyId: agencyA }, parsed.request);
+    await destroyUserSessions(agentA);
+    const result = await exchangeCode({ grant_type: "authorization_code", code, redirect_uri: REDIRECT, client_id: CLAUDE.clientId, code_verifier: verifier }, config);
+    expect(result).toMatchObject({ ok: false, error: "invalid_grant" });
   });
 
   it("stores only hashes: no raw code or token in the database", async () => {
@@ -165,6 +187,7 @@ describe("assistant connector: tokens", () => {
     const second = await exchangeCode(form, config);
     expect(second).toMatchObject({ ok: false, error: "invalid_grant" });
     if (first.ok) expect(await verifyAccessToken(first.accessToken, config)).toBeNull();
+    expect(await db.auditLog.count({ where: { action: "assistant.code_reuse_revoke" } })).toBe(1);
   });
 
   it("refuses a wrong verifier, client, redirect URI, resource, or an expired code (and the code is then spent)", async () => {
