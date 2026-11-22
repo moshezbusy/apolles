@@ -137,10 +137,41 @@ describe("lint guard: the MCP server is fenced off", () => {
     expect(await mcpRestricted(code)).toHaveLength(count);
   });
 
-  it("process.env is allowed in src/mcp/config.ts (and tests), still with the import fence", async () => {
+  it("process.env is allowed only in src/mcp/config.ts and its test, still with the import fence", async () => {
     expect(await mcpRestricted("export const u = process.env.MCP_PUBLIC_URL;\n", "src/mcp/config.ts")).toHaveLength(0);
     expect(await mcpRestricted("export const u = process.env.MCP_PUBLIC_URL;\n", "src/mcp/config.test.ts")).toHaveLength(0);
+    expect(await mcpRestricted("export const u = process.env.MCP_PUBLIC_URL;\n", "src/mcp/server.test.ts")).toHaveLength(1);
     expect(await mcpRestricted('import { db } from "@/server/db";\nexport const x = db;\n', "src/mcp/config.ts")).toHaveLength(1);
+    expect(await mcpRestricted('import { db } from "@/server/db";\nexport const x = db;\n', "src/mcp/config.test.ts")).toHaveLength(1);
+  });
+
+  // An allowlist, not a list of forbidden places: each of these got past the first fence.
+  it.each([
+    ["the test helpers", 'import { db } from "@/test/db";\nexport const x = db;\n'],
+    ["the worker", 'import w from "@/worker";\nexport const x = w;\n'],
+    ["@/mcp/ climbing out", 'import d from "@/mcp/../server/db";\nexport const x = d;\n'],
+    ["a relative path climbing out and back", 'import d from "../mcp/../server/db";\nexport const x = d;\n'],
+    ["a template-literal dynamic import", "export const f = () => import(`@/server/db`);\n"],
+    ["a computed require", 'const name = "@/server/db";\nexport const d = require(name);\n'],
+    ["destructuring process", "const { env } = process;\nexport const x = env;\n"],
+    ["aliasing process", "const p = process;\nexport const x = p.env;\n"],
+    ["aliasing globalThis.process", "const p = globalThis.process;\nexport const x = p;\n"],
+    ["a computed process member", 'export const x = process["e" + "nv"];\n'],
+    ["any other @/ path", 'import { x } from "@/lib/countries";\nexport const y = x;\n'],
+    ["an absolute path", 'import d from "/home/user/apolles/src/server/db";\nexport const x = d;\n'],
+    ["a re-export", 'export * from "@/server/db";\n'],
+    ["an inline type import", 'type T = import("@/server/db").X;\nexport type Y = T;\n'],
+  ])("%s in src/mcp/x.ts fails lint", async (_name, code) => {
+    expect((await mcpRestricted(code)).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it.each([
+    ["@/mcp/x", 'import { a } from "@/mcp/tools";\nexport const x = a;\n'],
+    ["./x", 'import { a } from "./tools";\nexport const x = a;\n'],
+    ["a dynamic import of ./x", 'export const f = () => import("./tools");\n'],
+    ["process outside env", "process.on(\"SIGTERM\", () => process.exit(0));\nexport const a = process.argv[1];\n"],
+  ])("%s is allowed in src/mcp/x.ts", async (_name, code) => {
+    expect(await mcpRestricted(code)).toHaveLength(0);
   });
 
   it.each([

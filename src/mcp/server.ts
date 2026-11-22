@@ -17,6 +17,7 @@ const PRM_PATHS = ["/.well-known/oauth-protected-resource", "/.well-known/oauth-
 const ALLOWED_ORIGINS = new Set(["https://claude.ai", "https://chatgpt.com"]);
 const MAX_BODY_BYTES = 64 * 1024;
 const SCOPE = "search:read";
+const SHUTDOWN_GRACE_MS = 25_000;
 // Names the log may repeat; anything else the client sent is logged as "other".
 const KNOWN_METHODS = new Set(["initialize", "ping", "tools/list", "tools/call", "notifications/initialized", "notifications/cancelled"]);
 
@@ -58,6 +59,9 @@ function readBody(req: http.IncomingMessage): Promise<string | "too_large" | "un
       }
     });
     req.on("error", () => finish("unreadable"));
+    // A client that goes away mid-body: settle now instead of waiting for an "end" that never comes.
+    req.on("aborted", () => finish("unreadable"));
+    req.on("close", () => finish("unreadable"));
   });
 }
 
@@ -164,6 +168,11 @@ export function createMcpServer(cfg: McpConfig, fetchFn: typeof fetch = fetch): 
 function main(): void {
   const cfg = loadConfig();
   const server = createMcpServer(cfg);
+  // Port taken, no permission...: a plain line and exit 1, never a stack trace.
+  server.on("error", () => {
+    console.error("Refusing to start: cannot listen on the port.");
+    process.exit(1);
+  });
   server.listen(cfg.port, () => console.info(`Apolles MCP server listening on port ${cfg.port}.`));
   let stopping = false;
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
@@ -173,8 +182,8 @@ function main(): void {
       console.info("Apolles MCP server stopping.");
       server.close(() => process.exit(0));
       server.closeIdleConnections();
-      // Requests in hand get up to the API timeout and a little more.
-      setTimeout(() => process.exit(1), 15_000).unref();
+      // Requests in hand get time to finish: a batch holds at most 2 tool calls of up to 10 s each.
+      setTimeout(() => process.exit(1), SHUTDOWN_GRACE_MS).unref();
     });
   }
 }

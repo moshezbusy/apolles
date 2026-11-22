@@ -90,6 +90,26 @@ describe("framing", () => {
     expect(out.body).toMatchObject({ error: { code: -32600 } });
   });
 
+  it("at most 2 tools/call in one batch: the others get -32600 and are not run", async () => {
+    const callTool = vi.fn(async () => ({ content: [], isError: false }));
+    const toolCall = (id: number) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "t", arguments: {} } });
+    const out = await run([toolCall(1), { jsonrpc: "2.0", id: 2, method: "ping" }, toolCall(3), toolCall(4), toolCall(5)], methods({ callTool }));
+    expect(out.status).toBe(200);
+    expect(out.body).toEqual([
+      { jsonrpc: "2.0", id: 1, result: { content: [], isError: false } },
+      { jsonrpc: "2.0", id: 2, result: {} },
+      { jsonrpc: "2.0", id: 3, result: { content: [], isError: false } },
+      { jsonrpc: "2.0", id: 4, error: { code: -32600, message: "Too many tool calls in one batch" } },
+      { jsonrpc: "2.0", id: 5, error: { code: -32600, message: "Too many tool calls in one batch" } },
+    ]);
+    expect(callTool).toHaveBeenCalledTimes(2);
+  });
+
+  it("id 0 and numeric ids are answered as sent", async () => {
+    expect((await run({ jsonrpc: "2.0", id: 0, method: "ping" })).body).toEqual({ jsonrpc: "2.0", id: 0, result: {} });
+    expect((await run({ jsonrpc: "2.0", id: 7, method: "ping" })).body).toEqual({ jsonrpc: "2.0", id: 7, result: {} });
+  });
+
   it("only notifications (or responses) → 202 with no body", async () => {
     expect(await run({ jsonrpc: "2.0", method: "notifications/initialized" })).toMatchObject({ status: 202, body: null });
     expect(await run([{ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 1 } }, { jsonrpc: "2.0", id: 9, result: {} }])).toMatchObject({

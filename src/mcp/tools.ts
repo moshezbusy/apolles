@@ -115,7 +115,12 @@ const ratesFound = z.object({
   link: z.string(),
 });
 
-const apiError = z.object({ error: z.string(), message: z.string().min(1).max(500) });
+const apiError = z.object({ error: z.string(), message: z.string() });
+// The API's 400 and 404 messages are fixed sentences of Apolles' own. Only text that looks like
+// one is passed to the assistant (no markup, links or line breaks); anything else gets the
+// matching fixed sentence. "_" is allowed: the sentences name fields such as destination_id.
+const PLAIN_MESSAGE = /^[A-Za-z0-9 ,.'()_-]{1,200}$/;
+const FALLBACK = { 400: "Check the destination, dates and guests.", 404: "This search expired. Run search_hotels again." } as const;
 
 // ---------- text summaries ----------
 
@@ -249,9 +254,10 @@ function fromAnswer(tool: Tool, answer: ApiAnswer): ToolResult {
   }
   if (answer.status === 429) return failure(RATE_LIMITED);
   if (answer.status === 400 || answer.status === 404) {
-    // Apolles' own plain message (it never echoes the request); without one, the search is off.
+    // Without an error body (e.g. a 404 while the feature is off), the search is unavailable.
     const error = apiError.safeParse(answer.json);
-    return failure(error.success ? error.data.message : UNAVAILABLE);
+    if (!error.success) return failure(UNAVAILABLE);
+    return failure(PLAIN_MESSAGE.test(error.data.message) ? error.data.message : FALLBACK[answer.status]);
   }
   return failure(UNAVAILABLE);
 }

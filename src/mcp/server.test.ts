@@ -1,4 +1,5 @@
 import http from "node:http";
+import net from "node:net";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { McpConfig } from "./config";
@@ -278,6 +279,30 @@ describe("POST /mcp", () => {
     const streamed = await send("POST", "/mcp", { headers: { ...auth, "Transfer-Encoding": "chunked" }, chunks: [chunk, chunk, chunk, chunk, chunk] });
     expect(streamed.status).toBe(413);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("a client that goes away mid-body: the request is settled (logged), not left pending", async () => {
+    const socket = net.connect(port, "127.0.0.1");
+    await new Promise<void>((resolve) => socket.once("connect", () => resolve()));
+    socket.write(`POST /mcp HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer ${TOKEN}\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{"jsonrpc":`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    socket.destroy();
+    await vi.waitFor(() => expect(logged.some((l) => /^mcp POST \/mcp 400 \d+ms$/.test(l))).toBe(true), { timeout: 2_000 });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("id 0 and a numeric id come back as sent", async () => {
+    expect((await rpc({ jsonrpc: "2.0", id: 0, method: "ping" })).json).toEqual({ jsonrpc: "2.0", id: 0, result: {} });
+    expect((await rpc({ jsonrpc: "2.0", id: 7, method: "tools/list" })).json).toMatchObject({ jsonrpc: "2.0", id: 7, result: { tools: expect.any(Array) } });
+    expect((await call("search_hotels", SEARCH_ARGS, 0)).json).toMatchObject({ jsonrpc: "2.0", id: 0, result: { isError: false } });
+  });
+
+  it("a batch with 3 tool calls: 2 run, the third gets -32600", async () => {
+    const toolCall = (id: number) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "search_hotels", arguments: SEARCH_ARGS } });
+    const res = await rpc([toolCall(1), toolCall(2), toolCall(3)]);
+    expect(res.status).toBe(200);
+    expect((res.json as unknown[])[2]).toEqual({ jsonrpc: "2.0", id: 3, error: { code: -32600, message: "Too many tool calls in one batch" } });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it("a body just under 64 KB is read", async () => {

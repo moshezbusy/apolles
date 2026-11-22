@@ -14,8 +14,10 @@ export const INVALID_REQUEST = -32600;
 export const METHOD_NOT_FOUND = -32601;
 export const INVALID_PARAMS = -32602;
 
-// More than this in one batch is refused: each tools/call is a search upstream.
+// More than this in one batch is refused. Tool calls run one after another, each up to the API's
+// 10 s timeout, so a batch holds at most 2 of them: one request stays within the shutdown grace.
 const MAX_BATCH = 10;
+export const MAX_TOOL_CALLS_PER_BATCH = 2;
 
 export class RpcError extends Error {
   readonly code: number;
@@ -120,11 +122,15 @@ export async function handleRpc(text: string, methods: McpMethods): Promise<RpcO
   const calls: RpcOutcome["calls"] = [];
   const responses: RpcResponse[] = [];
   let invalid = false;
+  let toolCalls = 0;
   for (const raw of raws) {
     const message = classify(raw);
     if (message.kind === "invalid") {
       invalid = true;
       responses.push(errorResponse(message.id, INVALID_REQUEST, "Invalid Request"));
+    } else if (message.kind === "request" && message.method === "tools/call" && ++toolCalls > MAX_TOOL_CALLS_PER_BATCH) {
+      calls.push({ method: message.method });
+      responses.push(errorResponse(message.id, INVALID_REQUEST, "Too many tool calls in one batch"));
     } else if (message.kind === "request") {
       const params = message.params;
       const tool = message.method === "tools/call" && isObject(params) && typeof params.name === "string" ? params.name : undefined;
