@@ -111,3 +111,70 @@ describe("lint guard: no direct db access outside src/server", () => {
     });
   });
 });
+
+// The MCP server (src/mcp) talks to Apolles over HTTP only: it must never reach the database,
+// the supplier or any app code, and it reads settings only through src/mcp/config.ts.
+describe("lint guard: the MCP server is fenced off", () => {
+  const MCP_MESSAGE = "The MCP server talks to Apolles over HTTP only";
+  const mcpRestricted = async (code: string, filePath = "src/mcp/x.ts") => restricted(await messagesFor(code, filePath));
+
+  it('import { db } from "@/server/db" in src/mcp/x.ts fails lint', async () => {
+    const found = await mcpRestricted('import { db } from "@/server/db";\nexport const x = db;\n');
+    expect(found).toHaveLength(1);
+    expect(found[0]?.message).toContain(MCP_MESSAGE);
+  });
+
+  it("process.env.DATABASE_URL in src/mcp/x.ts fails lint", async () => {
+    const found = await mcpRestricted("export const u = process.env.DATABASE_URL;\n");
+    expect(found).toHaveLength(1);
+    expect(found[0]?.message).toContain("src/mcp/config.ts");
+  });
+
+  it.each([
+    ["process.env in any form", 'export const a = process["env"];\nexport const b = globalThis.process.env;\n', 2],
+    ["node:process", 'import { env } from "node:process";\nexport const a = env;\n', 1],
+  ])("%s in src/mcp/x.ts fails lint", async (_name, code, count) => {
+    expect(await mcpRestricted(code)).toHaveLength(count);
+  });
+
+  it("process.env is allowed in src/mcp/config.ts (and tests), still with the import fence", async () => {
+    expect(await mcpRestricted("export const u = process.env.MCP_PUBLIC_URL;\n", "src/mcp/config.ts")).toHaveLength(0);
+    expect(await mcpRestricted("export const u = process.env.MCP_PUBLIC_URL;\n", "src/mcp/config.test.ts")).toHaveLength(0);
+    expect(await mcpRestricted('import { db } from "@/server/db";\nexport const x = db;\n', "src/mcp/config.ts")).toHaveLength(1);
+  });
+
+  it.each([
+    "@/server/ai/search-api",
+    "@/server/supplier/expedia/adapter",
+    "@/server/bookings/service",
+    "@/generated/prisma/client",
+    "@/app/api/ai/v1/search/route",
+    "../server/db",
+    "../server/supplier/expedia/client",
+    "../app/layout",
+    "../generated/prisma/client",
+    "../../src/server/db",
+    "pg",
+    "pg/lib/client",
+    "@prisma/client",
+    "@prisma/adapter-pg",
+  ])("static, type-only, dynamic and require imports of %s from src/mcp fail lint", async (source) => {
+    expect(await mcpRestricted(`import * as m from "${source}";\nexport const x = m;\n`)).toHaveLength(1);
+    expect(await mcpRestricted(`import type { T } from "${source}";\nexport type X = T;\n`)).toHaveLength(1);
+    expect(await mcpRestricted(`export const f = () => import("${source}");\n`)).toHaveLength(1);
+    expect(await mcpRestricted(`export const d = require("${source}");\n`)).toHaveLength(1);
+    expect(await mcpRestricted(`export const f = () => import("${source}");\n`, "src/mcp/server.test.ts")).toHaveLength(1);
+  });
+
+  it("its own files, zod and node built-ins are allowed", async () => {
+    const code = 'import { z } from "zod";\nimport http from "node:http";\nimport { loadConfig } from "./config";\nimport { createMcpServer } from "./server";\nexport const x = [z, http, loadConfig, createMcpServer];\n';
+    expect(await mcpRestricted(code)).toHaveLength(0);
+  });
+
+  it("the real src/mcp files pass the fence", async () => {
+    const results = await eslint.lintFiles([path.join(repoRoot, "src/mcp")]);
+    const found = results.flatMap((r) => restricted(r.messages));
+    expect(results.length).toBeGreaterThan(0);
+    expect(found).toEqual([]);
+  });
+});

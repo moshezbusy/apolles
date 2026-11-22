@@ -11,6 +11,7 @@ import { SupplierRateLimited } from "@/server/supplier/expedia/client";
 import type { AvailabilityQuery, Offer, PropertyOffers, SupplierAdapter, SupplierContext } from "@/server/supplier/types";
 import * as searchRoute from "@/app/api/ai/v1/search/route";
 import * as ratesRoute from "@/app/api/ai/v1/rates/route";
+import { callTool } from "@/mcp/tools";
 
 // The token check is wrapped in a spy (same behaviour), to see that a wrong service key is refused
 // before any token is looked up.
@@ -718,5 +719,40 @@ describe("routes /api/ai/v1/search and /api/ai/v1/rates", () => {
   it("a session cookie without a token is not accepted", async () => {
     const res = await searchRoute.POST(post("/api/ai/v1/search", JSON.stringify(searchBody), { cookie: `apl_session=${a.token}` }));
     expect(res.status).toBe(401);
+  });
+});
+
+// The MCP server (src/mcp, a separate process) reads these answers with its own schemas; it
+// cannot import this code. Fed the real answers, it must pass them on whole (nothing dropped)
+// and as successes.
+describe("the MCP server reads these answers unchanged", () => {
+  const through = async (name: string, args: Record<string, unknown>, res: { status: number; json: unknown }) =>
+    callTool(name, args, async () => ({ kind: "answer", status: res.status, json: res.json }));
+
+  it("hotels, candidates and rates", async () => {
+    const found = await search(searchBody);
+    const hotels = await through("search_hotels", searchBody, found);
+    expect(hotels.isError).toBe(false);
+    expect(hotels.structuredContent).toEqual(found.json);
+
+    const ambiguous = await search({ ...searchBody, destination_id: undefined, destination: "San Jose" });
+    const candidates = await through("search_hotels", { ...searchBody, destination_id: undefined, destination: "San Jose" }, ambiguous);
+    expect(candidates.isError).toBe(false);
+    expect(candidates.structuredContent).toEqual(ambiguous.json);
+
+    const args = { search_id: (found.json as { search_id: string }).search_id, hotel_id: "1" };
+    const listed = await aiRates(authOf(a), args, { now: NOW });
+    const rates = await through("get_hotel_rates", args, listed);
+    expect(rates.isError).toBe(false);
+    expect(rates.structuredContent).toEqual(listed.json);
+  });
+
+  it("the API's 400 and 404 messages reach the assistant", async () => {
+    const bad = await search({ ...searchBody, nationality: "XX" });
+    expect(bad.status).toBe(400);
+    const badResult = await through("search_hotels", searchBody, bad);
+    expect(badResult).toMatchObject({ isError: true, content: [{ text: (bad.json as { message: string }).message }] });
+    const gone = await aiRates(authOf(a), { search_id: "nope", hotel_id: "1" }, { now: NOW });
+    expect(await through("get_hotel_rates", { search_id: "nope", hotel_id: "1" }, gone)).toMatchObject({ isError: true, content: [{ text: EXPIRED }] });
   });
 });

@@ -9,6 +9,24 @@ const DB_MESSAGE =
 // connection. Exact names only, so look-alikes such as "pg-format" are not caught.
 const DB_PACKAGE_REGEX = "^(pg|@prisma/client|@prisma/adapter-pg)(/.*)?$";
 
+// The MCP server (src/mcp) is a separate process that reaches Apolles over HTTP only (plan 11,
+// design §4.3). It must never import app code, the database, the supplier (Expedia) or booking
+// code, not even types; and it reads settings only through src/mcp/config.ts.
+const MCP_MESSAGE =
+  "The MCP server talks to Apolles over HTTP only: no imports from src/server, src/app, src/generated or the database packages.";
+const MCP_ENV_MESSAGE = "In the MCP server, only src/mcp/config.ts reads the environment.";
+// Aliases, relative paths that climb out of src/mcp, and every Prisma package.
+const MCP_IMPORT_REGEX = "^(@/(server|app|generated)|(\\./)?(\\.\\./)+(src/)?(server|app|generated))(/.*)?$|^(pg|@prisma/[^/]+)(/.*)?$";
+const MCP_IMPORT_SYNTAX = ["ImportExpression", 'CallExpression[callee.name="require"]'].map((node) => ({
+  selector: `${node}[${node === "ImportExpression" ? "source" : "arguments.0"}.value=/${MCP_IMPORT_REGEX.replaceAll("/", "\\/")}/]`,
+  message: MCP_MESSAGE,
+}));
+const MCP_ENV_SYNTAX = [
+  { selector: 'MemberExpression[object.name="process"][property.name="env"]', message: MCP_ENV_MESSAGE },
+  { selector: 'MemberExpression[object.name="process"][property.value="env"]', message: MCP_ENV_MESSAGE },
+  { selector: 'MemberExpression[object.property.name="process"][property.name="env"]', message: MCP_ENV_MESSAGE },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -70,6 +88,28 @@ const eslintConfig = defineConfig([
         })),
       ],
     },
+  },
+  // The MCP fence. Listed after the block above so it replaces those two rules for src/mcp
+  // (the database is covered here too). Test files are fenced as well.
+  {
+    files: ["src/mcp/**/*.{ts,tsx,js,jsx,mjs,mts,cjs,cts}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            { name: "node:process", message: MCP_ENV_MESSAGE },
+            { name: "process", message: MCP_ENV_MESSAGE },
+          ],
+          patterns: [{ regex: MCP_IMPORT_REGEX, message: MCP_MESSAGE }],
+        },
+      ],
+      "no-restricted-syntax": ["error", ...MCP_IMPORT_SYNTAX, ...MCP_ENV_SYNTAX],
+    },
+  },
+  {
+    files: ["src/mcp/config.ts", "src/mcp/**/*.test.ts"],
+    rules: { "no-restricted-syntax": ["error", ...MCP_IMPORT_SYNTAX] },
   },
 ]);
 
