@@ -6,6 +6,8 @@ import { resetTestDb } from "@/test/db";
 import { createSession, getSession } from "@/server/auth/session";
 import { MAX_FAILED_LOGINS } from "@/server/auth/lockout-policy";
 import { recordFailedAttempt, reserveAttempt } from "@/server/auth/lockout";
+import { consumePasswordToken, issuePasswordToken } from "@/server/auth/password-tokens";
+import { setAgencyStatus } from "@/server/admin/agencies";
 import { aiSearchEnabled, appIssuer, mcpResource, serviceKeyMatches } from "@/server/ai/config";
 import {
   exchangeCode,
@@ -211,6 +213,12 @@ describe("AI search tokens", () => {
       const connection = await db.aiConnection.findUniqueOrThrow({ where: { id: connectionId } });
       expect(connection.revokedAt).not.toBeNull();
       expect(connection.revokedReason).toBe("code_reuse");
+      const audits = await db.auditLog.findMany({ where: { action: "ai.revoke" } });
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({ actorUserId: agent.userId, targetType: "AiConnection", targetId: connectionId, after: { reason: "code_reuse" } });
+      // A third use finds the connection already revoked: no second audit row.
+      await exchangeCode({ code, clientId: client.id, redirectUri: REDIRECT, codeVerifier: verifier, resource: RESOURCE });
+      expect(await db.auditLog.count({ where: { action: "ai.revoke" } })).toBe(1);
       expect(await verifyAiToken(pair.accessToken, RESOURCE)).toBeNull();
       expect(await refresh({ refreshToken: pair.refreshToken, clientId: client.id, resource: RESOURCE })).toEqual({ error: "invalid_grant" });
       // Only that code's connection ends.
@@ -326,11 +334,16 @@ describe("AI search tokens", () => {
       expect(next).toMatchObject({ expiresIn: 3600, scope: "search:read" });
       expect(next.refreshToken).not.toBe(pair.refreshToken);
       expect(await verifyAiToken(next.accessToken, RESOURCE)).toMatchObject({ connectionId });
+      // The old access token stops at once.
+      expect(await verifyAiToken(pair.accessToken, RESOURCE)).toBeNull();
 
       expect(await refresh({ refreshToken: pair.refreshToken, clientId: client.id, resource: RESOURCE })).toEqual({ error: "invalid_grant" });
       const connection = await db.aiConnection.findUniqueOrThrow({ where: { id: connectionId } });
       expect(connection.revokedReason).toBe("refresh_reuse");
       expect(connection.revokedAt).not.toBeNull();
+      const audits = await db.auditLog.findMany({ where: { action: "ai.revoke" } });
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({ actorUserId: agent.userId, targetType: "AiConnection", targetId: connectionId, after: { reason: "refresh_reuse" } });
       expect(await verifyAiToken(next.accessToken, RESOURCE)).toBeNull();
       expect(await refresh({ refreshToken: next.refreshToken, clientId: client.id, resource: RESOURCE })).toEqual({ error: "invalid_grant" });
     });
@@ -499,10 +512,115 @@ describe("AI search tokens", () => {
       await revokeConnection(agent.agencyId, revoked.connectionId, agent.userId);
       await verifyAiToken(first.pair.accessToken, RESOURCE);
 
-      const list = await listConnections(agent.agencyId);
+      const { connections: list, nextCursor } = await listConnections(agent.agencyId);
+      expect(nextCursor).toBeNull();
       expect(list.map((c) => c.id)).toEqual([second.connectionId, first.connectionId]);
       expect(list[0]).toEqual({ id: second.connectionId, assistant: "ChatGPT", createdAt: expect.any(Date), lastUsedAt: null });
       expect(list[1]).toMatchObject({ assistant: "Claude", lastUsedAt: expect.any(Date) });
+    });
+
+    it("a client with another name is still listed (so it can be revoked), as 'AI assistant'", async () => {
+      const agent = await createAgent();
+      const odd = await createClient("Some Bot");
+      const { connectionId } = await connect(agent, odd.id);
+      const { connections } = await listConnections(agent.agencyId);
+      expect(connections).toEqual([{ id: connectionId, assistant: "AI assistant", createdAt: expect.any(Date), lastUsedAt: null }]);
+    });
+
+    it("pages: 20 by default, at most 50, cursor = last id, each connection exactly once", async () => {
+      const agent = await createAgent();
+      const other = await createAgent("other@example.com");
+      const client = await createClient();
+      const base = Date.now() - 1000 * 60;
+      const ids: string[] = [];
+      for (let n = 0; n < 23; n++) {
+        const row = await db.aiConnection.create({
+          data: {
+            userId: agent.userId,
+            agencyId: agent.agencyId,
+            clientId: client.id,
+            scope: "search:read",
+            resource: RESOURCE,
+            // Two rows share each timestamp, so the id tie-break is exercised.
+            createdAt: new Date(base + Math.floor(n / 2) * 1000),
+          },
+        });
+        ids.push(row.id);
+      }
+      await connect(other, client.id);
+
+      const page1 = await listConnections(agent.agencyId);
+      expect(page1.connections).toHaveLength(20);
+      expect(page1.nextCursor).toBe(page1.connections[19]!.id);
+      const page2 = await listConnections(agent.agencyId, page1.nextCursor!);
+      expect(page2.connections).toHaveLength(3);
+      expect(page2.nextCursor).toBeNull();
+      const seen = [...page1.connections, ...page2.connections].map((c) => c.id);
+      expect(new Set(seen).size).toBe(23);
+      expect(seen.sort()).toEqual([...ids].sort());
+
+      expect((await listConnections(agent.agencyId, undefined, 500)).connections).toHaveLength(23);
+      expect((await listConnections(agent.agencyId, undefined, 5)).connections).toHaveLength(5);
+      // Another agency's id is not a valid cursor here.
+      const theirs = await db.aiConnection.findFirstOrThrow({ where: { agencyId: other.agencyId } });
+      await expect(listConnections(agent.agencyId, theirs.id)).rejects.toThrow("Invalid cursor");
+    });
+
+    it("take is clamped to 50", async () => {
+      const agent = await createAgent();
+      const client = await createClient();
+      await db.aiConnection.createMany({
+        data: Array.from({ length: 55 }, () => ({
+          userId: agent.userId,
+          agencyId: agent.agencyId,
+          clientId: client.id,
+          scope: "search:read",
+          resource: RESOURCE,
+        })),
+      });
+      const page = await listConnections(agent.agencyId, undefined, 500);
+      expect(page.connections).toHaveLength(50);
+      expect(page.nextCursor).not.toBeNull();
+    });
+  });
+
+  describe("a code or connect window opened before the account's access ended cannot be used after", () => {
+    async function pending() {
+      const agent = await createAgent();
+      const client = await createClient();
+      const { verifier, challenge } = pkce();
+      const code = await issueAuthCode({ userId: agent.userId, clientId: client.id, redirectUri: REDIRECT, codeChallenge: challenge, resource: RESOURCE });
+      await openConnectWindow(agent.userId, "session-a");
+      const good = { code, clientId: client.id, redirectUri: REDIRECT, codeVerifier: verifier, resource: RESOURCE };
+      return { agent, good };
+    }
+
+    it("password reset → the code exchange is invalid_grant and the window is closed", async () => {
+      const { agent, good } = await pending();
+      expect(await consumePasswordToken(await issuePasswordToken(agent.userId, "RESET"), "newpass34")).toBe("OK");
+      expect(await exchangeCode(good)).toEqual({ error: "invalid_grant" });
+      expect(await useConnectWindow(agent.userId, "session-a")).toBe(false);
+      expect(await db.aiToken.count()).toBe(0);
+      expect(await db.aiConnection.count()).toBe(0);
+    });
+
+    it("lockout that ends sessions → the code exchange is invalid_grant and the window is closed", async () => {
+      const { agent, good } = await pending();
+      await db.user.update({ where: { id: agent.userId }, data: { failedLogins: MAX_FAILED_LOGINS } });
+      await recordFailedAttempt({ id: agent.userId, email: "agent@example.com" }, MAX_FAILED_LOGINS, { endSessionsOnLock: true });
+      expect(await exchangeCode(good)).toEqual({ error: "invalid_grant" });
+      expect(await useConnectWindow(agent.userId, "session-a")).toBe(false);
+      expect(await db.aiConnection.count()).toBe(0);
+    });
+
+    it("agency suspension → the code exchange is invalid_grant, also after reactivation, and the window is closed", async () => {
+      const { agent, good } = await pending();
+      const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN" });
+      await setAgencyStatus(admin.id, agent.agencyId, "SUSPENDED");
+      await setAgencyStatus(admin.id, agent.agencyId, "ACTIVE");
+      expect(await exchangeCode(good)).toEqual({ error: "invalid_grant" });
+      expect(await useConnectWindow(agent.userId, "session-a")).toBe(false);
+      expect(await db.aiConnection.count()).toBe(0);
     });
   });
 

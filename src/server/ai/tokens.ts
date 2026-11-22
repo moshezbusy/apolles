@@ -149,18 +149,22 @@ async function createTokenPair(
   return { accessToken, refreshToken, expiresIn: ACCESS_TOKEN_TTL_S, scope: AI_SCOPE };
 }
 
-// Ends one connection and every token under it. Returns false if it was already revoked.
-async function revokeOne(
+// Theft signal (a code or refresh token used twice): ends one connection and every token
+// under it. The audit row names the connection's own agent as actor (no person clicked
+// anything); only the call that actually revoked it writes one.
+async function revokeStolen(
   tx: Prisma.TransactionClient,
   connectionId: string,
-  reason: RevokeReason,
-): Promise<boolean> {
+  reason: "code_reuse" | "refresh_reuse",
+): Promise<void> {
   const { count } = await tx.aiConnection.updateMany({
     where: { id: connectionId, revokedAt: null },
     data: { revokedAt: new Date(), revokedReason: reason },
   });
   await tx.aiToken.deleteMany({ where: { connectionId } });
-  return count === 1;
+  if (count !== 1) return;
+  const { userId } = await tx.aiConnection.findUniqueOrThrow({ where: { id: connectionId }, select: { userId: true } });
+  await audit(userId, "ai.revoke", "AiConnection", connectionId, undefined, { reason }, tx);
 }
 
 // authorization_code grant. Every check is made before the code is claimed, so a wrong
@@ -198,7 +202,7 @@ export async function exchangeCode(i: {
     });
     if (!row) return INVALID_GRANT;
     if (row.usedAt !== null) {
-      if (row.connectionId) await revokeOne(tx, row.connectionId, "code_reuse");
+      if (row.connectionId) await revokeStolen(tx, row.connectionId, "code_reuse");
       return INVALID_GRANT;
     }
     if (
@@ -211,9 +215,11 @@ export async function exchangeCode(i: {
       return INVALID_GRANT;
     }
 
-    // The user and agency rows are share-locked until commit: a suspension, password reset or
-    // lockout running at the same moment either waits for this exchange (and then revokes the
-    // new connection) or commits first (and this exchange sees the account is no longer active).
+    // The user and agency rows are share-locked until commit, so a suspension, password reset or
+    // lockout running at the same moment is ordered with this exchange: either it waits for this
+    // exchange and then revokes the new connection, or it commits first and has marked every
+    // unused code of the user as used, so the claim below finds nothing (invalid_grant). A
+    // suspension is also seen in the status read here.
     const accounts = await tx.$queryRaw<
       { role: "ADMIN" | "AGENT"; status: "ACTIVE" | "SUSPENDED"; agencyId: string; agencyStatus: "ACTIVE" | "SUSPENDED" }[]
     >`
@@ -233,7 +239,7 @@ export async function exchangeCode(i: {
     });
     if (claimed.count !== 1) {
       const winner = await tx.aiAuthCode.findUnique({ where: { id: row.id }, select: { connectionId: true } });
-      if (winner?.connectionId) await revokeOne(tx, winner.connectionId, "code_reuse");
+      if (winner?.connectionId) await revokeStolen(tx, winner.connectionId, "code_reuse");
       return INVALID_GRANT;
     }
 
@@ -253,8 +259,9 @@ export async function exchangeCode(i: {
 }
 
 // refresh_token grant, rotated on every use. The old refresh token is claimed with one
-// conditional UPDATE before the new pair is made; an already-used token, or the loser of a
-// parallel refresh, revokes the whole connection (theft signal) and gets invalid_grant.
+// conditional UPDATE before the new pair is made (its access token ends at the same moment);
+// an already-used token, or the loser of a parallel refresh, revokes the whole connection
+// (theft signal) and gets invalid_grant.
 export async function refresh(i: {
   refreshToken: string;
   clientId: string;
@@ -267,6 +274,14 @@ export async function refresh(i: {
   const refreshHash = hashToken(input.refreshToken);
 
   return db.$transaction(async (tx) => {
+    // Lock the connection row first, so every refresh of one connection runs one after the
+    // other and all writers take locks in the same order (connection, then tokens): without
+    // it two parallel reuses can deadlock (one revoking and deleting the token rows the other
+    // still holds from its failed claim). The full read below then sees the latest state.
+    const ref = await tx.aiToken.findUnique({ where: { refreshHash }, select: { connectionId: true } });
+    if (!ref) return INVALID_GRANT;
+    await tx.$queryRaw`SELECT id FROM "AiConnection" WHERE id = ${ref.connectionId} FOR NO KEY UPDATE`;
+
     const now = new Date();
     const row = await tx.aiToken.findUnique({
       where: { refreshHash },
@@ -297,7 +312,7 @@ export async function refresh(i: {
       return INVALID_GRANT;
     }
     if (row.usedAt !== null) {
-      await revokeOne(tx, connection.id, "refresh_reuse");
+      await revokeStolen(tx, connection.id, "refresh_reuse");
       return INVALID_GRANT;
     }
     if (
@@ -309,9 +324,13 @@ export async function refresh(i: {
       return INVALID_GRANT;
     }
 
-    const claimed = await tx.aiToken.updateMany({ where: { id: row.id, usedAt: null }, data: { usedAt: now } });
+    // The old access token stops at once too: only the newest pair works.
+    const claimed = await tx.aiToken.updateMany({
+      where: { id: row.id, usedAt: null },
+      data: { usedAt: now, accessExpiresAt: now },
+    });
     if (claimed.count !== 1) {
-      await revokeOne(tx, connection.id, "refresh_reuse");
+      await revokeStolen(tx, connection.id, "refresh_reuse");
       return INVALID_GRANT;
     }
     // Spent pairs are kept (to spot reuse) until their refresh token would have expired anyway.
@@ -383,31 +402,40 @@ export async function revokeConnection(
 }
 
 // Password set/reset and lockout: every open connection of the user ends, in the caller's
-// transaction (the same one that ends the sessions). Returns how many were open; the caller
-// writes the `ai.revoke_all` audit row with its own actor.
+// transaction (the same one that ends the sessions). Unused codes and open connect windows
+// end too: neither a reset nor a lockout changes the account status, so without this a code
+// issued just before could still be exchanged afterwards. Returns how many connections were
+// open; the caller writes the `ai.revoke_all` audit row with its own actor.
 export async function revokeUserConnections(
   userId: string,
   reason: RevokeReason,
   tx: Prisma.TransactionClient,
 ): Promise<number> {
+  const now = new Date();
+  await tx.aiAuthCode.updateMany({ where: { userId, usedAt: null }, data: { usedAt: now } });
+  await tx.aiConnectWindow.updateMany({ where: { userId, usedAt: null }, data: { usedAt: now } });
   const { count } = await tx.aiConnection.updateMany({
     where: { userId, revokedAt: null },
-    data: { revokedAt: new Date(), revokedReason: reason },
+    data: { revokedAt: now, revokedReason: reason },
   });
   await tx.aiToken.deleteMany({ where: { connection: { userId } } });
   return count;
 }
 
-// Agency suspended: every open connection of its users ends, in the suspension's transaction.
-// Reactivation does not bring them back. Returns how many were open (caller audits).
+// Agency suspended: every open connection, unused code and open connect window of its users
+// ends, in the suspension's transaction. Reactivation does not bring any of them back.
+// Returns how many connections were open (caller audits).
 export async function revokeAgencyConnections(
   agencyId: string,
   reason: RevokeReason,
   tx: Prisma.TransactionClient,
 ): Promise<number> {
+  const now = new Date();
+  await tx.aiAuthCode.updateMany({ where: { user: { agencyId }, usedAt: null }, data: { usedAt: now } });
+  await tx.aiConnectWindow.updateMany({ where: { user: { agencyId }, usedAt: null }, data: { usedAt: now } });
   const { count } = await tx.aiConnection.updateMany({
     where: { agencyId, revokedAt: null },
-    data: { revokedAt: new Date(), revokedReason: reason },
+    data: { revokedAt: now, revokedReason: reason },
   });
   await tx.aiToken.deleteMany({ where: { connection: { agencyId } } });
   return count;
@@ -415,30 +443,55 @@ export async function revokeAgencyConnections(
 
 // ---------- Listing ----------
 
-const ASSISTANTS = ["Claude", "ChatGPT"] as const;
-type Assistant = (typeof ASSISTANTS)[number];
-// One agent per agency; each connect adds one row, so this is far above real use.
-const MAX_LISTED_CONNECTIONS = 100;
+export type AssistantLabel = "Claude" | "ChatGPT" | "AI assistant";
+export type ConnectionListItem = { id: string; assistant: AssistantLabel; createdAt: Date; lastUsedAt: Date | null };
 
-function isAssistant(name: string): name is Assistant {
-  return (ASSISTANTS as readonly string[]).includes(name);
+const DEFAULT_CONNECTIONS_PAGE = 20;
+const MAX_CONNECTIONS_PAGE = 50;
+
+// Client names are set from the redirect URI at registration (task 4). Any other name still
+// gets a row (so it can be revoked), under a neutral label.
+function assistantLabel(name: string): AssistantLabel {
+  return name === "Claude" || name === "ChatGPT" ? name : "AI assistant";
 }
 
-// The agency's open connections, newest first, for the AI assistants tab.
-export async function listConnections(agencyId: string): Promise<
-  { id: string; assistant: Assistant; createdAt: Date; lastUsedAt: Date | null }[]
-> {
+// The agency's open connections for the AI assistants tab: newest first (createdAt desc,
+// id desc), `cursor` = id of the last connection of the previous page (same pattern as
+// listAgencies). The cursor must be one of this agency's connections.
+export async function listConnections(
+  agencyId: string,
+  cursor?: string,
+  take = DEFAULT_CONNECTIONS_PAGE,
+): Promise<{ connections: ConnectionListItem[]; nextCursor: string | null }> {
+  const size = Number.isFinite(take)
+    ? Math.min(MAX_CONNECTIONS_PAGE, Math.max(1, Math.trunc(take)))
+    : DEFAULT_CONNECTIONS_PAGE;
+  let where: Prisma.AiConnectionWhereInput = { agencyId, revokedAt: null };
+  if (cursor !== undefined) {
+    const after = await db.aiConnection.findFirst({
+      where: { id: cursor, agencyId },
+      select: { id: true, createdAt: true },
+    });
+    if (!after) throw new Error("Invalid cursor");
+    where = {
+      ...where,
+      OR: [{ createdAt: { lt: after.createdAt } }, { createdAt: after.createdAt, id: { lt: after.id } }],
+    };
+  }
   const rows = await db.aiConnection.findMany({
-    where: { agencyId, revokedAt: null },
+    where,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: MAX_LISTED_CONNECTIONS,
+    take: size + 1,
     select: { id: true, createdAt: true, lastUsedAt: true, client: { select: { name: true } } },
   });
-  // Client names are set from the redirect URI at registration (task 4), so only the two
-  // names exist; anything else would be a bug and is not shown as a known assistant.
-  return rows.flatMap((r) =>
-    isAssistant(r.client.name)
-      ? [{ id: r.id, assistant: r.client.name, createdAt: r.createdAt, lastUsedAt: r.lastUsedAt }]
-      : [],
-  );
+  const page = rows.slice(0, size);
+  return {
+    connections: page.map((r) => ({
+      id: r.id,
+      assistant: assistantLabel(r.client.name),
+      createdAt: r.createdAt,
+      lastUsedAt: r.lastUsedAt,
+    })),
+    nextCursor: rows.length > size ? page[page.length - 1]!.id : null,
+  };
 }
