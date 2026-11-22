@@ -87,6 +87,8 @@ describe("assistant connector: clients", () => {
 
   it("registration matches a client only when every redirect URI is that client's", () => {
     expect(clientForRedirects([REDIRECT])).toBe(CLAUDE);
+    expect(clientForRedirects(["https://chatgpt.com/connector_platform_oauth_redirect"])?.name).toBe("ChatGPT");
+    expect(clientForRedirects(["https://chatgpt.com/connector/oauth/abc123"])).toBeNull(); // per-connector URIs are not listed
     expect(clientForRedirects([REDIRECT, "https://evil.example.com/cb"])).toBeNull();
     expect(clientForRedirects(["https://evil.example.com/cb"])).toBeNull();
     expect(clientForRedirects([])).toBeNull();

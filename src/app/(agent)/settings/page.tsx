@@ -231,7 +231,7 @@ function AssistantsTab({ mcpUrl, connections }: { mcpUrl: string | null; connect
         AI assistants
       </h2>
       <p className="mb-5 mt-1 text-[13px] text-muted">
-        Search hotels from Claude. Search only: bookings, cancellations and your balance can&apos;t be reached from an AI assistant.
+        Search hotels from Claude or ChatGPT. Search only: bookings, cancellations and your balance can&apos;t be reached from an AI assistant.
       </p>
       {mcpUrl === null ? (
         <p className="text-sm text-muted">AI assistants are not available yet.</p>
@@ -240,7 +240,7 @@ function AssistantsTab({ mcpUrl, connections }: { mcpUrl: string | null; connect
           <div className="rounded-[9px] border border-line px-3 py-2.5 text-[13px] text-ink">
             <p className="font-semibold">To connect</p>
             <p className="mt-1 text-muted">
-              In Claude: Settings, Connectors, Add custom connector. Paste this address, then sign in to Apolles when asked:
+              In Claude or ChatGPT, add a custom connector with this address, then sign in to Apolles when asked:
             </p>
             <p className="mt-1 break-all font-mono text-ink">{mcpUrl}</p>
           </div>

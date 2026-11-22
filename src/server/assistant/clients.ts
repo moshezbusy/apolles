@@ -5,13 +5,16 @@
 //
 // Claude: https://claude.ai/api/mcp/auth_callback, checked 2026-11-22 against
 //   claude.com/docs/connectors/building/authentication (claude.ai web, Desktop and mobile).
-// ChatGPT: not listed yet. Its redirect URI could not be checked against OpenAI's docs from the
-//   build session; it is added only once checked (owner decision, safest option).
+// ChatGPT: https://chatgpt.com/connector_platform_oauth_redirect, checked 2026-11-22 against
+//   developers.openai.com/apps-sdk/build/auth: ChatGPT uses this stable URI when the server
+//   supports issuer identification (we advertise authorization_response_iss_parameter_supported
+//   and always return iss). Otherwise it would use a per-connector URI, which is not listed.
 
 export type AssistantClient = { clientId: string; name: string; redirectUris: readonly string[] };
 
 export const ASSISTANT_CLIENTS: readonly AssistantClient[] = [
   { clientId: "apolles-claude", name: "Claude", redirectUris: ["https://claude.ai/api/mcp/auth_callback"] },
+  { clientId: "apolles-chatgpt", name: "ChatGPT", redirectUris: ["https://chatgpt.com/connector_platform_oauth_redirect"] },
 ];
 
 export function clientById(clientId: unknown): AssistantClient | null {
