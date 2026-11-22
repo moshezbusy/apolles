@@ -21,11 +21,17 @@ type Checked =
   | { agent: { userId: string; sessionId: string }; check: Extract<AuthorizeCheck, { kind: "ok" }> }
   | { error: string };
 
-// The form's fields as authorize parameters; a repeated field becomes an array (refused later),
-// a file means the form was not ours.
+// React's own hidden inputs of a useActionState form ($ACTION_REF_*, $ACTION_<n>:<i>,
+// $ACTION_KEY). With JavaScript on they reach the action in its FormData; React's decodeAction
+// drops exactly these (prefix "$ACTION_") for no-JS submits.
+const REACT_ACTION_PREFIX = "$ACTION_";
+
+// The form's fields as authorize parameters, without React's own fields; a repeated field
+// becomes an array (refused later), a file means the form was not ours.
 function fieldsOf(formData: FormData): AuthorizeParams | null {
   const out: Record<string, string | string[]> = {};
   for (const [key, value] of formData) {
+    if (key.startsWith(REACT_ACTION_PREFIX)) continue;
     if (typeof value !== "string") return null;
     const previous = out[key];
     out[key] = previous === undefined ? value : [...(Array.isArray(previous) ? previous : [previous]), value];

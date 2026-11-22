@@ -16,10 +16,6 @@ const CLAUDE_CIMD = "https://claude.ai/oauth/mcp-oauth-client-metadata";
 const IP = "203.0.113.7";
 const FIFTEEN_MIN = 15 * 60 * 1000;
 
-function sha256Hex(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
 function pkce() {
   const verifier = randomBytes(32).toString("base64url");
   return { verifier, challenge: createHash("sha256").update(verifier).digest("base64url") };
@@ -270,9 +266,9 @@ describe("POST /oauth/token", () => {
   });
 
   describe("rate limits", () => {
-    it("the 61st request of a client in 15 minutes → 429", async () => {
+    it("DCR client: the 61st request in 15 minutes → 429", async () => {
       const { codeGrant, client } = await setup();
-      await seedRateLimit(`ai-token:client:${sha256Hex(client.id)}`, 60, FIFTEEN_MIN);
+      await seedRateLimit(`ai-token:client:${client.id}`, 60, FIFTEEN_MIN);
       const { res, body } = await tokens(codeGrant);
       expect(res.status).toBe(429);
       expect(body).toEqual({ error: "too_many_requests" });
@@ -280,18 +276,42 @@ describe("POST /oauth/token", () => {
       expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
     });
 
-    it("the 60th of a client still goes through", async () => {
+    it("DCR client: the 60th still goes through", async () => {
       const { codeGrant, client } = await setup();
-      await seedRateLimit(`ai-token:client:${sha256Hex(client.id)}`, 59, FIFTEEN_MIN);
+      await seedRateLimit(`ai-token:client:${client.id}`, 59, FIFTEEN_MIN);
       expect((await tokens(codeGrant)).res.status).toBe(200);
     });
 
-    it("the key holds a hash of the client_id, never the raw value", async () => {
-      const { codeGrant } = await setup();
-      await tokens({ ...codeGrant, client_id: CLAUDE_CIMD });
+    // Every Claude user sends the same CIMD client_id: one bucket for it would let one
+    // connection (or anyone) use up every other agent's refreshes.
+    it("CIMD client: 61 refreshes of one connection from many IPs → only that connection is stopped", async () => {
+      const agent = await createAgent();
+      const client = await db.aiClient.create({ data: { clientIdUrl: CLAUDE_CIMD, name: "Claude", redirectUris: [REDIRECT] } });
+      async function connectCimd(): Promise<string> {
+        const { verifier, challenge } = pkce();
+        const code = await issueAuthCode({ userId: agent.userId, clientId: client.id, redirectUri: REDIRECT, codeChallenge: challenge, resource: RESOURCE });
+        const body = (await tokens({ grant_type: "authorization_code", code, redirect_uri: REDIRECT, client_id: CLAUDE_CIMD, code_verifier: verifier, resource: RESOURCE })).body;
+        return body.refresh_token as string;
+      }
+      let refreshA = await connectCimd();
+      const refreshB = await connectCimd();
+      const refreshFrom = async (token: string, n: number) =>
+        tokenRoute.POST(
+          form(
+            "/oauth/token",
+            { grant_type: "refresh_token", refresh_token: token, client_id: CLAUDE_CIMD, resource: RESOURCE },
+            { "x-forwarded-for": `198.51.100.${(n % 250) + 1}` },
+          ),
+        );
+      for (let n = 1; n <= 60; n += 1) {
+        const res = await refreshFrom(refreshA, n);
+        expect(res.status, `refresh ${n}`).toBe(200);
+        refreshA = ((await res.json()) as { refresh_token: string }).refresh_token;
+      }
+      expect((await refreshFrom(refreshA, 61)).status).toBe(429);
+      expect((await refreshFrom(refreshB, 62)).status).toBe(200);
       const keys = (await db.rateLimitBucket.findMany({ select: { key: true } })).map((r) => r.key);
-      expect(keys).toContain(`ai-token:client:${sha256Hex(CLAUDE_CIMD)}`);
-      expect(keys.some((k) => k.includes("claude.ai"))).toBe(false);
+      expect(keys.some((k) => k.startsWith("ai-token:client:"))).toBe(false);
     });
 
     it("refresh: the 61st of one connection → 429 (other limits not reached)", async () => {

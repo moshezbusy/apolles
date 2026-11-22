@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { AiClient } from "@/generated/prisma/client";
 import { audit } from "@/server/audit";
@@ -52,11 +51,6 @@ function isSupportedScope(scope: string | undefined): boolean {
     .trim()
     .split(/ +/)
     .every((part) => SUPPORTED_SCOPES.has(part));
-}
-
-// Rate-limit keys hold at most 200 characters and never a raw client-supplied URL.
-function sha256Hex(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 // ---------- Authorize ----------
@@ -279,8 +273,9 @@ function tokenAnswer(result: TokenPair | OAuthError): EndpointResult {
   };
 }
 
-// POST /oauth/token. Limits (Global Constraints): 2,000 per 15 minutes per IP, 60 per client,
-// and for refresh 60 per connection. Each is one indexed statement, so the answer stays well
+// POST /oauth/token. Limits: 2,000 per 15 minutes per IP; 60 per DCR client; for refresh 60
+// per connection (counted once the refresh token's row is found, before anything is issued).
+// A code is single use, so the code grant needs no per-connection limit. Each is one indexed statement, so the answer stays well
 // inside an assistant's 10-second token timeout.
 export async function handleTokenRequest(fields: Record<string, string> | null, ip: string): Promise<EndpointResult> {
   const byIp = await hitRateLimit(`ai-token:ip:${ip}`, TOKEN_IP_LIMIT.limit, TOKEN_IP_LIMIT.windowMs);
@@ -289,14 +284,6 @@ export async function handleTokenRequest(fields: Record<string, string> | null, 
   if (fields.grant_type !== "authorization_code" && fields.grant_type !== "refresh_token") {
     return oauthError("unsupported_grant_type");
   }
-  const clientIdField = fields.client_id;
-  if (!clientIdField || clientIdField.length > MAX_FIELD_LENGTH) return oauthError("invalid_request");
-  const byClient = await hitRateLimit(
-    `ai-token:client:${sha256Hex(clientIdField)}`,
-    TOKEN_CLIENT_LIMIT.limit,
-    TOKEN_CLIENT_LIMIT.windowMs,
-  );
-  if (!byClient.allowed) return tooMany(byClient);
 
   const parsed = fields.grant_type === "authorization_code" ? codeGrant.safeParse(fields) : refreshGrant.safeParse(fields);
   if (!parsed.success) return oauthError("invalid_request");
@@ -306,6 +293,13 @@ export async function handleTokenRequest(fields: Record<string, string> | null, 
 
   const client = await findKnownClient(input.client_id);
   if (!client) return oauthError("invalid_client", 401);
+  // Per client only for DCR clients (one registration each). Every Claude (or ChatGPT) user
+  // sends the same CIMD client_id, so one bucket for it would be shared by all their agents and
+  // anyone could use it up; those are limited per connection (refresh) and per IP.
+  if (client.clientIdUrl === null) {
+    const byClient = await hitRateLimit(`ai-token:client:${client.id}`, TOKEN_CLIENT_LIMIT.limit, TOKEN_CLIENT_LIMIT.windowMs);
+    if (!byClient.allowed) return tooMany(byClient);
+  }
 
   if (input.grant_type === "authorization_code") {
     return tokenAnswer(

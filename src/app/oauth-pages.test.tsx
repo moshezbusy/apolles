@@ -313,6 +313,36 @@ describe("Allow and Deny", () => {
     expect(await db.aiConnectWindow.count({ where: { usedAt: null } })).toBe(1);
   });
 
+  // With JavaScript on, React puts its own hidden inputs into a useActionState form and they
+  // reach the action in its FormData.
+  const REACT_FIELDS = { $ACTION_REF_1: "", "$ACTION_1:0": '{"id":"abc","bound":"$@1"}', "$ACTION_1:1": "[]", $ACTION_KEY: "k1" };
+
+  it("Allow and Deny accept React's own $ACTION_ fields", async () => {
+    await openConnectWindow(agent.id, sessionId);
+    const allowed = new URL(await redirectOf(() => allowAction(null, formOf({ ...params, ...REACT_FIELDS }))));
+    expect(allowed.searchParams.get("code")).toBeTruthy();
+    const denied = new URL(await redirectOf(() => denyAction(formOf({ ...params, ...REACT_FIELDS }))));
+    expect(denied.searchParams.get("error")).toBe("access_denied");
+  });
+
+  it("any other extra field is still refused, next to React's fields", async () => {
+    await openConnectWindow(agent.id, sessionId);
+    for (const extra of [{ ACTION_x: "1" }, { $action: "1" }, { "x$ACTION_": "1" }]) {
+      const result = await allowAction(null, formOf({ ...params, ...REACT_FIELDS, ...extra }));
+      expect(result).toEqual({ error: expect.stringContaining("This connection link does not work") });
+      await expect(denyAction(formOf({ ...params, ...REACT_FIELDS, ...extra }))).resolves.toBeUndefined();
+    }
+    expect(await db.aiAuthCode.count()).toBe(0);
+  });
+
+  it("Allow counts against the per-IP authorize limit: the 121st is refused, no code", async () => {
+    await openConnectWindow(agent.id, sessionId);
+    await seedRateLimit(`ai-authorize:ip:${IP}`, 120, 15 * 60 * 1000);
+    expect(await allowAction(null, formOf(params))).toEqual({ error: expect.stringContaining("Too many connection requests") });
+    expect(await db.aiAuthCode.count()).toBe(0);
+    expect(await db.aiConnectWindow.count({ where: { usedAt: null } })).toBe(1);
+  });
+
   it("Deny → error=access_denied with state and iss, no code", async () => {
     await openConnectWindow(agent.id, sessionId);
     const url = new URL(await redirectOf(() => denyAction(formOf(params))));
