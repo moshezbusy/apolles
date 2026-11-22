@@ -1,0 +1,1022 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Review &amp; book | Apolles</title>
+<style>
+
+:root{
+  --ink:#17211d;
+  --muted:#6d756f;
+  --green:#173f35;
+  --green-2:#245c4e;
+  --green-soft:#eef3f0;
+  --line:#e7e2d8;
+  --bg:#faf9f6;
+  --card:#fff;
+  --shadow:0 14px 36px rgba(19,47,39,.08);
+  --warn:#fff8e8;
+  --warn-line:#eadfbe;
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  min-height:100%;
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--ink);
+  background:var(--bg);
+}
+a{text-decoration:none;color:inherit}
+button,input,select{font:inherit}
+
+.topbar{
+  position:sticky;
+  top:0;
+  z-index:100;
+  height:68px;
+  background:#fff;
+  border-bottom:1px solid var(--line);
+}
+.topbar-inner{
+  width:min(1280px,calc(100% - 40px));
+  height:100%;
+  margin:auto;
+  display:flex;
+  align-items:center;
+  gap:28px;
+}
+.brand{
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:27px;
+  margin-right:10px;
+}
+.nav{display:flex;height:100%;align-items:center;gap:26px}
+.nav-link{height:100%;display:flex;align-items:center;position:relative;font-size:13px;color:#6c7671}
+.nav-link.active{color:var(--green);font-weight:700}
+.nav-link.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-group{position:relative;height:100%;display:flex;align-items:center}
+.nav-trigger{
+  height:100%;border:0;background:transparent;padding:0;cursor:pointer;
+  color:#6c7671;font-size:13px;display:flex;align-items:center;gap:5px;position:relative;
+}
+.nav-trigger.active{color:var(--green);font-weight:700}
+.nav-trigger.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-trigger span{font-size:11px;color:#8a938e}
+.nav-menu{
+  position:absolute;top:58px;left:-10px;z-index:180;
+  width:190px;padding:7px;background:#fff;border:1px solid #e1e6e3;
+  border-radius:11px;box-shadow:0 15px 38px rgba(19,47,39,.14);
+  opacity:0;visibility:hidden;transform:translateY(5px);transition:.14s ease;
+}
+.nav-group:hover>.nav-menu,.nav-group.menu-open>.nav-menu{opacity:1;visibility:visible;transform:translateY(0)}
+.nav-menu a{display:block;padding:8px 10px;border-radius:7px;color:#4d5a54;font-size:12.5px}
+.nav-menu a:hover{background:#f1f6f3;color:var(--green)}
+.nav-sep{height:1px;background:#eeeae5;margin:5px 2px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:14px;color:#647069;font-size:12px}
+.balance-chip{
+  display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;
+  padding:6px 11px;border:1px solid #dce6e0;border-radius:10px;background:#f7faf8;
+}
+.balance-chip small{font-size:11px;color:#7f8984;font-weight:600}
+.balance-chip b{font-size:12.5px;color:var(--green)}
+.balance-chip:hover{border-color:#bcd0c6}
+.account-group{height:auto}
+.account-trigger{border:0;background:transparent;display:flex;align-items:center;gap:8px;color:#4d5a54;font-size:12.5px;padding:0;cursor:pointer}
+.account-trigger b{font-size:11px;font-weight:500}
+.account-menu{left:auto;right:0;top:40px}
+.avatar{
+  width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#e5eee9;color:var(--green);
+  font-size:11px;font-weight:800;
+}
+
+.page{
+  width:min(1280px,calc(100% - 40px));
+  margin:auto;
+  padding:22px 0 54px;
+}
+
+.steps{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:14px;
+  overflow:hidden;
+  margin-bottom:18px;
+}
+.step{
+  min-height:54px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:0 16px;
+  border-right:1px solid #f0ece6;
+  color:#8a928e;
+  font-size:12px;
+}
+.step:last-child{border-right:0}
+.step .num{
+  width:26px;height:26px;border-radius:50%;
+  display:grid;place-items:center;
+  border:1px solid #d8e1dc;
+  font-size:11px;
+  font-weight:700;
+}
+.step.done{color:var(--green)}
+.step.done .num{
+  background:var(--green-soft);
+  color:var(--green);
+  border-color:#d9e7df;
+}
+.step.active{
+  color:var(--ink);
+  background:#fbfcfb;
+  font-weight:700;
+}
+.step.active .num{
+  background:var(--green);
+  color:#fff;
+  border-color:var(--green);
+}
+
+.booking-context{
+  display:grid;
+  grid-template-columns:130px minmax(0,1fr) auto;
+  gap:16px;
+  align-items:center;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  padding:14px;
+  margin-bottom:18px;
+}
+.hotel-thumb{
+  height:86px;
+  border-radius:10px;
+  background:
+    linear-gradient(135deg,rgba(23,63,53,.14),rgba(23,63,53,.02)),
+    linear-gradient(180deg,#92bdca,#d9e9ed 55%,#c1ad8e);
+}
+.context-copy h1{
+  margin:0 0 5px;
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:26px;
+  font-weight:500;
+}
+.context-sub{
+  color:#6f7974;
+  font-size:12px;
+  margin-bottom:7px;
+}
+.context-room{
+  font-size:12px;
+  color:#47544e;
+}
+.context-room strong{color:#1f2a26}
+.context-dates{
+  min-width:250px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.date-box{
+  border:1px solid #e1e7e3;
+  border-radius:9px;
+  padding:9px 10px;
+}
+.date-box span{
+  display:block;
+  color:#8b938f;
+  font-size:11px;
+  margin-bottom:3px;
+}
+.date-box strong{font-size:12px}
+
+.layout{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 330px;
+  gap:18px;
+  align-items:start;
+}
+.main-col{
+  display:grid;
+  gap:14px;
+}
+.card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+}
+.card-head{
+  padding:15px 18px;
+  border-bottom:1px solid #f0ece6;
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+}
+.card-head h2{
+  margin:0;
+  font-size:15px;
+}
+.edit-link{
+  color:var(--green);
+  font-size:11.5px;
+  font-weight:700;
+}
+.card-body{
+  padding:16px 18px 18px;
+}
+
+.review-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px 18px;
+}
+.review-item span{
+  display:block;
+  color:#8b938f;
+  font-size:11px;
+  margin-bottom:3px;
+}
+.review-item strong{
+  font-size:12.5px;
+}
+
+.guests-list{
+  border:1px solid #e5eae7;
+  border-radius:10px;
+  overflow:hidden;
+}
+.guest-row{
+  display:grid;
+  grid-template-columns:130px 1fr 130px;
+  gap:12px;
+  padding:11px 12px;
+  border-bottom:1px solid #edf0ee;
+  font-size:12px;
+}
+.guest-row:last-child{border-bottom:0}
+.guest-row span{color:#7b8580}
+.guest-row strong{font-weight:700}
+
+.policy-box{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+}
+.policy-cell{
+  border:1px solid #e5eae7;
+  border-radius:10px;
+  padding:12px;
+}
+.policy-cell span{
+  display:block;
+  color:#8a928e;
+  font-size:11px;
+  margin-bottom:4px;
+}
+.policy-cell strong{
+  font-size:12.5px;
+}
+.policy-cell.good strong{color:#2e8744}
+
+.norms{
+  color:#55615b;
+  font-size:11.5px;
+  line-height:1.65;
+  max-height:155px;
+  overflow:auto;
+  padding-right:4px;
+}
+.norms::-webkit-scrollbar{width:7px}
+.norms::-webkit-scrollbar-thumb{
+  background:#d7dcd9;
+  border-radius:999px;
+}
+
+.terms{
+  display:grid;
+  gap:10px;
+}
+.term{
+  display:flex;
+  align-items:flex-start;
+  gap:9px;
+  color:#5e6964;
+  font-size:11px;
+  line-height:1.5;
+}
+.term input{
+  width:15px;height:15px;
+  margin-top:1px;
+  accent-color:var(--green);
+}
+
+/* sidebar */
+.summary{
+  position:sticky;
+  top:86px;
+}
+.summary-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  padding:16px;
+}
+.summary-card h2{
+  margin:0 0 14px;
+  font-size:16px;
+}
+.summary-row{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  padding:9px 0;
+  border-bottom:1px solid #f0ece6;
+  font-size:12px;
+}
+.summary-row span{color:#747e79}
+.summary-row strong{text-align:right}
+
+.total-box{
+  margin-top:12px;
+  padding:13px;
+  border-radius:10px;
+  background:var(--green-soft);
+}
+.total-label{
+  font-size:11px;
+  color:#66736d;
+}
+.total-amount{
+  margin-top:3px;
+  font-size:21px;
+  font-weight:800;
+}
+.total-small{
+  margin-top:4px;
+  color:#78827d;
+  font-size:11px;
+}
+
+.property-fee{
+  margin-top:12px;
+  border:1px solid var(--warn-line);
+  border-radius:10px;
+  overflow:hidden;
+  background:#fffdf7;
+}
+.property-fee-head{
+  padding:9px 11px;
+  background:#fff7dd;
+  color:#6f5a20;
+  font-size:11px;
+  font-weight:700;
+}
+.property-fee-body{
+  padding:11px;
+}
+.property-fee-row{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+}
+.property-fee-name{
+  font-size:12px;
+  font-weight:700;
+}
+.property-fee-note{
+  margin-top:3px;
+  color:#7c8580;
+  font-size:11px;
+}
+.property-fee-amount{
+  font-size:13px;
+  font-weight:800;
+  white-space:nowrap;
+}
+
+/* markup */
+.markup{
+  margin-top:14px;
+  padding-top:14px;
+  border-top:1px solid #f0ece6;
+}
+.markup-title{
+  margin-bottom:9px;
+  font-size:12px;
+  font-weight:700;
+}
+.markup-type{
+  display:flex;
+  gap:14px;
+  margin-bottom:10px;
+}
+.markup-type label{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:11px;
+  color:#5d6863;
+}
+.markup-type input{accent-color:var(--green)}
+.markup-row{
+  display:grid;
+  grid-template-columns:1fr 58px;
+  gap:8px;
+}
+.markup-row input{
+  width:100%;
+  height:36px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  padding:0 10px;
+  font-size:12px;
+}
+.apply-btn{
+  height:36px;
+  border:1px solid #d6dfda;
+  border-radius:8px;
+  background:#fff;
+  color:var(--green);
+  font-size:11px;
+  font-weight:700;
+}
+
+.warning{
+  margin-top:12px;
+  padding:10px 11px;
+  border:1px solid var(--warn-line);
+  border-radius:9px;
+  background:var(--warn);
+  color:#776331;
+  font-size:11px;
+  line-height:1.45;
+}
+
+.book-btn{
+  margin-top:14px;
+  width:100%;
+  height:44px;
+  border:0;
+  border-radius:10px;
+  background:var(--green);
+  color:#fff;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+.back-link{
+  display:block;
+  text-align:center;
+  margin-top:10px;
+  color:var(--green);
+  font-size:11.5px;
+  font-weight:600;
+}
+
+@media(max-width:980px){
+  .layout{grid-template-columns:1fr}
+  .summary{position:static}
+}
+@media(max-width:760px){
+  .topbar-inner,.page{width:min(100% - 24px,1280px)}
+  .nav{gap:14px;overflow:auto}
+  .top-actions>span:not(:last-child),.profile span{display:none}
+  .steps{grid-template-columns:1fr 1fr}
+  .booking-context{grid-template-columns:1fr}
+  .context-dates{min-width:0}
+  .review-grid{grid-template-columns:1fr}
+  .guest-row{grid-template-columns:1fr}
+  .policy-box{grid-template-columns:1fr}
+}
+
+/* v2 additions */
+.guest-row{grid-template-columns:130px 1fr 170px}
+.contact-line{margin-top:10px;font-size:12px;color:#5f6a65}
+.contact-line strong{color:#1f2a26}
+
+.balance-box{margin-top:12px;border:1px solid #dce6e0;border-radius:10px;overflow:hidden}
+.balance-row{display:flex;justify-content:space-between;gap:12px;padding:9px 11px;font-size:12px;border-bottom:1px solid #edf1ee}
+.balance-row:last-child{border-bottom:0}
+.balance-row span{color:#6f7974}
+.balance-row.after{background:#f6faf8}
+.balance-row.after strong{color:var(--green)}
+
+.markup-note{margin-top:8px;font-size:11px;color:#7c8580;line-height:1.45}
+.markup-result{margin-top:8px;display:flex;justify-content:space-between;font-size:12px}
+.markup-result span{color:#6f7974}
+.markup-result strong{color:var(--green)}
+
+.book-btn:disabled{opacity:.45;cursor:not-allowed}
+.book-hint{margin-top:8px;text-align:center;font-size:11px;color:#8a928e}
+
+/* Price changed + low balance states */
+.state{display:none;margin-top:12px;border-radius:10px;padding:12px;font-size:12px;line-height:1.5}
+.state.show{display:block}
+.state strong{display:block;font-size:12.5px;margin-bottom:4px}
+.state.price{border:1px solid #eadfbe;background:#fff9e9;color:#6f5a20}
+.state.low{border:1px solid #edd9d4;background:#fbf4f2;color:#8a3f32}
+.state .compare{display:flex;gap:14px;margin:6px 0 10px}
+.state .compare s{color:#9a8f73}
+.state .compare b{color:#1f2a26}
+.state-actions{display:grid;gap:7px}
+.state-btn{height:36px;border-radius:9px;border:1px solid var(--green);background:var(--green);color:#fff;font-size:12px;font-weight:700;cursor:pointer}
+.state-btn.ghost{background:#fff;color:var(--green);border-color:#d4ddd8}
+
+.demo{margin-top:12px;padding:9px 11px;border:1px dashed #d8dfdb;border-radius:10px;font-size:11px;color:#7d8581;line-height:1.6}
+.demo a{color:var(--green);font-weight:600;text-decoration:underline;cursor:pointer}
+
+@media(max-width:760px){
+  .account-name{display:none}
+  .balance-chip small{display:none}
+  .nav-menu{position:fixed;left:12px;right:12px;top:62px;width:auto}
+  .account-menu{top:62px}
+  .guest-row{grid-template-columns:1fr}
+}
+
+
+/* ===== 11: review page changes ===== */
+a.step{color:var(--green)}
+a.step:hover{background:#f7faf8}
+.sum-hotel{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.sum-hotel .hotel-thumb{flex:0 0 64px;height:52px;border-radius:9px}
+.sum-hotel-name{font-family:Georgia,"Times New Roman",serif;font-size:19px;line-height:1.15}
+.sum-sub{margin-top:3px;font-size:11.5px;color:#6f7974}
+.sum-dates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
+.sum-dates .date-box strong{display:block;font-size:12px}
+.sum-dates .date-box em{display:block;font-style:normal;color:#6d756f;font-size:11px;margin-top:2px}
+.row-link{margin-left:6px;color:var(--green);font-weight:700;font-size:11.5px}
+.row-link:hover{text-decoration:underline}
+.tz-note{margin-top:10px;font-size:11px;color:#7f8883}
+details.markup{margin-top:12px;border-top:1px solid #f0ece6;padding-top:10px}
+details.markup summary{list-style:none;cursor:pointer;font-size:12.5px;font-weight:700;color:var(--green);display:flex;justify-content:space-between;align-items:center}
+details.markup summary::-webkit-details-marker{display:none}
+details.markup summary em{font-style:normal;font-weight:500;color:#7c8580}
+details.markup summary:after{content:"+";font-size:17px;font-weight:500}
+details.markup[open] summary:after{content:"−"}
+details.markup[open] summary{margin-bottom:10px}
+.pay-options{display:grid;gap:8px}
+.pay-opt{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid #dce3df;border-radius:11px;cursor:pointer;background:#fff}
+.pay-opt input{margin-top:2px;accent-color:var(--green);flex:0 0 auto}
+.pay-opt:has(input:checked){border-color:var(--green);background:var(--green-soft);box-shadow:inset 0 0 0 1px var(--green)}
+.pay-opt.off{opacity:.45;cursor:not-allowed}
+.pay-body{display:block;min-width:0;flex:1}
+.pay-title{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;font-weight:700;color:#1f2a26}
+.pay-title b{white-space:nowrap}
+.pay-text{display:block;margin-top:3px;font-size:11px;line-height:1.45;color:#5f6b65}
+.pay-text strong{color:#1f2a26}
+.state.pending{border:1px solid #d9e7df;background:var(--green-soft);color:#24493e}
+a.state-btn{display:flex;align-items:center;justify-content:center}
+.summary-card .term{margin-top:14px;display:flex;gap:9px;align-items:flex-start;font-size:11.5px;color:#56635d;line-height:1.5}
+.summary-card .term input{margin-top:2px;flex:0 0 auto}
+.book-btn.busy{opacity:.8;cursor:progress}
+
+/* ===== 11: balanced columns. Stay details on the left, payment on the right ===== */
+.stay-top{display:grid;grid-template-columns:minmax(0,1fr) 170px 170px;gap:10px;align-items:stretch;padding-bottom:14px;border-bottom:1px solid #f0ece6}
+.stay-hotel{display:flex;gap:12px;align-items:center;min-width:0}
+.stay-hotel .hotel-thumb{flex:0 0 76px;height:58px;border-radius:9px}
+.stay-top .date-box{display:flex;flex-direction:column;justify-content:center}
+.stay-top .date-box strong{display:block;font-size:12.5px}
+.stay-top .date-box em{display:block;font-style:normal;color:#6d756f;font-size:11px;margin-top:2px}
+.stay-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px 16px;padding-top:14px}
+.stay-grid .review-item strong{display:block}
+@media(max-width:1100px){ .stay-grid{grid-template-columns:repeat(3,minmax(0,1fr))} }
+@media(max-width:760px){
+  .stay-top{grid-template-columns:1fr 1fr}
+  .stay-hotel{grid-column:1 / -1}
+  .stay-grid{grid-template-columns:1fr 1fr}
+}
+
+/* v4: one look across all agent pages */
+.book-btn{border-radius:9px}
+
+/* ===== 11: taxes split, free cancellation, read-only net or gross ===== */
+.good-text{color:var(--green)}
+.voucher-only{font-size:11px;color:#8b938f}
+.fc-box{margin-top:12px;border:1px solid #dce6e0;border-radius:10px;overflow:hidden}
+.fc-box .balance-row strong{text-align:right}
+.fc-box .balance-row span{white-space:nowrap}
+.incl-box{margin-top:12px;border:1px solid #dce6e0;border-radius:10px;overflow:hidden}
+.incl-head{padding:9px 11px;background:var(--green-soft);color:#24493e;font-size:11px;font-weight:700}
+.incl-row{display:flex;justify-content:space-between;gap:12px;padding:10px 11px;font-size:12px}
+.incl-row span{color:#6f7974}
+.property-fee-row+.property-fee-row{margin-top:10px}
+.property-fee-row.fee-total{padding-top:10px;border-top:1px solid #f0e6c8}
+.property-fee-foot{margin-top:10px;color:#7c8580;font-size:11px;line-height:1.45}
+.price-view-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:#5d6863}
+.price-view-head b{color:#1f2a26}
+.markup-result[hidden]{display:none}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="07-search.html">Apolles</a>
+
+    <nav class="nav">
+      <a class="nav-link active" href="07-search.html">Search</a>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Quotes <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="14-quotes.html">All quotes</a>
+          <a href="15-quote-editor.html">New quote</a>
+          <div class="nav-sep"></div>
+          <a href="18-clients.html">Clients</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Bookings <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="13-bookings.html">All bookings</a>
+          <a href="13-bookings.html#upcoming">Upcoming stays</a>
+          <a href="13-bookings.html#completed">Completed</a>
+          <a href="13-bookings.html#cancelled">Cancelled</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Reporting <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="19-reports.html">Overview</a>
+          <a href="19-reports.html">Balance history</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="top-actions">
+      <a class="balance-chip" href="20-agency-settings.html#balance" title="Balance and top-ups">
+        <small>Balance</small>
+        <b>USD 4,250.00</b>
+      </a>
+
+      <div class="nav-group account-group">
+        <button class="account-trigger" type="button">
+          <span class="avatar">MZ</span>
+          <span class="account-name">My Agency</span>
+          <b>⌄</b>
+        </button>
+        <div class="nav-menu account-menu">
+          <a href="20-agency-settings.html">Agency settings</a>
+          <a href="20-agency-settings.html#balance">Balance &amp; top-ups</a>
+          <a href="#">Support</a>
+          <div class="nav-sep"></div>
+          <a href="04-login.html">Sign out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+
+  <nav class="steps" aria-label="Booking steps">
+    <a class="step done" href="08-search-results.html"><span class="num">✓</span><span>Choose hotel</span></a>
+    <a class="step done" href="09-hotel-rooms.html"><span class="num">✓</span><span>Choose room</span></a>
+    <a class="step done" href="10-guest-details.html"><span class="num">✓</span><span>Guest details</span></a>
+    <div class="step active" aria-current="step"><span class="num">4</span><span>Review &amp; book</span></div>
+  </nav>
+
+  <section class="layout">
+    <div class="main-col">
+
+      <section class="card stay-card">
+        <div class="card-head"><h2>Your stay</h2><a class="edit-link" href="09-hotel-rooms.html">Change room</a></div>
+        <div class="card-body">
+          <div class="stay-top">
+            <div class="stay-hotel">
+              <div class="hotel-thumb"></div>
+              <div>
+                <div class="sum-hotel-name">SLS Playa Mujeres</div>
+                <div class="sum-sub">Playa Mujeres, Cancún · ★★★★★</div>
+              </div>
+            </div>
+            <div class="date-box"><span>Check-in</span><strong>Mon, Oct 12, 2026</strong><em>from 15:00</em></div>
+            <div class="date-box"><span>Check-out</span><strong>Wed, Oct 14, 2026</strong><em>until 12:00</em></div>
+          </div>
+          <div class="stay-grid">
+            <div class="review-item"><span>Room</span><strong>Junior Suite King Bed</strong></div>
+            <div class="review-item"><span>Meal plan</span><strong>All inclusive</strong></div>
+            <div class="review-item"><span>Guests</span><strong>2 adults</strong></div>
+            <div class="review-item"><span>Guest nationality</span><strong>Israel</strong></div>
+            <div class="review-item"><span>Nights</span><strong>2</strong></div>
+            <div class="review-item"><span>Room rate (net)</span><strong id="netText">USD 874.00</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Guest details</h2><a class="edit-link" href="10-guest-details.html">Edit</a></div>
+        <div class="card-body">
+          <div class="guests-list">
+            <div class="guest-row"><span>Lead guest</span><strong>Mr Daniel Levy</strong><span>Adult 1 · sent to the hotel</span></div>
+            <div class="guest-row"><span>Guest 2</span><strong>Mrs Maya Levy</strong><span>Adult 2 · <small class="voucher-only">On voucher only</small></span></div>
+          </div>
+          <div class="contact-line"><strong>Contact for the hotel:</strong> daniel.levy@email.com · +972 50 123 4567</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Cancellation policy</h2></div>
+        <div class="card-body">
+          <div class="policy-box">
+            <div class="policy-cell good"><span>On or before Oct 5, 2026, 23:59 hotel time</span><strong>USD 0.00</strong></div>
+            <div class="policy-cell"><span>After Oct 5, 2026, 23:59 hotel time</span><strong>USD 874.00 (100%)</strong></div>
+          </div>
+          <div class="tz-note">Hotel time: Cancún (UTC−5). The deadline and time zone come from the supplier.</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Hotel policies</h2></div>
+        <div class="card-body">
+          <div class="norms">
+            Guests may be required to present identification and a valid payment card at check-in. Local taxes, resort fees or environmental charges not included in the rate may be collected directly by the property. Special requests are subject to availability and may incur additional charges. No-show or late cancellation charges may be up to 100% of the booking amount. Booking amendments remain subject to the hotel and supplier terms applicable at the time of the request.
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <aside class="summary">
+      <div class="summary-card">
+        <h2>Payment</h2>
+
+
+        <!-- Two ways to book. Vouchered = paid now from the balance. Confirmed = nothing paid, auto-cancel before the free cancellation ends. -->
+        <div class="pay-options" role="radiogroup" aria-label="How to book">
+          <label class="pay-opt" id="optVoucher">
+            <input type="radio" name="pay" value="voucher" checked>
+            <span class="pay-body">
+              <span class="pay-title"><span>Book and issue voucher</span><b id="totalText">USD 874.00</b></span>
+              <span class="pay-text">Paid from your balance now, taxes included. The voucher is ready right away.</span>
+            </span>
+          </label>
+          <label class="pay-opt" id="optLater">
+            <input type="radio" name="pay" value="later">
+            <span class="pay-body">
+              <span class="pay-title"><span>Book now, pay later</span><b>USD 0.00 now</b></span>
+              <span class="pay-text">Issue the voucher by <strong>Oct 4, 2026, 23:59 hotel time</strong>. If not, the booking is cancelled automatically at no charge.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="balance-box" id="balanceBox">
+          <div class="balance-row"><span>Your balance</span><strong id="balNow">USD 4,250.00</strong></div>
+          <div class="balance-row after"><span>After this booking</span><strong id="balAfter">USD 3,376.00</strong></div>
+        </div>
+        <div class="fc-box">
+          <div class="balance-row"><span>Free cancellation</span><strong class="good-text">USD 0 until Oct 5, 23:59 hotel time</strong></div>
+        </div>
+        <!-- For the developer: Included in the price = nightly tax_and_service_fee + property_fee, one line "Taxes and fees".
+             Payable at property = occupancy_pricing fees (resort_fee, mandatory_fee, mandatory_tax) in billable_currency
+             (the hotel's local currency), with request_currency in USD as an estimate. -->
+        <div class="incl-box">
+          <div class="incl-head">Included in the price</div>
+          <div class="incl-row"><span>Taxes and fees</span><strong>USD 113.62</strong></div>
+        </div>
+
+        <!-- State: pay later not available (no free cancellation, deadline too close, or pay-later limit used) -->
+        <div class="state low" id="stateNoLater">
+          <strong>Pay later is not available</strong>
+          <span id="noLaterReason">You reached your pay-later limit: USD 5,000.00 in bookings without a voucher. Issue vouchers for open bookings, or book and issue the voucher now.</span>
+        </div>
+
+        <div class="property-fee">
+          <div class="property-fee-head">Not included in the price · Payable at property</div>
+          <div class="property-fee-body">
+            <div class="property-fee-row">
+              <div>
+                <div class="property-fee-name">Resort fee</div>
+                <div class="property-fee-note">MXN 690.00 per night</div>
+              </div>
+              <div class="property-fee-amount">MXN 1,380.00</div>
+            </div>
+            <div class="property-fee-row">
+              <div>
+                <div class="property-fee-name">Environmental tax</div>
+                <div class="property-fee-note">MXN 62.00 per night</div>
+              </div>
+              <div class="property-fee-amount">MXN 124.00</div>
+            </div>
+            <div class="property-fee-row fee-total">
+              <div>
+                <div class="property-fee-name">Total at property</div>
+                <div class="property-fee-note">About USD 87.19</div>
+              </div>
+              <div class="property-fee-amount">MXN 1,504.00</div>
+            </div>
+            <div class="property-fee-foot">Paid by the guest at the hotel in local currency. The USD amount is an estimate.</div>
+          </div>
+        </div>
+
+        <!-- Net or gross: chosen on Guest details. Read only here. For reports and the client quote only. -->
+        <div class="markup price-view">
+          <div class="price-view-head"><span>Price shown as <b id="modeText">Gross · 12%</b></span><a class="row-link" href="10-guest-details.html">Edit</a></div>
+          <div class="markup-result" id="grossRow"><span>Gross price</span><strong id="grossText">USD 978.88</strong></div>
+          <div class="markup-result" id="commRow"><span>Your commission</span><strong id="commText">USD 104.88</strong></div>
+          <div class="markup-note">Your balance is charged the net price. Gross is not shown on the voucher.</div>
+        </div>
+
+        <!-- State: price changed since the room was selected -->
+        <div class="state price" id="statePrice">
+          <strong>The price changed</strong>
+          The hotel updated the rate since you selected this room.
+          <div class="compare"><s>USD 874.00</s><b>USD 912.00</b><span>(+USD 38.00)</span></div>
+          <div class="state-actions">
+            <button class="state-btn" type="button" id="acceptPrice">Continue at USD 912.00</button>
+            <a class="state-btn ghost" href="09-hotel-rooms.html">Back to room options</a>
+          </div>
+        </div>
+
+        <!-- State: package rate. Shown if the price check returns sale_scenario.package=true (Expedia Rapid).
+             Such rates may be sold only together with a flight or car. They are normally filtered out of the results,
+             so this is a safety net. Booking is blocked. -->
+        <div class="state low" id="statePackage">
+          <strong>This rate can't be booked here</strong>
+          The hotel sells this rate only together with a flight or car. Apolles sells hotel only. Go back and choose another rate.
+          <div class="state-actions" style="margin-top:10px">
+            <a class="state-btn" href="09-hotel-rooms.html">Choose another rate</a>
+          </div>
+        </div>
+
+        <!-- State: balance too low -->
+        <div class="state low" id="stateLow">
+          <strong>Not enough balance to issue the voucher</strong>
+          <span id="lowText">Your balance is USD 500.00. You need USD 374.00 more.</span>
+          <div class="state-actions" style="margin-top:10px">
+            <a class="state-btn" href="20-agency-settings.html#balance">Top up by card</a>
+            <a class="state-btn ghost" href="20-agency-settings.html#balance">Bank transfer details</a>
+          </div>
+        </div>
+
+        <!-- State: the supplier did not confirm the booking -->
+        <div class="state low" id="stateFailed">
+          <strong>The booking was not confirmed</strong>
+          The hotel did not confirm this booking. No money was deducted from your balance. You can try again or choose another room.
+          <div class="state-actions" style="margin-top:10px">
+            <a class="state-btn" href="09-hotel-rooms.html">Choose another room</a>
+          </div>
+        </div>
+
+        <!-- State: the supplier accepted the request but the hotel has not confirmed yet -->
+        <div class="state pending" id="statePending">
+          <strong>Waiting for hotel confirmation</strong>
+          <span id="pendingText">The booking was sent. USD 874.00 is held from your balance until the hotel answers. If the hotel declines, the full amount returns to your balance. We email you as soon as there is an answer.</span>
+          <div class="state-actions" style="margin-top:10px">
+            <a class="state-btn" href="13-bookings.html">Go to bookings</a>
+          </div>
+        </div>
+
+        <div class="warning">Free cancellation until Oct 5, 2026, 23:59 hotel time. After that, the full amount is charged.</div>
+
+        <label class="term">
+          <input type="checkbox" id="agree">
+          <!-- Terms & Conditions page is not ready yet (waiting for the lawyer). The link has no target for now. -->
+          <span>I have reviewed the booking details, hotel policies and cancellation charges, and I agree to the <a href="#" style="text-decoration:underline">Terms &amp; Conditions</a>.</span>
+        </label>
+
+        <button class="book-btn" id="bookBtn" type="button" disabled>Book and pay USD 874.00 from balance</button>
+        <div class="book-hint" id="bookHint">Confirm the terms to book.</div>
+        <a class="back-link" href="10-guest-details.html">Back to guest details</a>
+
+        <div class="demo">Mockup demo only. Result of the next booking: <a id="demoPrice">price changed</a> · <a id="demoLow">low balance</a> · <a id="demoFailed">not confirmed</a> · <a id="demoPending">waiting for hotel</a> · <a id="demoNoLater">pay later not available</a> · <a id="demoPackage">package rate</a> · <a id="demoReset">normal</a></div>
+      </div>
+    </aside>
+
+  </section>
+</main>
+
+<script>
+(function(){
+  // Top menu dropdowns
+  document.querySelectorAll('.nav-trigger,.account-trigger').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const group=btn.closest('.nav-group');
+      document.querySelectorAll('.nav-group.menu-open').forEach(g=>{ if(g!==group) g.classList.remove('menu-open'); });
+      group.classList.toggle('menu-open');
+    });
+  });
+  document.addEventListener('click',()=>document.querySelectorAll('.nav-group.menu-open').forEach(g=>g.classList.remove('menu-open')));
+
+  const money=n=>'USD '+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  let net=874, balance=4250, priceChangedPending=false, outcome='ok', busy=false, laterOff=false, packageRate=false;
+  const $=id=>document.getElementById(id);
+  const agree=$('agree'), bookBtn=$('bookBtn'), hint=$('bookHint');
+  const statePrice=$('statePrice'), stateLow=$('stateLow'), stateFailed=$('stateFailed'), statePending=$('statePending'), stateNoLater=$('stateNoLater');
+  const payRadio=v=>document.querySelector('input[name=pay][value='+v+']');
+  const pay=()=>{ const r=document.querySelector('input[name=pay]:checked'); return r ? r.value : ''; };
+
+    // Net or gross from Guest details (demo: saved in this browser tab). Default demo: gross, 12%.
+  let pm={mode:'gross',type:'pct',value:12};
+  try{ const saved=JSON.parse(sessionStorage.getItem('apollesPriceMode')||'null'); if(saved && saved.mode) pm=saved; }catch(e){}
+  function markup(){
+    const gross=pm.mode==='gross';
+    const comm=Math.round((pm.type==='pct' ? net*pm.value/100 : pm.value)*100)/100;
+    $('modeText').textContent= gross ? 'Gross · '+(pm.type==='pct' ? pm.value+'%' : money(pm.value)) : 'Net';
+    $('grossRow').hidden=!gross; $('commRow').hidden=!gross;
+    $('grossText').textContent=money(net+comm);
+    $('commText').textContent=money(comm);
+  }
+
+  function render(){
+    $('netText').textContent=money(net);
+    $('totalText').textContent=money(net);
+    $('balNow').textContent=money(balance);
+    const low=balance<net;
+    // Voucher needs enough balance. Pay later needs free cancellation, enough time and room in the pay-later limit.
+    payRadio('voucher').disabled=low; $('optVoucher').classList.toggle('off',low);
+    payRadio('later').disabled=laterOff; $('optLater').classList.toggle('off',laterOff);
+    if(pay()==='voucher' && low) payRadio(laterOff?'voucher':'later').checked=!laterOff;
+    if(pay()==='later' && laterOff) payRadio('voucher').checked=!low;
+    if(!pay() && !low) payRadio('voucher').checked=true;
+    if(!pay() && !laterOff) payRadio('later').checked=true;
+    const mode=pay();
+        const blocked=(low && laterOff) || packageRate;
+
+    $('balAfter').textContent=money(balance-net);
+    $('balanceBox').style.display= mode==='voucher' ? '' : 'none';
+    stateLow.classList.toggle('show',low);
+    $('lowText').textContent='Your balance is '+money(balance)+'. You need '+money(net-balance)+' more.'+(laterOff?'':' You can still book now and pay later.');
+    stateNoLater.classList.toggle('show',laterOff);
+
+    if(!busy) bookBtn.textContent= mode==='later' ? 'Book now, pay later' : 'Book and pay '+money(net)+' from balance';
+    const ok=agree.checked && !blocked && !!mode && !priceChangedPending && !busy;
+    bookBtn.disabled=!ok;
+        $('statePackage').classList.toggle('show',packageRate);
+    if(!busy) hint.textContent= packageRate ? 'Choose another rate to continue.'
+                    : blocked ? 'Top up your balance to continue.'
+                    : priceChangedPending ? 'Accept the new price to continue.'
+                    : !agree.checked ? 'Confirm the terms to book.'
+                    : mode==='later' ? 'The booking is confirmed. Nothing is paid until you issue the voucher.'
+                    : 'The booking is confirmed and the voucher is issued right away.';
+    markup();
+  }
+
+  agree.addEventListener('change',render);
+  document.querySelectorAll('input[name=pay]').forEach(r=>r.addEventListener('change',render));
+  
+
+  $('acceptPrice').addEventListener('click',()=>{ net=912; priceChangedPending=false; statePrice.classList.remove('show'); render(); });
+
+  function reset(){
+    balance=4250; net=874; priceChangedPending=false; outcome='ok'; busy=false; laterOff=false; packageRate=false;
+    payRadio('voucher').disabled=false; payRadio('later').disabled=false; payRadio('voucher').checked=true;
+    [statePrice,stateFailed,statePending].forEach(x=>x.classList.remove('show'));
+    bookBtn.classList.remove('busy');
+  }
+  $('demoPrice').addEventListener('click',()=>{ reset(); priceChangedPending=true; statePrice.classList.add('show'); render(); });
+  $('demoLow').addEventListener('click',()=>{ reset(); balance=500; render(); });
+  $('demoFailed').addEventListener('click',()=>{ reset(); outcome='failed'; render(); hint.textContent='Demo: the next click on Book will not be confirmed.'; });
+  $('demoPending').addEventListener('click',()=>{ reset(); outcome='pending'; render(); hint.textContent='Demo: the next click on Book will wait for the hotel.'; });
+  $('demoNoLater').addEventListener('click',()=>{ reset(); laterOff=true; render(); });
+    $('demoPackage').addEventListener('click',()=>{ reset(); packageRate=true; render(); });
+  $('demoReset').addEventListener('click',()=>{ reset(); render(); });
+
+  // Book: locked right after the first click, so a double click can never create two bookings.
+  bookBtn.addEventListener('click',()=>{
+    if(bookBtn.disabled || busy) return;
+    busy=true; bookBtn.disabled=true; bookBtn.classList.add('busy');
+    bookBtn.textContent='Booking…';
+    hint.textContent='Do not close this page. This takes a few seconds.';
+    setTimeout(()=>{
+      bookBtn.classList.remove('busy');
+      if(outcome==='failed'){
+        busy=false; stateFailed.classList.add('show');
+        render(); hint.textContent='No money was deducted. You can try again.';
+        stateFailed.scrollIntoView({behavior:'smooth',block:'center'});
+      } else if(outcome==='pending'){
+        $('pendingText').textContent= pay()==='later'
+          ? 'The booking was sent. Nothing was paid. After the hotel confirms, issue the voucher by Oct 4, 2026, 23:59 hotel time. We email you as soon as there is an answer.'
+          : 'The booking was sent. '+money(net)+' is held from your balance until the hotel answers. If the hotel declines, the full amount returns to your balance. We email you as soon as there is an answer.';
+        statePending.classList.add('show');
+        bookBtn.textContent='Sent to the hotel';
+        hint.textContent='';
+        statePending.scrollIntoView({behavior:'smooth',block:'center'});
+      } else {
+        window.location.href='12-booking-summary.html'+(pay()==='later'?'#confirmed':'');
+      }
+    },1200);
+  });
+
+  render();
+})();
+</script>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

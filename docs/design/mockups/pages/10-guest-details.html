@@ -1,0 +1,1144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guest details | Apolles</title>
+<style>
+:root{
+  --ink:#17211d;
+  --muted:#6d756f;
+  --green:#173f35;
+  --green-2:#245c4e;
+  --green-soft:#eef3f0;
+  --line:#e7e2d8;
+  --bg:#faf9f6;
+  --card:#fff;
+  --shadow:0 14px 36px rgba(19,47,39,.08);
+  --danger:#9a5a50;
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  min-height:100%;
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--ink);
+  background:var(--bg);
+}
+a{text-decoration:none;color:inherit}
+button,input,select,textarea{font:inherit}
+
+.topbar{
+  position:sticky;
+  top:0;
+  z-index:100;
+  height:68px;
+  background:#fff;
+  border-bottom:1px solid var(--line);
+}
+.topbar-inner{
+  width:min(1280px,calc(100% - 40px));
+  height:100%;
+  margin:auto;
+  display:flex;
+  align-items:center;
+  gap:28px;
+}
+.brand{
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:27px;
+  margin-right:10px;
+}
+.nav{display:flex;height:100%;align-items:center;gap:26px}
+.nav-link{height:100%;display:flex;align-items:center;position:relative;font-size:13px;color:#6c7671}
+.nav-link.active{color:var(--green);font-weight:700}
+.nav-link.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-group{position:relative;height:100%;display:flex;align-items:center}
+.nav-trigger{
+  height:100%;border:0;background:transparent;padding:0;cursor:pointer;
+  color:#6c7671;font-size:13px;display:flex;align-items:center;gap:5px;position:relative;
+}
+.nav-trigger.active{color:var(--green);font-weight:700}
+.nav-trigger.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-trigger span{font-size:11px;color:#8a938e}
+.nav-menu{
+  position:absolute;top:58px;left:-10px;z-index:180;
+  width:190px;padding:7px;background:#fff;border:1px solid #e1e6e3;
+  border-radius:11px;box-shadow:0 15px 38px rgba(19,47,39,.14);
+  opacity:0;visibility:hidden;transform:translateY(5px);transition:.14s ease;
+}
+.nav-group:hover>.nav-menu,.nav-group.menu-open>.nav-menu{opacity:1;visibility:visible;transform:translateY(0)}
+.nav-menu a{display:block;padding:8px 10px;border-radius:7px;color:#4d5a54;font-size:12.5px}
+.nav-menu a:hover{background:#f1f6f3;color:var(--green)}
+.nav-sep{height:1px;background:#eeeae5;margin:5px 2px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:14px;color:#647069;font-size:12px}
+.balance-chip{
+  display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;
+  padding:6px 11px;border:1px solid #dce6e0;border-radius:10px;background:#f7faf8;
+}
+.balance-chip small{font-size:11px;color:#7f8984;font-weight:600}
+.balance-chip b{font-size:12.5px;color:var(--green)}
+.balance-chip:hover{border-color:#bcd0c6}
+.account-group{height:auto}
+.account-trigger{border:0;background:transparent;display:flex;align-items:center;gap:8px;color:#4d5a54;font-size:12.5px;padding:0;cursor:pointer}
+.account-trigger b{font-size:11px;font-weight:500}
+.account-menu{left:auto;right:0;top:40px}
+.avatar{
+  width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#e5eee9;color:var(--green);
+  font-size:11px;font-weight:800;
+}
+
+.page{
+  width:min(1280px,calc(100% - 40px));
+  margin:auto;
+  padding:22px 0 50px;
+}
+
+.steps{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:0;
+  margin-bottom:18px;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:14px;
+  overflow:hidden;
+}
+.step{
+  min-height:54px;
+  padding:0 16px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  border-right:1px solid #f0ece6;
+  color:#8a928e;
+  font-size:12px;
+}
+.step:last-child{border-right:0}
+.step .num{
+  width:26px;height:26px;border-radius:50%;
+  display:grid;place-items:center;
+  border:1px solid #d8e1dc;
+  font-size:11px;
+  font-weight:700;
+  background:#fff;
+}
+.step.done{color:var(--green)}
+.step.done .num{
+  background:var(--green-soft);
+  border-color:#d9e7df;
+  color:var(--green);
+}
+.step.active{
+  color:var(--ink);
+  font-weight:700;
+  background:#fbfcfb;
+}
+.step.active .num{
+  background:var(--green);
+  color:#fff;
+  border-color:var(--green);
+}
+
+.booking-context{
+  display:grid;
+  grid-template-columns:130px minmax(0,1fr) auto;
+  gap:16px;
+  align-items:center;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  padding:14px;
+  margin-bottom:18px;
+}
+.hotel-thumb{
+  height:86px;
+  border-radius:10px;
+  background:
+    linear-gradient(135deg,rgba(23,63,53,.14),rgba(23,63,53,.02)),
+    linear-gradient(180deg,#92bdca,#d9e9ed 55%,#c1ad8e);
+}
+.context-copy h1{
+  margin:0 0 5px;
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:26px;
+  font-weight:500;
+}
+.context-sub{
+  color:#6f7974;
+  font-size:12px;
+  margin-bottom:7px;
+}
+.context-room{
+  font-size:12px;
+  color:#47544e;
+}
+.context-room strong{color:#1f2a26}
+.context-dates{
+  min-width:210px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.date-box{
+  border:1px solid #e1e7e3;
+  border-radius:9px;
+  padding:9px 10px;
+}
+.date-box span{
+  display:block;
+  color:#8b938f;
+  font-size:11px;
+  margin-bottom:3px;
+}
+.date-box strong{font-size:12px}
+
+.layout{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 320px;
+  gap:18px;
+  align-items:start;
+}
+.main-col{
+  display:grid;
+  gap:14px;
+}
+.card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+}
+.card-head{
+  padding:16px 18px 13px;
+  border-bottom:1px solid #f0ece6;
+}
+.card-head h2{
+  margin:0;
+  font-size:16px;
+}
+.card-head p{
+  margin:5px 0 0;
+  color:#8b938f;
+  font-size:11.5px;
+}
+.card-body{padding:16px 18px 18px}
+
+.room-label{
+  margin-bottom:12px;
+  font-size:12px;
+  font-weight:700;
+  color:#46534d;
+}
+.guest-block + .guest-block{
+  margin-top:16px;
+  padding-top:16px;
+  border-top:1px solid #f0ece6;
+}
+.guest-title{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  margin-bottom:10px;
+}
+.guest-title strong{font-size:13px}
+.guest-title span{
+  color:#8b938f;
+  font-size:11px;
+}
+.form-grid{
+  display:grid;
+  grid-template-columns:110px 1fr 1fr;
+  gap:10px;
+}
+.form-grid.contact{
+  grid-template-columns:1fr 150px 1fr;
+}
+label{
+  display:block;
+  font-size:11px;
+  font-weight:700;
+  color:#495650;
+  margin-bottom:5px;
+}
+input,select,textarea{
+  width:100%;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  background:#fff;
+  color:#29352f;
+  outline:none;
+  font-size:13px;
+}
+input,select{
+  height:38px;
+  padding:0 10px;
+}
+textarea{
+  min-height:86px;
+  padding:10px;
+  resize:vertical;
+}
+input:focus,select:focus,textarea:focus{
+  border-color:#98ada4;
+  box-shadow:0 0 0 3px rgba(23,63,53,.07);
+}
+.required{color:#a85f53}
+.check-row{
+  margin-top:12px;
+  display:flex;
+  gap:9px;
+  align-items:flex-start;
+  color:#69736e;
+  font-size:11px;
+}
+.check-row input{
+  width:15px;
+  height:15px;
+  accent-color:var(--green);
+  margin-top:1px;
+}
+
+.request-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:8px;
+}
+.request{
+  min-height:42px;
+  border:1px solid #dce3df;
+  border-radius:9px;
+  padding:0 10px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:#4c5953;
+  font-size:11.5px;
+  cursor:pointer;
+  background:#fff;
+}
+.request input{
+  width:15px;
+  height:15px;
+  accent-color:var(--green);
+}
+.request-note{
+  margin-top:10px;
+  color:#8a928e;
+  font-size:11px;
+  line-height:1.5;
+}
+
+details{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:14px;
+  box-shadow:var(--shadow);
+  overflow:hidden;
+}
+summary{
+  list-style:none;
+  cursor:pointer;
+  padding:15px 18px;
+  font-size:13px;
+  font-weight:700;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+summary::-webkit-details-marker{display:none}
+summary:after{
+  content:"+";
+  color:var(--green);
+  font-size:18px;
+  font-weight:500;
+}
+details[open] summary:after{content:"−"}
+.detail-content{
+  padding:0 18px 16px;
+  border-top:1px solid #f0ece6;
+  color:#56635d;
+  font-size:12px;
+  line-height:1.6;
+}
+.policy-table{
+  margin-top:12px;
+  width:100%;
+  border-collapse:collapse;
+  font-size:11.5px;
+}
+.policy-table th,
+.policy-table td{
+  border:1px solid #e5e9e7;
+  padding:9px 10px;
+  text-align:left;
+}
+.policy-table th{
+  background:#f8f9f8;
+  color:#435049;
+}
+
+.summary{
+  position:sticky;
+  top:86px;
+}
+.summary-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  padding:16px;
+}
+.summary-card h2{
+  margin:0 0 14px;
+  font-size:16px;
+}
+.summary-row{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  padding:10px 0;
+  border-bottom:1px solid #f0ece6;
+  font-size:12px;
+}
+.summary-row:last-of-type{border-bottom:0}
+.summary-row span{color:#747e79}
+.summary-row strong{text-align:right}
+.total-box{
+  margin-top:12px;
+  padding:13px;
+  border-radius:10px;
+  background:var(--green-soft);
+}
+.total-box .label{
+  font-size:11px;
+  color:#66736d;
+}
+.total-box .amount{
+  margin-top:3px;
+  font-size:22px;
+  font-weight:800;
+}
+.total-box .small{
+  margin-top:4px;
+  font-size:11px;
+  color:#78827d;
+}
+.property-fee{
+  margin-top:12px;
+  border:1px solid #eadfbe;
+  border-radius:10px;
+  overflow:hidden;
+  background:#fffdf7;
+}
+.property-fee-head{
+  padding:9px 11px;
+  background:#fff7dd;
+  color:#6f5a20;
+  font-size:11px;
+  font-weight:700;
+}
+.property-fee-body{
+  padding:11px;
+}
+.property-fee-row{
+  display:flex;
+  justify-content:space-between;
+  gap:14px;
+  align-items:flex-start;
+}
+.property-fee-name{
+  font-size:12px;
+  font-weight:700;
+  color:#2d3933;
+}
+.property-fee-note{
+  margin-top:3px;
+  color:#7c8580;
+  font-size:11px;
+  line-height:1.4;
+}
+.property-fee-amount{
+  font-size:13px;
+  font-weight:800;
+  white-space:nowrap;
+  color:#1f2b25;
+}
+.warning{
+  margin-top:12px;
+  padding:10px 11px;
+  border:1px solid #eadfbe;
+  border-radius:9px;
+  background:#fff9e9;
+  color:#776331;
+  font-size:11px;
+  line-height:1.45;
+}
+.proceed{
+  margin-top:14px;
+  width:100%;
+  height:44px;
+  border:0;
+  border-radius:10px;
+  background:var(--green);
+  color:#fff;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+.back-link{
+  display:block;
+  text-align:center;
+  margin-top:10px;
+  font-size:11.5px;
+  color:var(--green);
+  font-weight:600;
+}
+
+
+.room-label-row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.room-label-row .room-label{margin:0}
+.pick-client{height:32px;padding:0 12px;border:1px solid #d4ddd8;border-radius:8px;background:#fff;color:var(--green);font-size:12px;font-weight:700;cursor:pointer}
+.form-grid.child{grid-template-columns:1fr 1fr 90px}
+.form-grid.child input:disabled{background:#f4f6f5;color:#5f6a65}
+.names-note{margin:16px 0 0;padding:10px 12px;border-radius:9px;background:#f7f4ed;color:#6b665b;font-size:11.5px;line-height:1.5}
+
+@media(max-width:980px){
+  .layout{grid-template-columns:1fr}
+  .summary{position:static}
+  .request-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:760px){
+  .topbar-inner,.page{width:min(100% - 24px,1280px)}
+  .nav{gap:14px;overflow:auto}
+  .account-name{display:none}
+  .balance-chip small{display:none}
+  .nav-menu{position:fixed;left:12px;right:12px;top:62px;width:auto}
+  .account-menu{top:62px}
+  .steps{grid-template-columns:1fr 1fr}
+  .step:nth-child(2){border-right:0}
+  .booking-context{grid-template-columns:1fr}
+  .context-dates{min-width:0}
+  .form-grid.child{grid-template-columns:1fr}
+}
+@media(max-width:540px){
+  .request-grid{grid-template-columns:1fr}
+}
+
+/* ===== 10: dropdowns (same look as the rest of the system) ===== */
+a.step{color:var(--green)}
+a.step:hover{background:#f7faf8}
+.dd-wrap{position:relative}
+.field-dd{width:100%;height:38px;border:1px solid #dce3df;border-radius:8px;background:#fff;color:#29352f;font-size:13px;padding:0 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;text-align:left}
+.field-dd span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.field-dd:focus,.field-dd[aria-expanded="true"]{border-color:#98ada4;box-shadow:0 0 0 3px rgba(23,63,53,.07);outline:none}
+.dd-menu{display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:90;min-width:100%;background:#fff;border:1px solid #dce3df;border-radius:10px;box-shadow:0 14px 34px rgba(19,47,39,.14);overflow:hidden;padding:4px 0}
+.dd-menu.open{display:block}
+.dd-wrap.right .dd-menu{left:auto;right:0}
+.dd-opt{width:100%;display:flex;align-items:center;gap:10px;border:0;background:#fff;padding:9px 12px;text-align:left;color:#324039;font-size:13px;cursor:pointer}
+.dd-opt:hover,.dd-opt.active{background:var(--green-soft);color:var(--green)}
+.pick-opt{justify-content:space-between}
+.pick-opt.sel{font-weight:700;color:var(--green)}
+.pick-opt.sel:after{content:"✓";font-weight:800}
+.dd-search{padding:8px;border-bottom:1px solid #eeeae3;margin-top:-4px}
+.dd-search input{height:36px}
+.dd-list{max-height:260px;overflow:auto;padding:4px 0}
+.dd-empty{padding:12px;font-size:12.5px;color:#7f8883}
+.client-menu{width:300px}
+.client-opt{flex-direction:column;align-items:flex-start;gap:1px}
+.client-opt small{color:#7f8883;font-size:11.5px}
+.cc-menu{width:280px}
+.cc-opt{justify-content:space-between}
+.cc-opt em{font-style:normal;color:#7f8883;font-variant-numeric:tabular-nums}
+
+/* ===== 10: required fields ===== */
+#guestCard{scroll-margin-top:84px}
+.optional{margin-left:6px;padding:2px 7px;border-radius:999px;background:#f1f3f1;color:#6d756f;font-size:11px;font-weight:700}
+.form-error{margin:0 0 14px;padding:10px 12px;border:1px solid #efc9c2;border-radius:9px;background:#fbf1ef;color:#8a3f33;font-size:12.5px;font-weight:600}
+input.invalid{border-color:#c9786b;box-shadow:0 0 0 3px rgba(201,120,107,.12)}
+.field-msg{margin-top:4px;color:#a0493b;font-size:11px}
+
+/* ===== 10: booking summary with hotel and dates (replaces the top section) ===== */
+.sum-hotel{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.sum-hotel .hotel-thumb{flex:0 0 64px;height:52px;border-radius:9px}
+.sum-hotel-name{font-family:Georgia,"Times New Roman",serif;font-size:19px;line-height:1.15}
+.sum-hotel .context-sub{margin:3px 0 0;font-size:11.5px}
+.sum-dates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
+.sum-dates .date-box strong{display:block;font-size:12px}
+.sum-dates .date-box em{display:block;font-style:normal;color:#6d756f;font-size:11px;margin-top:2px}
+.tz-note{margin-top:8px;font-size:11px;color:#7f8883}
+
+@media(max-width:760px){
+  .form-grid{grid-template-columns:96px minmax(0,1fr)}
+  .form-grid .span-phone{grid-column:1 / -1}
+  .form-grid.contact{grid-template-columns:132px minmax(0,1fr)}
+  .client-menu{width:min(300px,calc(100vw - 48px))}
+  .cc-menu{width:min(280px,calc(100vw - 48px))}
+}
+
+/* v4: one look across all agent pages */
+.proceed{border-radius:9px}
+
+/* ===== 10: on request, taxes split, free cancellation, net or gross ===== */
+.on-request{margin-left:auto;padding:2px 7px;border-radius:999px;background:#fff7dd;color:#6f5a20;font-size:10.5px;font-weight:700;white-space:nowrap}
+.good-text{color:var(--green)}
+.incl-box{margin-top:12px;border:1px solid #dce6e0;border-radius:10px;overflow:hidden}
+.incl-head{padding:9px 11px;background:var(--green-soft);color:#24493e;font-size:11px;font-weight:700}
+.incl-row{display:flex;justify-content:space-between;gap:12px;padding:10px 11px;font-size:12px}
+.incl-row span{color:#747e79}
+.property-fee-row+.property-fee-row{margin-top:10px}
+.property-fee-row.fee-total{padding-top:10px;border-top:1px solid #f0e6c8}
+.property-fee-foot{margin-top:10px;color:#7c8580;font-size:11px;line-height:1.45}
+.price-mode{margin-top:14px;padding-top:12px;border-top:1px solid #f0ece6}
+.price-mode-title{margin-bottom:8px;font-size:12px;font-weight:700}
+.mode-options{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mode-opt{display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border:1px solid #dce3df;border-radius:10px;cursor:pointer;background:#fff}
+.mode-opt input,.markup-type input{width:15px;height:15px;padding:0;margin:2px 0 0;accent-color:var(--green);flex:0 0 auto}
+.mode-opt input:focus,.markup-type input:focus{box-shadow:none}
+.mode-opt:has(input:checked){border-color:var(--green);background:var(--green-soft);box-shadow:inset 0 0 0 1px var(--green)}
+.mode-opt b{display:block;font-size:12.5px;color:#1f2a26}
+.mode-opt small{display:block;margin-top:2px;font-size:11px;color:#5f6b65}
+.gross-box{margin-top:10px}
+.gross-box[hidden]{display:none}
+.markup-type{display:flex;gap:14px;margin-bottom:10px}
+.markup-type label{display:flex;align-items:center;gap:6px;font-size:11px;color:#5d6863}
+.markup-row input{width:100%;height:36px;border:1px solid #dce3df;border-radius:8px;padding:0 10px;font-size:12px}
+.markup-result{margin-top:8px;display:flex;justify-content:space-between;font-size:12px}
+.markup-result span{color:#6f7974}
+.markup-result strong{color:var(--green)}
+.markup-note{margin-top:8px;font-size:11px;color:#7c8580;line-height:1.45}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="07-search.html">Apolles</a>
+
+    <nav class="nav">
+      <a class="nav-link active" href="07-search.html">Search</a>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Quotes <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="14-quotes.html">All quotes</a>
+          <a href="15-quote-editor.html">New quote</a>
+          <div class="nav-sep"></div>
+          <a href="18-clients.html">Clients</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Bookings <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="13-bookings.html">All bookings</a>
+          <a href="13-bookings.html">Upcoming stays</a>
+          <a href="13-bookings.html">Completed</a>
+          <a href="13-bookings.html">Cancelled</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Reporting <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="19-reports.html">Overview</a>
+          <a href="19-reports.html">Balance history</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="top-actions">
+      <a class="balance-chip" href="20-agency-settings.html#balance" title="Balance and top-ups">
+        <small>Balance</small>
+        <b>USD 4,250.00</b>
+      </a>
+
+      <div class="nav-group account-group">
+        <button class="account-trigger" type="button">
+          <span class="avatar">MZ</span>
+          <span class="account-name">My Agency</span>
+          <b>⌄</b>
+        </button>
+        <div class="nav-menu account-menu">
+          <a href="20-agency-settings.html">Agency settings</a>
+          <a href="20-agency-settings.html#balance">Balance &amp; top-ups</a>
+          <a href="#">Support</a>
+          <div class="nav-sep"></div>
+          <a href="04-login.html">Sign out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+
+  <nav class="steps" aria-label="Booking steps">
+    <a class="step done" href="08-search-results.html"><span class="num">✓</span><span>Choose hotel</span></a>
+    <a class="step done" href="09-hotel-rooms.html"><span class="num">✓</span><span>Choose room</span></a>
+    <div class="step active" aria-current="step"><span class="num">3</span><span>Guest details</span></div>
+    <div class="step"><span class="num">4</span><span>Review & book</span></div>
+  </nav>
+
+  <section class="layout">
+
+    <div class="main-col">
+
+      <section class="card" id="guestCard">
+        <div class="card-head">
+          <h2>Guest details</h2>
+          <p>Enter the traveler names exactly as they appear on their travel documents.</p>
+        </div>
+
+        <div class="card-body">
+          <div class="form-error" id="formError" role="alert" hidden></div>
+
+          <div class="room-label-row">
+            <div class="room-label">Room 1 · 2 adults</div>
+            <div class="dd-wrap right">
+              <button class="pick-client" id="pickClient" type="button" aria-haspopup="listbox" aria-expanded="false">Choose from clients ⌄</button>
+              <div class="dd-menu client-menu" id="clientMenu">
+                <div class="dd-search"><input id="clientSearch" type="text" placeholder="Search client" autocomplete="off" aria-label="Search client"></div>
+                <div class="dd-list" id="clientList" role="listbox" aria-label="Clients"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="guest-block">
+            <div class="guest-title">
+              <strong>Lead guest <span class="required">*</span></strong>
+              <span>Adult 1</span>
+            </div>
+            <div class="form-grid">
+              <div class="dd-wrap">
+                <label id="tl1">Title</label>
+                <button class="field-dd title-dd" type="button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="tl1"><span class="dd-val">Mr</span><span>⌄</span></button>
+                <div class="dd-menu title-menu" role="listbox">
+                  <button type="button" role="option" class="dd-opt pick-opt sel">Mr</button>
+                  <button type="button" role="option" class="dd-opt pick-opt">Mrs</button>
+                  <button type="button" role="option" class="dd-opt pick-opt">Ms</button>
+                </div>
+              </div>
+              <div>
+                <label for="g1First">First name <span class="required">*</span></label>
+                <input id="g1First" data-req placeholder="First name">
+              </div>
+              <div class="span-phone">
+                <label for="g1Last">Last name <span class="required">*</span></label>
+                <input id="g1Last" data-req placeholder="Last name">
+              </div>
+            </div>
+          </div>
+
+          <div class="guest-block">
+            <div class="guest-title">
+              <strong>Guest 2 <span class="optional">Optional</span></strong>
+              <span>Adult 2 · on the voucher only</span>
+            </div>
+            <div class="form-grid">
+              <div class="dd-wrap">
+                <label id="tl2">Title</label>
+                <button class="field-dd title-dd" type="button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="tl2"><span class="dd-val">Mr</span><span>⌄</span></button>
+                <div class="dd-menu title-menu" role="listbox">
+                  <button type="button" role="option" class="dd-opt pick-opt sel">Mr</button>
+                  <button type="button" role="option" class="dd-opt pick-opt">Mrs</button>
+                  <button type="button" role="option" class="dd-opt pick-opt">Ms</button>
+                </div>
+              </div>
+              <div>
+                <label for="g2First">First name</label>
+                <input id="g2First" placeholder="First name">
+              </div>
+              <div class="span-phone">
+                <label for="g2Last">Last name</label>
+                <input id="g2Last" placeholder="Last name">
+              </div>
+            </div>
+          </div>
+
+          <!-- For the developer: one room block per room in the search ("Room 2 · 1 adult, 1 child" and so on).
+               Each room has one required lead guest. It is sent to Expedia Rapid as rooms[].given_name and
+               rooms[].family_name (max 60 characters each). Other guests are optional: Expedia has no field for
+               them, so they are kept in Apolles and printed on the voucher only. Never put them in special_request (PII).
+               When the search has a child, a block like this is added per child. Children have no title.
+               The age comes from the search and cannot be changed here.
+          <div class="guest-block">
+            <div class="guest-title">
+              <strong>Guest 3 <span class="optional">Optional</span></strong>
+              <span>Child · 7 years old (from your search)</span>
+            </div>
+            <div class="form-grid child">
+              <div><label>First name</label><input placeholder="First name"></div>
+              <div><label>Last name</label><input placeholder="Last name"></div>
+              <div><label>Age</label><input value="7" disabled></div>
+            </div>
+          </div>
+          -->
+
+          <div class="guest-block">
+            <div class="guest-title">
+              <strong>Lead guest contact <span class="optional">Optional</span></strong>
+              <span>If filled in, sent to the hotel and shown on the voucher</span>
+            </div>
+            <div class="form-grid contact">
+              <div class="span-phone">
+                <label for="email">Email</label>
+                <input id="email" type="email" data-check placeholder="guest@email.com">
+              </div>
+              <div class="dd-wrap">
+                <label id="ccLabel">Country code</label>
+                <button class="field-dd" id="ccBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="ccLabel"><span id="ccText">Israel +972</span><span>⌄</span></button>
+                <div class="dd-menu cc-menu" id="ccMenu">
+                  <div class="dd-search"><input id="ccSearch" type="text" placeholder="Search country or code" autocomplete="off" aria-label="Search country or code"></div>
+                  <div class="dd-list" id="ccList" role="listbox" aria-label="Country code"></div>
+                </div>
+              </div>
+              <div>
+                <label for="phone">Phone</label>
+                <input id="phone" type="tel" placeholder="Phone number">
+              </div>
+            </div>
+
+            <label class="check-row">
+              <input type="checkbox" checked>
+              <span>Save the lead guest to Clients, so you can select them next time.</span>
+            </label>
+          </div>
+
+          <p class="names-note">The lead guest of each room is required, exactly as on the travel documents. Only the lead guest name is sent to the hotel. Other names appear on the voucher.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Special requests</h2>
+          <p>Optional. Requests are sent to the hotel with the booking and are not guaranteed.</p>
+        </div>
+
+        <div class="card-body">
+          <div class="request-grid">
+            <label class="request"><input type="checkbox"> Early check-in <span class="on-request">On request</span></label>
+            <label class="request"><input type="checkbox"> Late check-out <span class="on-request">On request</span></label>
+            <label class="request"><input type="checkbox"> High floor</label>
+            <label class="request"><input type="checkbox"> Honeymoon</label>
+          </div>
+
+          <div style="margin-top:12px;">
+            <label for="note">Additional request</label>
+            <textarea id="note" placeholder="Optional note for the hotel"></textarea>
+          </div>
+
+          <div class="request-note">
+            Early check-in and late check-out are sent to the hotel as a request. The hotel answers at check-in, and may charge for them. Special requests may be subject to availability or additional hotel charges.
+          </div>
+        </div>
+      </section>
+
+      <details open>
+        <summary>Cancellation policy</summary>
+        <div class="detail-content">
+          This rate is refundable until the stated deadline. After the deadline, the hotel may charge the full booking amount.
+          <table class="policy-table">
+            <thead>
+              <tr>
+                <th>Cancelled</th>
+                <th>Cancellation charge</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>On or before Oct 5, 2026, 23:59 hotel time</td>
+                <td>USD 0.00</td>
+              </tr>
+              <tr>
+                <td>After Oct 5, 2026, 23:59 hotel time</td>
+                <td>USD 874.00 (100%)</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="tz-note">Hotel time: Cancún (UTC−5). The deadline and time zone come from the supplier.</div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Hotel policies</summary>
+        <div class="detail-content">
+          Check-in from 15:00. Check-out until 12:00. Guests may be required to present identification and a payment card at check-in. Local taxes, resort fees or environmental charges that are not included in the rate may be collected directly by the hotel.
+        </div>
+      </details>
+
+    </div>
+
+    <aside class="summary">
+      <div class="summary-card">
+        <h2>Booking summary</h2>
+
+        <div class="sum-hotel">
+          <div class="hotel-thumb"></div>
+          <div>
+            <div class="sum-hotel-name">SLS Playa Mujeres</div>
+            <div class="context-sub">Playa Mujeres, Cancún · ★★★★★</div>
+          </div>
+        </div>
+
+        <div class="sum-dates">
+          <div class="date-box">
+            <span>Check-in</span>
+            <strong>Mon, Oct 12, 2026</strong>
+            <em>from 15:00</em>
+          </div>
+          <div class="date-box">
+            <span>Check-out</span>
+            <strong>Wed, Oct 14, 2026</strong>
+            <em>until 12:00</em>
+          </div>
+        </div>
+
+        <div class="summary-row">
+          <span>Room</span>
+          <strong>Junior Suite King Bed</strong>
+        </div>
+
+        <div class="summary-row">
+          <span>Meal plan</span>
+          <strong>All inclusive</strong>
+        </div>
+
+        <div class="summary-row">
+          <span>Guests</span>
+          <strong>2 adults</strong>
+        </div>
+
+        <div class="summary-row">
+          <span>Nights</span>
+          <strong>2</strong>
+        </div>
+
+                <div class="summary-row">
+          <span>Room rate</span>
+          <strong>USD 874.00</strong>
+        </div>
+        <div class="summary-row">
+          <span>Free cancellation</span>
+          <strong class="good-text">USD 0 until Oct 5, 23:59 hotel time</strong>
+        </div>
+        <div class="total-box">
+          <div class="label">Total amount (net)</div>
+          <div class="amount">USD 874.00</div>
+          <div class="small">Deducted from your balance when you book</div>
+        </div>
+        <!-- For the developer: the two parts below come from the Expedia Rapid price check.
+             Included in the price: the nightly tax_and_service_fee + property_fee, shown as one line "Taxes and fees".
+             Payable at property: occupancy_pricing fees (resort_fee, mandatory_fee, mandatory_tax), shown in the
+             billable_currency (the hotel's local currency), with request_currency in USD as an estimate. -->
+        <div class="incl-box">
+          <div class="incl-head">Included in the price</div>
+          <div class="incl-row"><span>Taxes and fees</span><strong>USD 113.62</strong></div>
+        </div>
+        <div class="property-fee">
+          <div class="property-fee-head">Not included in the price · Payable at property</div>
+          <div class="property-fee-body">
+            <div class="property-fee-row">
+              <div>
+                <div class="property-fee-name">Resort fee</div>
+                <div class="property-fee-note">MXN 690.00 per night</div>
+              </div>
+              <div class="property-fee-amount">MXN 1,380.00</div>
+            </div>
+            <div class="property-fee-row">
+              <div>
+                <div class="property-fee-name">Environmental tax</div>
+                <div class="property-fee-note">MXN 62.00 per night</div>
+              </div>
+              <div class="property-fee-amount">MXN 124.00</div>
+            </div>
+            <div class="property-fee-row fee-total">
+              <div>
+                <div class="property-fee-name">Total at property</div>
+                <div class="property-fee-note">About USD 87.19</div>
+              </div>
+              <div class="property-fee-amount">MXN 1,504.00</div>
+            </div>
+            <div class="property-fee-foot">Paid by the guest at the hotel in local currency. The USD amount is an estimate.</div>
+          </div>
+        </div>
+        <!-- Net or gross: for the agent's own view, reports and client quote. The balance is always charged the net price. -->
+        <div class="price-mode">
+          <div class="price-mode-title">Show price as</div>
+          <div class="mode-options" role="radiogroup" aria-label="Show price as">
+            <label class="mode-opt"><input type="radio" name="priceMode" value="net" checked><span><b>Net</b><small>What you pay</small></span></label>
+            <label class="mode-opt"><input type="radio" name="priceMode" value="gross"><span><b>Gross</b><small>With your commission</small></span></label>
+          </div>
+          <div class="gross-box" id="grossBox" hidden>
+            <div class="markup-type">
+              <label><input type="radio" name="markup" value="pct" checked> Percentage (%)</label>
+              <label><input type="radio" name="markup" value="fixed"> Fixed (USD)</label>
+            </div>
+            <div class="markup-row">
+              <input type="number" id="markupInput" value="12" min="0" step="any" aria-label="Commission">
+            </div>
+            <div class="markup-result"><span>Gross price</span><strong id="grossText">USD 978.88</strong></div>
+            <div class="markup-result"><span>Your commission</span><strong id="commText">USD 104.88</strong></div>
+          </div>
+          <div class="markup-note">Gross is for your reports and client quote only. Your balance is charged the net price. Not shown on the voucher.</div>
+        </div>
+
+        <div class="warning">
+          Cancellation charges apply after Oct 5, 2026, 23:59 hotel time.
+        </div>
+
+        <button class="proceed" id="proceed" type="button">Continue to review</button>
+        <a class="back-link" href="09-hotel-rooms.html">Back to room options</a>
+      </div>
+    </aside>
+
+  </section>
+
+</main>
+
+<script>
+document.querySelectorAll('.nav-trigger,.account-trigger').forEach(btn=>{
+  btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const group=btn.closest('.nav-group');
+    document.querySelectorAll('.nav-group.menu-open').forEach(g=>{ if(g!==group) g.classList.remove('menu-open'); });
+    group.classList.toggle('menu-open');
+  });
+});
+document.addEventListener('click',()=>document.querySelectorAll('.nav-group.menu-open').forEach(g=>g.classList.remove('menu-open')));
+</script>
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const closeAll=()=>document.querySelectorAll('.dd-menu.open').forEach(m=>{ m.classList.remove('open'); const b=m.parentElement.querySelector('[aria-expanded]'); if(b) b.setAttribute('aria-expanded','false'); });
+  document.addEventListener('click',closeAll);
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeAll(); });
+  function opener(btn,menu,onOpen){
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const open=!menu.classList.contains('open');
+      closeAll();
+      if(open){ menu.classList.add('open'); btn.setAttribute('aria-expanded','true'); if(onOpen) onOpen(); }
+    });
+    menu.addEventListener('click',e=>e.stopPropagation());
+  }
+
+  // Title (Mr / Mrs / Ms)
+  document.querySelectorAll('.title-dd').forEach(btn=>{
+    const menu=btn.nextElementSibling;
+    opener(btn,menu);
+    menu.addEventListener('click',e=>{
+      const o=e.target.closest('.pick-opt'); if(!o) return;
+      menu.querySelectorAll('.pick-opt').forEach(x=>x.classList.toggle('sel',x===o));
+      btn.querySelector('.dd-val').textContent=o.textContent;
+      closeAll(); btn.focus();
+    });
+  });
+  const setTitle=(n,val)=>{
+    const btn=document.querySelectorAll('.title-dd')[n];
+    btn.querySelector('.dd-val').textContent=val;
+    btn.nextElementSibling.querySelectorAll('.pick-opt').forEach(x=>x.classList.toggle('sel',x.textContent===val));
+  };
+
+  // Country code: all countries, searchable
+  const CODES=[["Afghanistan", "+93"], ["Åland Islands", "+358"], ["Albania", "+355"], ["Algeria", "+213"], ["American Samoa", "+1"], ["Andorra", "+376"], ["Angola", "+244"], ["Anguilla", "+1"], ["Antigua and Barbuda", "+1"], ["Argentina", "+54"], ["Armenia", "+374"], ["Aruba", "+297"], ["Australia", "+61"], ["Austria", "+43"], ["Azerbaijan", "+994"], ["Bahamas", "+1"], ["Bahrain", "+973"], ["Bangladesh", "+880"], ["Barbados", "+1"], ["Belarus", "+375"], ["Belgium", "+32"], ["Belize", "+501"], ["Benin", "+229"], ["Bermuda", "+1"], ["Bhutan", "+975"], ["Bolivia", "+591"], ["Bosnia and Herzegovina", "+387"], ["Botswana", "+267"], ["Brazil", "+55"], ["British Indian Ocean Territory", "+246"], ["British Virgin Islands", "+1"], ["Brunei", "+673"], ["Bulgaria", "+359"], ["Burkina Faso", "+226"], ["Burundi", "+257"], ["Cabo Verde", "+238"], ["Cambodia", "+855"], ["Cameroon", "+237"], ["Canada", "+1"], ["Caribbean Netherlands", "+599"], ["Cayman Islands", "+1"], ["Central African Republic", "+236"], ["Chad", "+235"], ["Chile", "+56"], ["China", "+86"], ["Christmas Island", "+61"], ["Cocos (Keeling) Islands", "+61"], ["Colombia", "+57"], ["Comoros", "+269"], ["Congo", "+242"], ["Congo (DRC)", "+243"], ["Cook Islands", "+682"], ["Costa Rica", "+506"], ["Croatia", "+385"], ["Cuba", "+53"], ["Curaçao", "+599"], ["Cyprus", "+357"], ["Czechia", "+420"], ["Côte d'Ivoire", "+225"], ["Denmark", "+45"], ["Djibouti", "+253"], ["Dominica", "+1"], ["Dominican Republic", "+1"], ["Ecuador", "+593"], ["Egypt", "+20"], ["El Salvador", "+503"], ["Equatorial Guinea", "+240"], ["Eritrea", "+291"], ["Estonia", "+372"], ["Eswatini", "+268"], ["Ethiopia", "+251"], ["Falkland Islands", "+500"], ["Faroe Islands", "+298"], ["Fiji", "+679"], ["Finland", "+358"], ["France", "+33"], ["French Guiana", "+594"], ["French Polynesia", "+689"], ["Gabon", "+241"], ["Gambia", "+220"], ["Georgia", "+995"], ["Germany", "+49"], ["Ghana", "+233"], ["Gibraltar", "+350"], ["Greece", "+30"], ["Greenland", "+299"], ["Grenada", "+1"], ["Guadeloupe", "+590"], ["Guam", "+1"], ["Guatemala", "+502"], ["Guernsey", "+44"], ["Guinea", "+224"], ["Guinea-Bissau", "+245"], ["Guyana", "+592"], ["Haiti", "+509"], ["Honduras", "+504"], ["Hong Kong", "+852"], ["Hungary", "+36"], ["Iceland", "+354"], ["India", "+91"], ["Indonesia", "+62"], ["Iran", "+98"], ["Iraq", "+964"], ["Ireland", "+353"], ["Isle of Man", "+44"], ["Israel", "+972"], ["Italy", "+39"], ["Jamaica", "+1"], ["Japan", "+81"], ["Jersey", "+44"], ["Jordan", "+962"], ["Kazakhstan", "+7"], ["Kenya", "+254"], ["Kiribati", "+686"], ["Kuwait", "+965"], ["Kyrgyzstan", "+996"], ["Laos", "+856"], ["Latvia", "+371"], ["Lebanon", "+961"], ["Lesotho", "+266"], ["Liberia", "+231"], ["Libya", "+218"], ["Liechtenstein", "+423"], ["Lithuania", "+370"], ["Luxembourg", "+352"], ["Macao", "+853"], ["Madagascar", "+261"], ["Malawi", "+265"], ["Malaysia", "+60"], ["Maldives", "+960"], ["Mali", "+223"], ["Malta", "+356"], ["Marshall Islands", "+692"], ["Martinique", "+596"], ["Mauritania", "+222"], ["Mauritius", "+230"], ["Mayotte", "+262"], ["Mexico", "+52"], ["Micronesia", "+691"], ["Moldova", "+373"], ["Monaco", "+377"], ["Mongolia", "+976"], ["Montenegro", "+382"], ["Montserrat", "+1"], ["Morocco", "+212"], ["Mozambique", "+258"], ["Myanmar", "+95"], ["Namibia", "+264"], ["Nauru", "+674"], ["Nepal", "+977"], ["Netherlands", "+31"], ["New Caledonia", "+687"], ["New Zealand", "+64"], ["Nicaragua", "+505"], ["Niger", "+227"], ["Nigeria", "+234"], ["Niue", "+683"], ["Norfolk Island", "+672"], ["North Korea", "+850"], ["North Macedonia", "+389"], ["Northern Mariana Islands", "+1"], ["Norway", "+47"], ["Oman", "+968"], ["Pakistan", "+92"], ["Palau", "+680"], ["Palestine", "+970"], ["Panama", "+507"], ["Papua New Guinea", "+675"], ["Paraguay", "+595"], ["Peru", "+51"], ["Philippines", "+63"], ["Poland", "+48"], ["Portugal", "+351"], ["Puerto Rico", "+1"], ["Qatar", "+974"], ["Romania", "+40"], ["Russia", "+7"], ["Rwanda", "+250"], ["Réunion", "+262"], ["Saint Barthélemy", "+590"], ["Saint Helena", "+290"], ["Saint Kitts and Nevis", "+1"], ["Saint Lucia", "+1"], ["Saint Martin (French part)", "+590"], ["Saint Pierre and Miquelon", "+508"], ["Saint Vincent and the Grenadines", "+1"], ["Samoa", "+685"], ["San Marino", "+378"], ["Sao Tome and Principe", "+239"], ["Saudi Arabia", "+966"], ["Senegal", "+221"], ["Serbia", "+381"], ["Seychelles", "+248"], ["Sierra Leone", "+232"], ["Singapore", "+65"], ["Sint Maarten", "+1"], ["Slovakia", "+421"], ["Slovenia", "+386"], ["Solomon Islands", "+677"], ["Somalia", "+252"], ["South Africa", "+27"], ["South Korea", "+82"], ["South Sudan", "+211"], ["Spain", "+34"], ["Sri Lanka", "+94"], ["Sudan", "+249"], ["Suriname", "+597"], ["Svalbard and Jan Mayen", "+47"], ["Sweden", "+46"], ["Switzerland", "+41"], ["Syria", "+963"], ["Taiwan", "+886"], ["Tajikistan", "+992"], ["Tanzania", "+255"], ["Thailand", "+66"], ["Timor-Leste", "+670"], ["Togo", "+228"], ["Tokelau", "+690"], ["Tonga", "+676"], ["Trinidad and Tobago", "+1"], ["Tunisia", "+216"], ["Turkmenistan", "+993"], ["Turks and Caicos Islands", "+1"], ["Tuvalu", "+688"], ["Türkiye", "+90"], ["U.S. Virgin Islands", "+1"], ["Uganda", "+256"], ["Ukraine", "+380"], ["United Arab Emirates", "+971"], ["United Kingdom", "+44"], ["United States", "+1"], ["Uruguay", "+598"], ["Uzbekistan", "+998"], ["Vanuatu", "+678"], ["Vatican City", "+39"], ["Venezuela", "+58"], ["Vietnam", "+84"], ["Wallis and Futuna", "+681"], ["Western Sahara", "+212"], ["Yemen", "+967"], ["Zambia", "+260"], ["Zimbabwe", "+263"]];
+  let cc=['Israel','+972'];
+  const ccList=$('ccList'), ccSearch=$('ccSearch');
+  function renderCC(){
+    const q=ccSearch.value.trim().toLowerCase().replace(/^\+/,'');
+    const list=CODES.filter(c=>!q || c[0].toLowerCase().includes(q) || c[1].slice(1).startsWith(q));
+    ccList.innerHTML=list.length ? list.map(c=>'<button type="button" role="option" class="dd-opt cc-opt'+(c[0]===cc[0]?' sel':'')+'" data-n="'+c[0].replace(/"/g,'&quot;')+'" data-c="'+c[1]+'"><span>'+c[0].replace(/</g,'&lt;')+'</span><em>'+c[1]+'</em></button>').join('') : '<div class="dd-empty">No country found.</div>';
+  }
+  opener($('ccBtn'),$('ccMenu'),()=>{ ccSearch.value=''; renderCC(); const sel=ccList.querySelector('.sel'); if(sel) sel.scrollIntoView({block:'center'}); setTimeout(()=>ccSearch.focus(),0); });
+  ccSearch.addEventListener('input',()=>{ renderCC(); ccList.scrollTop=0; });
+  ccList.addEventListener('click',e=>{
+    const o=e.target.closest('.cc-opt'); if(!o) return;
+    cc=[o.dataset.n,o.dataset.c]; $('ccText').textContent=cc[0]+' '+cc[1]; closeAll(); $('ccBtn').focus();
+  });
+  ccSearch.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const f=ccList.querySelector('.cc-opt'); if(f) f.click(); } });
+
+  // Choose from clients: fills the lead guest (and the companion, when the client has one)
+  const CLIENTS=[
+    {first:'Daniel',last:'Levy',title:'Mr',email:'daniel.levy@email.com',cc:['Israel','+972'],phone:'50 123 4567',companion:{title:'Mrs',first:'Maya',last:'Levy'}},
+    {first:'Maya',last:'Cohen',title:'Mrs',email:'maya@example.com',cc:['Israel','+972'],phone:'52 444 1180'},
+    {first:'Noa',last:'Elkobi',title:'Ms',email:'noa@example.com',cc:['Israel','+972'],phone:'54 220 9910'},
+    {first:'Ron',last:'Shavit',title:'Mr',email:'ron@example.com',cc:['Israel','+972'],phone:'50 771 2345'},
+    {first:'Omar',last:'Shahin',title:'Mr',email:'omar@example.com',cc:['Israel','+972'],phone:'58 330 1177'},
+    {first:'Gal',last:'Cohen',title:'Mr',email:'gal@example.com',cc:['Israel','+972'],phone:'53 909 1212'}
+  ];
+  const clientList=$('clientList'), clientSearch=$('clientSearch');
+  function renderClients(){
+    const q=clientSearch.value.trim().toLowerCase();
+    const list=CLIENTS.map((c,i)=>[c,i]).filter(([c])=>!q || (c.first+' '+c.last+' '+c.email).toLowerCase().includes(q));
+    clientList.innerHTML=list.length ? list.map(([c,i])=>'<button type="button" role="option" class="dd-opt client-opt" data-i="'+i+'"><strong>'+c.first+' '+c.last+'</strong><small>'+c.email+(c.companion?' · travels with '+c.companion.first+' '+c.companion.last:'')+'</small></button>').join('') : '<div class="dd-empty">No clients match. Type the guest details below.</div>';
+  }
+  opener($('pickClient'),$('clientMenu'),()=>{ clientSearch.value=''; renderClients(); setTimeout(()=>clientSearch.focus(),0); });
+  clientSearch.addEventListener('input',renderClients);
+  clientList.addEventListener('click',e=>{
+    const o=e.target.closest('.client-opt'); if(!o) return;
+    const c=CLIENTS[+o.dataset.i];
+    setTitle(0,c.title); $('g1First').value=c.first; $('g1Last').value=c.last;
+    $('email').value=c.email; $('phone').value=c.phone; cc=c.cc; $('ccText').textContent=cc[0]+' '+cc[1];
+    if(c.companion){ setTitle(1,c.companion.title); $('g2First').value=c.companion.first; $('g2Last').value=c.companion.last; }
+    document.querySelectorAll('[data-req],[data-check]').forEach(clearErr);
+    $('formError').hidden=true;
+    closeAll();
+  });
+
+  // Required fields: checked when the agent clicks Continue
+  function clearErr(inp){ inp.classList.remove('invalid'); const m=inp.parentElement.querySelector('.field-msg'); if(m) m.remove(); }
+  document.querySelectorAll('[data-req],[data-check]').forEach(inp=>inp.addEventListener('input',()=>{ clearErr(inp); if(!document.querySelector('input.invalid')) $('formError').hidden=true; }));
+  $('proceed').addEventListener('click',()=>{
+    let missing=0, first=null;
+    document.querySelectorAll('[data-req],[data-check]').forEach(inp=>{
+      clearErr(inp);
+      const v=inp.value.trim();
+      let msg='';
+      if(!v && inp.hasAttribute('data-req')) msg='Required';
+      else if(v && inp.type==='email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) msg='Enter a valid email';
+      if(msg){
+        missing++; inp.classList.add('invalid');
+        const m=document.createElement('div'); m.className='field-msg'; m.textContent=msg; inp.after(m);
+        if(!first) first=inp;
+      }
+    });
+    if(missing){
+      const box=$('formError');
+      box.textContent=missing===1 ? '1 field is missing or wrong. Check the field marked in red.' : missing+' fields are missing or wrong. Check the fields marked in red.';
+      box.hidden=false;
+      $('guestCard').scrollIntoView({behavior:'smooth',block:'start'});
+      setTimeout(()=>first.focus({preventScroll:true}),400);
+      return;
+    }
+        location.href='11-review-and-book.html';
+  });
+
+  // Net or gross: commission math, saved for the review page (demo only)
+  const NET=874;
+  const fmt=n=>'USD '+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  function calcGross(){
+    const mode=document.querySelector('input[name="priceMode"]:checked').value;
+    const type=document.querySelector('input[name="markup"]:checked').value;
+    const v=Math.max(0,parseFloat($('markupInput').value)||0);
+    const comm=Math.round((type==='pct' ? NET*v/100 : v)*100)/100;
+    $('grossBox').hidden = mode!=='gross';
+    $('grossText').textContent=fmt(NET+comm);
+    $('commText').textContent=fmt(comm);
+    try{ sessionStorage.setItem('apollesPriceMode',JSON.stringify({mode,type,value:v,gross:NET+comm,comm})); }catch(e){}
+  }
+  document.querySelectorAll('input[name="priceMode"],input[name="markup"]').forEach(r=>r.addEventListener('change',calcGross));
+  $('markupInput').addEventListener('input',calcGross);
+  calcGross();
+})();
+</script>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

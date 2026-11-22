@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My Agency | Apolles</title>
+<style>
+
+:root{
+  --ink:#17211d;
+  --muted:#6d756f;
+  --green:#173f35;
+  --green2:#245c4e;
+  --green-soft:#eef3f0;
+  --cream:#f7f4ed;
+  --line:#e7e2d8;
+  --bg:#faf9f6;
+  --card:#fff;
+  --shadow:0 10px 28px rgba(19,47,39,.07);
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  min-height:100%;
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--ink);
+  background:var(--bg);
+}
+a{text-decoration:none;color:inherit}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+
+.topbar{
+  position:sticky;top:0;z-index:100;height:68px;
+  background:#fff;border-bottom:1px solid var(--line);
+}
+.topbar-inner{
+  width:min(1240px,calc(100% - 40px));height:100%;margin:auto;
+  display:flex;align-items:center;gap:28px;
+}
+.brand{font-family:Georgia,"Times New Roman",serif;font-size:27px;margin-right:10px}
+.nav{display:flex;height:100%;align-items:center;gap:26px}
+.nav-link{height:100%;display:flex;align-items:center;position:relative;font-size:13px;color:#6c7671}
+.nav-link.active{color:var(--green);font-weight:700}
+.nav-link.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-group{position:relative;height:100%;display:flex;align-items:center}
+.nav-trigger{
+  height:100%;border:0;background:transparent;padding:0;cursor:pointer;
+  color:#6c7671;font-size:13px;display:flex;align-items:center;gap:5px;position:relative;
+}
+.nav-trigger.active{color:var(--green);font-weight:700}
+.nav-trigger.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-trigger span{font-size:11px;color:#8a938e}
+.nav-menu{
+  position:absolute;top:58px;left:-10px;z-index:180;
+  width:190px;padding:7px;background:#fff;border:1px solid #e1e6e3;
+  border-radius:11px;box-shadow:0 15px 38px rgba(19,47,39,.14);
+  opacity:0;visibility:hidden;transform:translateY(5px);transition:.14s ease;
+}
+.nav-group:hover>.nav-menu,.nav-group.menu-open>.nav-menu{opacity:1;visibility:visible;transform:translateY(0)}
+.nav-menu a{display:block;padding:8px 10px;border-radius:7px;color:#4d5a54;font-size:12.5px}
+.nav-menu a:hover{background:#f1f6f3;color:var(--green)}
+.nav-sep{height:1px;background:#eeeae5;margin:5px 2px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:14px;color:#647069;font-size:12px}
+.balance-chip{
+  display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;
+  padding:6px 11px;border:1px solid #dce6e0;border-radius:10px;background:#f7faf8;
+}
+.balance-chip small{font-size:11px;color:#7f8984;font-weight:600}
+.balance-chip b{font-size:12.5px;color:var(--green)}
+.balance-chip:hover{border-color:#bcd0c6}
+.account-group{height:auto}
+.account-trigger{border:0;background:transparent;display:flex;align-items:center;gap:8px;color:#4d5a54;font-size:12.5px;padding:0;cursor:pointer}
+.account-trigger b{font-size:11px;font-weight:500}
+.account-menu{left:auto;right:0;top:40px}
+.avatar{
+  width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#e5eee9;color:var(--green);
+  font-size:11px;font-weight:800;
+}
+
+.page{
+  width:min(1120px,calc(100% - 40px));
+  margin:auto;
+  padding:28px 0 60px;
+}
+.page-head{
+  display:flex;justify-content:space-between;align-items:flex-end;
+  gap:20px;margin-bottom:17px;
+}
+.page-title h1{
+  margin:0 0 5px;
+  font:500 34px/1 Georgia,"Times New Roman",serif;
+  letter-spacing:-.02em;
+}
+.page-title p{margin:0;color:var(--muted);font-size:12px}
+.save-all{
+  height:38px;padding:0 14px;border:0;border-radius:8px;
+  background:var(--green);color:#fff;font-size:11px;font-weight:850;
+}
+
+.settings-shell{
+  display:grid;
+  grid-template-columns:190px minmax(0,1fr);
+  gap:14px;
+  align-items:start;
+}
+.settings-nav{
+  position:sticky;top:86px;
+  background:#fff;border:1px solid var(--line);border-radius:14px;
+  padding:7px;box-shadow:var(--shadow);
+}
+.settings-tab{
+  width:100%;height:38px;border:0;border-radius:8px;background:transparent;
+  text-align:left;padding:0 10px;color:#6f7a74;font-size:11px;font-weight:750;
+}
+.settings-tab.active{background:var(--green-soft);color:var(--green)}
+.settings-tab:hover{background:#f5f7f5}
+
+.panel{display:none}
+.panel.active{display:grid;gap:12px}
+
+.card{
+  background:#fff;border:1px solid var(--line);border-radius:16px;
+  box-shadow:var(--shadow);overflow:hidden;
+}
+.card-head{
+  min-height:54px;padding:0 15px;border-bottom:1px solid #eeeae5;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+.card-head h2{margin:0;font-size:12.5px}
+.card-head p{margin:3px 0 0;color:#89918d;font-size:11px}
+.card-body{padding:14px 15px}
+
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px 12px}
+.form-grid.one{grid-template-columns:1fr}
+.field.full{grid-column:1/-1}
+label{
+  display:block;margin-bottom:5px;color:#54615a;
+  font-size:11px;font-weight:800;
+}
+input,select,textarea{
+  width:100%;border:1px solid #d8e1dc;border-radius:8px;
+  background:#fff;color:#33413b;outline:none;font-size:11px;
+}
+input,select{height:35px;padding:0 10px}
+textarea{min-height:88px;padding:9px 10px;resize:vertical;line-height:1.5}
+input:focus,select:focus,textarea:focus{
+  border-color:#94aaa0;box-shadow:0 0 0 3px rgba(23,63,53,.05)
+}
+
+.logo-box{
+  display:flex;align-items:center;gap:14px;
+}
+.logo-preview{
+  width:82px;height:82px;border:1px dashed #bfcfc7;border-radius:12px;
+  display:grid;place-items:center;background:#fbfcfb;
+  font:500 25px Georgia,"Times New Roman",serif;color:var(--green);
+}
+.logo-copy strong{display:block;font-size:11px}
+.logo-copy p{margin:4px 0 8px;color:#8a928e;font-size:11px;line-height:1.45}
+.secondary-btn{
+  height:31px;padding:0 10px;border:1px solid #d6dfda;border-radius:7px;
+  background:#fff;color:var(--green);font-size:11px;font-weight:800;
+}
+
+.quote-preview{
+  margin-top:10px;border:1px solid #dde5e1;border-radius:12px;overflow:hidden;background:#fafbfa;
+}
+.quote-preview-head{
+  height:44px;padding:0 12px;display:flex;align-items:center;justify-content:space-between;
+  background:#fff;border-bottom:1px solid #e7ece9;
+}
+.preview-brand{font:500 18px Georgia,"Times New Roman",serif}
+.preview-agency{text-align:right}
+.preview-agency strong{display:block;font-size:11px}
+.preview-agency span{display:block;color:#8b938f;font-size:11px;margin-top:2px}
+.quote-preview-body{padding:13px}
+.quote-preview-body strong{font-size:11px}
+.quote-preview-body p{margin:4px 0 0;color:#7c8580;font-size:11px;line-height:1.45}
+
+.setting-row{
+  min-height:54px;padding:10px 0;border-bottom:1px solid #f0eeea;
+  display:flex;align-items:center;justify-content:space-between;gap:18px;
+}
+.setting-row:last-child{border-bottom:0}
+.setting-copy strong{display:block;font-size:11px}
+.setting-copy span{display:block;margin-top:3px;color:#89918d;font-size:11px;line-height:1.35}
+.switch{
+  width:35px;height:20px;border:0;border-radius:999px;background:#dce2de;position:relative;flex:0 0 35px
+}
+.switch:after{
+  content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15);transition:.15s ease;
+}
+.switch.on{background:var(--green)}
+.switch.on:after{left:17px}
+
+.payout-summary{
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px
+}
+.payout-box{
+  border:1px solid #e1e7e3;border-radius:10px;background:#fbfcfb;padding:10px
+}
+.payout-box span{display:block;color:#87908b;font-size:11px;margin-bottom:4px}
+.payout-box strong{font-size:11px}
+
+.notice{
+  margin-top:10px;padding:10px 11px;border-radius:9px;
+  background:#f4f7f5;color:#66716b;font-size:11px;line-height:1.5
+}
+.danger-card{border-color:#eadbd7}
+.danger-card .card-head{background:#fffafa}
+.danger-btn{
+  height:34px;border:1px solid #e4c7c1;border-radius:8px;background:#fff;
+  color:#94554e;padding:0 11px;font-size:11px;font-weight:800
+}
+
+.toast{
+  position:fixed;right:18px;bottom:18px;z-index:220;
+  background:var(--green);color:#fff;padding:10px 13px;border-radius:9px;
+  font-size:11px;font-weight:800;opacity:0;transform:translateY(8px);transition:.18s ease
+}
+.toast.show{opacity:1;transform:translateY(0)}
+
+
+/* v2: readable sizes */
+.page-title p{font-size:13px}
+.save-all{height:40px;padding:0 16px;font-size:12.5px}
+.settings-tab{height:40px;font-size:12.5px}
+.card-head h2{font-size:15px}
+.card-head p{font-size:11.5px}
+label{font-size:11.5px}
+input,select,textarea{font-size:13px}
+input,select{height:38px}
+input:disabled,select:disabled{background:#f4f6f5;color:#5f6a65}
+.logo-copy strong{font-size:13px}
+.logo-copy p{font-size:11.5px}
+.secondary-btn{height:34px;font-size:12px}
+.setting-copy strong{font-size:13px}
+.setting-copy span{font-size:11.5px}
+.notice{font-size:11.5px}
+.danger-btn{font-size:12px}
+.toast{font-size:12px}
+.field-help{margin-top:5px;font-size:11px;color:#8a928e;line-height:1.45}
+
+/* Logo */
+.logo-preview.has-logo{border-style:solid;background:#e9e1d1;color:#7a5f30}
+
+/* Brand color */
+.swatches{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.swatch{width:30px;height:30px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #d8e1dc;cursor:pointer}
+.swatch.on{box-shadow:0 0 0 2px var(--ink)}
+.swatch-custom{display:flex;align-items:center;gap:6px;font-size:12px;color:#5f6a65}
+.swatch-custom input{width:40px;height:30px;padding:0;border-radius:8px}
+
+/* Quote preview */
+.quote-preview-head{height:54px}
+.preview-agency-brand{display:flex;align-items:center;gap:9px}
+.preview-agency-brand .preview-logo{display:grid;width:32px;height:32px;border-radius:9px;background:#e9e1d1;color:#7a5f30;font:500 13px Georgia,"Times New Roman",serif;display:grid;place-items:center}
+.preview-agency-brand strong{display:block;font-size:12px}
+.preview-agency-brand span{display:block;font-size:11px;color:#8b938f}
+.preview-wa{height:28px;padding:0 11px;border-radius:999px;color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center}
+.preview-hero{margin:12px;border-radius:12px;padding:14px 16px;color:#fff}
+.preview-hero small{font-size:11px;letter-spacing:.1em;text-transform:uppercase;opacity:.75;font-weight:700}
+.preview-hero b{display:block;font:500 20px Georgia,"Times New Roman",serif;margin-top:3px}
+.preview-note{padding:0 14px 14px;font-size:11px;color:#7c8580}
+
+/* Balance & top-ups */
+.balance-big{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding:16px;border-radius:12px;background:var(--green-soft);margin-bottom:14px}
+.balance-big span{display:block;font-size:11.5px;color:#5f6a65}
+.balance-big strong{display:block;font-size:28px;letter-spacing:-.01em;color:var(--green);margin-top:2px}
+.balance-big a{font-size:12px;font-weight:700;color:var(--green);text-decoration:underline}
+.topup-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.topup-box{border:1px solid #e1e7e3;border-radius:12px;padding:14px}
+.topup-box h3{margin:0 0 4px;font-size:14px}
+.topup-box > p{margin:0 0 12px;font-size:11.5px;color:#7c8580;line-height:1.45}
+.bank-rows{display:grid;gap:0;border:1px solid #edf0ee;border-radius:10px;overflow:hidden}
+.bank-rows div{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;font-size:12px;border-bottom:1px solid #f0f2f1}
+.bank-rows div:last-child{border-bottom:0}
+.bank-rows span{color:#7c8580}
+.bank-rows .ref{background:#fff9e9}
+.bank-rows .ref strong{color:#7a5f1c}
+.copy-link{margin-top:10px;display:inline-block;font-size:12px;font-weight:700;color:var(--green);cursor:pointer}
+.amounts{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.amount-chip{height:32px;padding:0 12px;border:1px solid #d8e1dc;border-radius:999px;background:#fff;font-size:12px;font-weight:700;color:#4d5a54;cursor:pointer}
+.amount-chip.on{background:var(--green);border-color:var(--green);color:#fff}
+.fee-line{display:flex;justify-content:space-between;font-size:12px;padding:6px 0;color:#5f6a65}
+.fee-line strong{color:var(--ink)}
+.pay-btn{width:100%;height:40px;margin-top:8px;border:0;border-radius:9px;background:var(--green);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer}
+
+/* v3: unsaved state, pay-later limit, leave dialog */
+.preview-hero small{font-size:11px}
+.card-head{padding:12px 15px}
+.save-wrap{display:flex;align-items:center;gap:12px}
+.save-state{font-size:12.5px;color:#6d756f;white-space:nowrap}
+.save-state.dirty{color:#8a5a12;font-weight:700}
+.save-state.dirty:before{content:"● ";color:#c98a1d}
+.paylater{border:1px solid #e1e7e3;border-radius:12px;padding:14px;margin-bottom:14px}
+.paylater-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.paylater-top strong{display:block;font-size:14px}
+.paylater-top span{display:block;margin-top:3px;font-size:11.5px;color:#7c8580;line-height:1.45}
+.paylater-top b{font-size:14px;white-space:nowrap}
+.paylater-track{height:8px;border-radius:999px;background:#edf1ee;margin:12px 0 7px;overflow:hidden}
+.paylater-fill{height:100%;border-radius:999px;background:#c98a1d}
+.paylater-foot{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:#5f6a65}
+.paylater-link{display:inline-block;margin-top:9px;font-size:12px;font-weight:700;color:var(--green);text-decoration:underline}
+.modal-backdrop{position:fixed;inset:0;z-index:300;background:rgba(18,29,25,.38);display:none;align-items:center;justify-content:center;padding:18px}
+.modal-backdrop.open{display:flex}
+.modal{width:min(440px,100%);background:#fff;border-radius:15px;box-shadow:0 24px 70px rgba(0,0,0,.2)}
+.modal-body{padding:18px}
+.modal-body strong{display:block;font-size:16px}
+.modal-body p{margin:6px 0 16px;color:#6d756f;font-size:13px;line-height:1.45}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.modal-actions .save-all{height:34px;font-size:12px}
+
+@media(max-width:800px){
+  .topbar-inner,.page{width:min(100% - 24px,1120px)}
+  .nav{gap:14px;overflow:auto}
+  .account-name{display:none}
+  .balance-chip small{display:none}
+  .nav-menu{position:fixed;left:12px;right:12px;top:62px;width:auto}
+  .account-menu{top:62px}
+  .settings-shell{grid-template-columns:1fr}
+  .settings-nav{position:static;display:flex;overflow:auto;gap:4px;padding:5px}
+  .settings-tab{width:auto;white-space:nowrap;padding:0 11px}
+  .form-grid{grid-template-columns:1fr}
+  .field.full{grid-column:auto}
+  .topup-grid{grid-template-columns:1fr}
+  .page-head{align-items:flex-start;flex-direction:column}
+  .save-wrap{width:100%;justify-content:space-between}
+}
+
+
+/* v4: one look across all agent pages */
+@media(min-width:1100px){.topbar-inner{width:min(1280px,calc(100% - 40px))}}
+
+/* AI assistants (search only) */
+.ai-list{border:1px solid #e1e7e3;border-radius:10px;overflow:hidden;margin-top:12px}
+.ai-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 12px;border-bottom:1px solid #f0eeea;background:#fff}
+.ai-row:last-child{border-bottom:0}
+.ai-empty{display:none;padding:14px 12px;color:#7c8580;font-size:12px;text-align:center;background:#fbfcfb}
+.ai-list.is-empty .ai-empty{display:block}
+.ai-scope{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.ai-scope .payout-box ul{margin:0;padding-left:16px;color:#66716b;font-size:11.5px;line-height:1.6}
+.ai-scope .payout-box span{font-weight:700;color:var(--ink)}
+@media(max-width:800px){.ai-scope{grid-template-columns:1fr}.ai-row{align-items:flex-start}}
+.save-all{border-radius:9px}
+.secondary-btn{border-radius:8px}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="07-search.html">Apolles</a>
+
+    <nav class="nav">
+      <a class="nav-link" href="07-search.html">Search</a>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Quotes <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="14-quotes.html">All quotes</a>
+          <a href="15-quote-editor.html">New quote</a>
+          <div class="nav-sep"></div>
+          <a href="18-clients.html">Clients</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Bookings <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="13-bookings.html">All bookings</a>
+          <a href="13-bookings.html">Upcoming stays</a>
+          <a href="13-bookings.html">Completed</a>
+          <a href="13-bookings.html">Cancelled</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Reporting <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="19-reports.html">Overview</a>
+          <a href="19-reports.html">Balance history</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="top-actions">
+      <a class="balance-chip" href="20-agency-settings.html#balance" title="Balance and top-ups">
+        <small>Balance</small>
+        <b>USD 4,250.00</b>
+      </a>
+
+      <div class="nav-group account-group">
+        <button class="account-trigger" type="button">
+          <span class="avatar">MZ</span>
+          <span class="account-name">My Agency</span>
+          <b>⌄</b>
+        </button>
+        <div class="nav-menu account-menu">
+          <a href="20-agency-settings.html">Agency settings</a>
+          <a href="20-agency-settings.html#balance">Balance &amp; top-ups</a>
+          <a href="#">Support</a>
+          <div class="nav-sep"></div>
+          <a href="04-login.html">Sign out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <div class="page-head">
+    <div class="page-title">
+      <h1>My Agency</h1>
+      <p>Agency profile, quote branding, preferences, balance and account.</p>
+    </div>
+    <div class="save-wrap">
+      <span class="save-state" id="saveState">All changes saved</span>
+      <button class="save-all" id="saveAllBtn">Save changes</button>
+    </div>
+  </div>
+
+  <div class="settings-shell">
+    <aside class="settings-nav">
+      <button class="settings-tab active" data-panel="agency">Agency profile</button>
+      <button class="settings-tab" data-panel="branding">Quote branding</button>
+      <button class="settings-tab" data-panel="preferences">Preferences</button>
+      <button class="settings-tab" data-panel="balance">Balance &amp; top-ups</button>
+      <button class="settings-tab" data-panel="ai">AI assistants</button>
+      <button class="settings-tab" data-panel="account">Account</button>
+    </aside>
+
+    <section>
+      <!-- Agency profile -->
+      <div class="panel active" id="panel-agency">
+        <article class="card">
+          <div class="card-head"><div><h2>Agency details</h2><p>Basic information used across Apolles and on invoices.</p></div></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field"><label>Agency name</label><input value="My Agency"></div>
+              <div class="field"><label>Business email</label><input value="moshe@myagency.com"></div>
+              <div class="field"><label>Phone</label><input value="+972 50 555 0198"></div>
+              <div class="field">
+                <label>Country</label>
+                <select><option>Israel</option><option>United States</option><option>United Kingdom</option></select>
+                <div class="field-help">Also used to format client phone numbers for WhatsApp.</div>
+              </div>
+              <div class="field full"><label>Business address</label><input value="Haifa, Israel"></div>
+              <div class="field full"><label>Website or social media page</label><input value="https://facebook.com/myagency"></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><div><h2>Agency logo</h2><p>Shown at the top of every client quote, instead of Apolles.</p></div></div>
+          <div class="card-body">
+            <div class="logo-box">
+              <div class="logo-preview has-logo">MA</div>
+              <div class="logo-copy">
+                <strong>Agency logo</strong>
+                <p>PNG or SVG, transparent background, at least 300px wide.</p>
+                <button class="secondary-btn" id="uploadLogoBtn">Upload logo</button>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <!-- Quote branding -->
+      <div class="panel" id="panel-branding">
+        <article class="card">
+          <div class="card-head"><div><h2>Client quote branding</h2><p>What your clients see on the quote link. Apolles is never shown to them.</p></div></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field"><label>Display name</label><input value="My Agency"></div>
+              <div class="field"><label>Advisor name</label><input value="Moshe Zafrani"></div>
+              <div class="field">
+                <label>Contact number</label>
+                <input value="+972 50 555 0198">
+                <div class="field-help">Used for the WhatsApp and Call buttons on the quote.</div>
+              </div>
+              <div class="field"><label>Advisor email</label><input value="moshe@myagency.com"></div>
+              <div class="field">
+                <label>Default quote language</label>
+                <select><option>English</option><option>Hebrew (right to left)</option></select>
+                <div class="field-help">You can change the language on each quote.</div>
+              </div>
+              <div class="field">
+                <label>Brand color</label>
+                <div class="swatches" id="swatches">
+                  <button class="swatch on" type="button" style="background:#173f35" data-color="#173f35" aria-label="Forest green"></button>
+                  <button class="swatch" type="button" style="background:#1f3a5f" data-color="#1f3a5f" aria-label="Navy"></button>
+                  <button class="swatch" type="button" style="background:#7a3b2e" data-color="#7a3b2e" aria-label="Terracotta"></button>
+                  <button class="swatch" type="button" style="background:#2f6f73" data-color="#2f6f73" aria-label="Teal"></button>
+                  <button class="swatch" type="button" style="background:#3d3a4b" data-color="#3d3a4b" aria-label="Charcoal"></button>
+                  <label class="swatch-custom">Custom <input type="color" id="customColor" value="#173f35"></label>
+                </div>
+                <div class="field-help">One color for the quote header and buttons.</div>
+              </div>
+              <div class="field full">
+                <label>Default message to clients</label>
+                <textarea>Need help choosing? Message me on WhatsApp and I will be happy to help with any of the options.</textarea>
+              </div>
+            </div>
+
+            <div class="quote-preview">
+              <div class="quote-preview-head">
+                <div class="preview-agency-brand">
+                  <span class="preview-logo">MA</span>
+                  <div><strong>My Agency</strong><span>Moshe Zafrani · Travel advisor</span></div>
+                </div>
+                <span class="preview-wa" id="previewWa" style="background:#173f35">WhatsApp</span>
+              </div>
+              <div class="preview-hero" id="previewHero" style="background:#173f35">
+                <small>Your travel proposal</small>
+                <b>Mexico Honeymoon</b>
+              </div>
+              <div class="preview-note">This is how your agency appears on the client quote page.</div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <!-- Preferences -->
+      <div class="panel" id="panel-preferences">
+        <article class="card">
+          <div class="card-head"><div><h2>Defaults</h2><p>Used automatically in new quotes and bookings. You can change them any time.</p></div></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field">
+                <label>Currency</label>
+                <input value="USD" disabled>
+                <div class="field-help">USD only for now.</div>
+              </div>
+              <div class="field">
+                <label>Default markup</label>
+                <select><option>Percentage (%)</option><option>Fixed per room (USD)</option></select>
+              </div>
+              <div class="field">
+                <label>Markup value</label>
+                <input type="number" value="10" min="0">
+                <div class="field-help">Filled in as the selling price in new quotes and bookings. You can edit it on each quote or booking.</div>
+              </div>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-copy"><strong>Show cancellation terms in quotes</strong><span>Default for new quotes. You can change it on each quote.</span></div>
+              <button class="switch on" type="button"></button>
+            </div>
+            <div class="setting-row">
+              <div class="setting-copy"><strong>Show prices in ILS on client quotes</strong><span>Applies to all your client quotes, not per quote. Adds a USD / ILS switch for the client. ILS is approximate, for display only.</span></div>
+              <button class="switch on" type="button"></button>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <!-- Balance & top-ups -->
+      <div class="panel" id="panel-balance">
+        <article class="card">
+          <div class="card-head"><div><h2>Balance &amp; top-ups</h2><p>Vouchers are paid from this balance. Refunds return to it once a cancellation is confirmed.</p></div></div>
+          <div class="card-body">
+            <div class="balance-big">
+              <div><span>Current balance</span><strong>USD 4,250.00</strong></div>
+              <a href="19-reports.html#balance-activity">View balance activity</a>
+            </div>
+
+            <div class="paylater">
+              <div class="paylater-top">
+                <div>
+                  <strong>Pay-later limit</strong>
+                  <span>Bookings without a voucher count toward this limit. Set by Apolles.</span>
+                </div>
+                <b>USD 5,000.00</b>
+              </div>
+              <div class="paylater-track" aria-hidden="true"><div class="paylater-fill" style="width:66%"></div></div>
+              <div class="paylater-foot">
+                <span>USD 3,312.00 in use · 2 bookings</span>
+                <span>USD 1,688.00 left</span>
+              </div>
+              <a class="paylater-link" href="13-bookings.html">See bookings without a voucher</a>
+            </div>
+
+            <div class="topup-grid">
+              <div class="topup-box">
+                <h3>Bank transfer</h3>
+                <p>No fees from Apolles. The amount is added once the transfer arrives, usually within 1 to 3 business days.</p>
+                <div class="bank-rows">
+                  <div><span>Beneficiary</span><strong>Apolles</strong></div>
+                  <div><span>Bank</span><strong>(bank name)</strong></div>
+                  <div><span>IBAN / Account</span><strong>(account number)</strong></div>
+                  <div><span>SWIFT</span><strong>(SWIFT code)</strong></div>
+                  <div class="ref"><span>Your reference</span><strong>APL-2217</strong></div>
+                </div>
+                <span class="copy-link" id="copyBank">Copy transfer details</span>
+                <p class="field-help" style="margin-top:8px">Always write your reference so we can match the transfer to your agency.</p>
+              </div>
+
+              <div class="topup-box">
+                <h3>Card top-up</h3>
+                <p>Added to your balance right away. The card processing fee is added to the amount.</p>
+                <div class="amounts" id="amounts">
+                  <button class="amount-chip" type="button" data-v="500">USD 500</button>
+                  <button class="amount-chip on" type="button" data-v="1000">USD 1,000</button>
+                  <button class="amount-chip" type="button" data-v="2500">USD 2,500</button>
+                  <button class="amount-chip" type="button" data-v="5000">USD 5,000</button>
+                </div>
+                <div class="fee-line"><span>Added to balance</span><strong id="topAmount">USD 1,000.00</strong></div>
+                <div class="fee-line"><span>Card fee (about 3%)</span><strong id="topFee">USD 30.00</strong></div>
+                <div class="fee-line"><span>Charged to your card</span><strong id="topTotal">USD 1,030.00</strong></div>
+                <button class="pay-btn" type="button" id="payBtn">Pay USD 1,030.00 by card</button>
+              </div>
+            </div>
+
+            <div class="notice">Unused balance can be returned to your bank account on request. Contact support.</div>
+          </div>
+        </article>
+      </div>
+
+      <!-- AI assistants: search only.
+           For the developer, the security design:
+           - A separate MCP server, apart from the booking system. It has only two tools:
+             search_hotels and get_hotel_rates. No tool books, cancels, issues vouchers or reads the balance.
+           - The MCP server holds no Expedia keys. It calls only the Apolles search API.
+           - Each agent connects with their own OAuth token, scope search:read. Every booking, cancellation,
+             voucher and balance endpoint refuses this scope.
+           - No guest names, client data or balance in any answer. Each result links to the hotel page in
+             Apolles (09-hotel-rooms with the search in the URL), where the agent books as usual.
+           - Rate limited per agent. Every call is logged. All tokens of an agent are revoked when the agent
+             is disabled, and when the agent clicks Revoke.
+           - Still to confirm with Expedia before launch: permission to show rates inside AI assistants,
+             and which sales_channel value to send for these searches. -->
+      <div class="panel" id="panel-ai">
+        <article class="card">
+          <div class="card-head"><div><h2>AI assistants</h2><p>Search hotels from Claude or ChatGPT. Search only: bookings, cancellations and your balance can't be reached from an AI assistant.</p></div></div>
+          <div class="card-body">
+            <button class="save-all" id="connectAiBtn" type="button">Connect assistant</button>
+            <div class="ai-list" id="aiList">
+              <div class="ai-row">
+                <div class="setting-copy"><strong>Claude</strong><span>Connected Nov 12, 2026 · last used today</span></div>
+                <button class="danger-btn ai-revoke" type="button">Revoke</button>
+              </div>
+              <div class="ai-row">
+                <div class="setting-copy"><strong>ChatGPT</strong><span>Connected Nov 3, 2026 · last used Nov 18, 2026</span></div>
+                <button class="danger-btn ai-revoke" type="button">Revoke</button>
+              </div>
+              <div class="ai-empty">No assistants connected.</div>
+            </div>
+            <div class="ai-scope">
+              <div class="payout-box">
+                <span>What the assistant can do</span>
+                <ul><li>Search hotels and rates</li><li>Open a result in Apolles to book</li></ul>
+              </div>
+              <div class="payout-box">
+                <span>What it can't do</span>
+                <ul><li>Book, cancel or issue vouchers</li><li>See guests or your balance</li></ul>
+              </div>
+            </div>
+            <div class="notice">Revoking disconnects the assistant right away. To book, open the result in Apolles.</div>
+          </div>
+        </article>
+      </div>
+
+      <!-- Account -->
+      <div class="panel" id="panel-account">
+        <article class="card">
+          <div class="card-head"><div><h2>Account</h2><p>Your personal Apolles login.</p></div></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field"><label>Name</label><input value="Moshe Zafrani"></div>
+              <div class="field"><label>Login email</label><input value="moshe@myagency.com"></div>
+            </div>
+            <div style="margin-top:12px"><button class="secondary-btn">Change password</button></div>
+            <div class="notice">For your security, signing in from a new device asks for a code sent to your email, and you are signed out after 12 hours.</div>
+          </div>
+        </article>
+
+        <article class="card danger-card">
+          <div class="card-head"><div><h2>Sign out</h2><p>End the current Apolles session.</p></div></div>
+          <div class="card-body"><button class="danger-btn">Sign out</button></div>
+        </article>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div class="toast" id="toast">Changes saved</div>
+
+<div class="modal-backdrop" id="leaveModal" role="dialog" aria-modal="true" aria-labelledby="leaveTitle">
+  <div class="modal">
+    <div class="modal-body">
+      <strong id="leaveTitle">Leave without saving?</strong>
+      <p>You have unsaved changes in your agency settings.</p>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="leaveCancel">Stay</button>
+        <button type="button" class="secondary-btn" id="leaveDiscard">Leave</button>
+        <button type="button" class="save-all" id="leaveSave">Save and leave</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const tabs = document.querySelectorAll('.settings-tab');
+  const panels = document.querySelectorAll('.panel');
+  const toast = document.getElementById('toast');
+  let t;
+  function showToast(text){
+    toast.textContent = text;
+    toast.classList.add('show');
+    clearTimeout(t);
+    t = setTimeout(()=>toast.classList.remove('show'),1600);
+  }
+
+  tabs.forEach(tab=>{
+    tab.addEventListener('click',()=>{
+      tabs.forEach(x=>x.classList.remove('active'));
+      panels.forEach(x=>x.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-'+tab.dataset.panel).classList.add('active');
+    });
+  });
+
+  document.querySelectorAll('.switch').forEach(sw=>sw.addEventListener('click',()=>sw.classList.toggle('on')));
+  // Unsaved changes
+  let dirty = false, pendingUrl = null;
+  const saveState = document.getElementById('saveState');
+  function renderSave(){
+    saveState.className = 'save-state' + (dirty ? ' dirty' : '');
+    saveState.textContent = dirty ? 'Unsaved changes' : 'All changes saved';
+  }
+  function markDirty(){ if(!dirty){ dirty = true; renderSave(); } }
+  function saveAll(){ dirty = false; renderSave(); showToast('Agency settings saved'); }
+  document.querySelectorAll('#panel-agency, #panel-branding, #panel-preferences, #panel-account').forEach(p=>{
+    p.addEventListener('input', markDirty);
+    p.addEventListener('change', markDirty);
+  });
+  document.querySelectorAll('.switch, .swatch').forEach(el=>el.addEventListener('click', markDirty));
+  document.getElementById('saveAllBtn').addEventListener('click', saveAll);
+  window.addEventListener('beforeunload', e=>{ if(dirty){ e.preventDefault(); e.returnValue = ''; } });
+
+  const leaveModal = document.getElementById('leaveModal');
+  function closeLeave(){ leaveModal.classList.remove('open'); pendingUrl = null; }
+  document.addEventListener('click', e=>{
+    const a = e.target.closest('a[href]');
+    if(!a || !dirty) return;
+    const href = a.getAttribute('href');
+    if(!href || href.startsWith('#') || href.startsWith('20-agency-settings.html')) return;
+    e.preventDefault();
+    pendingUrl = a.href;
+    leaveModal.classList.add('open');
+  }, true);
+  document.getElementById('leaveCancel').addEventListener('click', closeLeave);
+  document.getElementById('leaveDiscard').addEventListener('click', ()=>{ const u = pendingUrl; dirty = false; closeLeave(); location.href = u; });
+  document.getElementById('leaveSave').addEventListener('click', ()=>{ const u = pendingUrl; saveAll(); closeLeave(); location.href = u; });
+  leaveModal.addEventListener('click', e=>{ if(e.target === leaveModal) closeLeave(); });
+  document.addEventListener('keydown', e=>{ if(e.key === 'Escape') closeLeave(); });
+  document.getElementById('uploadLogoBtn').addEventListener('click',()=>showToast('Logo upload opens here'));
+
+  // Brand color
+  function setColor(c){
+    document.getElementById('previewHero').style.background = c;
+    document.getElementById('previewWa').style.background = c;
+  }
+  document.querySelectorAll('.swatch').forEach(s=>{
+    s.addEventListener('click',()=>{
+      document.querySelectorAll('.swatch').forEach(x=>x.classList.toggle('on',x===s));
+      setColor(s.dataset.color);
+    });
+  });
+  document.getElementById('customColor').addEventListener('input',e=>{
+    document.querySelectorAll('.swatch').forEach(x=>x.classList.remove('on'));
+    setColor(e.target.value);
+  });
+
+  // Card top-up (fee here is a mockup estimate)
+  const money = n => 'USD ' + n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  document.querySelectorAll('.amount-chip').forEach(c=>{
+    c.addEventListener('click',()=>{
+      document.querySelectorAll('.amount-chip').forEach(x=>x.classList.toggle('on',x===c));
+      const v = Number(c.dataset.v), fee = Math.round(v*0.03*100)/100;
+      document.getElementById('topAmount').textContent = money(v);
+      document.getElementById('topFee').textContent = money(fee);
+      document.getElementById('topTotal').textContent = money(v+fee);
+      document.getElementById('payBtn').textContent = 'Pay ' + money(v+fee) + ' by card';
+    });
+  });
+  document.getElementById('payBtn').addEventListener('click',()=>showToast('Secure card payment opens here'));
+  document.getElementById('copyBank').addEventListener('click',()=>showToast('Transfer details copied'));
+
+  // AI assistants
+  const aiList = document.getElementById('aiList');
+  document.getElementById('connectAiBtn').addEventListener('click',()=>showToast('The sign-in to connect an assistant opens here'));
+  aiList.addEventListener('click',e=>{
+    const b = e.target.closest('.ai-revoke'); if(!b) return;
+    const name = b.closest('.ai-row').querySelector('strong').textContent;
+    b.closest('.ai-row').remove();
+    aiList.classList.toggle('is-empty', !aiList.querySelector('.ai-row'));
+    showToast(name+' disconnected');
+  });
+
+  // Top menu
+  document.querySelectorAll('.nav-trigger,.account-trigger').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const group = btn.closest('.nav-group');
+      document.querySelectorAll('.nav-group.menu-open').forEach(g=>{ if(g!==group) g.classList.remove('menu-open'); });
+      group.classList.toggle('menu-open');
+    });
+  });
+  document.addEventListener('click',()=>document.querySelectorAll('.nav-group.menu-open').forEach(g=>g.classList.remove('menu-open')));
+
+  // Open a tab from the URL, e.g. #balance
+  const h = location.hash.replace('#','');
+  const target = document.querySelector('.settings-tab[data-panel="'+h+'"]');
+  if(target) target.click();
+  window.addEventListener('hashchange',()=>{const t=document.querySelector('.settings-tab[data-panel="'+location.hash.slice(1)+'"]'); if(t){t.click();window.scrollTo(0,0);}});
+})();
+</script>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>

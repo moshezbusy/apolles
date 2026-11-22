@@ -1,0 +1,3244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Search results | Apolles</title>
+<style>
+:root{
+  --ink:#17211d;
+  --muted:#6d756f;
+  --green:#173f35;
+  --green-soft:#eef3f0;
+  --line:#e7e2d8;
+  --bg:#faf9f6;
+  --shadow:0 14px 36px rgba(19,47,39,.08);
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  height:100%;
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--ink);
+  background:var(--bg);
+  overflow:hidden;
+}
+a{text-decoration:none;color:inherit}
+button,input,select{font:inherit}
+input{min-width:0}
+
+.topbar{
+  height:68px;
+  background:#fff;
+  border-bottom:1px solid var(--line);
+  position:sticky;
+  top:0;
+  z-index:120;
+}
+.topbar-inner{
+  width:min(1280px,calc(100% - 40px));
+  height:100%;
+  margin:auto;
+  display:flex;
+  align-items:center;
+  gap:28px;
+}
+.brand{
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:27px;
+  margin-right:10px;
+}
+.nav{display:flex;height:100%;align-items:center;gap:26px}
+.nav-link{height:100%;display:flex;align-items:center;position:relative;font-size:13px;color:#6c7671}
+.nav-link.active{color:var(--green);font-weight:700}
+.nav-link.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-group{position:relative;height:100%;display:flex;align-items:center}
+.nav-trigger{
+  height:100%;border:0;background:transparent;padding:0;cursor:pointer;
+  color:#6c7671;font-size:13px;display:flex;align-items:center;gap:5px;position:relative;
+}
+.nav-trigger.active{color:var(--green);font-weight:700}
+.nav-trigger.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--green)}
+.nav-trigger span{font-size:11px;color:#8a938e}
+.nav-menu{
+  position:absolute;top:58px;left:-10px;z-index:180;
+  width:190px;padding:7px;background:#fff;border:1px solid #e1e6e3;
+  border-radius:11px;box-shadow:0 15px 38px rgba(19,47,39,.14);
+  opacity:0;visibility:hidden;transform:translateY(5px);transition:.14s ease;
+}
+.nav-group:hover>.nav-menu,.nav-group.menu-open>.nav-menu{opacity:1;visibility:visible;transform:translateY(0)}
+.nav-menu a{display:block;padding:8px 10px;border-radius:7px;color:#4d5a54;font-size:12.5px}
+.nav-menu a:hover{background:#f1f6f3;color:var(--green)}
+.nav-sep{height:1px;background:#eeeae5;margin:5px 2px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:14px;color:#647069;font-size:12px}
+.balance-chip{
+  display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;
+  padding:6px 11px;border:1px solid #dce6e0;border-radius:10px;background:#f7faf8;
+}
+.balance-chip small{font-size:11px;color:#7f8984;font-weight:600}
+.balance-chip b{font-size:12.5px;color:var(--green)}
+.balance-chip:hover{border-color:#bcd0c6}
+.account-group{height:auto}
+.account-trigger{border:0;background:transparent;display:flex;align-items:center;gap:8px;color:#4d5a54;font-size:12.5px;padding:0;cursor:pointer}
+.account-trigger b{font-size:11px;font-weight:500}
+.account-menu{left:auto;right:0;top:40px}
+.avatar{
+  width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#e5eee9;color:var(--green);
+  font-size:11px;font-weight:800;
+}
+
+.app{
+  height:calc(100vh - 68px);
+  display:flex;
+  flex-direction:column;
+}
+.page{
+  width:min(1280px,calc(100% - 40px));
+  margin:auto;
+  padding:18px 0 22px;
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  height:100%;
+}
+
+.search-summary{
+  flex:0 0 auto;
+}
+.search-box{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  padding:14px;
+}
+.search-row{
+  display:grid;
+  grid-template-columns:1.65fr .95fr .95fr 1.05fr .85fr auto;
+  gap:9px;
+  align-items:end;
+}
+.field-wrap label{
+  display:block;
+  margin:0 0 5px 2px;
+  font-size:11px;
+  font-weight:700;
+  color:#7b8580;
+}
+.field,.field-button{
+  width:100%;
+  height:40px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  background:#fff;
+  color:#324039;
+  font-size:13px;
+}
+.field{padding:0 11px}
+.field-button{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 11px;
+}
+.search-btn{
+  height:40px;
+  border:0;
+  border-radius:8px;
+  padding:0 20px;
+  background:var(--green);
+  color:#fff;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+.results-meta{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  margin-top:12px;
+  padding-top:12px;
+  border-top:1px solid #f0ece6;
+}
+.results-meta strong{font-size:14px}
+.results-meta span{color:#808884;font-size:12px}
+.meta-actions{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.meta-pill,.sort-select{
+  height:34px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  background:#fff;
+  padding:0 12px;
+  font-size:12px;
+  color:#4c5752;
+  display:inline-flex;
+  align-items:center;
+}
+.sort-select{min-width:144px}
+
+.toggle-pill{
+  height:34px;
+  border:1px solid #dce3df;
+  border-radius:999px;
+  background:#fff;
+  padding:0 12px;
+  font-size:12px;
+  color:#4c5752;
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  cursor:pointer;
+  user-select:none;
+}
+.toggle-pill input{
+  position:absolute;
+  opacity:0;
+  pointer-events:none;
+}
+.toggle-slider{
+  width:34px;
+  height:20px;
+  border-radius:999px;
+  background:#d7dcd9;
+  position:relative;
+  flex:0 0 auto;
+  transition:.18s ease;
+}
+.toggle-slider:after{
+  content:"";
+  position:absolute;
+  top:2px;
+  left:2px;
+  width:16px;
+  height:16px;
+  border-radius:50%;
+  background:#fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.14);
+  transition:.18s ease;
+}
+.toggle-pill input:checked + .toggle-slider{
+  background:var(--green);
+}
+.toggle-pill input:checked + .toggle-slider:after{
+  left:16px;
+}
+
+.content-shell{
+  flex:1;
+  min-height:0;
+  display:grid;
+  grid-template-columns:255px minmax(0,1fr);
+  gap:16px;
+  margin-top:18px;
+}
+.filters{
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:6px;
+}
+.filters::-webkit-scrollbar{
+  width:8px;
+}
+.filters::-webkit-scrollbar-thumb{
+  background:#d7dcd9;
+  border-radius:999px;
+}
+.filter-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  padding:16px;
+}
+.filter-card h3{
+  margin:0 0 14px;
+  font-size:15px;
+}
+.filter-group + .filter-group{
+  margin-top:18px;
+  padding-top:16px;
+  border-top:1px solid #f0ece6;
+}
+.filter-title{
+  display:block;
+  margin:0 0 10px;
+  font-size:12px;
+  font-weight:700;
+  color:#39443f;
+}
+.filter-input{
+  width:100%;
+  min-width:0;
+  height:38px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  padding:0 10px;
+  font-size:12px;
+  color:#33413a;
+  background:#fff;
+}
+.range-inputs{
+  width:100%;
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+}
+.range-inputs input{
+  width:100%;
+  min-width:0;
+  height:38px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  padding:0 10px;
+  font-size:12px;
+}
+.check-list{
+  display:grid;
+  gap:9px;
+}
+.check{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  font-size:12px;
+  color:#52605a;
+}
+.check input{
+  width:16px;
+  height:16px;
+  accent-color:var(--green);
+}
+.filter-link{
+  margin-top:10px;
+  display:inline-block;
+  font-size:11.5px;
+  font-weight:600;
+  color:var(--green);
+}
+.reset-link{
+  display:inline-block;
+  margin-top:14px;
+  font-size:11.5px;
+  font-weight:600;
+  color:#9a5a50;
+}
+/* Active filters: one chip per filter value, above the results */
+.active-chips{display:none;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px}
+.active-chips.on{display:flex}
+.f-chip{min-height:24px;padding:4px 7px 4px 10px;border:0;border-radius:999px;background:#dfeee7;color:var(--green);display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11px;font-weight:600;line-height:1.2;cursor:pointer}
+.f-chip b{font-size:13px;line-height:1;font-weight:600;opacity:.7}
+.f-chip:hover b{opacity:1}
+.chips-clear{border:0;background:none;padding:0 4px;font:inherit;font-size:11.5px;font-weight:600;color:#9a5a50;cursor:pointer}
+.guest-score{margin-top:5px;font-size:11.5px;color:#52605a}
+.guest-score b{display:inline-block;margin-right:5px;padding:1px 6px;border-radius:6px;background:var(--green);color:#fff;font-size:11px;font-weight:700}
+
+.results-panel{
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:6px;
+}
+.results-panel::-webkit-scrollbar{
+  width:10px;
+}
+.results-panel::-webkit-scrollbar-thumb{
+  background:#d7dcd9;
+  border-radius:999px;
+}
+.results{
+  display:grid;
+  gap:14px;
+  padding-bottom:2px;
+}
+
+.hotel-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:18px;
+  box-shadow:var(--shadow);
+  overflow:hidden;
+}
+.hotel-main{
+  display:grid;
+  grid-template-columns:240px minmax(0,1fr) 190px;
+  align-items:stretch;
+}
+.hotel-media{
+  padding:14px;
+  display:flex;
+  align-self:stretch;
+}
+.hotel-media .image{
+  width:100%;
+  height:100%;
+  min-height:100%;
+  border-radius:12px;
+  background:
+    linear-gradient(135deg, rgba(23,63,53,.20), rgba(23,63,53,.05)),
+    linear-gradient(180deg, #8fb8c8, #d9e9ef 55%, #d3c1a7);
+  position:relative;
+  overflow:hidden;
+}
+.hotel-media .image:after{
+  content:"";
+  position:absolute;
+  inset:auto 0 0 0;
+  height:38%;
+  background:linear-gradient(180deg, transparent, rgba(0,0,0,.14));
+}
+.hotel-body{
+  padding:14px 18px;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+}
+.hotel-top{
+  display:flex;
+  justify-content:space-between;
+  gap:16px;
+  align-items:start;
+}
+.hotel-name{
+  margin:0 0 5px;
+  font-size:28px;
+  letter-spacing:-.02em;
+  font-family:Georgia,"Times New Roman",serif;
+  font-weight:500;
+}
+.hotel-location{
+  font-size:12px;
+  color:#6f7974;
+}
+.stars{
+  color:#c59a2e;
+  font-size:14px;
+  letter-spacing:1px;
+  white-space:nowrap;
+  flex:0 0 auto;
+}
+.badges{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin:12px 0;
+}
+.badge{
+  min-height:24px;
+  padding:5px 10px;
+  border-radius:999px;
+  background:#dfeee7;
+  color:var(--green);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  line-height:1.2;
+  font-size:11px;
+  font-weight:600;
+}
+.room-name-line{
+  margin-top:6px;
+  padding-top:10px;
+  border-top:1px solid #f0ece6;
+  font-size:12px;
+  color:#51605a;
+}
+.room-name-line strong{
+  color:#1f2a26;
+}
+.room-meta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 16px;
+  margin-top:8px;
+  font-size:12px;
+  color:#51605a;
+}
+.room-meta strong{color:#1f2a26}
+.more-rooms{
+  margin-top:12px;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  color:var(--green);
+  font-size:12px;
+  font-weight:700;
+}
+
+.hotel-side{
+  border-left:1px solid #f0ece6;
+  padding:16px 14px;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:14px;
+}
+.compare{
+  align-self:flex-start;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:12px;
+  color:#55625c;
+}
+.compare input{
+  width:16px;
+  height:16px;
+  accent-color:var(--green);
+}
+.price-box{
+  text-align:right;
+  margin-top:auto;
+}
+.price-box .from{
+  display:block;
+  color:#8a928e;
+  font-size:11px;
+  margin-bottom:2px;
+}
+.price-box .price{
+  font-size:19px;
+  font-weight:800;
+  letter-spacing:-.01em;
+}
+.price-box .nights{
+  margin-top:4px;
+  color:#6f7974;
+  font-size:11.5px;
+}
+.side-actions{
+  display:grid;
+  gap:8px;
+  margin-top:8px;
+}
+.book-btn{
+  min-width:148px;
+  height:42px;
+  border:0;
+  border-radius:10px;
+  background:var(--green);
+  color:#fff;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+.quote-btn{
+  min-width:148px;
+  height:36px;
+  border:1px solid #d4ddd8;
+  border-radius:10px;
+  background:#fff;
+  color:var(--green);
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+}
+
+
+/* Price per night under the total */
+.per-night{margin-top:2px;color:#8a928e;font-size:11px}
+
+/* List / Map toggle */
+.view-toggle{display:inline-flex;padding:3px;border-radius:9px;background:#f1f3f1;border:1px solid #e1e6e3}
+.view-toggle button{height:28px;padding:0 12px;border:0;border-radius:7px;background:transparent;color:#66716b;font-size:12px;font-weight:700;cursor:pointer}
+.view-toggle button.on{background:#fff;color:var(--green);box-shadow:0 1px 3px rgba(19,47,39,.1)}
+
+/* Room shown because of the Room name filter */
+.match-chip{display:none;margin-left:8px;padding:2px 8px;border-radius:999px;background:#fff4dc;color:#7d5f1c;font-size:11px;font-weight:700}
+.hotel-card.filtered .match-chip{display:inline-block}
+
+.no-match{display:none;padding:22px;border:1px dashed #d8dfdb;border-radius:14px;background:#fff;color:#6f7974;font-size:12.5px;text-align:center}
+.load-more{display:flex;flex-direction:column;align-items:center;gap:8px;padding:18px 0 6px;color:#7f8883;font-size:12px}
+.load-more button{height:38px;padding:0 18px;border:1px solid #d4ddd8;border-radius:9px;background:#fff;color:var(--green);font-size:12.5px;font-weight:700;cursor:pointer}
+
+/* Map view */
+.map-view{display:none;height:100%;min-height:520px}
+.map-canvas{
+  position:relative;height:100%;min-height:520px;border-radius:18px;overflow:hidden;border:1px solid var(--line);
+  background:
+    repeating-linear-gradient(0deg,rgba(255,255,255,.35) 0 1px,transparent 1px 60px),
+    repeating-linear-gradient(90deg,rgba(255,255,255,.35) 0 1px,transparent 1px 60px),
+    #dfe8d9;
+}
+.map-water{position:absolute;right:0;top:0;bottom:0;width:30%;background:#bcd9e2}
+.pin{
+  position:absolute;transform:translate(-50%,-100%);border:0;border-radius:999px;padding:6px 10px;
+  background:var(--green);color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;
+  box-shadow:0 8px 18px rgba(19,47,39,.25);white-space:nowrap;
+}
+.pin em{display:none;font-style:normal;font-weight:600;margin-left:6px;color:#d7e5de}
+.pin:hover em{display:inline}
+.map-note{position:absolute;left:14px;bottom:14px;right:14px;max-width:420px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.92);color:#5f6a65;font-size:11.5px}
+.results-panel.map-mode .results,.results-panel.map-mode .load-more,.results-panel.map-mode .no-match{display:none!important}
+.results-panel.map-mode .map-view{display:block}
+
+@media(max-width:1080px){
+  .search-row{grid-template-columns:1.4fr 1fr 1fr}
+  html,body{overflow:auto}
+  .app{height:auto}
+  .content-shell{grid-template-columns:1fr}
+  .filters{overflow:visible;padding-right:0}
+  .results-panel{overflow:visible;padding-right:0}
+}
+@media(max-width:860px){
+  .search-row{grid-template-columns:1fr 1fr}
+  .hotel-main{grid-template-columns:1fr}
+  .hotel-media{padding:14px 14px 0}
+  .hotel-media .image{min-height:220px}
+  .hotel-side{
+    border-left:0;
+    border-top:1px solid #f0ece6;
+    align-items:stretch;
+  }
+  .price-box{text-align:left}
+}
+
+
+.quote-side-tab > span:first-child{
+  writing-mode:vertical-rl;
+  text-orientation:mixed;
+  transform:rotate(180deg);
+}
+.quote-side-tab .quote-side-count{
+  writing-mode:horizontal-tb;
+  transform:none;
+}
+
+.quote-title-block .quote-sub{
+  color:#73817b;
+}
+.quote-name-input{
+  color:#173f35;
+}
+.trip-section strong{
+  color:#173f35;
+}
+.trip-section:before{
+  content:"Current search";
+  display:block;
+  margin-bottom:5px;
+  color:#6f887e;
+  font-size:11px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.quote-item:nth-child(even){
+  background:#fcfdfc;
+  border-left-color:#b89155;
+}
+.quote-item-price{
+  color:#173f35;
+}
+.quote-item-room{
+  color:#55665f;
+}
+.quote-empty{
+  background:#fff;
+  border-color:#cfdcd6;
+}
+.quote-open-btn{
+  box-shadow:0 5px 12px rgba(23,63,53,.14);
+}
+.finish-quote-btn{
+  background:#f4f8f6;
+}
+
+@media(max-width:680px){
+  .topbar-inner,.page{width:min(100% - 24px,1280px)}
+  .nav{gap:14px;overflow:auto}
+  .account-name{display:none}
+  .balance-chip small{display:none}
+  .nav-menu{position:fixed;left:12px;right:12px;top:62px;width:auto}
+  .account-menu{top:62px}
+  .search-row{grid-template-columns:1fr}
+  .results-meta{flex-direction:column;align-items:flex-start}
+}
+
+/* Quote collection experience */
+.quotes-link{
+  display:flex !important;
+  align-items:center;
+  gap:7px;
+}
+.quote-nav-badge{
+  display:none;
+  min-width:20px;
+  height:20px;
+  padding:0 6px;
+  border-radius:999px;
+  background:var(--green);
+  color:#fff;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:800;
+}
+.quote-nav-badge.show{display:inline-flex}
+
+.hotel-card.in-quote{
+  border-color:#aebfb7;
+  box-shadow:0 0 0 2px rgba(23,63,53,.06),var(--shadow);
+}
+.quote-btn.in-quote{
+  background:var(--green-soft);
+  border-color:#cddbd4;
+  color:var(--green);
+}
+.quote-btn.in-quote:before{
+  content:"✓ ";
+  font-weight:900;
+}
+
+.quote-drawer{
+  position:fixed;
+  z-index:250;
+  top:0;
+  right:0;
+  bottom:0;
+  width:410px;
+  height:100vh;
+  background:#f8faf9;
+  border-left:1px solid var(--line);
+  box-shadow:-18px 0 44px rgba(19,47,39,.12);
+  transform:translateX(100%);
+  transition:transform .22s ease;
+  display:flex;
+  flex-direction:column;
+}
+.quote-drawer.open{transform:translateX(0)}
+
+.quote-drawer-head{
+  padding:18px 20px 16px;
+  border-bottom:1px solid #dbe4df;
+  background:#173f35;
+  color:#fff;
+}
+.quote-drawer-kicker{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:12px;
+}
+.quote-drawer-kicker span{
+  color:#c9d8d2;
+  font-size:11px;
+  font-weight:750;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.quote-close{
+  width:30px;
+  height:30px;
+  border:1px solid rgba(255,255,255,.25);
+  border-radius:8px;
+  background:rgba(255,255,255,.10);
+  color:#fff;
+  font-size:18px;
+  line-height:1;
+}
+.quote-picker{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+}
+.quote-picker select{
+  width:100%;
+  height:38px;
+  border:1px solid rgba(255,255,255,.28);
+  border-radius:8px;
+  background:#fff;
+  color:#20302a;
+  padding:0 10px;
+  font-size:12px;
+  font-weight:700;
+}
+.new-quote-btn{
+  height:38px;
+  border:1px solid rgba(255,255,255,.35);
+  border-radius:8px;
+  background:rgba(255,255,255,.12);
+  color:#fff;
+  padding:0 11px;
+  font-size:12px;
+  font-weight:800;
+}
+.quote-title-block{
+  padding:18px 20px 14px;
+  background:#fff;
+  border-bottom:1px solid #e4e9e6;
+}
+.quote-title-row{
+  display:flex;
+  justify-content:space-between;
+  gap:14px;
+  align-items:flex-start;
+}
+.quote-title-row h3{
+  margin:0;
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:22px;
+  font-weight:500;
+}
+.quote-count{
+  flex:0 0 auto;
+  border-radius:999px;
+  background:#dfeee7;
+  color:var(--green);
+  padding:5px 8px;
+  font-size:11px;
+  font-weight:800;
+}
+.quote-sub{
+  margin-top:6px;
+  color:#7c8581;
+  font-size:12px;
+}
+.trip-section{
+  margin:14px 20px 12px;
+  padding:12px 13px;
+  border:1px solid #d8e5df;
+  border-radius:11px;
+  background:#eef5f1;
+}
+.trip-section strong{
+  display:block;
+  font-size:13px;
+  margin-bottom:3px;
+}
+.trip-section span{
+  color:#7c8580;
+  font-size:12px;
+}
+.quote-items{
+  flex:1;
+  overflow:auto;
+  padding:0 20px 18px;
+}
+.quote-empty{
+  margin-top:22px;
+  padding:24px 16px;
+  border:1px dashed #dce3df;
+  border-radius:12px;
+  text-align:center;
+  color:#7d8782;
+  font-size:12.5px;
+  line-height:1.6;
+}
+.quote-item{
+  border:1px solid #dfe7e3;
+  border-left:4px solid #6e9485;
+  border-radius:12px;
+  padding:12px;
+  margin-bottom:10px;
+  background:#fff;
+  box-shadow:0 5px 14px rgba(19,47,39,.05);
+}
+.quote-item-top{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:flex-start;
+}
+.quote-item-hotel{
+  font-size:13.5px;
+  font-weight:800;
+  line-height:1.25;
+}
+.quote-item-remove{
+  flex:0 0 auto;
+  width:25px;
+  height:25px;
+  border:0;
+  border-radius:7px;
+  background:#f5f6f5;
+  color:#89918d;
+  font-size:15px;
+}
+.quote-item-room{
+  margin-top:5px;
+  color:#5f6a65;
+  font-size:12px;
+}
+.quote-item-meta{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-end;
+  margin-top:9px;
+  padding-top:9px;
+  border-top:1px solid #f0eeea;
+}
+.quote-item-dates{
+  color:#8a938e;
+  font-size:11.5px;
+  line-height:1.45;
+}
+.quote-item-price{
+  text-align:right;
+  font-size:13.5px;
+  font-weight:850;
+  white-space:nowrap;
+}
+.quote-item-price small{
+  display:block;
+  margin-top:2px;
+  color:#969d99;
+  font-size:11px;
+  font-weight:600;
+}
+.quote-drawer-foot{
+  border-top:1px solid #dbe4df;
+  padding:14px 20px 16px;
+  background:#fff;
+}
+.quote-limit{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  color:#7d8681;
+  font-size:11.5px;
+  margin-bottom:10px;
+}
+.quote-open-btn{
+  width:100%;
+  height:40px;
+  border:0;
+  border-radius:9px;
+  background:var(--green);
+  color:#fff;
+  font-size:13px;
+  font-weight:800;
+}
+.keep-searching{
+  width:100%;
+  height:34px;
+  margin-top:7px;
+  border:0;
+  background:transparent;
+  color:#617069;
+  font-size:12px;
+  font-weight:750;
+}
+.quote-toast{
+  position:fixed;
+  z-index:300;
+  right:18px;
+  bottom:18px;
+  min-width:250px;
+  padding:11px 13px;
+  border-radius:10px;
+  background:#173f35;
+  color:#fff;
+  box-shadow:0 12px 30px rgba(19,47,39,.22);
+  font-size:12.5px;
+  opacity:0;
+  transform:translateY(8px);
+  pointer-events:none;
+  transition:.18s ease;
+}
+.quote-toast.show{
+  opacity:1;
+  transform:translateY(0);
+}
+
+.quote-side-tab{
+  position:fixed;
+  z-index:240;
+  right:0;
+  top:50%;
+  transform:translateY(-50%);
+  width:42px;
+  min-width:42px;
+  height:92px;
+  padding:10px 0;
+  border:1px solid #cddad4;
+  border-right:0;
+  border-radius:12px 0 0 12px;
+  background:var(--green);
+  color:#fff;
+  box-shadow:-8px 8px 24px rgba(19,47,39,.16);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  font-size:11px;
+  font-weight:800;
+  cursor:pointer;
+  transition:right .22s ease, background .15s ease;
+  writing-mode:horizontal-tb;
+  text-orientation:mixed;
+  transform:translateY(-50%);
+}
+.quote-side-tab:hover{background:#245c4e}
+.quote-side-tab.drawer-open{
+  right:410px;
+  border-right:1px solid #d8e1dc;
+}
+.quote-side-count{
+  display:none;
+  min-width:20px;
+  height:20px;
+  padding:0 6px;
+  border-radius:999px;
+  background:var(--green);
+  color:#fff;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:850;
+}
+.quote-side-count.show{display:inline-flex}
+
+.quote-name-wrap{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+.quote-name-input{
+  width:100%;
+  min-width:0;
+  height:38px;
+  border:1px solid transparent;
+  border-radius:8px;
+  background:transparent;
+  padding:0 8px;
+  margin-left:-8px;
+  color:var(--ink);
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:22px;
+  font-weight:500;
+  outline:none;
+}
+.quote-name-input:hover{border-color:#e1e6e3;background:#fbfcfb}
+.quote-name-input:focus{
+  border-color:#a7b8b0;
+  background:#fff;
+  box-shadow:0 0 0 3px rgba(23,63,53,.06);
+}
+.quote-edit-hint{
+  flex:0 0 auto;
+  color:#8a938e;
+  font-size:11px;
+}
+.finish-quote-btn{
+  width:100%;
+  height:38px;
+  margin-top:7px;
+  border:1px solid #cfdad4;
+  border-radius:9px;
+  background:#fff;
+  color:var(--green);
+  font-size:12.5px;
+  font-weight:800;
+}
+.quote-finished-note{
+  display:none;
+  margin:0 18px 12px;
+  padding:9px 10px;
+  border-radius:9px;
+  background:#dfeee7;
+  color:var(--green);
+  font-size:12px;
+  font-weight:700;
+}
+.quote-finished-note.show{display:block}
+
+@media(max-width:680px){
+  .quote-side-tab.drawer-open{right:0}
+  .quote-side-tab{top:auto;bottom:20px;transform:none}
+}
+
+@media(max-width:680px){
+  .quote-drawer{
+    width:100%;
+    top:0;
+    height:100vh;
+  }
+}
+
+/* ===== Search bar: copied from 07-search.html ===== */
+.field-wrap{position:relative}
+.field-wrap label{
+  display:block;
+  margin:0 0 5px 2px;
+  font-size:11px;
+  font-weight:700;
+  color:#7b8580;
+}
+.field,
+.field-button{
+  width:100%;
+  height:42px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  background:#fff;
+  color:#324039;
+  outline:none;
+  font-size:13px;
+}
+.field{padding:0 11px}
+.field::placeholder{color:#9ba39f}
+.field-button{
+  padding:0 11px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  cursor:pointer;
+  text-align:left;
+}
+.field:focus,.field-button:focus{
+  border-color:#98ada4;
+  box-shadow:0 0 0 3px rgba(23,63,53,.07);
+}
+.search-btn{
+  height:42px;
+  border:0;
+  border-radius:8px;
+  padding:0 22px;
+  background:var(--green);
+  color:#fff;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+.popover{
+  display:none;
+  position: absolute;
+  z-index:80;
+  background:#fff;
+  border:1px solid var(--line);
+  box-shadow:0 18px 48px rgba(19,47,39,.14);
+}
+.popover.open{display:block}
+
+/* Calendar */
+.calendar-pop{
+  top:calc(100% + 8px);
+  left:0;
+  width:520px;
+  border-radius:12px;
+  overflow:hidden;
+}
+.calendar-layout{
+  display:grid;
+  grid-template-columns:145px 1fr;
+  height:430px;
+}
+.month-list{
+  border-right:1px solid #eeeae3;
+  background:#faf9f6;
+  padding:10px 0;
+  overflow:auto;
+}
+.month-list button{
+  width:100%;
+  border:0;
+  background:transparent;
+  padding:10px 16px;
+  text-align:left;
+  color:#4e5954;
+  font-size:12px;
+  cursor:pointer;
+}
+.month-list button:hover,
+.month-list button.active{
+  background:var(--green-soft);
+  color:var(--green);
+  font-weight:700;
+}
+.single-calendar{
+  padding:14px 18px 16px;
+  overflow:auto;
+}
+.weekdays,.days{
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  gap:3px;
+}
+.weekdays{
+  border-top:1px solid #ece8e2;
+  padding-top:7px;
+}
+.weekdays span{
+  text-align:center;
+  color:#7d8a83;
+  font-size:11px;
+  padding:3px 0 5px;
+  font-weight:700;
+}
+.month-section{
+  margin-bottom:18px;
+}
+.month-section h3{
+  margin:0 0 10px;
+  font-size:16px;
+  color:var(--green);
+}
+.days button{
+  height:30px;
+  border:0;
+  background:transparent;
+  color:#3f4b45;
+  border-radius:7px;
+  font-size:11px;
+  cursor:pointer;
+}
+.days button:hover{background:#f1f4f2}
+.days button.muted{color:#c7cbc9}
+.days button.start,
+.days button.end{
+  background:var(--green);
+  color:#fff;
+  font-weight:700;
+}
+.days button.range{
+  background:var(--green-soft);
+  color:var(--green);
+  border-radius:0;
+}
+.days button.start{border-top-right-radius:0;border-bottom-right-radius:0}
+.days button.end{border-top-left-radius:0;border-bottom-left-radius:0}
+
+/* Guests */
+.guests-pop{
+  top:calc(100% + 8px);
+  right:0;
+  left:auto;
+  width:350px;
+  border-radius:12px;
+  padding:16px;
+}
+.room-block + .room-block{
+  border-top:1px solid #eeeae3;
+  margin-top:14px;
+  padding-top:14px;
+}
+.room-title{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:12px;
+}
+.room-title strong{font-size:13px}
+.remove-room{
+  border:0;background:transparent;color:#9a5a50;font-size:11px;cursor:pointer
+}
+.guest-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:14px;
+  margin:10px 0;
+}
+.guest-label strong{display:block;font-size:12px}
+.guest-label span{display:block;color:#8f9793;font-size:11px}
+.counter{
+  display:flex;align-items:center;gap:8px;
+}
+.counter button{
+  width:27px;height:27px;
+  border:1px solid #dce3df;
+  border-radius:7px;
+  background:#fff;
+  cursor:pointer;
+}
+.counter span{
+  min-width:16px;
+  text-align:center;
+  font-size:12px;
+}
+.children-area{
+  margin-top:8px;
+}
+.children-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 12px;
+  margin-bottom:8px;
+}
+.add-child{
+  width:100%;
+  height:34px;
+  border:1px dashed #cfd9d3;
+  border-radius:8px;
+  background:#fbfcfb;
+  color:var(--green);
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+}
+.child-row{
+  position:relative;
+  display:flex;
+  gap:6px;
+  align-items:center;
+  margin-top:0;
+  width:auto;
+}
+.age-trigger{
+  min-width:102px;
+  height:34px;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  padding:0 10px;
+  background:#fff;
+  color:#48544e;
+  font-size:11px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  cursor:pointer;
+}
+.age-trigger.open{
+  border-color:#98ada4;
+  box-shadow:0 0 0 3px rgba(23,63,53,.07);
+}
+.age-menu{
+  position:absolute;
+  top:38px;
+  left:0;
+  min-width:160px;
+  max-height:180px;
+  overflow:auto;
+  background:#fff;
+  border:1px solid #dce3df;
+  border-radius:8px;
+  box-shadow:0 14px 28px rgba(19,47,39,.12);
+  z-index:20;
+}
+.age-option{
+  width:100%;
+  text-align:left;
+  border:0;
+  background:#fff;
+  padding:8px 10px;
+  font-size:11px;
+  color:#425049;
+  cursor:pointer;
+}
+.age-option:hover{
+  background:var(--green-soft);
+  color:var(--green);
+}
+.remove-child{
+  width:30px;
+  height:30px;
+  border:0;
+  background:transparent;
+  color:#9a5a50;
+  cursor:pointer;
+  margin-top:2px;
+}
+.guests-footer{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:15px;
+  padding-top:13px;
+  border-top:1px solid #eeeae3;
+}
+.add-room{
+  border:0;background:transparent;color:var(--green);font-size:11px;font-weight:700;cursor:pointer
+}
+.done-btn{
+  min-width:90px;height:34px;
+  border:0;border-radius:8px;
+  background:var(--green);color:#fff;
+  font-size:11px;font-weight:700;cursor:pointer
+}
+
+/* Interactive calendar */
+.calendar-pop{width:560px}
+.cal-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #eeeae3}
+.cal-pick{flex:1;min-width:0;text-align:left;border:1px solid #e3e0d8;border-radius:10px;background:#fff;padding:7px 11px;cursor:pointer}
+.cal-pick small{display:block;font-size:11px;color:#7d8a83;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.cal-pick b{display:block;font-size:13.5px;color:var(--ink);margin-top:1px;white-space:nowrap}
+.cal-pick.on{border-color:var(--green);box-shadow:0 0 0 3px rgba(23,63,53,.09)}
+.cal-pick b.empty{color:#a3aaa6;font-weight:600}
+.cal-arrow{color:#9aa39e}
+.cal-nights{font-size:12px;font-weight:800;color:var(--green);background:var(--green-soft);border-radius:999px;padding:5px 10px;white-space:nowrap}
+.cal-nights:empty{display:none}
+.cal-hint{padding:8px 14px;font-size:12px;color:#5f6a65;background:#fbfaf7;border-bottom:1px solid #eeeae3}
+.calendar-layout{height:360px}
+.single-calendar{padding:0 16px 14px;position:relative}
+.weekdays{position:sticky;top:0;z-index:2;background:#fff;border-top:0;padding:10px 0 6px;border-bottom:1px solid #f0ede7;margin-bottom:8px}
+.weekdays span{font-size:11px;letter-spacing:.03em}
+.month-section{margin-bottom:14px;scroll-margin-top:44px}
+.month-section h3{font-size:15px;margin:4px 0 8px}
+.days{gap:2px 0}
+.days button{height:36px;font-size:12.5px;border-radius:0;position:relative}
+.days button:hover:not(:disabled){background:#e9efeb;border-radius:8px}
+.days button:disabled{cursor:default}
+.days button.past{color:#c3c8c5;text-decoration:line-through;text-decoration-color:#dde1df}
+.days button.blank{visibility:hidden}
+.days button.today:after{content:"";position:absolute;left:50%;bottom:5px;width:4px;height:4px;margin-left:-2px;border-radius:50%;background:var(--green)}
+.days button.range,.days button.preview{background:var(--green-soft);border-radius:0}
+.days button.preview{background:#f1f5f3;box-shadow:inset 0 1px 0 #dfe8e3,inset 0 -1px 0 #dfe8e3}
+.days button.start,.days button.end{background:var(--green);color:#fff;font-weight:800;border-radius:8px}
+.days button.start.has-end{border-radius:8px 0 0 8px}
+.days button.end{border-radius:0 8px 8px 0}
+.days button.start.today:after,.days button.end.today:after{background:#fff}
+.cal-foot{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-top:1px solid #eeeae3;background:#fff}
+.cal-clear{border:0;background:transparent;color:#6d756f;font-size:12px;font-weight:700;cursor:pointer;padding:6px 0}
+.cal-clear:hover{color:var(--green)}
+.nights-inline{font-style:normal;color:#7f8883;font-size:11.5px;margin-left:6px}
+@media(max-width:760px){
+  .calendar-pop{position:fixed;left:8px;right:8px;bottom:8px;top:auto;width:auto;height:min(600px,80vh);display:none;flex-direction:column;z-index:300;box-shadow:0 -10px 40px rgba(19,47,39,.25)}
+  .calendar-pop.open{display:flex}
+  .calendar-pop .calendar-layout{flex:1 1 auto;height:auto;min-height:0}
+  .calendar-layout{grid-template-columns:92px 1fr;height:340px}
+  .month-list button{padding:9px 10px;font-size:11.5px}
+  .cal-head{flex-wrap:wrap}
+  .cal-arrow{display:none}
+  .cal-nights{order:3}
+  .att-summary{display:none!important}
+}
+
+/* ===== Dropdown menus (same look as the child-age menu) ===== */
+.dd-menu{
+  display:none;position:absolute;top:calc(100% + 6px);z-index:90;
+  background:#fff;border:1px solid #dce3df;border-radius:10px;
+  box-shadow:0 14px 34px rgba(19,47,39,.14);overflow:hidden;
+}
+.dd-menu.open{display:block}
+.dd-opt{
+  width:100%;display:flex;align-items:center;gap:11px;border:0;background:#fff;
+  padding:9px 12px;text-align:left;color:#324039;font-size:13px;cursor:pointer;
+}
+.dd-opt:hover,.dd-opt.active{background:var(--green-soft);color:var(--green)}
+.dd-empty{padding:14px 12px;font-size:12.5px;color:#7f8883}
+
+/* Destination */
+.dest-box{position:relative}
+.dest-ico{position:absolute;left:11px;top:50%;width:16px;height:16px;margin-top:-8px;fill:none;stroke:#7b8580;stroke-width:1.8;pointer-events:none}
+.dest-input{padding-left:34px;padding-right:32px}
+.dest-clear{position:absolute;right:7px;top:50%;margin-top:-12px;width:24px;height:24px;border:0;border-radius:50%;background:#eef1ef;color:#55615b;font-size:15px;line-height:1;cursor:pointer}
+.dest-clear:hover{background:#e0e7e3}
+.dest-menu{left:0;width:max(100%,520px);max-height:420px;overflow:auto;padding:5px 0}
+.dest-opt{padding:10px 14px}
+.dest-opt svg{flex:0 0 18px;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;color:#4d5a54}
+.dest-opt:hover svg,.dest-opt.active svg{color:var(--green)}
+.dest-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dest-name b{color:var(--green);font-weight:800}
+.dest-type{flex:0 0 auto;font-size:11.5px;color:#8a928e}
+.dest-sep{height:1px;background:#eeeae5;margin:5px 12px}
+
+/* Nationality */
+.nat-menu{right:0;width:280px}
+.nat-search{padding:8px;border-bottom:1px solid #eeeae3}
+.nat-search input{width:100%;height:36px;border:1px solid #dce3df;border-radius:8px;padding:0 10px;font-size:13px;outline:none;color:var(--ink)}
+.nat-search input:focus{border-color:#98ada4;box-shadow:0 0 0 3px rgba(23,63,53,.07)}
+.nat-list{max-height:280px;overflow:auto;padding:4px 0}
+.nat-opt{justify-content:space-between;padding:8px 12px}
+.nat-opt.sel{font-weight:700;color:var(--green)}
+.nat-opt.sel:after{content:"✓";font-weight:800}
+#natBtn span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+@media(max-width:760px){
+  .dest-menu{width:100%}
+  .dest-type{display:none}
+  .nat-menu{left:0;right:0;width:auto}
+}
+
+/* ===== 08: mobile search summary, Filters button, sort menu, card links ===== */
+.search-mini{display:none}
+.filters-btn{display:none;height:34px;padding:0 12px;border:1px solid #dce3df;border-radius:8px;background:#fff;color:var(--green);font-size:12px;font-weight:700;cursor:pointer;align-items:center;gap:6px}
+.filters-btn b{min-width:18px;height:18px;border-radius:999px;background:var(--green);color:#fff;font-size:11px;display:none;align-items:center;justify-content:center;padding:0 5px}
+.filters-btn b.on{display:inline-flex}
+.sort-wrap{position:relative}
+.sort-btn{cursor:pointer;gap:8px;justify-content:space-between}
+.sort-menu{right:0;left:auto;width:220px;padding:4px 0}
+.sort-opt{justify-content:space-between}
+.sort-opt.sel{font-weight:700;color:var(--green)}
+.sort-opt.sel:after{content:"✓";font-weight:800}
+.hotel-name a:hover{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:4px}
+.hotel-media .image{cursor:pointer}
+.map-link{border:0;background:transparent;padding:0;color:var(--green);font-size:12px;font-weight:600;cursor:pointer}
+.map-link:hover{text-decoration:underline}
+.book-btn:hover{background:#245c4e}
+.hotel-card.flash{box-shadow:0 0 0 3px rgba(184,145,85,.55),var(--shadow);transition:box-shadow .2s}
+.pin.hl{background:#b89155;z-index:2}
+.results-panel.searching .results{opacity:.35;pointer-events:none;transition:opacity .15s}
+@media(max-width:1080px){
+  .filters-btn{display:inline-flex}
+  .filters{display:none}
+  .content-shell.show-filters .filters{display:block}
+}
+@media(max-width:760px){
+  .search-mini{display:flex;width:100%;align-items:center;gap:10px;padding:10px 12px;border:1px solid #dce3df;border-radius:10px;background:#fff;text-align:left;cursor:pointer;color:var(--ink)}
+  .search-mini svg{flex:0 0 18px;width:18px;height:18px;fill:none;stroke:#7b8580;stroke-width:1.8}
+  .search-mini .mini-text{flex:1;min-width:0}
+  .search-mini b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .search-mini small{display:block;font-size:12px;color:#7f8883;margin-top:1px}
+  .search-mini .mini-edit{font-size:12.5px;font-weight:700;color:var(--green)}
+  .search-box:not(.editing) .search-row{display:none}
+  .search-box.editing .search-row{margin-top:12px}
+  .sort-menu{left:0;right:auto}
+}
+
+
+/* Quote drawer: destinations and guests */
+.quote-party{margin-top:6px;font-size:12px;font-weight:700;color:#173f35}
+.quote-dest{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:14px 0 8px;padding-bottom:6px;border-bottom:1px solid #e6ece9}
+.quote-dest strong{font-size:13px}
+.quote-dest span{font-size:12px;color:#7c8580;white-space:nowrap}
+.guests-dlg{position:fixed;inset:0;z-index:400;background:rgba(18,29,25,.38);display:none;align-items:center;justify-content:center;padding:18px}
+.guests-dlg.open{display:flex}
+.guests-box{width:min(420px,100%);background:#fff;border-radius:15px;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.2)}
+.guests-box strong{display:block;font-size:16px}
+.guests-box p{margin:6px 0 16px;font-size:13px;line-height:1.5;color:#5f6a65}
+.guests-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.guests-actions button{height:36px;padding:0 14px;border-radius:9px;font-size:12.5px;font-weight:700;border:1px solid #cfd8d3;background:#fff;color:#173f35;cursor:pointer}
+.guests-actions .guests-new{background:#173f35;border-color:#173f35;color:#fff}
+
+/* v4: one look across all agent pages */
+.search-btn,.book-btn{border-radius:9px}
+.quote-btn{border-radius:8px}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="07-search.html">Apolles</a>
+
+    <nav class="nav">
+      <a class="nav-link active" href="07-search.html">Search</a>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Quotes <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="14-quotes.html">All quotes</a>
+          <a href="15-quote-editor.html">New quote</a>
+          <div class="nav-sep"></div>
+          <a href="18-clients.html">Clients</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Bookings <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="13-bookings.html">All bookings</a>
+          <a href="13-bookings.html">Upcoming stays</a>
+          <a href="13-bookings.html">Completed</a>
+          <a href="13-bookings.html">Cancelled</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button">Reporting <span>⌄</span></button>
+        <div class="nav-menu">
+          <a href="19-reports.html">Overview</a>
+          <a href="19-reports.html">Balance history</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="top-actions">
+      <a class="balance-chip" href="20-agency-settings.html#balance" title="Balance and top-ups">
+        <small>Balance</small>
+        <b>USD 4,250.00</b>
+      </a>
+
+      <div class="nav-group account-group">
+        <button class="account-trigger" type="button">
+          <span class="avatar">MZ</span>
+          <span class="account-name">My Agency</span>
+          <b>⌄</b>
+        </button>
+        <div class="nav-menu account-menu">
+          <a href="20-agency-settings.html">Agency settings</a>
+          <a href="20-agency-settings.html#balance">Balance &amp; top-ups</a>
+          <a href="#">Support</a>
+          <div class="nav-sep"></div>
+          <a href="04-login.html">Sign out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="app">
+  <main class="page">
+
+    <section class="search-summary">
+      <div class="search-box">
+        <!-- Phone only: the search collapses to one line. Tap to edit. -->
+        <button class="search-mini" id="searchMini" type="button" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+          <span class="mini-text"><b id="miniDest">Cancun</b><small id="miniMeta">Oct 12 to Oct 14 · 2 guests</small></span>
+          <span class="mini-edit" id="miniEdit">Edit</span>
+        </button>
+        <div class="search-row">
+
+      <!-- Destination autocomplete. Order of suggestions: cities first, then areas and airports
+           of that city, then hotels. Matched letters are highlighted. Shows after 2 letters. -->
+      <div class="field-wrap dest-wrap" id="destWrap">
+        <label for="destInput">Destination or hotel</label>
+        <div class="dest-box">
+          <svg class="dest-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.6"/></svg>
+          <input class="field dest-input" id="destInput" value="Cancun, Quintana Roo, Mexico" placeholder="City, hotel or location" autocomplete="off"
+                 role="combobox" aria-expanded="false" aria-controls="destMenu" aria-autocomplete="list">
+          <button class="dest-clear" id="destClear" type="button" aria-label="Clear">×</button>
+        </div>
+        <div class="dd-menu dest-menu" id="destMenu" role="listbox" aria-label="Suggestions"></div>
+      </div>
+
+      <div class="field-wrap">
+        <label>Check-in</label>
+        <button class="field-button" id="checkinBtn" type="button">
+          <span id="checkinText">Oct 28, 2026</span>
+          <span>⌄</span>
+        </button>
+
+        <div class="popover calendar-pop" id="calendarPopover" role="dialog" aria-label="Choose dates">
+          <div class="cal-head">
+            <button type="button" class="cal-pick" id="calPickIn"><small>Check-in</small><b id="calInText">Wed, Oct 28</b></button>
+            <span class="cal-arrow">→</span>
+            <button type="button" class="cal-pick" id="calPickOut"><small>Check-out</small><b id="calOutText">Wed, Nov 4</b></button>
+            <span class="cal-nights" id="calNights">7 nights</span>
+          </div>
+          <div class="cal-hint" id="calHint">Select your check-out date</div>
+          <div class="calendar-layout">
+            <div class="month-list" id="monthList"></div>
+            <div class="single-calendar" id="calScroll">
+              <div class="weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+              <div id="calMonths"></div>
+            </div>
+          </div>
+          <div class="cal-foot">
+            <button type="button" class="cal-clear" id="calClear">Clear dates</button>
+            <button type="button" class="done-btn" id="calDone">Done</button>
+          </div>
+        </div>
+            </div>
+
+      <div class="field-wrap">
+        <label>Check-out</label>
+        <button class="field-button" id="checkoutBtn" type="button">
+          <span id="checkoutText">Nov 4, 2026 <em class="nights-inline">7 nights</em></span>
+          <span>⌄</span>
+        </button>
+      </div>
+
+      <div class="field-wrap">
+        <label>Rooms & guests</label>
+        <button class="field-button" id="guestsBtn">
+          <span id="guestsText">1 room · 2 guests</span>
+          <span>⌄</span>
+        </button>
+
+        <div class="popover guests-pop" id="guestsPopover">
+          <div id="roomsContainer"></div>
+
+          <div class="guests-footer">
+            <button class="add-room" id="addRoomBtn" type="button">+ Add a room</button>
+            <button class="done-btn" id="doneGuestsBtn" type="button">Done</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Guest nationality: full list of all 249 countries (ISO 3166), with search at the top. Default: Israel. -->
+      <div class="field-wrap nat-wrap" id="natWrap">
+        <label>Guest nationality</label>
+        <button class="field-button" id="natBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+          <span id="natText">Israel</span>
+          <span>⌄</span>
+        </button>
+        <div class="dd-menu nat-menu" id="natMenu">
+          <div class="nat-search"><input id="natSearch" type="text" placeholder="Search country" autocomplete="off" aria-label="Search country"></div>
+          <div class="nat-list" id="natList" role="listbox" aria-label="Guest nationality"></div>
+        </div>
+      </div>
+
+      <button class="search-btn" id="searchBtn" type="button">Search</button>
+    </div>
+
+        <div class="results-meta">
+          <div>
+            <strong>365 properties found</strong>
+            <span id="metaFor">for Cancun, Oct 12 to Oct 14</span>
+          </div>
+
+          <div class="meta-actions">
+            <div class="view-toggle" role="tablist" aria-label="Results view">
+              <button class="on" type="button" data-view="list">List</button>
+              <button type="button" data-view="map">Map</button>
+            </div>
+              <button class="filters-btn" id="filtersBtn" type="button" aria-expanded="false">Filters <b id="filtersCount"></b></button>
+              <label class="toggle-pill"><input type="checkbox" id="freeOnly"><span class="toggle-slider"></span><span>Free cancellation only</span></label>
+            <div class="sort-wrap">
+              <button class="sort-select sort-btn" id="sortBtn" type="button" aria-haspopup="listbox" aria-expanded="false"><span id="sortText">Sort: Recommended</span><span>⌄</span></button>
+              <div class="dd-menu sort-menu" id="sortMenu" role="listbox" aria-label="Sort results">
+                <button type="button" role="option" class="dd-opt sort-opt sel" data-sort="rec">Recommended</button>
+                <button type="button" role="option" class="dd-opt sort-opt" data-sort="low">Price: low to high</button>
+                <button type="button" role="option" class="dd-opt sort-opt" data-sort="high">Price: high to low</button>
+                <button type="button" role="option" class="dd-opt sort-opt" data-sort="pop">Popularity</button>
+                <button type="button" role="option" class="dd-opt sort-opt" data-sort="rating">Guest rating</button>
+                <button type="button" role="option" class="dd-opt sort-opt" data-sort="stars">Star rating</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="content-shell">
+      <aside class="filters">
+        <div class="filter-card">
+          <h3>Filters</h3>
+
+          <div class="filter-group">
+            <span class="filter-title">Hotel name</span>
+            <input class="filter-input" id="fHotel" placeholder="Search hotel">
+          </div>
+
+          <div class="filter-group">
+            <span class="filter-title">Room name</span>
+            <input class="filter-input" id="fRoom" placeholder="Search room">
+          </div>
+
+          <div class="filter-group">
+            <span class="filter-title">Price per night (USD)</span>
+            <div class="range-inputs">
+              <input id="fMin" type="number" min="0" inputmode="numeric" placeholder="Min" aria-label="Minimum price per night">
+              <input id="fMax" type="number" min="0" inputmode="numeric" placeholder="Max" aria-label="Maximum price per night">
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <span class="filter-title">Star rating</span>
+            <div class="check-list">
+              <label class="check"><input type="checkbox" class="f-star" value="5"> 5 stars</label>
+              <label class="check"><input type="checkbox" class="f-star" value="4"> 4 stars</label>
+              <label class="check"><input type="checkbox" class="f-star" value="3"> 3 stars</label>
+              <label class="check"><input type="checkbox" class="f-star" value="2"> 2 stars</label>
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <span class="filter-title">Meal plan</span>
+            <div class="check-list">
+              <label class="check"><input type="checkbox" class="f-meal" value="All inclusive"> All inclusive</label>
+              <label class="check"><input type="checkbox" class="f-meal" value="Breakfast included"> Breakfast included</label>
+              <label class="check"><input type="checkbox" class="f-meal" value="Room only"> Room only</label>
+            </div>
+          </div>
+          <div class="filter-group">
+            <span class="filter-title">Guest rating</span>
+            <div class="check-list">
+              <label class="check"><input type="radio" name="fRating" class="f-rating" value="" checked> Any rating</label>
+              <label class="check"><input type="radio" name="fRating" class="f-rating" value="9"> 9+ Wonderful</label>
+              <label class="check"><input type="radio" name="fRating" class="f-rating" value="8"> 8+ Very good</label>
+              <label class="check"><input type="radio" name="fRating" class="f-rating" value="7"> 7+ Good</label>
+            </div>
+          </div>
+          <div class="filter-group">
+            <span class="filter-title">Amenities</span>
+            <div class="check-list">
+              <label class="check"><input type="checkbox" class="f-amen" value="pool"> Pool</label>
+              <label class="check"><input type="checkbox" class="f-amen" value="spa"> Spa</label>
+              <label class="check"><input type="checkbox" class="f-amen" value="beach"> Beach access</label>
+              <label class="check"><input type="checkbox" class="f-amen" value="kids"> Kids club</label>
+              <label class="check"><input type="checkbox" class="f-amen" value="gym"> Gym</label>
+              <label class="check"><input type="checkbox" class="f-amen" value="parking"> Free parking</label>
+              <label class="check"><input type="checkbox" class="f-amen" value="wifi"> Free WiFi</label>
+            </div>
+          </div>
+          <div class="filter-group">
+            <span class="filter-title">Property type</span>
+            <div class="check-list">
+              <label class="check"><input type="checkbox" class="f-ptype" value="hotel"> Hotel</label>
+              <label class="check"><input type="checkbox" class="f-ptype" value="resort"> Resort</label>
+              <label class="check"><input type="checkbox" class="f-ptype" value="apartment"> Apartment</label>
+              <label class="check"><input type="checkbox" class="f-ptype" value="villa"> Villa</label>
+            </div>
+          </div>
+
+<a class="reset-link" id="resetFilters" href="#">Reset filters</a>
+        </div>
+      </aside>
+
+      <div class="results-panel">
+        <!-- For the developer: rates with sale_scenario.package = true (Expedia Rapid) are package rates,
+             sold only together with a flight or car. Apolles sells the hotel only: every search is sent with
+             sales_environment=hotel_only, and any rate with sale_scenario.package = true is removed before the
+             results are built. It never shows here, on the hotel page or in a quote. -->
+        <!-- Active filters: one chip per filter value. The x removes that value. Clear all removes every filter. -->
+        <div class="active-chips" id="activeChips" aria-label="Active filters"></div>
+        <div class="results">
+
+          <article class="hotel-card" data-rating="9.2" data-pop="3" data-amen="pool,spa,beach,kids,gym,wifi" data-ptype="resort" data-stars="5" data-rooms="[{&quot;room&quot;: &quot;King bed&quot;, &quot;board&quot;: &quot;All inclusive&quot;, &quot;policy&quot;: &quot;Non-refundable&quot;, &quot;price&quot;: 604.78}, {&quot;room&quot;: &quot;Junior Suite King Bed&quot;, &quot;board&quot;: &quot;All inclusive&quot;, &quot;policy&quot;: &quot;USD 0 until Oct 5&quot;, &quot;price&quot;: 874.0}, {&quot;room&quot;: &quot;Oceanfront King&quot;, &quot;board&quot;: &quot;All inclusive&quot;, &quot;policy&quot;: &quot;USD 0 until Oct 3&quot;, &quot;price&quot;: 892.0}, {&quot;room&quot;: &quot;Two Queen Beds Ocean View&quot;, &quot;board&quot;: &quot;All inclusive&quot;, &quot;policy&quot;: &quot;USD 0 until Oct 5&quot;, &quot;price&quot;: 918.0}]">
+            <div class="hotel-main">
+              <div class="hotel-media">
+                <div class="image" role="link" tabindex="0" aria-label="Open hotel rooms"></div>
+              </div>
+
+              <div class="hotel-body">
+                <div class="hotel-top">
+                  <div>
+                    <h2 class="hotel-name"><a href="09-hotel-rooms.html">SLS Playa Mujeres</a></h2>
+                    <div class="hotel-location">Playa Mujeres, Cancún · <button class="map-link" type="button">View on map</button></div>
+                    <div class="guest-score"><b>9.2</b>Wonderful · guest rating</div>
+                  </div>
+                  <div class="stars">★★★★★</div>
+                </div>
+
+                <div class="badges">
+                  <span class="badge">All inclusive</span>
+                  <span class="badge">Luxury spa</span>
+                  <span class="badge">Kids activity zone</span>
+                </div>
+
+                <div class="room-name-line">
+                  <strong>Room:</strong> <span class="room-label">King bed</span><span class="match-chip">Matches your room filter</span>
+                </div>
+
+                <div class="room-meta">
+                  <span><strong>Board:</strong> All inclusive</span>
+                  <span><strong>Cancellation:</strong> Non-refundable</span>
+                </div>
+
+                <a class="more-rooms" href="09-hotel-rooms.html">View 12 more room options →</a>
+              </div>
+
+              <div class="hotel-side">
+<div class="price-box">
+                  <span class="from">from</span>
+                  <div class="price">USD 604.78</div>
+                  <div class="nights">2 nights, 2 adults</div>
+                  <div class="per-night">USD 302.39 per night</div>
+                </div>
+
+                <div class="side-actions">
+                  <button class="book-btn" type="button">Book this room</button>
+                  <button class="quote-btn">Add to quote</button>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="hotel-card" data-rating="9.0" data-pop="2" data-amen="pool,spa,beach,kids,gym,parking,wifi" data-ptype="resort" data-stars="5" data-rooms="[{&quot;room&quot;: &quot;Oceanfront King&quot;, &quot;board&quot;: &quot;All inclusive&quot;, &quot;policy&quot;: &quot;USD 0 until Oct 6&quot;, &quot;price&quot;: 830.46}, {&quot;room&quot;: &quot;Junior Suite Ocean View&quot;, &quot;board&quot;: &quot;All inclusive&quot;, &quot;policy&quot;: &quot;USD 0 until Oct 6&quot;, &quot;price&quot;: 912.1}, {&quot;room&quot;: &quot;Two Bedroom Suite&quot;, &quot;board&quot;: &quot;All inclusive&quot;, &quot;policy&quot;: &quot;Non-refundable&quot;, &quot;price&quot;: 1480.0}]">
+            <div class="hotel-main">
+              <div class="hotel-media">
+                <div class="image" role="link" tabindex="0" aria-label="Open hotel rooms" style="background:
+                  linear-gradient(135deg, rgba(23,63,53,.16), rgba(23,63,53,.03)),
+                  linear-gradient(180deg, #b2b6b4, #d7d3cf 58%, #b79678);"></div>
+              </div>
+
+              <div class="hotel-body">
+                <div class="hotel-top">
+                  <div>
+                    <h2 class="hotel-name"><a href="09-hotel-rooms.html">AVA Resort Cancun</a></h2>
+                    <div class="hotel-location">Zona Hotelera, Cancún · <button class="map-link" type="button">View on map</button></div>
+                    <div class="guest-score"><b>9.0</b>Wonderful · guest rating</div>
+                  </div>
+                  <div class="stars">★★★★★</div>
+                </div>
+
+                <div class="badges">
+                  <span class="badge">Ocean view</span>
+                  <span class="badge">Free cancellation</span>
+                  <span class="badge">Early check-in</span>
+                </div>
+
+                <div class="room-name-line">
+                  <strong>Room:</strong> <span class="room-label">Oceanfront King</span><span class="match-chip">Matches your room filter</span>
+                </div>
+
+                <div class="room-meta">
+                  <span><strong>Board:</strong> All inclusive</span>
+                  <span><strong>Cancellation:</strong> USD 0 until Oct 6</span>
+                </div>
+
+                <a class="more-rooms" href="09-hotel-rooms.html">View 8 more room options →</a>
+              </div>
+
+              <div class="hotel-side">
+<div class="price-box">
+                  <span class="from">from</span>
+                  <div class="price">USD 830.46</div>
+                  <div class="nights">2 nights, 2 adults</div>
+                  <div class="per-night">USD 415.23 per night</div>
+                </div>
+
+                <div class="side-actions">
+                  <button class="book-btn" type="button">Book this room</button>
+                  <button class="quote-btn">Add to quote</button>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="hotel-card" data-rating="8.8" data-pop="1" data-amen="pool,spa,beach,kids,gym,wifi" data-ptype="resort" data-stars="5" data-rooms="[{&quot;room&quot;: &quot;Resort View King&quot;, &quot;board&quot;: &quot;All inclusive&quot;, &quot;policy&quot;: &quot;USD 0 until Oct 5&quot;, &quot;price&quot;: 1037.89}, {&quot;room&quot;: &quot;Ocean View Junior Suite King&quot;, &quot;board&quot;: &quot;All inclusive&quot;, &quot;policy&quot;: &quot;USD 0 until Oct 5&quot;, &quot;price&quot;: 1188.4}]">
+            <div class="hotel-main">
+              <div class="hotel-media">
+                <div class="image" role="link" tabindex="0" aria-label="Open hotel rooms" style="background:
+                  linear-gradient(135deg, rgba(23,63,53,.20), rgba(23,63,53,.04)),
+                  linear-gradient(180deg, #a7c0d8, #e1edf5 55%, #cab8a2);"></div>
+              </div>
+
+              <div class="hotel-body">
+                <div class="hotel-top">
+                  <div>
+                    <h2 class="hotel-name"><a href="09-hotel-rooms.html">Hyatt Ziva Cancun</a></h2>
+                    <div class="hotel-location">Punta Cancún, Zona Hotelera · <button class="map-link" type="button">View on map</button></div>
+                    <div class="guest-score"><b>8.8</b>Very good · guest rating</div>
+                  </div>
+                  <div class="stars">★★★★★</div>
+                </div>
+
+                <div class="badges">
+                  <span class="badge">Excellent reviews</span>
+                  <span class="badge">Family friendly</span>
+                  <span class="badge">Beachfront</span>
+                </div>
+
+                <div class="room-name-line">
+                  <strong>Room:</strong> <span class="room-label">Resort View King</span><span class="match-chip">Matches your room filter</span>
+                </div>
+
+                <div class="room-meta">
+                  <span><strong>Board:</strong> All inclusive</span>
+                  <span><strong>Cancellation:</strong> USD 0 until Oct 5</span>
+                </div>
+
+                <a class="more-rooms" href="09-hotel-rooms.html">View 10 more room options →</a>
+              </div>
+
+              <div class="hotel-side">
+<div class="price-box">
+                  <span class="from">from</span>
+                  <div class="price">USD 1,037.89</div>
+                  <div class="nights">2 nights, 2 adults</div>
+                  <div class="per-night">USD 518.95 per night</div>
+                </div>
+
+                <div class="side-actions">
+                  <button class="book-btn" type="button">Book this room</button>
+                  <button class="quote-btn">Add to quote</button>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="hotel-card" data-rating="7.9" data-pop="4" data-amen="pool,beach,kids,parking,wifi" data-ptype="hotel" data-stars="4" data-rooms="[{&quot;room&quot;: &quot;Standard Room&quot;, &quot;board&quot;: &quot;Room only&quot;, &quot;policy&quot;: &quot;Non-refundable&quot;, &quot;price&quot;: 448.0}, {&quot;room&quot;: &quot;Deluxe Ocean View&quot;, &quot;board&quot;: &quot;Breakfast included&quot;, &quot;policy&quot;: &quot;USD 0 until Oct 8&quot;, &quot;price&quot;: 512.4}, {&quot;room&quot;: &quot;Junior Suite King&quot;, &quot;board&quot;: &quot;Breakfast included&quot;, &quot;policy&quot;: &quot;USD 0 until Oct 8&quot;, &quot;price&quot;: 604.0}]">
+            <div class="hotel-main">
+              <div class="hotel-media">
+                <div class="image" role="link" tabindex="0" aria-label="Open hotel rooms" style="background:
+                  linear-gradient(135deg, rgba(23,63,53,.12), rgba(23,63,53,.02)),
+                  linear-gradient(180deg, #84b9c2, #d8ecf0 58%, #b9a383);"></div>
+              </div>
+
+              <div class="hotel-body">
+                <div class="hotel-top">
+                  <div>
+                    <h2 class="hotel-name"><a href="09-hotel-rooms.html">Sunscape Cancun Resort</a></h2>
+                    <div class="hotel-location">Zona Hotelera, Cancún · <button class="map-link" type="button">View on map</button></div>
+                    <div class="guest-score"><b>7.9</b>Good · guest rating</div>
+                  </div>
+                  <div class="stars">★★★★☆</div>
+                </div>
+
+                <div class="badges">
+                  <span class="badge">Beachfront</span>
+                  <span class="badge">Family resort</span>
+                  <span class="badge">Breakfast included</span>
+                </div>
+
+                <div class="room-name-line">
+                  <strong>Room:</strong> <span class="room-label">Deluxe Ocean View</span><span class="match-chip">Matches your room filter</span>
+                </div>
+
+                <div class="room-meta">
+                  <span><strong>Board:</strong> Breakfast included</span>
+                  <span><strong>Cancellation:</strong> USD 0 until Oct 8</span>
+                </div>
+
+                <a class="more-rooms" href="09-hotel-rooms.html">View 6 more room options →</a>
+              </div>
+
+              <div class="hotel-side">
+<div class="price-box">
+                  <span class="from">from</span>
+                  <div class="price">USD 512.40</div>
+                  <div class="nights">2 nights, 2 adults</div>
+                  <div class="per-night">USD 256.20 per night</div>
+                </div>
+
+                <div class="side-actions">
+                  <button class="book-btn" type="button">Book this room</button>
+                  <button class="quote-btn">Add to quote</button>
+                </div>
+              </div>
+            </div>
+          </article>
+
+        </div>
+
+        <div class="no-match" id="noMatch">No hotels have a room that matches this name. Try a shorter word, for example "suite" or "ocean".</div>
+
+        <div class="load-more">
+          <span id="showingText">Showing 4 of 365 hotels</span>
+          <button type="button">Load more hotels</button>
+        </div>
+
+        <div class="map-view" id="mapView">
+          <div class="map-canvas">
+            <span class="map-water"></span>
+            <button class="pin" data-card="0" style="left:62%;top:18%" type="button">USD 604.78<em>SLS Playa Mujeres</em></button>
+            <button class="pin" data-card="1" style="left:70%;top:52%" type="button">USD 830.46<em>AVA Resort Cancun</em></button>
+            <button class="pin" data-card="2" style="left:58%;top:40%" type="button">USD 1,037.89<em>Hyatt Ziva Cancun</em></button>
+            <button class="pin" data-card="3" style="left:66%;top:66%" type="button">USD 512.40<em>Sunscape Cancun Resort</em></button>
+            <div class="map-note">Map view: hotels with their lowest total price, with the same filters as the list. Clicking a pin opens that hotel card in the list.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+
+
+<button class="quote-side-tab" id="quoteSideTab" aria-label="Open quote">
+  <span>Quote</span>
+  <span class="quote-side-count" id="quoteSideCount">0</span>
+</button>
+
+<aside class="quote-drawer" id="quoteDrawer" aria-label="Active quote">
+  <div class="quote-drawer-head">
+    <div class="quote-drawer-kicker">
+      <span>Active quote</span>
+      <button class="quote-close" id="quoteClose" aria-label="Close">×</button>
+    </div>
+
+    <div class="quote-picker">
+      <select id="quotePicker" aria-label="Switch quote">
+        <option value="1">Quote 1 · Untitled quote</option>
+      </select>
+      <button class="new-quote-btn" id="newQuoteBtn">+ New</button>
+    </div>
+  </div>
+
+  <div class="quote-title-block">
+    <div class="quote-title-row">
+      <div style="min-width:0;flex:1">
+        <div class="quote-name-wrap">
+          <input class="quote-name-input" id="quoteNameInput" value="Untitled quote" aria-label="Quote name">
+          <span class="quote-edit-hint">Edit name</span>
+        </div>
+        <div class="quote-sub">Collect hotel and room options first. Add the client when you are ready to send.</div>
+        <div class="quote-party" id="quoteParty"></div>
+      </div>
+      <span class="quote-count" id="quoteCount">0 options</span>
+    </div>
+  </div>
+
+  <div class="quote-finished-note" id="quoteFinishedNote">
+    Quote saved. A new quote is ready for more options.
+  </div>
+
+  <div class="trip-section">
+    <strong id="tripDest">Cancun</strong>
+    <span id="tripMeta">Oct 12 to Oct 14, 2026 · 2 adults · 1 room</span>
+  </div>
+
+  <div class="quote-items" id="quoteItems">
+    <div class="quote-empty" id="quoteEmpty">
+      Add hotel options while you search.<br>
+      You can mix different hotels, rooms, dates and destinations in the same quote.
+    </div>
+  </div>
+
+  <div class="quote-drawer-foot">
+    <div class="quote-limit">
+      <span id="quoteLimitText">0 of 30 hotels added</span>
+      <span>Auto-saved</span>
+    </div>
+    <button class="quote-open-btn" id="openQuoteBtn">Open quote</button>
+    <button class="finish-quote-btn" id="finishQuoteBtn">Finish quote & start new</button>
+    <button class="keep-searching" id="keepSearching">Close</button>
+  </div>
+</aside>
+
+<div class="quote-toast" id="quoteToast">Added to Untitled quote</div>
+
+<script>
+(function(){
+  const drawer = document.getElementById('quoteDrawer');
+  const closeBtn = document.getElementById('quoteClose');
+  const keepSearching = document.getElementById('keepSearching');
+  const sideTab = document.getElementById('quoteSideTab');
+  const sideCount = document.getElementById('quoteSideCount');
+  const quoteCount = document.getElementById('quoteCount');
+  const quoteItems = document.getElementById('quoteItems');
+  const quoteEmpty = document.getElementById('quoteEmpty');
+  const quoteLimitText = document.getElementById('quoteLimitText');
+  const toast = document.getElementById('quoteToast');
+  const newQuoteBtn = document.getElementById('newQuoteBtn');
+  const quotePicker = document.getElementById('quotePicker');
+  const quoteNameInput = document.getElementById('quoteNameInput');
+  const finishQuoteBtn = document.getElementById('finishQuoteBtn');
+  const finishedNote = document.getElementById('quoteFinishedNote');
+
+  let toastTimer;
+  let nextQuoteId = 2;
+  let activeQuoteId = 1;
+
+  const quotes = [
+    {
+      id: 1,
+      name: 'Untitled quote',
+      finished: false,
+      items: []
+    }
+  ];
+
+  function getActiveQuote(){
+    return quotes.find(q => q.id === activeQuoteId);
+  }
+
+  function openDrawer(){
+    drawer.classList.add('open');
+    sideTab.classList.add('drawer-open');
+  }
+
+  function closeDrawer(){
+    drawer.classList.remove('open');
+    sideTab.classList.remove('drawer-open');
+  }
+
+  function getCardData(button){
+    const card = button.closest('.hotel-card');
+    const name = card.querySelector('.hotel-name').textContent.trim();
+    const roomLine = card.querySelector('.room-label').textContent.trim();
+    const price = card.querySelector('.price').textContent.trim();
+    const policyBits = Array.from(card.querySelectorAll('.room-meta span')).map(x => x.textContent.trim());
+    return {
+      card,
+      button,
+      name,
+      room: roomLine,
+      price,
+      policy: policyBits.join(' · '),
+      dates: window.apollesSearchDates || 'Oct 12 to Oct 14 · 2 nights',
+      dest: window.apollesDest || 'Cancun',
+      party: window.apollesParty || '1 room · 2 adults',
+      key: name + '||' + roomLine + '||' + price + '||' + (window.apollesSearchDates || '')
+    };
+  }
+
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, s => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#039;'
+    }[s]));
+  }
+
+  function showToast(message){
+    toast.textContent = message;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1500);
+  }
+
+  function quoteLabel(q){
+    const prefix = `Quote ${q.id}`;
+    const name = q.name.trim() || 'Untitled quote';
+    const state = q.finished ? ' · Finished' : '';
+    return `${prefix} · ${name}${state}`;
+  }
+
+  function refreshPicker(){
+    quotePicker.innerHTML = quotes.map(q =>
+      `<option value="${q.id}">${escapeHtml(quoteLabel(q))}</option>`
+    ).join('');
+    quotePicker.value = String(activeQuoteId);
+  }
+
+  function syncPageButtons(){
+    const active = getActiveQuote();
+
+    document.querySelectorAll('.quote-btn').forEach(button => {
+      const data = getCardData(button);
+      const included = active.items.some(item => item.key === data.key);
+
+      button.classList.toggle('in-quote', included);
+      button.textContent = included ? 'In quote' : 'Add to quote';
+      data.card.classList.toggle('in-quote', included);
+    });
+  }
+
+  function render(){
+    const active = getActiveQuote();
+    const count = active.items.length;
+
+    quoteNameInput.value = active.name;
+    quoteNameInput.disabled = false;
+    document.getElementById('quoteParty').textContent = active.party ? 'For ' + active.party : '';
+
+    sideCount.textContent = count;
+    sideCount.classList.toggle('show', count > 0);
+
+
+    quoteCount.textContent = count + (count === 1 ? ' option' : ' options');
+    quoteLimitText.textContent = count + ' of 30 hotels added';
+
+    refreshPicker();
+    syncPageButtons();
+
+    if(!count){
+      quoteItems.innerHTML = `
+        <div class="quote-empty" id="quoteEmptyDynamic">
+          No options in this quote yet.<br>
+          Add hotels while you search, or switch to another quote above.
+        </div>`;
+      return;
+    }
+
+    const groups = [];
+    active.items.forEach((item, i) => {
+      let g = groups.find(x => x.key === destKey(item));
+      if(!g){ g = {key: destKey(item), dest: item.dest, dates: item.dates, rows: []}; groups.push(g); }
+      g.rows.push([item, i]);
+    });
+    quoteItems.innerHTML = groups.map(g => `<div class="quote-dest"><strong>${escapeHtml(g.dest)}</strong><span>${escapeHtml(g.dates)}</span></div>` + g.rows.map(([item, i]) => `
+      <div class="quote-item">
+        <div class="quote-item-top">
+          <div class="quote-item-hotel">${escapeHtml(item.name)}</div>
+          <button class="quote-item-remove" data-remove="${i}" aria-label="Remove">×</button>
+        </div>
+        <div class="quote-item-room">${escapeHtml(item.room)}</div>
+        <div class="quote-item-meta">
+          <div class="quote-item-dates">
+            ${escapeHtml(item.policy)}
+          </div>
+          <div class="quote-item-price">
+            ${escapeHtml(item.price)}
+            <small>total stay</small>
+          </div>
+        </div>
+      </div>
+    `).join('')).join('');
+
+    quoteItems.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = Number(btn.dataset.remove);
+        active.items.splice(index, 1);
+        if(!active.items.length) active.party = null;
+        render();
+        showToast('Removed from quote');
+      });
+    });
+  }
+
+  // Where an option lands: the destination with the same city and dates, or a new one.
+  function destKey(x){ return x.dest + '||' + x.dates; }
+  function addToQuote(q, data){
+    const newDest = q.items.length > 0 && !q.items.some(i => destKey(i) === destKey(data));
+    if(!q.party) q.party = data.party;
+    q.items.push(data);
+    render();
+    const where = data.dest + ', ' + data.dates.split(' · ')[0];
+    showToast(`Added to ${q.name || 'Untitled quote'} · ${newDest ? 'new destination: ' : ''}${where}`);
+  }
+
+  // A quote is priced for one set of rooms and guests. A search for other guests
+  // cannot go into it: the prices would not fit.
+  let pendingAdd = null;
+  const guestsDlg = document.createElement('div');
+  guestsDlg.className = 'guests-dlg';
+  guestsDlg.setAttribute('role', 'dialog');
+  guestsDlg.setAttribute('aria-modal', 'true');
+  guestsDlg.innerHTML = '<div class="guests-box"><strong>Different rooms and guests</strong><p class="guests-text"></p><div class="guests-actions"><button type="button" class="guests-cancel">Cancel</button><button type="button" class="guests-new">Start a new quote</button></div></div>';
+  document.body.appendChild(guestsDlg);
+  function askDifferentGuests(q, data){
+    pendingAdd = data;
+    guestsDlg.querySelector('.guests-text').textContent = `"${q.name || 'Untitled quote'}" is for ${q.party}. This search is for ${data.party}, so its prices do not fit this quote. Start a new quote for these guests, or change the search.`;
+    guestsDlg.classList.add('open');
+  }
+  function closeGuestsDlg(){ guestsDlg.classList.remove('open'); pendingAdd = null; }
+  guestsDlg.querySelector('.guests-cancel').addEventListener('click', e => { e.stopPropagation(); closeGuestsDlg(); });
+  guestsDlg.addEventListener('click', e => { e.stopPropagation(); if(e.target === guestsDlg) closeGuestsDlg(); });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape' && guestsDlg.classList.contains('open')) closeGuestsDlg(); });
+  guestsDlg.querySelector('.guests-new').addEventListener('click', e => {
+    e.stopPropagation();
+    const data = pendingAdd; closeGuestsDlg();
+    const q = createQuote('Untitled quote');
+    addToQuote(q, data);
+    showToast(`Quote ${q.id} created for ${data.party} · ${data.dest}, ${data.dates.split(' · ')[0]}`);
+  });
+
+  function createQuote(name){
+    const q = {
+      id: nextQuoteId++,
+      name: name || 'Untitled quote',
+      finished: false,
+      items: []
+    };
+    quotes.push(q);
+    activeQuoteId = q.id;
+    finishedNote.classList.remove('show');
+    render();
+    return q;
+  }
+
+  document.querySelectorAll('.quote-btn').forEach(button => {
+    button.addEventListener('click', () => {
+      const active = getActiveQuote();
+      const data = getCardData(button);
+      const existingIndex = active.items.findIndex(item => item.key === data.key);
+
+      if(existingIndex >= 0){
+        active.items.splice(existingIndex, 1);
+        if(!active.items.length) active.party = null;
+        render();
+        showToast('Removed from quote');
+        return;
+      }
+
+      if(active.items.length >= 30){
+        showToast('This quote already has 30 hotels');
+        return;
+      }
+
+      if(active.party && active.party !== data.party){ askDifferentGuests(active, data); return; }
+      addToQuote(active, data);
+    });
+  });
+
+  sideTab.addEventListener('click', () => {
+    drawer.classList.contains('open') ? closeDrawer() : openDrawer();
+  });
+
+  closeBtn.addEventListener('click', closeDrawer);
+  keepSearching.addEventListener('click', closeDrawer);
+
+
+  // Clicking outside the drawer closes it.
+  document.addEventListener('click', event => {
+    if(!drawer.classList.contains('open')) return;
+    if(drawer.contains(event.target)) return;
+    if(sideTab.contains(event.target)) return;
+    closeDrawer();
+  });
+
+  // Switch between quotes without leaving the search screen.
+  quotePicker.addEventListener('change', () => {
+    activeQuoteId = Number(quotePicker.value);
+    finishedNote.classList.remove('show');
+    render();
+
+    const active = getActiveQuote();
+    showToast(`Switched to ${active.name || 'Untitled quote'}`);
+  });
+
+  quoteNameInput.addEventListener('input', () => {
+    const active = getActiveQuote();
+    active.name = quoteNameInput.value;
+    refreshPicker();
+  });
+
+  quoteNameInput.addEventListener('blur', () => {
+    const active = getActiveQuote();
+    if(!active.name.trim()){
+      active.name = 'Untitled quote';
+      quoteNameInput.value = active.name;
+    }
+    refreshPicker();
+  });
+
+  newQuoteBtn.addEventListener('click', () => {
+    const q = createQuote('Untitled quote');
+    showToast(`Quote ${q.id} created`);
+  });
+
+  finishQuoteBtn.addEventListener('click', () => {
+    const active = getActiveQuote();
+
+    if(!active.items.length){
+      showToast('Add at least one option before finishing');
+      return;
+    }
+
+    active.finished = true;
+    const finishedName = active.name || `Quote ${active.id}`;
+
+    const newQuote = createQuote('Untitled quote');
+    finishedNote.textContent = `${finishedName} saved. Quote ${newQuote.id} is ready for new options.`;
+    finishedNote.classList.add('show');
+
+    showToast(`${finishedName} finished`);
+  });
+
+  document.getElementById('openQuoteBtn').addEventListener('click', () => {
+    const active = getActiveQuote();
+    if(!active.items.length){ showToast('No options in this quote yet'); return; }
+    location.href = '15-quote-editor.html';
+  });
+
+  window.apollesSyncQuote = syncPageButtons;
+  closeDrawer();
+  render();
+})();
+</script>
+
+<!-- ===== Search bar scripts: copied from 07-search.html ===== -->
+<script>
+const calendarPopover = document.getElementById("calendarPopover");
+const guestsPopover = document.getElementById("guestsPopover");
+const checkinBtn = document.getElementById("checkinBtn");
+const checkoutBtn = document.getElementById("checkoutBtn");
+const guestsBtn = document.getElementById("guestsBtn");
+const roomsContainer = document.getElementById("roomsContainer");
+const guestsText = document.getElementById("guestsText");
+
+function closePopovers(){
+  calendarPopover.classList.remove("open");
+  guestsPopover.classList.remove("open");
+  document.querySelectorAll(".dd-menu.open").forEach(m=>m.classList.remove("open"));
+}
+
+guestsBtn.addEventListener("click",e=>{
+  e.stopPropagation();
+  calendarPopover.classList.remove("open");
+  document.querySelectorAll(".dd-menu.open").forEach(m=>m.classList.remove("open"));
+  guestsPopover.classList.toggle("open");
+});
+calendarPopover.addEventListener("click",e=>e.stopPropagation());
+guestsPopover.addEventListener("click",e=>e.stopPropagation());
+document.addEventListener("click",()=>{
+  closePopovers();
+  openAgePicker = null;
+  renderRooms();
+});
+
+let rooms = [{adults:2, children:[]}];
+let openAgePicker = null;
+
+function updateGuestSummary(){
+  const totalGuests = rooms.reduce((s,r)=>s+r.adults+r.children.length,0);
+  guestsText.textContent = `${rooms.length} room${rooms.length>1?'s':''} · ${totalGuests} guest${totalGuests>1?'s':''}`;
+}
+
+function ageLabel(age){
+  if(age === "" || age === null || age === undefined) return "Select child age";
+  return `${age} year${Number(age)===1?'':'s'}`;
+}
+
+function renderAgeMenu(roomIndex, childIndex){
+  let html = '<div class="age-menu">';
+  for(let i=0;i<=17;i++){
+    html += `<button class="age-option" type="button" data-age-option="${roomIndex}:${childIndex}:${i}">${i} year${i===1?'':'s'}</button>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderRooms(){
+  roomsContainer.innerHTML="";
+  rooms.forEach((room,roomIndex)=>{
+    const block=document.createElement("div");
+    block.className="room-block";
+
+    const childrenHtml = room.children.map((age,childIndex)=>{
+      const isOpen = openAgePicker && openAgePicker.room===roomIndex && openAgePicker.child===childIndex;
+      return `
+        <div class="child-row">
+          <div style="flex:1; position:relative;">
+            <button class="age-trigger ${isOpen?'open':''}" data-open-age="${roomIndex}:${childIndex}" type="button">
+              <span>${ageLabel(age)}</span>
+              <span>⌄</span>
+            </button>
+            ${isOpen ? renderAgeMenu(roomIndex, childIndex) : ""}
+          </div>
+          <button class="remove-child" data-remove-child="${roomIndex}:${childIndex}" type="button">×</button>
+        </div>
+      `;
+    }).join("");
+
+    block.innerHTML=`
+      <div class="room-title">
+        <strong>Room ${roomIndex+1}</strong>
+        ${rooms.length>1?`<button class="remove-room" data-remove-room="${roomIndex}" type="button">Remove</button>`:""}
+      </div>
+
+      <div class="guest-row">
+        <div class="guest-label">
+          <strong>Adults</strong>
+          <span>Age 18+</span>
+        </div>
+        <div class="counter">
+          <button data-adult-minus="${roomIndex}" type="button">−</button>
+          <span>${room.adults}</span>
+          <button data-adult-plus="${roomIndex}" type="button">+</button>
+        </div>
+      </div>
+
+      <div class="children-area">
+        <div class="children-list">
+          ${childrenHtml}
+        </div>
+        <button class="add-child" data-add-child="${roomIndex}" type="button">+ Add a child</button>
+      </div>
+    `;
+    roomsContainer.appendChild(block);
+  });
+
+  bindRoomActions();
+  updateGuestSummary();
+}
+
+function bindRoomActions(){
+  document.querySelectorAll("[data-adult-minus]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const i=Number(btn.dataset.adultMinus);
+      rooms[i].adults=Math.max(1,rooms[i].adults-1);
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-adult-plus]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const i=Number(btn.dataset.adultPlus);
+      rooms[i].adults++;
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-add-child]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const i=Number(btn.dataset.addChild);
+      rooms[i].children.push("");
+      openAgePicker = {room:i, child:rooms[i].children.length-1};
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-remove-child]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const [r,c]=btn.dataset.removeChild.split(":").map(Number);
+      rooms[r].children.splice(c,1);
+      if(openAgePicker && openAgePicker.room===r && openAgePicker.child===c){
+        openAgePicker = null;
+      }
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-open-age]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const [r,c]=btn.dataset.openAge.split(":").map(Number);
+      if(openAgePicker && openAgePicker.room===r && openAgePicker.child===c){
+        openAgePicker = null;
+      } else {
+        openAgePicker = {room:r, child:c};
+      }
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-age-option]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const [r,c,age]=btn.dataset.ageOption.split(":").map(Number);
+      rooms[r].children[c]=age;
+      openAgePicker = null;
+      renderRooms();
+    };
+  });
+
+  document.querySelectorAll("[data-remove-room]").forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      rooms.splice(Number(btn.dataset.removeRoom),1);
+      openAgePicker = null;
+      renderRooms();
+    };
+  });
+}
+
+document.getElementById("addRoomBtn").addEventListener("click",(e)=>{
+  e.stopPropagation();
+  rooms.push({adults:2,children:[]});
+  renderRooms();
+});
+
+document.getElementById("doneGuestsBtn").addEventListener("click",(e)=>{
+  e.stopPropagation();
+  guestsPopover.classList.remove("open");
+  openAgePicker = null;
+  renderRooms();
+});
+
+renderRooms();
+
+</script>
+<script>
+/* ===== Interactive date picker (demo "today" = Sep 27, 2026) ===== */
+(function(){
+  const TODAY = new Date(2026, 8, 27);
+  const FIRST = new Date(2026, 8, 1), MONTHS = 14;
+  const MS = 86400000;
+  const pop = document.getElementById('calendarPopover');
+  const monthsEl = document.getElementById('calMonths');
+  const listEl = document.getElementById('monthList');
+  const scrollEl = document.getElementById('calScroll');
+  const inBtn = document.getElementById('checkinBtn'), outBtn = document.getElementById('checkoutBtn');
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const MONL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  let start = new Date(2026, 9, 12), end = new Date(2026, 9, 14);
+  let picking = 'end';           // which date the next click sets
+  let hover = null;
+  const key = d => d.getFullYear()*10000 + d.getMonth()*100 + d.getDate();
+  const nights = () => (start && end) ? Math.round((end - start)/MS) : 0;
+  const short = d => DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate();
+  const full = d => MON[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();
+
+  // build month list + months once
+  for(let m=0; m<MONTHS; m++){
+    const first = new Date(FIRST.getFullYear(), FIRST.getMonth()+m, 1);
+    const b = document.createElement('button'); b.type='button';
+    b.textContent = MONL[first.getMonth()] + (first.getMonth()===0 || m===0 ? ' '+first.getFullYear() : '');
+    b.dataset.m = m; listEl.appendChild(b);
+    b.addEventListener('click', ()=>{ const sec=document.getElementById('cal-m'+m); scrollEl.scrollTo({top: sec.offsetTop - 44, behavior:'smooth'}); });
+    const sec = document.createElement('div'); sec.className='month-section'; sec.id='cal-m'+m;
+    const h = document.createElement('h3'); h.textContent = MONL[first.getMonth()]+' '+first.getFullYear(); sec.appendChild(h);
+    const grid = document.createElement('div'); grid.className='days';
+    for(let i=0;i<first.getDay();i++){ const e=document.createElement('button'); e.className='blank'; e.disabled=true; e.tabIndex=-1; grid.appendChild(e); }
+    const dim = new Date(first.getFullYear(), first.getMonth()+1, 0).getDate();
+    for(let d=1; d<=dim; d++){
+      const date = new Date(first.getFullYear(), first.getMonth(), d);
+      const btn = document.createElement('button'); btn.type='button'; btn.textContent=d; btn.dataset.k = key(date);
+      btn._date = date;
+      if(date < TODAY){ btn.disabled = true; btn.classList.add('past'); }
+      if(key(date)===key(TODAY)) btn.classList.add('today');
+      btn.setAttribute('aria-label', short(date)+' '+date.getFullYear());
+      grid.appendChild(btn);
+    }
+    sec.appendChild(grid); monthsEl.appendChild(sec);
+  }
+  const dayBtns = [...monthsEl.querySelectorAll('.days button:not(.blank)')];
+
+  function paint(){
+    const sk = start && key(start), ek = end && key(end);
+    const hk = (!end && start && hover && hover > start) ? key(hover) : null;
+    dayBtns.forEach(b=>{
+      const k = +b.dataset.k;
+      b.classList.toggle('start', k===sk);
+      b.classList.toggle('has-end', k===sk && !!(ek || hk));
+      b.classList.toggle('end', k===ek);
+      b.classList.toggle('range', !!(sk && ek && k>sk && k<ek));
+      b.classList.toggle('preview', !!(hk && k>sk && k<=hk));
+    });
+    document.getElementById('calInText').textContent = start ? short(start) : 'Add date';
+    document.getElementById('calInText').classList.toggle('empty', !start);
+    document.getElementById('calOutText').textContent = end ? short(end) : 'Add date';
+    document.getElementById('calOutText').classList.toggle('empty', !end);
+    const n = nights();
+    document.getElementById('calNights').textContent = n ? n+' night'+(n>1?'s':'') : '';
+    document.getElementById('calPickIn').classList.toggle('on', picking==='start');
+    document.getElementById('calPickOut').classList.toggle('on', picking==='end');
+    document.getElementById('calHint').textContent = picking==='start' ? 'Select your check-in date' : 'Select your check-out date';
+    document.getElementById('checkinText').textContent = start ? full(start) : 'Add date';
+    document.getElementById('checkoutText').innerHTML = end ? full(end)+' <em class="nights-inline">'+n+' night'+(n>1?'s':'')+'</em>' : 'Add date';
+  }
+
+  function scrollTo(d){
+    if(!d) d = TODAY;
+    const m = (d.getFullYear()-FIRST.getFullYear())*12 + d.getMonth()-FIRST.getMonth();
+    const sec = document.getElementById('cal-m'+Math.max(0,Math.min(MONTHS-1,m)));
+    if(sec) scrollEl.scrollTop = sec.offsetTop - 44;
+    markMonth();
+  }
+  function markMonth(){
+    let cur = 0;
+    for(let m=0;m<MONTHS;m++){ const sec=document.getElementById('cal-m'+m); if(sec.offsetTop - 60 <= scrollEl.scrollTop) cur=m; }
+    listEl.querySelectorAll('button').forEach(b=>b.classList.toggle('active', +b.dataset.m===cur));
+  }
+  scrollEl.addEventListener('scroll', markMonth, {passive:true});
+
+  function open(which){
+    picking = which;
+    if(which==='end' && !start) picking='start';
+    guestsPopover.classList.remove('open');
+    document.querySelectorAll('.dd-menu.open').forEach(m=>m.classList.remove('open'));
+    pop.classList.add('open');
+    paint();
+    scrollTo(picking==='end' ? (start||TODAY) : (start||TODAY));
+  }
+  inBtn.addEventListener('click', e=>{ e.stopPropagation(); if(pop.classList.contains('open') && picking==='start'){ pop.classList.remove('open'); return; } open('start'); });
+  outBtn.addEventListener('click', e=>{ e.stopPropagation(); if(pop.classList.contains('open') && picking==='end'){ pop.classList.remove('open'); return; } open('end'); });
+  document.getElementById('calPickIn').addEventListener('click', ()=>{ picking='start'; paint(); });
+  document.getElementById('calPickOut').addEventListener('click', ()=>{ picking = start ? 'end' : 'start'; paint(); });
+
+  monthsEl.addEventListener('click', e=>{
+    const b = e.target.closest('button'); if(!b || b.disabled || !b._date) return;
+    const d = b._date;
+    if(picking==='start' || !start || d <= start){
+      start = d; end = null; picking = 'end';
+    } else {
+      end = d; picking = 'end';
+      paint();
+      setTimeout(()=>pop.classList.remove('open'), 350);   // both dates chosen: close
+      return;
+    }
+    paint();
+  });
+  monthsEl.addEventListener('mouseover', e=>{
+    const b = e.target.closest('button'); if(!b || !b._date || b.disabled) return;
+    if(start && !end){ hover = b._date; paint(); }
+  });
+  monthsEl.addEventListener('mouseleave', ()=>{ if(hover){ hover=null; paint(); } });
+  document.getElementById('calClear').addEventListener('click', ()=>{ start=null; end=null; picking='start'; paint(); });
+  document.getElementById('calDone').addEventListener('click', ()=>{ if(start && !end){ end = new Date(start.getTime()+MS); } paint(); pop.classList.remove('open'); });
+
+  window.apollesDates = () => ({start, end});
+  // Used by the search URL: sets both dates (from ?in= and ?out=)
+  window.apollesSetDates = (a, b) => { start = a; end = b; picking = 'end'; paint(); };
+  paint();
+})();
+
+</script>
+<script>
+/* ===== Destination autocomplete =====
+   Sample data only. In the real system the list comes from the hotel supplier's
+   location search. Ranking rule for the developer:
+   1. Cities whose name starts with what the agent typed
+   2. Areas, regions and airports of that city (Hotel Zone, Downtown, Airport)
+   3. Other destinations that contain the text
+   4. Hotels (name contains the text, or the hotel is in a matching city)          */
+(function(){
+  const T = {city:'City', area:'Area', region:'Region', airport:'Airport', hotel:'Hotel'};
+  const RANK = {city:0, region:1, area:2, airport:3, hotel:4};
+  const D = [
+    ['city','Cancun','Quintana Roo, Mexico'],
+    ['area','Cancun Hotel Zone','Quintana Roo, Mexico','Cancun'],
+    ['area','Cancun Downtown','Quintana Roo, Mexico','Cancun'],
+    ['area','Playa Mujeres','Cancun, Quintana Roo, Mexico','Cancun'],
+    ['area','Costa Mujeres','Cancun, Quintana Roo, Mexico','Cancun'],
+    ['airport','Cancun International Airport (CUN)','Quintana Roo, Mexico','Cancun'],
+    ['region','Riviera Maya','Quintana Roo, Mexico'],
+    ['city','Playa del Carmen','Quintana Roo, Mexico'],
+    ['city','Tulum','Quintana Roo, Mexico'],
+    ['city','Puerto Morelos','Quintana Roo, Mexico'],
+    ['city','Isla Mujeres','Quintana Roo, Mexico'],
+    ['city','Los Cabos','Baja California Sur, Mexico'],
+    ['city','Cabo San Lucas','Baja California Sur, Mexico'],
+    ['airport','Los Cabos International Airport (SJD)','Baja California Sur, Mexico','Los Cabos'],
+    ['city','Puerto Vallarta','Jalisco, Mexico'],
+    ['city','Mexico City','Mexico'],
+    ['city','Punta Cana','La Altagracia, Dominican Republic'],
+    ['area','Cap Cana','Punta Cana, Dominican Republic','Punta Cana'],
+    ['airport','Punta Cana International Airport (PUJ)','Dominican Republic','Punta Cana'],
+    ['city','Las Terrenas','Samaná, Dominican Republic'],
+    ['city','Miami','Florida, United States'],
+    ['city','Miami Beach','Florida, United States'],
+    ['area','South Beach','Miami Beach, Florida, United States','Miami Beach'],
+    ['airport','Miami International Airport (MIA)','Florida, United States','Miami'],
+    ['hotel','Hyatt Ziva Cancun','Cancun, Mexico','Cancun'],
+    ['hotel','Hard Rock Hotel Cancun','Cancun, Mexico','Cancun'],
+    ['hotel','Nizuc Resort & Spa','Cancun, Mexico','Cancun'],
+    ['hotel','Le Blanc Spa Resort Cancun','Cancun, Mexico','Cancun'],
+    ['hotel','Atelier Playa Mujeres','Cancun, Mexico','Cancun'],
+    ['hotel','Excellence Playa Mujeres','Cancun, Mexico','Cancun'],
+    ['hotel','Hotel Xcaret Mexico','Playa del Carmen, Mexico','Playa del Carmen'],
+    ['hotel','Grand Hyatt Playa del Carmen','Playa del Carmen, Mexico','Playa del Carmen'],
+    ['hotel','Rosewood Mayakoba','Playa del Carmen, Mexico','Playa del Carmen'],
+    ['hotel','Azulik Tulum','Tulum, Mexico','Tulum'],
+    ['hotel','One&Only Palmilla','Los Cabos, Mexico','Los Cabos'],
+    ['hotel','Waldorf Astoria Los Cabos Pedregal','Cabo San Lucas, Mexico','Cabo San Lucas'],
+    ['hotel','Eden Roc Cap Cana','Punta Cana, Dominican Republic','Punta Cana'],
+    ['hotel','Excellence Punta Cana','Punta Cana, Dominican Republic','Punta Cana'],
+    ['hotel','Donoma Las Terrenas','Las Terrenas, Dominican Republic','Las Terrenas'],
+    ['hotel','Nobu Hotel Miami Beach','Miami Beach, United States','Miami Beach'],
+    ['hotel','Faena Hotel Miami Beach','Miami Beach, United States','Miami Beach']
+  ].map((r,i)=>({type:r[0], name:r[1], where:r[2], city:r[3]||r[1], order:i}));
+
+  const ICON = {
+    pin:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.6"/></svg>',
+    plane:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 13.5 3 11l1.4-1.4 8 .8 4.3-4.3a1.9 1.9 0 0 1 2.7 2.7l-4.3 4.3.8 8L14.5 22 12 14.5"/></svg>',
+    bed:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6v13M3 16h18v3M21 16v-4a3 3 0 0 0-3-3h-7v7"/><circle cx="7" cy="11.5" r="2"/></svg>'
+  };
+  const wrap = document.getElementById('destWrap'), input = document.getElementById('destInput');
+  const menu = document.getElementById('destMenu'), clear = document.getElementById('destClear');
+  let items = [], active = -1;
+
+  const esc = s => s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function hl(text, q){
+    const i = text.toLowerCase().indexOf(q);
+    if(i<0) return esc(text);
+    return esc(text.slice(0,i)) + '<b>' + esc(text.slice(i,i+q.length)) + '</b>' + esc(text.slice(i+q.length));
+  }
+  function search(q){
+    const res = [];
+    D.forEach(d=>{
+      const n = d.name.toLowerCase(), c = d.city.toLowerCase();
+      const inName = n.indexOf(q), inCity = c.startsWith(q);
+      if(inName<0 && !inCity) return;
+      // 0 = starts with the text, 1 = word starts with it, 2 = contains it / is in a matching city
+      const m = inName===0 ? 0 : (inName>0 && /[\s(]/.test(n[inName-1])) ? 1 : 2;
+      const group = d.type==='hotel' ? 2 : (d.type==='city' && m===0) ? 0 : 1;
+      res.push({d, group, m});
+    });
+    res.sort((a,b)=> a.group-b.group || a.m-b.m || RANK[a.d.type]-RANK[b.d.type] || a.d.order-b.d.order);
+    const places = res.filter(r=>r.group<2).slice(0,7), hotels = res.filter(r=>r.group===2).slice(0,6);
+    return places.concat(hotels).map(r=>r.d);
+  }
+  function render(){
+    const q = input.value.trim().toLowerCase();
+    clear.hidden = !input.value;
+    if(q.length<2){ close(); return; }
+    items = search(q); active = items.length ? 0 : -1;
+    if(!items.length){
+      menu.innerHTML = '<div class="dd-empty">No matches. Try a city, area or hotel name.</div>';
+    } else {
+      let html = '', prevHotel = false;
+      items.forEach((d,i)=>{
+        const isHotel = d.type==='hotel';
+        if(isHotel && !prevHotel && i>0) html += '<div class="dest-sep"></div>';
+        prevHotel = isHotel;
+        const icon = isHotel ? ICON.bed : d.type==='airport' ? ICON.plane : ICON.pin;
+        html += '<button type="button" role="option" class="dd-opt dest-opt'+(i===active?' active':'')+'" data-i="'+i+'">'+icon+
+                '<span class="dest-name">'+hl(d.name,q)+', '+esc(d.where)+'</span><span class="dest-type">'+T[d.type]+'</span></button>';
+      });
+      menu.innerHTML = html;
+    }
+    closePopovers(); menu.classList.add('open'); input.setAttribute('aria-expanded','true');
+  }
+  function close(){ menu.classList.remove('open'); input.setAttribute('aria-expanded','false'); }
+  function pick(i){ const d = items[i]; if(!d) return; input.value = d.name+', '+d.where; input.dataset.type = d.type; clear.hidden=false; close(); }
+  function move(step){
+    if(!items.length) return;
+    active = (active+step+items.length)%items.length;
+    menu.querySelectorAll('.dest-opt').forEach((b,i)=>b.classList.toggle('active', i===active));
+    const a = menu.querySelector('.dest-opt.active'); if(a) a.scrollIntoView({block:'nearest'});
+  }
+  input.addEventListener('input', render);
+  input.addEventListener('focus', ()=>{ if(input.value.trim().length>=2) render(); });
+  input.addEventListener('click', e=>e.stopPropagation());
+  input.addEventListener('keydown', e=>{
+    if(!menu.classList.contains('open')) return;
+    if(e.key==='ArrowDown'){ e.preventDefault(); move(1); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); move(-1); }
+    else if(e.key==='Enter'){ e.preventDefault(); pick(active); }
+    else if(e.key==='Escape'){ close(); }
+  });
+  menu.addEventListener('click', e=>{ e.stopPropagation(); const b = e.target.closest('.dest-opt'); if(b) pick(+b.dataset.i); });
+  menu.addEventListener('mousemove', e=>{ const b = e.target.closest('.dest-opt'); if(b && +b.dataset.i!==active){ active=+b.dataset.i; move(0); } });
+  clear.addEventListener('click', e=>{ e.stopPropagation(); input.value=''; delete input.dataset.type; clear.hidden=true; close(); input.focus(); });
+  input.addEventListener('input', ()=>{ delete input.dataset.type; });
+})();
+
+/* ===== Guest nationality: all countries, searchable ===== */
+(function(){
+  const COUNTRIES = ["Afghanistan", "Åland Islands", "Albania", "Algeria", "American Samoa", "Andorra", "Angola", "Anguilla", "Antarctica", "Antigua and Barbuda", "Argentina", "Armenia", "Aruba", "Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bermuda", "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Bouvet Island", "Brazil", "British Indian Ocean Territory", "British Virgin Islands", "Brunei", "Bulgaria", "Burkina Faso", "Burundi", "Cabo Verde", "Cambodia", "Cameroon", "Canada", "Caribbean Netherlands", "Cayman Islands", "Central African Republic", "Chad", "Chile", "China", "Christmas Island", "Cocos (Keeling) Islands", "Colombia", "Comoros", "Congo", "Congo (DRC)", "Cook Islands", "Costa Rica", "Croatia", "Cuba", "Curaçao", "Cyprus", "Czechia", "Côte d'Ivoire", "Denmark", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia", "Falkland Islands", "Faroe Islands", "Fiji", "Finland", "France", "French Guiana", "French Polynesia", "French Southern Territories", "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Gibraltar", "Greece", "Greenland", "Grenada", "Guadeloupe", "Guam", "Guatemala", "Guernsey", "Guinea", "Guinea-Bissau", "Guyana", "Haiti", "Heard Island and McDonald Islands", "Honduras", "Hong Kong", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Isle of Man", "Israel", "Italy", "Jamaica", "Japan", "Jersey", "Jordan", "Kazakhstan", "Kenya", "Kiribati", "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luxembourg", "Macao", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Martinique", "Mauritania", "Mauritius", "Mayotte", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Montserrat", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal", "Netherlands", "New Caledonia", "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "Norfolk Island", "North Korea", "North Macedonia", "Northern Mariana Islands", "Norway", "Oman", "Pakistan", "Palau", "Palestine", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Pitcairn", "Poland", "Portugal", "Puerto Rico", "Qatar", "Romania", "Russia", "Rwanda", "Réunion", "Saint Barthélemy", "Saint Helena", "Saint Kitts and Nevis", "Saint Lucia", "Saint Martin (French part)", "Saint Pierre and Miquelon", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Sint Maarten", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", "South Georgia and the South Sandwich Islands", "South Korea", "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname", "Svalbard and Jan Mayen", "Sweden", "Switzerland", "Syria", "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo", "Tokelau", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkmenistan", "Turks and Caicos Islands", "Tuvalu", "Türkiye", "U.S. Minor Outlying Islands", "U.S. Virgin Islands", "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Uzbekistan", "Vanuatu", "Vatican City", "Venezuela", "Vietnam", "Wallis and Futuna", "Western Sahara", "Yemen", "Zambia", "Zimbabwe"];
+  const btn = document.getElementById('natBtn'), text = document.getElementById('natText');
+  const menu = document.getElementById('natMenu'), list = document.getElementById('natList'), box = document.getElementById('natSearch');
+  let selected = 'Israel', shown = [], active = -1;
+
+  function render(){
+    const q = box.value.trim().toLowerCase();
+    const starts = COUNTRIES.filter(c=>c.toLowerCase().startsWith(q));
+    const contains = q ? COUNTRIES.filter(c=>!c.toLowerCase().startsWith(q) && c.toLowerCase().includes(q)) : [];
+    shown = starts.concat(contains);
+    if(!shown.length){ list.innerHTML = '<div class="dd-empty">No country found.</div>'; active=-1; return; }
+    active = q ? 0 : Math.max(0, shown.indexOf(selected));
+    list.innerHTML = shown.map((c,i)=>'<button type="button" role="option" class="dd-opt nat-opt'+(c===selected?' sel':'')+(i===active?' active':'')+'" data-i="'+i+'" aria-selected="'+(c===selected)+'">'+c.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</button>').join('');
+  }
+  function mark(scroll){
+    list.querySelectorAll('.nat-opt').forEach((b,i)=>b.classList.toggle('active', i===active));
+    const a = list.querySelector('.nat-opt.active'); if(a && scroll) a.scrollIntoView({block: scroll});
+  }
+  function open(){
+    closePopovers();
+    box.value=''; render(); menu.classList.add('open'); btn.setAttribute('aria-expanded','true');
+    mark('center'); setTimeout(()=>box.focus(), 0);
+  }
+  function close(){ menu.classList.remove('open'); btn.setAttribute('aria-expanded','false'); }
+  function pick(i){ if(shown[i]==null) return; selected = shown[i]; text.textContent = selected; close(); btn.focus(); }
+  // Used by the search URL (?nat=)
+  window.apollesNat = () => selected;
+  window.apollesSetNat = n => { if(COUNTRIES.includes(n)){ selected = n; text.textContent = n; } };
+
+  btn.addEventListener('click', e=>{ e.stopPropagation(); menu.classList.contains('open') ? close() : open(); });
+  menu.addEventListener('click', e=>{ e.stopPropagation(); const b = e.target.closest('.nat-opt'); if(b) pick(+b.dataset.i); });
+  box.addEventListener('input', ()=>{ render(); list.scrollTop = 0; });
+  box.addEventListener('keydown', e=>{
+    if(e.key==='ArrowDown'){ e.preventDefault(); if(shown.length){ active=Math.min(shown.length-1,active+1); mark('nearest'); } }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); if(shown.length){ active=Math.max(0,active-1); mark('nearest'); } }
+    else if(e.key==='Enter'){ e.preventDefault(); pick(active); }
+    else if(e.key==='Escape'){ close(); btn.focus(); }
+  });
+})();
+</script>
+
+
+<script>
+(function(){
+  // Top menu dropdowns
+  document.querySelectorAll('.nav-trigger,.account-trigger').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const group=btn.closest('.nav-group');
+      document.querySelectorAll('.nav-group.menu-open').forEach(g=>{ if(g!==group) g.classList.remove('menu-open'); });
+      group.classList.toggle('menu-open');
+    });
+  });
+  document.addEventListener('click',()=>document.querySelectorAll('.nav-group.menu-open').forEach(g=>g.classList.remove('menu-open')));
+
+  // List / Map
+  const panel=document.querySelector('.results-panel');
+  document.querySelectorAll('.view-toggle button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.view-toggle button').forEach(x=>x.classList.toggle('on',x===b));
+      panel.classList.toggle('map-mode',b.dataset.view==='map');
+    });
+  });
+
+  // ===== Filters, sort and search =====
+  // Each hotel card shows its cheapest room that passes ALL filters.
+  // "Add to quote" then adds exactly the room shown on the card.
+  // Demo prices are per night x nights x rooms.
+  const $ = id => document.getElementById(id);
+  const cards=[...document.querySelectorAll('.hotel-card[data-rooms]')];
+  const resultsEl=document.querySelector('.results');
+  const money=n=>'USD '+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const MONS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const S={nights:2, rooms:1, adults:2, children:0};
+  let sortBy='rec';
+  cards.forEach((c,i)=>{
+    c._i=i; c._stars=+c.dataset.stars;
+    c._rating=+c.dataset.rating||0; c._pop=+c.dataset.pop||99;
+    c._amen=(c.dataset.amen||'').split(',').filter(Boolean); c._ptype=c.dataset.ptype||'';
+    c._name=c.querySelector('.hotel-name').textContent.trim().toLowerCase();
+    c._rooms=JSON.parse(c.dataset.rooms).map(r=>Object.assign(r,{night:r.price/2}));
+  });
+  const vals = sel => [...document.querySelectorAll(sel+':checked')].map(x=>x.value);
+  const plural = (n,w) => n+' '+w+(n===1?'':'s');
+  function partyLine(){ let t=plural(S.rooms,'room')+' · '+plural(S.adults,'adult'); if(S.children) t+=' · '+(S.children===1?'1 child':S.children+' children'); return t; }
+  function guestsLine(){
+    let t=(S.rooms>1?plural(S.rooms,'room')+', ':'')+plural(S.adults,'adult');
+    if(S.children) t+=', '+(S.children===1?'1 child':S.children+' children');
+    return t;
+  }
+
+  function apply(noWrite){
+    const hq=$('fHotel').value.trim().toLowerCase(), rq=$('fRoom').value.trim().toLowerCase();
+    const min=parseFloat($('fMin').value), max=parseFloat($('fMax').value);
+    const stars=vals('.f-star').map(Number), meals=vals('.f-meal'), freeOnly=$('freeOnly').checked;
+    const minRating=+(document.querySelector('.f-rating:checked')||{}).value||0, amens=vals('.f-amen'), ptypes=vals('.f-ptype');
+    let shown=0;
+    cards.forEach(card=>{
+      const hotelOk=(!hq || card._name.includes(hq)) && (!stars.length || stars.includes(card._stars)) &&
+        (!minRating || card._rating>=minRating) && amens.every(a=>card._amen.includes(a)) &&
+        (!ptypes.length || ptypes.includes(card._ptype));
+      const list = !hotelOk ? [] : card._rooms.filter(r=>
+        (!rq || r.room.toLowerCase().includes(rq)) &&
+        (!meals.length || meals.includes(r.board)) &&
+        (!freeOnly || /^USD 0 until/.test(r.policy)) &&
+        (isNaN(min) || r.night>=min) && (isNaN(max) || r.night<=max)
+      ).sort((a,b)=>a.night-b.night);
+      card._best=list[0]||null;
+      if(!card._best){ card.style.display='none'; card._total=Infinity; return; }
+      card.style.display=''; shown++;
+      const r=card._best, total=r.night*S.nights*S.rooms;
+      card._total=total;
+      card.classList.toggle('filtered',!!rq);
+      card.querySelector('.room-label').textContent=r.room;
+      const metas=card.querySelectorAll('.room-meta span');
+      metas[0].innerHTML='<strong>Board:</strong> '+r.board;
+      metas[1].innerHTML='<strong>Cancellation:</strong> '+r.policy;
+      card.querySelector('.price').textContent=money(total);
+      card.querySelector('.price-box .nights').textContent=plural(S.nights,'night')+', '+guestsLine();
+      card.querySelector('.per-night').textContent=money(total/S.nights)+' per night';
+      const more=card._rooms.length-1;
+      card.querySelector('.more-rooms').textContent='View '+plural(more,'more room option')+' →';
+    });
+    // sort
+    const order=[...cards].sort((a,b)=>
+      sortBy==='low'  ? a._total-b._total || a._i-b._i :
+      sortBy==='high' ? (b._total===Infinity?-1:a._total===Infinity?1:b._total-a._total) || a._i-b._i :
+      sortBy==='stars'? b._stars-a._stars || a._total-b._total :
+      sortBy==='pop'  ? a._pop-b._pop || a._i-b._i :
+      sortBy==='rating'? b._rating-a._rating || a._total-b._total : a._i-b._i);
+    order.forEach(c=>resultsEl.appendChild(c));
+    // map pins follow the same filters
+    document.querySelectorAll('.pin').forEach(pin=>{
+      const c=cards[+pin.dataset.card];
+      pin.style.display=c._best?'':'none';
+      if(c._best) pin.firstChild.textContent=money(c._total);
+    });
+    const noMatch=$('noMatch');
+    noMatch.textContent = rq ? 'No hotels have a room that matches this name. Try a shorter word, for example "suite" or "ocean".'
+                             : 'No hotels match these filters. Remove a filter or click Reset filters.';
+    noMatch.style.display=shown?'none':'block';
+    $('showingText').textContent='Showing '+shown+' of 365 hotels';
+    const active=(hq?1:0)+(rq?1:0)+(isNaN(min)&&isNaN(max)?0:1)+(stars.length?1:0)+(meals.length?1:0)+
+      (minRating?1:0)+(amens.length?1:0)+(ptypes.length?1:0);
+    $('filtersCount').textContent=active||''; $('filtersCount').classList.toggle('on',!!active);
+    renderChips();
+    if(!noWrite) writeURL(false);
+    updateLinks();
+    if(window.apollesSyncQuote) window.apollesSyncQuote();
+  }
+  ['fHotel','fRoom','fMin','fMax'].forEach(id=>$(id).addEventListener('input',()=>apply()));
+  document.querySelectorAll('.f-star,.f-meal,.f-rating,.f-amen,.f-ptype,#freeOnly').forEach(x=>x.addEventListener('change',()=>apply()));
+  function clearAll(){
+    ['fHotel','fRoom','fMin','fMax'].forEach(id=>$(id).value='');
+    document.querySelectorAll('.f-star,.f-meal,.f-amen,.f-ptype,#freeOnly').forEach(x=>x.checked=false);
+    document.querySelector('.f-rating[value=""]').checked=true;
+  }
+  $('resetFilters').addEventListener('click',e=>{ e.preventDefault(); clearAll(); apply(); });
+
+  // ===== Active filter chips =====
+  const chipsEl=$('activeChips');
+  const labelOf=x=>x.parentElement.textContent.trim();
+  const esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  let chipList=[];
+  function renderChips(){
+    chipList=[];
+    const add=(label,clear)=>chipList.push({label,clear});
+    const hv=$('fHotel').value.trim(), rv=$('fRoom').value.trim();
+    if(hv) add('Hotel: '+hv,()=>$('fHotel').value='');
+    if(rv) add('Room: '+rv,()=>$('fRoom').value='');
+    const mn=parseFloat($('fMin').value), mx=parseFloat($('fMax').value);
+    if(!isNaN(mn)||!isNaN(mx)){
+      const t=!isNaN(mn)&&!isNaN(mx) ? money(mn)+' to '+money(mx) : !isNaN(mn) ? 'from '+money(mn) : 'up to '+money(mx);
+      add('Per night: '+t,()=>{ $('fMin').value=''; $('fMax').value=''; });
+    }
+    document.querySelectorAll('.f-star:checked,.f-meal:checked').forEach(x=>add(labelOf(x),()=>x.checked=false));
+    if($('freeOnly').checked) add('Free cancellation only',()=>$('freeOnly').checked=false);
+    const rt=document.querySelector('.f-rating:checked');
+    if(rt && rt.value) add('Guest rating '+labelOf(rt),()=>document.querySelector('.f-rating[value=""]').checked=true);
+    document.querySelectorAll('.f-amen:checked,.f-ptype:checked').forEach(x=>add(labelOf(x),()=>x.checked=false));
+    chipsEl.innerHTML=chipList.map((c,i)=>'<button type="button" class="f-chip" data-chip="'+i+'" aria-label="Remove filter '+esc(c.label)+'">'+esc(c.label)+'<b aria-hidden="true">×</b></button>').join('')+
+      (chipList.length?'<button type="button" class="chips-clear" id="chipsClear">Clear all</button>':'');
+    chipsEl.classList.toggle('on',chipList.length>0);
+  }
+  chipsEl.addEventListener('click',e=>{
+    if(e.target.closest('#chipsClear')){ clearAll(); apply(); return; }
+    const b=e.target.closest('.f-chip'); if(!b) return;
+    const c=chipList[+b.dataset.chip]; if(c){ c.clear(); apply(); }
+  });
+
+  // ===== Search in the URL =====
+  // Every search value, filter and the sort live in the address, so refresh, Back and a shared link
+  // open exactly the same search. Filter and sort changes replace the address; a new search adds one.
+  // dest, type, in, out (YYYY-MM-DD), rooms (adults then child ages per room: 2,2-5-9), nat,
+  // hotel, room, min, max, stars, meal (ai, bb, ro), free, rating, amen, ptype, sort.
+  const MEAL={ai:'All inclusive',bb:'Breakfast included',ro:'Room only'};
+  const MEAL_CODE={}; Object.keys(MEAL).forEach(k=>MEAL_CODE[MEAL[k]]=k);
+  const SORTS=['rec','low','high','pop','rating','stars'];
+  const SEARCH_KEYS=['dest','type','in','out','rooms','nat'];
+  const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const parseIso=v=>{ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(v||''); if(!m) return null; const d=new Date(+m[1],m[2]-1,+m[3]); return isNaN(d)?null:d; };
+  function formSearch(){
+    const p=new URLSearchParams(), di=$('destInput'), d=window.apollesDates();
+    if(di.value.trim()) p.set('dest',di.value.trim());
+    if(di.dataset.type) p.set('type',di.dataset.type);
+    if(d.start) p.set('in',iso(d.start));
+    if(d.end) p.set('out',iso(d.end));
+    p.set('rooms',rooms.map(r=>[r.adults].concat(r.children).join('-')).join(','));
+    p.set('nat',window.apollesNat());
+    return p;
+  }
+  let searchQ=null;          // the last search that ran
+  function fullQuery(){
+    const p=new URLSearchParams(searchQ||formSearch());
+    const set=(k,v)=>{ if(v) p.set(k,v); };
+    set('hotel',$('fHotel').value.trim()); set('room',$('fRoom').value.trim());
+    set('min',$('fMin').value); set('max',$('fMax').value);
+    set('stars',vals('.f-star').join(','));
+    set('meal',vals('.f-meal').map(v=>MEAL_CODE[v]).join(','));
+    if($('freeOnly').checked) p.set('free','1');
+    set('rating',(document.querySelector('.f-rating:checked')||{}).value);
+    set('amen',vals('.f-amen').join(',')); set('ptype',vals('.f-ptype').join(','));
+    if(sortBy!=='rec') p.set('sort',sortBy);
+    return p.toString().replace(/%2C/g,',');
+  }
+  function writeURL(push){
+    const q=fullQuery(), url='?'+q;
+    if(url===location.search) return;
+    try{ history[push?'pushState':'replaceState'](null,'',url); }catch(e){}
+  }
+  function updateLinks(){
+    const q='?'+fullQuery();
+    document.querySelectorAll('a[href^="09-hotel-rooms.html"]').forEach(a=>a.setAttribute('href','09-hotel-rooms.html'+q));
+  }
+  function setSortUI(){
+    sortMenu.querySelectorAll('.sort-opt').forEach(x=>{
+      const on=x.dataset.sort===sortBy; x.classList.toggle('sel',on);
+      if(on) $('sortText').textContent='Sort: '+x.textContent;
+    });
+  }
+  function fromURL(){
+    const q=new URLSearchParams(location.search);
+    const di=$('destInput');
+    if(q.get('dest')){ di.value=q.get('dest'); $('destClear').hidden=false; }
+    if(q.get('type')) di.dataset.type=q.get('type'); else if(q.get('dest')) delete di.dataset.type;
+    const a=parseIso(q.get('in')), b=parseIso(q.get('out'));
+    if(a && b && b>a) window.apollesSetDates(a,b);
+    if(q.get('rooms')){
+      const rs=q.get('rooms').split(',').map(t=>{
+        const x=t.split('-');
+        return {adults:Math.max(1,Math.min(8,parseInt(x[0],10)||2)),
+                children:x.slice(1).map(v=>v===''?'':Math.max(0,Math.min(17,parseInt(v,10)||0)))};
+      }).slice(0,8);
+      if(rs.length){ rooms=rs; renderRooms(); }
+    }
+    if(q.get('nat')) window.apollesSetNat(q.get('nat'));
+    // filters
+    $('fHotel').value=q.get('hotel')||''; $('fRoom').value=q.get('room')||'';
+    $('fMin').value=q.get('min')||''; $('fMax').value=q.get('max')||'';
+    const list=k=>(q.get(k)||'').split(',').filter(Boolean);
+    const stars=list('stars'), meals=list('meal').map(c=>MEAL[c]), amens=list('amen'), pts=list('ptype');
+    document.querySelectorAll('.f-star').forEach(x=>x.checked=stars.includes(x.value));
+    document.querySelectorAll('.f-meal').forEach(x=>x.checked=meals.includes(x.value));
+    document.querySelectorAll('.f-amen').forEach(x=>x.checked=amens.includes(x.value));
+    document.querySelectorAll('.f-ptype').forEach(x=>x.checked=pts.includes(x.value));
+    $('freeOnly').checked=q.get('free')==='1';
+    const rt=document.querySelector('.f-rating[value="'+(['9','8','7'].includes(q.get('rating'))?q.get('rating'):'')+'"]');
+    if(rt) rt.checked=true;
+    sortBy=SORTS.includes(q.get('sort'))?q.get('sort'):'rec';
+    setSortUI();
+    const sp=new URLSearchParams();
+    SEARCH_KEYS.forEach(k=>{ if(q.get(k)) sp.set(k,q.get(k)); });
+    searchQ=sp.toString()?sp:null;
+    showSearch();
+    apply(true);
+  }
+  window.addEventListener('popstate',fromURL);
+
+  // Filters button (tablet and phone): shows / hides the filter panel
+  $('filtersBtn').addEventListener('click',()=>{
+    const shell=document.querySelector('.content-shell');
+    shell.classList.toggle('show-filters');
+    $('filtersBtn').setAttribute('aria-expanded',String(shell.classList.contains('show-filters')));
+  });
+
+  // Sort menu
+  const sortMenu=$('sortMenu');
+  $('sortBtn').addEventListener('click',e=>{
+    e.stopPropagation();
+    const open=!sortMenu.classList.contains('open');
+    closePopovers();
+    sortMenu.classList.toggle('open',open);
+    $('sortBtn').setAttribute('aria-expanded',String(open));
+  });
+  sortMenu.addEventListener('click',e=>{
+    e.stopPropagation();
+    const b=e.target.closest('.sort-opt'); if(!b) return;
+    sortBy=b.dataset.sort;
+    setSortUI();
+    sortMenu.classList.remove('open'); $('sortBtn').setAttribute('aria-expanded','false');
+    apply();
+  });
+
+  // Card links: Book, hotel image, View on map, map pins
+  const setView=v=>{
+    document.querySelectorAll('.view-toggle button').forEach(x=>x.classList.toggle('on',x.dataset.view===v));
+    panel.classList.toggle('map-mode',v==='map');
+  };
+  resultsEl.addEventListener('click',e=>{
+    if(e.target.closest('.book-btn')){ location.href='10-guest-details.html'; return; }
+    if(e.target.closest('.image')){ location.href='09-hotel-rooms.html?'+fullQuery(); return; }
+    const m=e.target.closest('.map-link');
+    if(m){
+      const i=cards.indexOf(m.closest('.hotel-card'));
+      setView('map');
+      document.querySelectorAll('.pin').forEach(p=>p.classList.toggle('hl',+p.dataset.card===i));
+    }
+  });
+  resultsEl.addEventListener('keydown',e=>{ if(e.key==='Enter' && e.target.classList.contains('image')) location.href='09-hotel-rooms.html?'+fullQuery(); });
+  document.querySelectorAll('.pin').forEach(pin=>pin.addEventListener('click',()=>{
+    const card=cards[+pin.dataset.card];
+    setView('list');
+    card.scrollIntoView({behavior:'smooth',block:'center'});
+    card.classList.add('flash'); setTimeout(()=>card.classList.remove('flash'),1400);
+  }));
+
+  // Search: updates the summary line, the quote drawer trip line and the prices
+  const fmt=d=>MONS[d.getMonth()]+' '+d.getDate();
+  const box=document.querySelector('.search-box');
+  function setMini(dest,label){
+    $('miniDest').textContent=dest;
+    const g=S.adults+S.children;
+    $('miniMeta').textContent=label+' · '+plural(g,'guest');
+  }
+  // Shows the search on the page (summary line, quote drawer trip line, prices)
+  function showSearch(){
+    const d=window.apollesDates();
+    if(!d.start||!d.end) return;
+    const dest=$('destInput').value.split(',')[0].trim();
+    S.nights=Math.round((d.end-d.start)/86400000);
+    S.rooms=rooms.length;
+    S.adults=rooms.reduce((a,r)=>a+r.adults,0);
+    S.children=rooms.reduce((a,r)=>a+r.children.length,0);
+    const label=fmt(d.start)+' to '+fmt(d.end);
+    $('metaFor').textContent='for '+dest+', '+label;
+    $('tripDest').textContent=dest;
+    $('tripMeta').textContent=label+', '+d.end.getFullYear()+' · '+guestsLine();
+    window.apollesSearchDates=label+' · '+plural(S.nights,'night');
+    window.apollesDest=dest; window.apollesParty=partyLine();
+    setMini(dest,label);
+  }
+  $('searchBtn').addEventListener('click',e=>{
+    e.stopPropagation();
+    const d=window.apollesDates();
+    const destInput=$('destInput');
+    if(!destInput.value.trim()){ destInput.focus(); return; }
+    if(!d.start||!d.end){ $('checkinBtn').click(); return; }
+    // every child needs an age before searching
+    if(rooms.some(r=>r.children.some(a=>a===''||a==null))){ closePopovers(); guestsPopover.classList.add('open'); return; }
+    closePopovers();
+    showSearch();
+    searchQ=formSearch();
+    writeURL(true);
+    box.classList.remove('editing'); $('searchMini').setAttribute('aria-expanded','false'); $('miniEdit').textContent='Edit';
+    panel.classList.add('searching');
+    setTimeout(()=>{ panel.classList.remove('searching'); apply(); },450);
+  });
+  $('searchMini').addEventListener('click',()=>{
+    const on=box.classList.toggle('editing');
+    $('searchMini').setAttribute('aria-expanded',String(on));
+    $('miniEdit').textContent=on?'Close':'Edit';
+  });
+
+  window.apollesSearchDates='Oct 12 to Oct 14 · 2 nights';
+  window.apollesDest='Cancun'; window.apollesParty=partyLine();
+  fromURL();
+})();
+</script>
+<script>/* prototype bridge: tells the prototype window which page is open */
+(function(){if(window.parent===window)return;
+function tell(){try{parent.postMessage({apolles:'page',file:location.pathname.split('/').pop()},'*')}catch(e){}}
+tell();window.addEventListener('pageshow',tell);
+window.addEventListener('message',function(e){if(e.data&&e.data.apolles==='back')history.back()});})();</script>
+</body>
+</html>
