@@ -20,6 +20,7 @@ function roomsParam(rooms: Occupancy[]): string {
 }
 
 // `nationality` is an ISO 3166 code ("IL"); the link carries the country name ("Israel").
+// Without one the link has no `nat` (the page then leaves it empty).
 export function hotelLink(i: {
   hotelName: string;
   propertyId: string;
@@ -27,16 +28,16 @@ export function hotelLink(i: {
   checkin: string;
   checkout: string;
   rooms: Occupancy[];
-  nationality: string;
+  nationality?: string;
 }): string {
-  if (!isCountryCode(i.nationality)) throw new Error("hotelLink: nationality must be an ISO country code");
+  if (i.nationality !== undefined && !isCountryCode(i.nationality)) throw new Error("hotelLink: nationality must be an ISO country code");
   const params = new URLSearchParams({
     dest: i.hotelName,
     type: "hotel",
     in: i.checkin,
     out: i.checkout,
     rooms: roomsParam(i.rooms),
-    nat: countryName(i.nationality),
+    ...(i.nationality !== undefined ? { nat: countryName(i.nationality) } : {}),
     hotel: i.propertyId,
     destId: i.destinationId,
   });

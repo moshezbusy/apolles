@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
-import { RATE_LIMITS, emailKey, hitRateLimit, ipKey } from "@/server/rate-limit";
+import { RATE_LIMITS, emailKey, hitRateLimit, ipKey, peekRateLimit } from "@/server/rate-limit";
 
 // Deterministic: the window start comes from the database clock, so instead of faking time
 // these tests either use a window so long that no boundary can fall inside a test run
@@ -98,6 +98,39 @@ describe("hitRateLimit", () => {
     await expect(hitRateLimit("k", 1.5, HUGE)).rejects.toThrow();
     await expect(hitRateLimit("k", 1, 0)).rejects.toThrow();
     await expect(hitRateLimit("", 1, HUGE)).rejects.toThrow();
+  });
+});
+
+describe("peekRateLimit", () => {
+  beforeEach(async () => {
+    await resetTestDb();
+  });
+
+  it("returns the current window's count without counting a hit", async () => {
+    expect(await peekRateLimit("t:ip:1", HUGE)).toBe(0);
+    expect(await buckets()).toHaveLength(0); // no row is created by a peek
+    for (let i = 0; i < 3; i++) await hitRateLimit("t:ip:1", 10, HUGE, NEVER_PRUNE);
+    expect(await peekRateLimit("t:ip:1", HUGE)).toBe(3);
+    expect(await peekRateLimit("t:ip:1", HUGE)).toBe(3);
+    expect(await peekRateLimit("t:ip:2", HUGE)).toBe(0);
+    expect((await buckets()).map((r) => r.count)).toEqual([3]);
+  });
+
+  it("reads only the current window: an earlier window's count is not seen", async () => {
+    for (let i = 0; i < 3; i++) await hitRateLimit("t:ip:1", 10, HUGE, NEVER_PRUNE);
+    await db.$executeRaw`
+      UPDATE "RateLimitBucket" SET "windowStart" = "windowStart" - ${HUGE}::bigint * interval '1 millisecond'`;
+    expect(await peekRateLimit("t:ip:1", HUGE)).toBe(0);
+  });
+
+  it("the same window length must be used: another window length is another bucket", async () => {
+    for (let i = 0; i < 2; i++) await hitRateLimit("t:ip:1", 10, FIFTEEN_MINUTES, NEVER_PRUNE);
+    expect(await peekRateLimit("t:ip:1", FIFTEEN_MINUTES)).toBe(2);
+  });
+
+  it("rejects a bad window or key (programming error)", async () => {
+    await expect(peekRateLimit("", HUGE)).rejects.toThrow();
+    await expect(peekRateLimit("t", 0)).rejects.toThrow();
   });
 });
 

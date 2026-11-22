@@ -175,6 +175,7 @@ async function auditRows() {
 
 describe("caller checks, in order", () => {
   it("no or wrong service key → 401 before any token lookup", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     for (const serviceKey of [null, "wrong-key", "", `${SERVICE_KEY}x`]) {
       const res = await aiSearch({ serviceKey, bearer: a.token, ip: IP }, searchBody, { now: NOW });
       expect(res).toEqual({ status: 401, json: { error: "unauthorized" } });
@@ -186,6 +187,7 @@ describe("caller checks, in order", () => {
   });
 
   it("no service key configured → nothing matches", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv("AI_MCP_SERVICE_KEY", "");
     expect((await aiSearch({ serviceKey: "", bearer: a.token, ip: IP }, searchBody)).status).toBe(401);
     expect(verifyAiToken).not.toHaveBeenCalled();
@@ -207,13 +209,35 @@ describe("caller checks, in order", () => {
     expect((await search(searchBody)).status).toBe(401);
   });
 
-  it("601st call from one IP in a minute → 429, before the key and the token are checked", async () => {
-    await seedRateLimit(`ai-api:ip:${IP}`, 600, MINUTE);
+  it("10 wrong keys from one IP → the 11th call is refused with 429 even with the right key, before any token lookup", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    for (let i = 0; i < 10; i++) {
+      expect(await aiSearch({ serviceKey: `wrong-${i}`, bearer: a.token, ip: IP }, searchBody)).toEqual({ status: 401, json: { error: "unauthorized" } });
+    }
+    expect(await aiSearch(authOf(a), searchBody, { adapter: fakeAdapter().adapter, content: none, now: NOW })).toEqual({ status: 429, json: { error: "rate_limited" } });
+    expect(await aiRates(authOf(a), { search_id: "x", hotel_id: "1" })).toEqual({ status: 429, json: { error: "rate_limited" } });
+    expect(verifyAiToken).not.toHaveBeenCalled();
+    // Only the failures were counted; the refused calls did not add to them.
+    const fails = await db.rateLimitBucket.findMany({ where: { key: `ai-api:keyfail:ip:${IP}` } });
+    expect(fails.map((b) => b.count)).toEqual([10]);
+    // One fixed line per failure: neither the key nor the address.
+    expect(warn.mock.calls).toEqual(Array.from({ length: 10 }, () => ["ai api: bad service key"]));
+    // Another address is not affected.
+    expect((await aiSearch({ ...authOf(a), ip: "198.51.100.21" }, searchBody, { adapter: fakeAdapter().adapter, content: none, now: NOW })).status).toBe(200);
+  });
+
+  it("good calls are not limited by the IP: 700 in a minute from one address still pass", async () => {
+    await seedRateLimit(`ai-api:ip:${IP}`, 700, MINUTE);
+    expect((await search(searchBody)).status).toBe(200);
+    const rates = await aiRates(authOf(a), { search_id: "nope", hotel_id: "1" }, { now: NOW });
+    expect(rates.status).toBe(404);
+  });
+
+  it("the loose per-IP ceiling: the 6,001st call in a minute → 429, before the key and the token are checked", async () => {
+    await seedRateLimit(`ai-api:ip:${IP}`, 6_000, MINUTE);
     expect(await aiSearch(authOf(a), searchBody)).toEqual({ status: 429, json: { error: "rate_limited" } });
     expect(await aiRates({ serviceKey: null, bearer: null, ip: IP }, {})).toEqual({ status: 429, json: { error: "rate_limited" } });
     expect(verifyAiToken).not.toHaveBeenCalled();
-    // Another address is not affected.
-    expect((await aiSearch({ ...authOf(a), ip: "198.51.100.21" }, searchBody, { adapter: fakeAdapter().adapter, content: none, now: NOW })).status).toBe(200);
   });
 
   it("21st tool call by one agent in a minute → 429 rate_limited (audited)", async () => {
@@ -446,6 +470,40 @@ describe("search_hotels", () => {
   });
 });
 
+describe("unexpected errors after the caller is known", () => {
+  it("search: one audit row with outcome error, then the error goes up (route: 500, error name only)", async () => {
+    const broken = fakeAdapter(() => {
+      throw new TypeError("boom: secret detail");
+    });
+    await expect(search(searchBody, broken)).rejects.toBeInstanceOf(TypeError);
+    const rows = await auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.after).toMatchObject({ destination_id: "paris", outcome: "error" });
+    expect(JSON.stringify(rows[0])).not.toContain("boom");
+  });
+
+  it("rates: one audit row with outcome error; the route answers 500 and logs only the error name", async () => {
+    const id = ((await search(searchBody)).json as { search_id: string }).search_id;
+    vi.stubEnv("APP_URL", "not a url"); // the link cannot be built
+    await expect(aiRates(authOf(a), { search_id: id, hotel_id: "1" }, { now: NOW })).rejects.toThrow();
+    const rows = await db.auditLog.findMany({ where: { action: "ai.get_hotel_rates" } });
+    expect(rows.map((r) => r.after)).toEqual([{ outcome: "error" }]);
+
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await ratesRoute.POST(
+      new Request("https://app.example.test/api/ai/v1/rates", {
+        method: "POST",
+        headers: { "x-forwarded-for": IP, "x-apolles-service-key": SERVICE_KEY, authorization: `Bearer ${a.token}` },
+        body: JSON.stringify({ search_id: id, hotel_id: "1" }),
+      }),
+    );
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "server_error" });
+    expect(logged.mock.calls).toEqual([["ai api failed: Error"]]);
+    expect(await db.auditLog.count({ where: { action: "ai.get_hotel_rates" } })).toBe(2);
+  });
+});
+
 describe("get_hotel_rates", () => {
   async function searchId(): Promise<string> {
     return ((await search(searchBody)).json as { search_id: string }).search_id;
@@ -505,6 +563,37 @@ describe("get_hotel_rates", () => {
     expect(json.rates[29]!.total.amount).toBe("495.00");
     expect(json.rates[0]!.amenities).toHaveLength(10);
     expect(new URL(json.link).searchParams.get("nat")).toBe("France");
+  });
+
+  it("free cancellation ends at the earliest penalty in time, whatever the offsets", async () => {
+    // As text the -05:00 start sorts first, but in time it is the latest (01:00 UTC on the 8th);
+    // the +05:00 one is the earliest (18:30 UTC on the 7th).
+    const mixed = (q: AvailabilityQuery) =>
+      q.propertyIds.map((id) => ({
+        propertyId: id,
+        offers: [
+          offer(id, 30_000, {
+            cancelPenalties: [
+              { start: "2027-04-07T20:00:00.000-05:00", end: "2027-04-10T00:00:00.000-05:00", amount: null, nights: 1, percent: null },
+              { start: "2027-04-08T00:00:00.000+02:00", end: "2027-04-10T00:00:00.000+02:00", amount: null, nights: 1, percent: null },
+              { start: "2027-04-07T23:30:00.000+05:00", end: "2027-04-10T00:00:00.000+05:00", amount: null, nights: 1, percent: null },
+            ],
+          }),
+        ],
+      }));
+    const id = ((await search(searchBody, fakeAdapter(mixed))).json as { search_id: string }).search_id;
+    const res = await aiRates(authOf(a), { search_id: id, hotel_id: "1" }, { now: NOW });
+    expect((res.json as { rates: { free_cancellation_until: string }[] }).rates[0]!.free_cancellation_until).toBe("2027-04-07T23:30:00.000+05:00");
+  });
+
+  it("an agency country that is not an ISO code → the link has no nat (never a made-up one)", async () => {
+    const id = ((await search(searchBody)).json as { search_id: string }).search_id;
+    await db.agency.update({ where: { id: a.agencyId }, data: { country: "ZZ" } });
+    const res = await aiRates(authOf(a), { search_id: id, hotel_id: "1" }, { now: NOW });
+    expect(res.status).toBe(200);
+    const link = new URL((res.json as { link: string }).link);
+    expect(link.searchParams.has("nat")).toBe(false);
+    expect(link.searchParams.get("hotel")).toBe("1");
   });
 
   it("an expired search → 404 with the message to search again", async () => {

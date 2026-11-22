@@ -42,6 +42,13 @@ describe("hotelLink", () => {
     expect(url.searchParams.get("type")).toBe("hotel");
   });
 
+  it("without a nationality the link has no nat", () => {
+    const { hotelName, propertyId, destinationId, checkin, checkout, rooms } = base;
+    const url = new URL(hotelLink({ hotelName, propertyId, destinationId, checkin, checkout, rooms }));
+    expect(url.searchParams.has("nat")).toBe(false);
+    expect(url.searchParams.get("rooms")).toBe("2-5,2");
+  });
+
   it("refuses a nationality that is not an ISO country code", () => {
     expect(() => hotelLink({ ...base, nationality: "Israel" })).toThrow();
   });

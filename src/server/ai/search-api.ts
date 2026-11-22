@@ -6,7 +6,7 @@ import { audit } from "@/server/audit";
 import type { getContent } from "@/server/content/content-cache";
 import { getClientIp } from "@/server/client-ip";
 import { db } from "@/server/db";
-import { hitRateLimit } from "@/server/rate-limit";
+import { hitRateLimit, peekRateLimit } from "@/server/rate-limit";
 import { destinationById, suggestDestinations } from "@/server/search/destinations";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "@/server/search/errors";
 import { getHotelOffers, listResults, searchSummary, startSearch, type HotelCard, type ListOptions } from "@/server/search/search";
@@ -18,15 +18,17 @@ import { verifyAiToken } from "./tokens";
 // The internal AI search API (plan 11, design §5 and §7): the only way the separate MCP server
 // reaches Apolles. Search only: it starts and reads searches of the token's own agency and never
 // touches bookings, money or clients. Checks, in this order, on every call:
-//   1. per-IP ceiling (before anything else is looked at),
+//   1. a loose per-IP ceiling, and a refusal once one address has sent 10 wrong service keys in
+//      15 minutes (only failures count: all real traffic comes from the MCP server's one address,
+//      often seen as "unknown", so a tight per-IP limit would lock every agent out at once),
 //   2. the MCP server's own service key (no token lookup without it),
 //   3. the agent's search token (read from the database every time: a revoke or a suspension
 //      stops the very next call),
 //   4. the agent's tool-call limits (per minute and per day),
 //   5. the request body (strict),
 //   6. the work.
-// Every call that passed 1-3 writes one audit row: the agent, the connection and the outcome;
-// never the token, the IP or text from the request.
+// Every call that passed 1-3 writes one audit row: the agent, the connection and the outcome
+// (also "error" when something unexpected failed); never the token, the IP or text from the request.
 
 export type AiAuth = { serviceKey: string | null; bearer: string | null; ip: string };
 export type ApiResult = { status: 200 | 400 | 401 | 403 | 404 | 429 | 503; json: unknown };
@@ -34,9 +36,10 @@ export type ApiResult = { status: 200 | 400 | 401 | 403 | 404 | 429 | 503; json:
 export type AiDeps = { adapter?: SupplierAdapter; content?: typeof getContent; now?: Date };
 
 type Caller = { connectionId: string; userId: string; agencyId: string };
-type Outcome = "ok" | "rate_limited" | "invalid" | "unavailable" | "not_found" | "ambiguous";
+type Outcome = "ok" | "rate_limited" | "invalid" | "unavailable" | "not_found" | "ambiguous" | "error";
 
-const IP_LIMIT = { limit: 600, windowMs: 60_000 };
+const IP_LIMIT = { limit: 6_000, windowMs: 60_000 }; // backstop only
+const KEY_FAILURES = { limit: 10, windowMs: 15 * 60_000 }; // wrong service keys per IP
 // Per agent, every tool call. The day bucket has its own key: buckets are rows keyed by
 // (key, window start), and at midnight UTC a minute window and the day window start together.
 const AGENT_LIMITS = [
@@ -134,7 +137,14 @@ const roomsOut = (rooms: Occupancy[]) => rooms.map((r) => ({ adults: r.adults, c
 async function authenticate(auth: AiAuth): Promise<{ deny: ApiResult } | { caller: Caller; limited: boolean }> {
   const ip = await hitRateLimit(`ai-api:ip:${auth.ip}`, IP_LIMIT.limit, IP_LIMIT.windowMs);
   if (!ip.allowed) return { deny: result(429, { error: "rate_limited" }) };
-  if (!serviceKeyMatches(auth.serviceKey)) return { deny: result(401, { error: "unauthorized" }) };
+  // Refused before the key is compared, so an address that guessed 10 times cannot try an 11th.
+  const failKey = `ai-api:keyfail:ip:${auth.ip}`;
+  if ((await peekRateLimit(failKey, KEY_FAILURES.windowMs)) >= KEY_FAILURES.limit) return { deny: result(429, { error: "rate_limited" }) };
+  if (!serviceKeyMatches(auth.serviceKey)) {
+    await hitRateLimit(failKey, KEY_FAILURES.limit, KEY_FAILURES.windowMs);
+    console.warn("ai api: bad service key");
+    return { deny: result(401, { error: "unauthorized" }) };
+  }
   const caller = auth.bearer === null ? null : await verifyAiToken(auth.bearer, mcpResource());
   if (!caller) return { deny: result(401, { error: "invalid_token" }) };
   for (const { suffix, limit, windowMs } of AGENT_LIMITS) {
@@ -144,13 +154,54 @@ async function authenticate(auth: AiAuth): Promise<{ deny: ApiResult } | { calle
   return { caller, limited: false };
 }
 
-type AuditFields = { destination_id?: string; checkin?: string; checkout?: string; rooms?: number; results?: number; outcome: Outcome };
+type AuditDetails = { destination_id?: string; checkin?: string; checkout?: string; rooms?: number; results?: number };
+type AuditFields = AuditDetails & { outcome: Outcome };
 
 async function record(caller: Caller, action: "ai.search_hotels" | "ai.get_hotel_rates", after: AuditFields): Promise<void> {
   await audit(caller.userId, action, "AiConnection", caller.connectionId, undefined, after as Prisma.InputJsonValue);
 }
 
-// A search-service error as an answer; anything else is a bug and goes up.
+// What a tool's work uses to audit: `note` adds details as they become known, `done` writes the
+// one row. If the work throws before `done`, the row is written with outcome "error" (and the
+// details known so far), then the error goes up (the route answers 500).
+type CallLog = { note(details: AuditDetails): void; done(outcome: Outcome, details?: AuditDetails): Promise<void> };
+
+async function audited(
+  checked: { caller: Caller; limited: boolean },
+  action: "ai.search_hotels" | "ai.get_hotel_rates",
+  work: (log: CallLog) => Promise<ApiResult>,
+): Promise<ApiResult> {
+  const { caller } = checked;
+  let details: AuditDetails = {};
+  let written = false;
+  const write = async (after: AuditFields) => {
+    written = true;
+    await record(caller, action, after);
+  };
+  if (checked.limited) {
+    await write({ outcome: "rate_limited" });
+    return result(429, RATE_LIMITED);
+  }
+  try {
+    return await work({
+      note: (more) => {
+        details = { ...details, ...more };
+      },
+      done: (outcome, more = {}) => write({ ...details, ...more, outcome }),
+    });
+  } catch (error) {
+    if (!written) {
+      try {
+        await write({ ...details, outcome: "error" });
+      } catch {
+        // The original error is the one to report.
+      }
+    }
+    throw error;
+  }
+}
+
+// A search-service error as an answer; anything else is unexpected and goes up.
 function searchErrorResult(error: unknown): { res: ApiResult; outcome: Outcome } {
   if (error instanceof SearchInputInvalid) return { res: invalid(error.message), outcome: "invalid" };
   if (error instanceof SearchRateLimited) return { res: result(429, { error: "rate_limited", message: error.message }), outcome: "rate_limited" };
@@ -187,28 +238,26 @@ async function resolveDestination(body: z.infer<typeof searchSchema>): Promise<R
 export async function aiSearch(auth: AiAuth, body: unknown, deps: AiDeps = {}): Promise<ApiResult> {
   const checked = await authenticate(auth);
   if ("deny" in checked) return checked.deny;
-  const { caller } = checked;
-  const action = "ai.search_hotels";
-  if (checked.limited) {
-    await record(caller, action, { outcome: "rate_limited" });
-    return result(429, RATE_LIMITED);
-  }
+  return audited(checked, "ai.search_hotels", (log) => searchHotels(checked.caller, body, deps, log));
+}
+
+async function searchHotels(caller: Caller, body: unknown, deps: AiDeps, log: CallLog): Promise<ApiResult> {
   const parsed = searchSchema.safeParse(body);
   if (!parsed.success) {
-    await record(caller, action, { outcome: "invalid" });
+    await log.done("invalid");
     return invalid(messageOf(parsed.error));
   }
   const input = parsed.data;
   const rooms: Occupancy[] = input.rooms.map((r) => ({ adults: r.adults, childAges: r.child_ages }));
-  const base = { checkin: input.checkin, checkout: input.checkout, rooms: rooms.length };
+  log.note({ checkin: input.checkin, checkout: input.checkout, rooms: rooms.length });
 
   const resolved = await resolveDestination(input);
   if ("res" in resolved) {
-    await record(caller, action, { ...base, outcome: resolved.outcome });
+    await log.done(resolved.outcome);
     return resolved.res;
   }
   const { destination } = resolved;
-  const fields = { destination_id: destination.id, ...base };
+  log.note({ destination_id: destination.id });
   const now = deps.now ?? new Date();
 
   let snapshotId: string;
@@ -225,7 +274,7 @@ export async function aiSearch(auth: AiAuth, body: unknown, deps: AiDeps = {}): 
     listed = await listResults(caller.agencyId, snapshotId, opts, now);
   } catch (error) {
     const { res, outcome } = searchErrorResult(error);
-    await record(caller, action, { ...fields, outcome });
+    await log.done(outcome);
     return res;
   }
   if (!listed) throw new Error("aiSearch: the new search was not found");
@@ -249,8 +298,7 @@ export async function aiSearch(auth: AiAuth, body: unknown, deps: AiDeps = {}): 
       nationality: input.nationality,
     }),
   }));
-  await record(caller, action, { ...fields, results: hotels.length, outcome: "ok" });
-  return result(200, {
+  const answer = result(200, {
     search_id: snapshotId,
     destination: { destination_id: destination.id, name: destination.label },
     nights: nightsBetween(input.checkin, input.checkout),
@@ -258,6 +306,8 @@ export async function aiSearch(auth: AiAuth, body: unknown, deps: AiDeps = {}): 
     hotels,
     notes: NOTES,
   });
+  await log.done("ok", { results: hotels.length });
+  return answer;
 }
 
 function taxesAndFees(offer: Offer): { amount: string; currency: string } | null {
@@ -269,10 +319,16 @@ function taxesAndFees(offer: Offer): { amount: string; currency: string } | null
   return Number.isSafeInteger(sum) ? amount({ minor: sum, currency }) : null;
 }
 
-// Free cancellation ends where the first charge starts (as the hotel page says it).
+// Free cancellation ends where the first charge starts (as the hotel page says it). Starts carry
+// the property's own offset, so they are compared as instants, not as text; one that does not
+// read as a date-time counts as last.
 function freeCancellationUntil(offer: Offer): string | null {
   if (!offer.refundable) return null;
-  const first = [...offer.cancelPenalties].sort((x, y) => x.start.localeCompare(y.start))[0];
+  const at = (start: string) => {
+    const t = Date.parse(start);
+    return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
+  };
+  const first = [...offer.cancelPenalties].sort((x, y) => at(x.start) - at(y.start))[0];
   return first?.start ?? null;
 }
 
@@ -298,15 +354,13 @@ function rateOut(offer: Offer) {
 export async function aiRates(auth: AiAuth, body: unknown, deps: AiDeps = {}): Promise<ApiResult> {
   const checked = await authenticate(auth);
   if ("deny" in checked) return checked.deny;
-  const { caller } = checked;
-  const action = "ai.get_hotel_rates";
-  if (checked.limited) {
-    await record(caller, action, { outcome: "rate_limited" });
-    return result(429, RATE_LIMITED);
-  }
+  return audited(checked, "ai.get_hotel_rates", (log) => hotelRates(checked.caller, body, deps, log));
+}
+
+async function hotelRates(caller: Caller, body: unknown, deps: AiDeps, log: CallLog): Promise<ApiResult> {
   const parsed = ratesSchema.safeParse(body);
   if (!parsed.success) {
-    await record(caller, action, { outcome: "invalid" });
+    await log.done("invalid");
     return invalid(messageOf(parsed.error));
   }
   const input = parsed.data;
@@ -318,20 +372,21 @@ export async function aiRates(auth: AiAuth, body: unknown, deps: AiDeps = {}): P
     found = await getHotelOffers(caller.agencyId, input.search_id, input.hotel_id, now, { content: deps.content ?? (async () => new Map()) });
   } catch (error) {
     const { res, outcome } = searchErrorResult(error);
-    await record(caller, action, { outcome });
+    await log.done(outcome);
     return res;
   }
   // Expired, unknown, another agency's search or a hotel not in it: one answer for all.
   const summary = found ? await searchSummary(caller.agencyId, input.search_id, now) : null;
   if (!found || !summary || summary.expired) {
-    await record(caller, action, { outcome: "not_found" });
+    await log.done("not_found");
     return result(404, { error: "not_found", message: EXPIRED_MESSAGE });
   }
 
+  // The link's nationality: the one given, else the agency's country; none if that is not valid.
   let nationality = input.nationality;
   if (nationality === undefined) {
     const agency = await db.agency.findUnique({ where: { id: caller.agencyId }, select: { country: true } });
-    nationality = agency && isCountryCode(agency.country) ? agency.country : "US";
+    if (agency && isCountryCode(agency.country)) nationality = agency.country;
   }
   // Cheapest first; equal prices keep the supplier's order.
   const rates = found.offers
@@ -340,15 +395,7 @@ export async function aiRates(auth: AiAuth, body: unknown, deps: AiDeps = {}): P
     .slice(0, MAX_RATES)
     .map(({ offer }) => rateOut(offer));
 
-  await record(caller, action, {
-    destination_id: summary.destinationId,
-    checkin: summary.checkin,
-    checkout: summary.checkout,
-    rooms: summary.rooms.length,
-    results: rates.length,
-    outcome: "ok",
-  });
-  return result(200, {
+  const answer = result(200, {
     search_id: input.search_id,
     hotel: { hotel_id: input.hotel_id, name: found.hotel.name, city: found.hotel.city, stars: stars(found.hotel.starRating) },
     stay: { checkin: summary.checkin, checkout: summary.checkout, nights: summary.nights, rooms: roomsOut(summary.rooms) },
@@ -360,9 +407,17 @@ export async function aiRates(auth: AiAuth, body: unknown, deps: AiDeps = {}): P
       checkin: summary.checkin,
       checkout: summary.checkout,
       rooms: summary.rooms,
-      nationality,
+      ...(nationality !== undefined ? { nationality } : {}),
     }),
   });
+  await log.done("ok", {
+    destination_id: summary.destinationId,
+    checkin: summary.checkin,
+    checkout: summary.checkout,
+    rooms: summary.rooms.length,
+    results: rates.length,
+  });
+  return answer;
 }
 
 // ---------- HTTP plumbing for the two routes under src/app/api/ai/v1/ ----------
