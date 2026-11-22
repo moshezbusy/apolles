@@ -25,8 +25,8 @@ const CHATGPT_CIMD_PER_CONNECTOR = /^https:\/\/chatgpt\.com\/oauth\/[A-Za-z0-9_-
 export const CIMD_TIMEOUT_MS = 5_000;
 export const CIMD_MAX_BYTES = 64 * 1024;
 // A cached document is used as is for 24 hours; after that it is fetched again. If that fetch
-// fails, the cached copy is still trusted for up to 7 days (an outage at the assistant's side
-// should not cut every agent off at once).
+// fails for a passing reason (network, timeout, 5xx), the cached copy is still trusted for up to
+// 7 days (an outage at the assistant's side should not cut every agent off at once).
 const CIMD_FRESH_MS = 24 * 60 * 60 * 1000;
 const CIMD_STALE_MAX_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -68,14 +68,13 @@ function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+type CappedRead = { kind: "ok"; text: string } | { kind: "too_large" } | { kind: "not_utf8" } | { kind: "failed" };
+
 // Reads a body up to `maxBytes`, as UTF-8 text. Stops reading (and cancels the stream) as soon
 // as the limit is passed, so a huge or endless body costs at most `maxBytes` of memory.
-// null = over the limit, not valid UTF-8, or the stream failed.
-export async function readCappedText(
-  body: ReadableStream<Uint8Array> | null,
-  maxBytes: number,
-): Promise<string | null> {
-  if (!body) return "";
+// "failed" = the stream broke (network error or timeout while reading).
+async function readCapped(body: ReadableStream<Uint8Array> | null, maxBytes: number): Promise<CappedRead> {
+  if (!body) return { kind: "ok", text: "" };
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -86,15 +85,28 @@ export async function readCappedText(
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel().catch(() => undefined);
-        return null;
+        return { kind: "too_large" };
       }
       chunks.push(value);
     }
-    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
   } catch {
     await reader.cancel().catch(() => undefined);
-    return null;
+    return { kind: "failed" };
   }
+  try {
+    return { kind: "ok", text: new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)) };
+  } catch {
+    return { kind: "not_utf8" };
+  }
+}
+
+// Same, as text or null (over the limit, not valid UTF-8, or the stream failed).
+export async function readCappedText(
+  body: ReadableStream<Uint8Array> | null,
+  maxBytes: number,
+): Promise<string | null> {
+  const result = await readCapped(body, maxBytes);
+  return result.kind === "ok" ? result.text : null;
 }
 
 // ---------- Dynamic Client Registration (RFC 7591) ----------
@@ -180,15 +192,23 @@ const cimdDocument = z.object({
   token_endpoint_auth_method: z.literal("none").optional(),
 });
 
-type CimdFailure = "network" | "status" | "too_large" | "not_json" | "invalid";
+type CimdFailure = "network" | "server_error" | "status" | "too_large" | "not_json" | "invalid";
 
-function logCimdFailure(url: string, reason: CimdFailure): void {
+// Only a failure that says nothing about the document (network error, timeout, 5xx) lets a
+// recently cached copy stand in. A 4xx, a redirect or a document that fails our checks means
+// the assistant changed or removed it, so the cached copy is not used either.
+const TRANSIENT_FAILURES: ReadonlySet<CimdFailure> = new Set(["network", "server_error"]);
+
+type CimdResult = { ok: true; redirectUris: string[] } | { ok: false; transient: boolean };
+
+function cimdFailure(url: string, reason: CimdFailure): CimdResult {
   console.warn("AI client metadata fetch failed", { clientIdUrl: url, reason });
+  return { ok: false, transient: TRANSIENT_FAILURES.has(reason) };
 }
 
-// Fetches and checks the document at an allowlisted client-id URL. Returns its redirect URIs,
-// or null. A redirect is a failure (redirect: "manual", status must be 200).
-async function fetchCimd(url: string, assistant: AssistantName, fetchFn: typeof fetch): Promise<string[] | null> {
+// Fetches and checks the document at an allowlisted client-id URL. A redirect is a failure
+// (redirect: "manual", status must be 200).
+async function fetchCimd(url: string, assistant: AssistantName, fetchFn: typeof fetch): Promise<CimdResult> {
   let response: Response;
   try {
     response = await fetchFn(url, {
@@ -199,45 +219,34 @@ async function fetchCimd(url: string, assistant: AssistantName, fetchFn: typeof 
       signal: AbortSignal.timeout(CIMD_TIMEOUT_MS),
     });
   } catch {
-    logCimdFailure(url, "network");
-    return null;
+    return cimdFailure(url, "network");
   }
   if (response.status !== 200 || response.redirected) {
     await response.body?.cancel().catch(() => undefined);
-    logCimdFailure(url, "status");
-    return null;
+    return cimdFailure(url, response.status >= 500 && response.status <= 599 ? "server_error" : "status");
   }
   const declared = Number(response.headers.get("content-length") ?? "0");
   if (Number.isFinite(declared) && declared > CIMD_MAX_BYTES) {
     await response.body?.cancel().catch(() => undefined);
-    logCimdFailure(url, "too_large");
-    return null;
+    return cimdFailure(url, "too_large");
   }
-  const text = await readCappedText(response.body, CIMD_MAX_BYTES);
-  if (text === null) {
-    logCimdFailure(url, "too_large");
-    return null;
-  }
+  const body = await readCapped(response.body, CIMD_MAX_BYTES);
+  if (body.kind === "failed") return cimdFailure(url, "network");
+  if (body.kind === "too_large") return cimdFailure(url, "too_large");
+  if (body.kind === "not_utf8") return cimdFailure(url, "not_json");
   let json: unknown;
   try {
-    json = JSON.parse(text);
+    json = JSON.parse(body.text);
   } catch {
-    logCimdFailure(url, "not_json");
-    return null;
+    return cimdFailure(url, "not_json");
   }
   const parsed = cimdDocument.safeParse(json);
   // The document must name itself, be a public client, and list only redirect URIs of the
   // assistant that owns the URL.
-  if (!parsed.success || parsed.data.client_id !== url) {
-    logCimdFailure(url, "invalid");
-    return null;
-  }
+  if (!parsed.success || parsed.data.client_id !== url) return cimdFailure(url, "invalid");
   const redirectUris = unique(parsed.data.redirect_uris);
-  if (singleAssistant(redirectUris) !== assistant) {
-    logCimdFailure(url, "invalid");
-    return null;
-  }
-  return redirectUris;
+  if (singleAssistant(redirectUris) !== assistant) return cimdFailure(url, "invalid");
+  return { ok: true, redirectUris };
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -279,7 +288,7 @@ export async function resolveClient(clientId: string, fetchFn: typeof fetch = fe
   const age = cached ? Date.now() - cached.createdAt.getTime() : Number.POSITIVE_INFINITY;
   if (cached && age < CIMD_FRESH_MS) return cached;
 
-  const redirectUris = await fetchCimd(clientId, assistant, fetchFn);
-  if (redirectUris) return saveCimd(clientId, assistant, redirectUris);
-  return cached && age < CIMD_STALE_MAX_MS ? cached : null;
+  const fetched = await fetchCimd(clientId, assistant, fetchFn);
+  if (fetched.ok) return saveCimd(clientId, assistant, fetched.redirectUris);
+  return fetched.transient && cached && age < CIMD_STALE_MAX_MS ? cached : null;
 }

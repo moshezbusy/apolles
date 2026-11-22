@@ -48,3 +48,5 @@ export const GET = methodNotAllowed;
 export const PUT = methodNotAllowed;
 export const PATCH = methodNotAllowed;
 export const DELETE = methodNotAllowed;
+// Next.js would otherwise answer OPTIONS itself (204 + Allow), even while the feature is off.
+export const OPTIONS = methodNotAllowed;

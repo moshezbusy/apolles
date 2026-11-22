@@ -3,7 +3,7 @@ import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import { seedRateLimit } from "@/test/rate-limit";
 import { assistantName, registerClient, resolveClient } from "@/server/ai/clients";
-import { GET, POST } from "@/app/oauth/register/route";
+import { GET, OPTIONS, POST } from "@/app/oauth/register/route";
 
 const CLAUDE_REDIRECT = "https://claude.ai/api/mcp/auth_callback";
 const CHATGPT_REDIRECT = "https://chatgpt.com/connector_platform_oauth_redirect";
@@ -189,6 +189,11 @@ describe("resolveClient", () => {
       "https://chatgpt.com/oauth/a/b/client.json",
       "https://chatgpt.com.evil.example/oauth/x/client.json",
       "http://169.254.169.254/latest/meta-data",
+      "https://CLAUDE.AI/oauth/mcp-oauth-client-metadata",
+      "https://claude.ai./oauth/mcp-oauth-client-metadata",
+      "https://claude.ai:443/oauth/mcp-oauth-client-metadata",
+      "https://x@claude.ai/oauth/mcp-oauth-client-metadata",
+      "https://chatgpt.com/oauth/a%2Fb/client.json",
     ]) {
       expect(await resolveClient(url, fetchSpy)).toBeNull();
     }
@@ -309,6 +314,33 @@ describe("resolveClient", () => {
     expect(failing).toHaveBeenCalledTimes(2);
   });
 
+  it("falls back to a cached row on a timeout too", async () => {
+    await resolveClient(CLAUDE_CIMD, fetchReturning(() => jsonResponse(claudeDoc())));
+    const row = await db.aiClient.findUniqueOrThrow({ where: { clientIdUrl: CLAUDE_CIMD } });
+    await db.aiClient.update({ where: { id: row.id }, data: { createdAt: new Date(Date.now() - 2 * DAY) } });
+    const timingOut = fetchReturning(() => {
+      throw new DOMException("The operation timed out.", "TimeoutError");
+    });
+    expect((await resolveClient(CLAUDE_CIMD, timingOut))?.id).toBe(row.id);
+  });
+
+  it("does not fall back to a cached row when the document is gone (4xx) or no longer valid", async () => {
+    await resolveClient(CLAUDE_CIMD, fetchReturning(() => jsonResponse(claudeDoc())));
+    const row = await db.aiClient.findUniqueOrThrow({ where: { clientIdUrl: CLAUDE_CIMD } });
+    const refetches: Array<() => Response> = [
+      () => new Response("gone", { status: 404 }),
+      () => new Response(null, { status: 302, headers: { location: "https://claude.ai/elsewhere" } }),
+      () => jsonResponse(claudeDoc({ redirect_uris: ["https://evil.example/callback"] })),
+      () => jsonResponse(claudeDoc({ token_endpoint_auth_method: "private_key_jwt" })),
+      () => new Response("{not json", { status: 200 }),
+      () => new Response("x".repeat(64 * 1024 + 1), { status: 200 }),
+    ];
+    for (const make of refetches) {
+      await db.aiClient.update({ where: { id: row.id }, data: { createdAt: new Date(Date.now() - 2 * DAY) } });
+      expect(await resolveClient(CLAUDE_CIMD, fetchReturning(make))).toBeNull();
+    }
+  });
+
   it("looks up a non-URL client_id as a DCR client, never as a cached CIMD row", async () => {
     const fetchSpy = fetchReturning(() => jsonResponse(claudeDoc()));
     const registered = await registerClient({ redirect_uris: [CLAUDE_REDIRECT] }, IP);
@@ -338,6 +370,7 @@ describe("POST /oauth/register", () => {
     const res = await POST(registerRequest(JSON.stringify({ redirect_uris: [CLAUDE_REDIRECT] })));
     expect(res.status).toBe(404);
     expect((await GET()).status).toBe(404);
+    expect((await OPTIONS()).status).toBe(404);
     expect(await db.aiClient.count()).toBe(0);
   });
 
@@ -391,9 +424,11 @@ describe("POST /oauth/register", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("answers 405 to GET when enabled", async () => {
-    const res = await GET();
-    expect(res.status).toBe(405);
-    expect(res.headers.get("allow")).toBe("POST");
+  it("answers 405 to GET and OPTIONS when enabled", async () => {
+    for (const handler of [GET, OPTIONS]) {
+      const res = await handler();
+      expect(res.status).toBe(405);
+      expect(res.headers.get("allow")).toBe("POST");
+    }
   });
 });
