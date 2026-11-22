@@ -85,6 +85,35 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # The search-only MCP server for AI assistants (plan docs/plans/2026-11-22-mcp-search-connector.md).
+  # OFF by default: it starts only with `--profile assistant` (README section "AI assistants").
+  # No env_file on purpose: it must never see DATABASE_URL, supplier keys or any other secret.
+  # Only on n8n_default: Caddy reaches it there, and it reaches the app there. It is not on the
+  # database network, so it cannot even reach the database host.
+  apolles-staging-mcp:
+    image: apolles-staging-app
+    profiles: ["assistant"]
+    restart: unless-stopped
+    init: true
+    mem_limit: 128m
+    environment:
+      NODE_ENV: production
+      PORT: "3100"
+      ASSISTANT_MCP_URL: ${ASSISTANT_MCP_URL:-}
+      APP_URL: ${APP_URL:-}
+      APP_INTERNAL_URL: http://apolles-staging:3000
+    entrypoint: ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--import", "./prisma/ts-loader.mjs", "src/mcp-server.ts"]
+    depends_on:
+      apolles-staging:
+        condition: service_started
+    networks:
+      - n8n_default
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   apolles_staging_db:
 

@@ -39,6 +39,16 @@ const nextConfig: NextConfig = {
           { key: "Cache-Control", value: "private, no-store" },
         ],
       },
+      // AI assistant sign-in (plan 2026-11-22): the URL holds the OAuth request and the code
+      // goes back in a redirect. Never in a Referer header, a search engine or a cache.
+      {
+        source: "/oauth/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Cache-Control", value: "no-store" },
+        ],
+      },
       {
         source: "/forgot-password",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],

@@ -1,6 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import { MAX_RAW_TOKEN_LENGTH as MAX_TOKEN_LENGTH, generateRawToken, hashToken } from "@/server/auth/token";
+import { revokeUserConnections } from "@/server/assistant/connections";
 
 export const SESSION_COOKIE = "apl_session";
 // Sessions end 12 hours after sign-in, with no "remember me" and no sliding renewal.
@@ -96,9 +97,12 @@ export async function destroySession(rawToken: string): Promise<void> {
 
 // Password change or suspension: ends every session of the user. Pass the transaction
 // client to make it part of a larger change (e.g. setting a new password).
+// Also revokes the user's AI assistant connections (search-only connector): whatever ends the
+// user's sessions (password change, lockout) ends those too.
 export async function destroyUserSessions(
   userId: string,
   client: Prisma.TransactionClient = db,
 ): Promise<void> {
   await client.session.deleteMany({ where: { userId } });
+  await revokeUserConnections(userId, client);
 }

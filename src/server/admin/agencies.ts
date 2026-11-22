@@ -4,6 +4,7 @@ import { Prisma } from "@/generated/prisma/client";
 import type { AccountStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
 import { audit } from "@/server/audit";
+import { revokeAgencyConnections } from "@/server/assistant/connections";
 import { sendSetPasswordEmail } from "@/server/auth/password-tokens";
 import { createUser, normalizeEmail } from "@/server/users";
 import { getBalances } from "@/server/wallet/ledger";
@@ -146,6 +147,8 @@ export async function setAgencyStatus(
       await tx.session.deleteMany({ where: { user: { agencyId } } });
       // Plan 8e: and every remembered device, so a reactivation asks for a sign-in code again.
       await tx.trustedDevice.deleteMany({ where: { user: { agencyId } } });
+      // And every AI assistant connection: they stay revoked after a reactivation.
+      await revokeAgencyConnections(agencyId, tx);
     }
     await audit(
       actor,
