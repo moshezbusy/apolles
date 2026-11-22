@@ -44,6 +44,15 @@ describe("next.config headers", () => {
     expect(headersFor(await rules(), "/admin/2fa/setup")).toEqual({ "Cache-Control": "no-store" });
   });
 
+  // The authorize page and token answers carry codes and tokens (plan 11).
+  it("/oauth/* is never cached, sends no Referer and is not indexed", async () => {
+    expect(headersFor(await rules(), "/oauth/:path*")).toEqual({
+      "Cache-Control": "no-store",
+      "Referrer-Policy": "no-referrer",
+      "X-Robots-Tag": "noindex",
+    });
+  });
+
   // The staging container runs the self-contained server that `next build` writes to
   // .next/standalone (deploy/staging, Dockerfile).
   it("builds the standalone server used by the container image", () => {

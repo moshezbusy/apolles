@@ -6,6 +6,7 @@ import { z } from "zod";
 import { LOGIN_ERROR_COPY, login } from "@/server/auth/login";
 import { PASSWORD_MAX_LENGTH } from "@/server/auth/password";
 import { getClientIp } from "@/server/client-ip";
+import { safeReturnTo } from "@/server/auth/return-to";
 import { SIGN_IN_RATE_LIMIT_COPY, hitIpRateLimit } from "@/server/rate-limit";
 import {
   SESSION_COOKIE,
@@ -68,11 +69,14 @@ export async function loginAction(
     maxAge: SESSION_TTL_MS / 1000,
   });
 
+  // Plan 11: an agent who came from an assistant's connect page goes back to it (only the
+  // paths safeReturnTo accepts; anything else is ignored).
+  const next = safeReturnTo(formData.get("next"));
   if (!result.needsTotp && !knownDevice) {
     const session = await getSession(token);
     if (session) await sendSignInCode(session.sessionId);
-    redirect("/login/verify");
+    redirect(next ? `/login/verify?next=${encodeURIComponent(next)}` : "/login/verify");
   }
   // Admins continue to the admin area (TOTP step is added with admin TOTP).
-  redirect(result.needsTotp ? "/admin" : "/search");
+  redirect(result.needsTotp ? "/admin" : (next ?? "/search"));
 }

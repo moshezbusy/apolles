@@ -5,7 +5,7 @@ import { useActionState } from "react";
 import { alertError, btnPrimary, input, label } from "@/components/ui";
 import { loginAction, type LoginFormState } from "./actions";
 
-export function LoginForm() {
+export function LoginForm({ next = null }: { next?: string | null }) {
   const [state, formAction, pending] = useActionState<LoginFormState, FormData>(
     loginAction,
     null,
@@ -13,6 +13,7 @@ export function LoginForm() {
 
   return (
     <form action={formAction} className="flex flex-col gap-3.5" noValidate>
+      {next ? <input type="hidden" name="next" value={next} /> : null}
       {state?.error ? (
         <p role="alert" className={alertError}>
           {state.error}

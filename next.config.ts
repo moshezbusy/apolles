@@ -47,6 +47,17 @@ const nextConfig: NextConfig = {
         source: "/admin/:path*",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
+      // AI connector (plan 11): the authorize page carries the assistant's request in its URL
+      // and the token endpoint answers with tokens. No cache may keep them, no Referer sends
+      // the URL on, and search engines leave them alone.
+      {
+        source: "/oauth/:path*",
+        headers: [
+          { key: "Cache-Control", value: "no-store" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex" },
+        ],
+      },
       // The setup page shows a QR code (and text) that contain the TOTP secret: no browser
       // or proxy cache may keep it.
       {

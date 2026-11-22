@@ -292,3 +292,14 @@ export async function resolveClient(clientId: string, fetchFn: typeof fetch = fe
   if (fetched.ok) return saveCimd(clientId, assistant, fetched.redirectUris);
   return fetched.transient && cached && age < CIMD_STALE_MAX_MS ? cached : null;
 }
+
+// The client behind a client_id at the token and revoke endpoints: a lookup only, never a fetch
+// (the token answer must be fast, and the authorize step already checked the document and saved
+// the row). A CIMD client is found only by its URL, a DCR client only by its own id.
+export async function findKnownClient(clientId: string): Promise<AiClient | null> {
+  if (typeof clientId !== "string" || clientId.length === 0 || clientId.length > MAX_CLIENT_ID_LENGTH) return null;
+  if (looksLikeUrl(clientId)) {
+    return cimdAssistant(clientId) === null ? null : db.aiClient.findUnique({ where: { clientIdUrl: clientId } });
+  }
+  return db.aiClient.findFirst({ where: { id: clientId, clientIdUrl: null } });
+}

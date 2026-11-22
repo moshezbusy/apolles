@@ -30,7 +30,8 @@ export type RevokeReason =
   | "refresh_reuse"
   | "agency_suspended"
   | "password_set"
-  | "lockout";
+  | "lockout"
+  | "client_revoke";
 
 const INVALID_GRANT: OAuthError = { error: "invalid_grant" };
 const INVALID_REQUEST: OAuthError = { error: "invalid_request" };
@@ -101,6 +102,16 @@ export async function useConnectWindow(userId: string, sessionId: string): Promi
     data: { usedAt: now },
   });
   return count > 0;
+}
+
+// For the consent page: is there an open window of this user, started by this session? Only a
+// read; Allow spends the window with useConnectWindow.
+export async function hasOpenConnectWindow(userId: string, sessionId: string): Promise<boolean> {
+  const open = await db.aiConnectWindow.findFirst({
+    where: { userId, sessionId, usedAt: null, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  return open !== null;
 }
 
 // ---------- Authorization code ----------
@@ -339,6 +350,14 @@ export async function refresh(i: {
   });
 }
 
+// The connection a refresh token belongs to (used or not), for the token endpoint's
+// per-connection rate limit. One lookup on a unique index; null for an unknown token.
+export async function connectionIdForRefreshToken(raw: string): Promise<string | null> {
+  if (typeof raw !== "string" || !isPlausibleToken(raw)) return null;
+  const row = await db.aiToken.findUnique({ where: { refreshHash: hashToken(raw) }, select: { connectionId: true } });
+  return row?.connectionId ?? null;
+}
+
 // ---------- Token check (every AI API call) ----------
 
 // Reads the database every time (no cache), so a revoke or a suspension stops the very next
@@ -398,6 +417,36 @@ export async function revokeConnection(
     await tx.aiToken.deleteMany({ where: { connectionId } });
     await audit(actorUserId, "ai.revoke", "AiConnection", connectionId, undefined, { reason: "agent_revoke" }, tx);
     return true;
+  });
+}
+
+// /oauth/revoke (RFC 7009): the assistant ends its own connection with its access or refresh
+// token. `clientId` is the client_id the request named (a DCR id or a CIMD URL); a token of
+// another client, or an unknown token, changes nothing, and the caller answers the same either
+// way. Revoking ends the whole connection (every token under it), audited with the
+// connection's own agent as actor.
+export async function revokeByToken(raw: string, clientId: string): Promise<void> {
+  if (typeof raw !== "string" || !isPlausibleToken(raw)) return;
+  if (typeof clientId !== "string" || clientId.length === 0 || clientId.length > 200) return;
+  const hash = hashToken(raw);
+  const row = await db.aiToken.findFirst({
+    where: { OR: [{ accessHash: hash }, { refreshHash: hash }] },
+    select: { connection: { select: { id: true, userId: true, client: { select: { id: true, clientIdUrl: true } } } } },
+  });
+  if (!row) return;
+  const { connection } = row;
+  // A CIMD client is named by its URL; its internal row id is not a client_id.
+  const owner = connection.client.clientIdUrl ?? connection.client.id;
+  if (owner !== clientId) return;
+  await db.$transaction(async (tx) => {
+    const { count } = await tx.aiConnection.updateMany({
+      where: { id: connection.id, revokedAt: null },
+      data: { revokedAt: new Date(), revokedReason: "client_revoke" },
+    });
+    await tx.aiToken.deleteMany({ where: { connectionId: connection.id } });
+    if (count === 1) {
+      await audit(connection.userId, "ai.revoke", "AiConnection", connection.id, undefined, { reason: "client_revoke" }, tx);
+    }
   });
 }
 

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AuthShell } from "@/components/AuthShell";
 import { alertInfo, alertSuccess } from "@/components/ui";
+import { safeReturnTo } from "@/server/auth/return-to";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in · Apolles" };
@@ -11,7 +12,9 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { reset, expired, code } = await searchParams;
+  const { reset, expired, code, next } = await searchParams;
+  // Plan 11: an agent sent here from an assistant's connect page goes back to it after sign-in.
+  const returnTo = safeReturnTo(next);
 
   return (
     <AuthShell eyebrow="Agent portal" title="Welcome back" subtitle="Sign in to your Apolles account." headerLink={{ href: "/join", label: "Join Apolles" }}>
@@ -30,7 +33,7 @@ export default async function LoginPage({
           You were signed out. For your security, sessions end after 12 hours. Sign in again to continue.
         </p>
       ) : null}
-      <LoginForm />
+      <LoginForm next={returnTo} />
       <p className="mt-3 text-center text-xs text-muted">
         For your security, you are signed out automatically after 12 hours.
       </p>
