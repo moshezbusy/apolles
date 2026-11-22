@@ -30,6 +30,15 @@ describe("next.config headers", () => {
     expect(headersFor(list, "/admin/:path*")).toEqual({ "X-Robots-Tag": "noindex, nofollow" });
   });
 
+  // AI assistant consent (plan 2026-11-22): the URL holds the OAuth request.
+  it("assistant consent page: no Referer, no indexing, no cache", async () => {
+    expect(headersFor(await rules(), "/oauth/:path*")).toEqual({
+      "Referrer-Policy": "no-referrer",
+      "X-Robots-Tag": "noindex, nofollow",
+      "Cache-Control": "no-store",
+    });
+  });
+
   // Client quote pages hold the quote's link token in the URL (plan 5c).
   it("client quote pages: no Referer, no indexing, no shared cache", async () => {
     expect(headersFor(await rules(), "/q/:token*")).toEqual({

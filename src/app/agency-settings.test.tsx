@@ -166,9 +166,9 @@ describe("agency settings", () => {
       return renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tab: name }) }));
     }
 
-    it("shows the five tabs; an unknown tab shows the profile", async () => {
+    it("shows the six tabs; an unknown tab shows the profile", async () => {
       const html = await tab("nope");
-      for (const label of ["Agency profile", "Quote branding", "Preferences", "Balance &amp; top-ups", "Account"]) expect(html).toContain(label);
+      for (const label of ["Agency profile", "Quote branding", "Preferences", "Balance &amp; top-ups", "AI assistants", "Account"]) expect(html).toContain(label);
       expect(html).toContain('value="Sunrise Travel"');
     });
 
@@ -211,6 +211,46 @@ describe("agency settings", () => {
       const { requestResetWithinLimits } = await import("@/server/auth/password-tokens");
       expect(await changePasswordAction()).toMatchObject({ status: "success" });
       expect(vi.mocked(requestResetWithinLimits)).toHaveBeenCalledWith("a@sunrise.example", expect.any(String));
+    });
+
+    async function assistantConnection(agencyId: string, userId: string, clientName: string) {
+      return db.assistantConnection.create({
+        data: { agencyId, userId, clientId: "apolles-claude", clientName, tokenHash: `h-${clientName}-${agencyId}`, resource: "http://localhost:3100/mcp", authCodeId: `c-${clientName}-${agencyId}`, expiresAt: new Date(Date.now() + 86_400_000) },
+      });
+    }
+
+    it("AI assistants: off until the connector is set up", async () => {
+      vi.stubEnv("ASSISTANT_MCP_URL", "");
+      const html = await tab("assistants");
+      vi.unstubAllEnvs();
+      expect(html).toContain("AI assistants");
+      expect(html).toContain("not available yet");
+    });
+
+    it("AI assistants: the agency's own connections only, the MCP URL, and search-only wording", async () => {
+      vi.stubEnv("ASSISTANT_MCP_URL", "http://localhost:3100/mcp");
+      const agentB = (await createUser({ email: "b@other.example", name: "Ben", role: "AGENT", agencyId: agencyB })).id;
+      await assistantConnection(agencyA, agentA, "Claude");
+      await assistantConnection(agencyB, agentB, "ChatGPT");
+      const html = await tab("assistants");
+      vi.unstubAllEnvs();
+      expect(html).toContain("Claude");
+      expect(html).not.toContain("ChatGPT</");
+      expect(html).toContain("http://localhost:3100/mcp");
+      expect(html).toContain("Search only");
+      expect(html).toContain("Revoke");
+    });
+
+    it("AI assistants: Revoke ends the session agency's connection only; another agency's id does nothing", async () => {
+      const agentB = (await createUser({ email: "b@other.example", name: "Ben", role: "AGENT", agencyId: agencyB })).id;
+      const own = await assistantConnection(agencyA, agentA, "Claude");
+      const other = await assistantConnection(agencyB, agentB, "Claude");
+      const { revokeAssistantAction } = await import("./(agent)/settings/actions");
+      await revokeAssistantAction(form({ connectionId: other.id }));
+      expect((await db.assistantConnection.findUniqueOrThrow({ where: { id: other.id } })).revokedAt).toBeNull();
+      await revokeAssistantAction(form({ connectionId: own.id }));
+      expect((await db.assistantConnection.findUniqueOrThrow({ where: { id: own.id } })).revokedAt).not.toBeNull();
+      expect(requireAgent).toHaveBeenCalled();
     });
   });
 

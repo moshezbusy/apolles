@@ -325,3 +325,27 @@ docker compose -p apolles-staging exec apolles-staging node --disable-warning=MO
 ```
 
 No password is ever written in code.
+
+## 7. AI assistants (search only) — off until the owner turns it on
+
+Plan: `docs/plans/2026-11-22-mcp-search-connector.md`. Agents can connect Claude (and, once
+checked, ChatGPT) to search hotels. Search only: no booking, cancel, voucher or balance.
+
+```
+Claude → Cloudflare → Caddy → apolles-staging-mcp:3100 → apolles-staging:3000/api/assistant/*
+```
+
+It stays off until all of this is done by the owner:
+
+1. A DNS name for the MCP server, e.g. `mcp-staging.apolles.com`, through Cloudflare.
+2. A Caddy site block for it: `reverse_proxy apolles-staging-mcp:3100`. Claude calls from
+   `160.79.104.0/21` and `153.61.208.0/20`; a firewall rule must not block those.
+3. In `deploy/staging/.env`, add `ASSISTANT_MCP_URL=https://mcp-staging.apolles.com/mcp`
+   (the exact URL agents will paste into Claude). `APP_URL` is already there.
+4. Start it: `docker compose -p apolles-staging --profile assistant up -d --build`.
+   The automatic update (section 5) does not start it; after it is started, a rebuild keeps it.
+
+The MCP container gets no `.env` file: it never sees the database password or any key. Check:
+`docker compose -p apolles-staging logs --tail 20 apolles-staging-mcp` shows
+`Apolles MCP server listening on 3100.` To turn it off again: remove `ASSISTANT_MCP_URL` from
+`.env`, `docker compose -p apolles-staging stop apolles-staging-mcp`, and restart the app.

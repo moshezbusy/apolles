@@ -7,11 +7,13 @@ import { countryOptions } from "@/lib/countries";
 import { formatUsd } from "@/lib/money";
 import { LOGO_MAX_BYTES, LOGO_RULE_COPY, getAgencyProfile } from "@/server/agency-profile";
 import { requireAgent } from "@/server/auth/guards";
+import { assistantConfig } from "@/server/assistant/config";
+import { type ConnectionListItem, listConnections } from "@/server/assistant/connections";
 import { getBankDetails } from "@/server/bank-details";
 import { getQuoteSettings } from "@/server/quote-settings";
 import { getAccount } from "@/server/users";
 import { getBalance } from "@/server/wallet/ledger";
-import { changePasswordAction, removeLogoAction, updateBrandingAction, updateDefaultsAction, updateProfileAction, uploadLogoAction } from "./actions";
+import { changePasswordAction, removeLogoAction, revokeAssistantAction, updateBrandingAction, updateDefaultsAction, updateProfileAction, uploadLogoAction } from "./actions";
 import { LogoForm } from "./logo-form";
 import { ProfileForm } from "./profile-form";
 import { BrandingForm, ChangePasswordForm, DefaultsForm } from "./quote-forms";
@@ -23,6 +25,7 @@ const TABS = [
   { id: "branding", label: "Quote branding" },
   { id: "preferences", label: "Preferences" },
   { id: "balance", label: "Balance & top-ups" },
+  { id: "assistants", label: "AI assistants" },
   { id: "account", label: "Account" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
@@ -40,10 +43,12 @@ export default async function AgencySettingsPage({ searchParams }: { searchParam
   const profile = await getAgencyProfile(agencyId);
   if (!profile) throw new Error("Agency not found for the signed-in agent");
   // Only what the open tab shows is read.
-  const [settings, account, balance] = await Promise.all([
+  const assistant = tab === "assistants" ? assistantConfig() : null;
+  const [settings, account, balance, connections] = await Promise.all([
     tab === "branding" || tab === "preferences" ? getQuoteSettings(agencyId) : null,
     tab === "branding" || tab === "account" ? getAccount(userId, agencyId) : null,
     tab === "balance" ? getBalance(agencyId) : null,
+    assistant ? listConnections(agencyId) : null,
   ]);
 
   return (
@@ -69,6 +74,7 @@ export default async function AgencySettingsPage({ searchParams }: { searchParam
         {tab === "branding" && settings ? <BrandingTab settings={settings} advisor={account?.name ?? ""} profile={profile} /> : null}
         {tab === "preferences" && settings ? <PreferencesTab settings={settings} /> : null}
         {tab === "balance" && balance ? <BalanceTab balance={balance} reference={profile.bankReference} /> : null}
+        {tab === "assistants" ? <AssistantsTab mcpUrl={assistant?.mcpUrl ?? null} connections={connections ?? []} /> : null}
         {tab === "account" && account ? <AccountTab account={account} /> : null}
       </div>
     </main>
@@ -210,6 +216,73 @@ function BalanceTab({ balance, reference }: { balance: { balanceCents: number; h
         <p className="mt-3 text-[13px] text-muted">Always write your reference so we can match the transfer to your agency. Unused balance can be returned to your bank account on request: contact support.</p>
       </section>
     </div>
+  );
+}
+
+const dateFormat = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
+
+// AI assistants (plan 2026-11-22, mockup 20 "AI assistants"): search-only connections to Claude
+// or ChatGPT. The agent connects from the assistant (it opens the Apolles sign-in); here the
+// agent sees the connections and revokes them.
+function AssistantsTab({ mcpUrl, connections }: { mcpUrl: string | null; connections: ConnectionListItem[] }) {
+  return (
+    <section aria-labelledby="assistants-title" className={`${card} p-6`}>
+      <h2 id="assistants-title" className="text-base font-bold text-ink">
+        AI assistants
+      </h2>
+      <p className="mb-5 mt-1 text-[13px] text-muted">
+        Search hotels from Claude or ChatGPT. Search only: bookings, cancellations and your balance can&apos;t be reached from an AI assistant.
+      </p>
+      {mcpUrl === null ? (
+        <p className="text-sm text-muted">AI assistants are not available yet.</p>
+      ) : (
+        <>
+          <div className="rounded-[9px] border border-line px-3 py-2.5 text-[13px] text-ink">
+            <p className="font-semibold">To connect</p>
+            <p className="mt-1 text-muted">
+              In Claude: Settings, Connectors, Add custom connector. Paste this address, then sign in to Apolles when asked:
+            </p>
+            <p className="mt-1 break-all font-mono text-ink">{mcpUrl}</p>
+          </div>
+          <ul className="mt-4 flex flex-col divide-y divide-line">
+            {connections.length === 0 ? <li className="py-3 text-sm text-muted">No assistants connected.</li> : null}
+            {connections.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <div className="text-sm">
+                  <p className="font-semibold text-ink">{c.clientName}</p>
+                  <p className="text-[13px] text-muted">
+                    Connected {dateFormat.format(c.createdAt)} by {c.userName} · {c.lastUsedAt ? `last used ${dateFormat.format(c.lastUsedAt)}` : "not used yet"} · ends {dateFormat.format(c.expiresAt)}
+                  </p>
+                </div>
+                <form action={revokeAssistantAction}>
+                  <input type="hidden" name="connectionId" value={c.id} />
+                  <button type="submit" className={btnSecondary}>
+                    Revoke
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-4 grid gap-3 text-[13px] text-muted sm:grid-cols-2">
+            <div>
+              <p className="font-semibold text-ink">What the assistant can do</p>
+              <ul className="mt-1 list-disc pl-4">
+                <li>Search hotels and rates</li>
+                <li>Open a result in Apolles to book</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-semibold text-ink">What it can&apos;t do</p>
+              <ul className="mt-1 list-disc pl-4">
+                <li>Book, cancel or issue vouchers</li>
+                <li>See guests or your balance</li>
+              </ul>
+            </div>
+          </div>
+          <p className="mt-4 text-[13px] text-muted">Revoking disconnects the assistant right away. To book, open the result in Apolles.</p>
+        </>
+      )}
+    </section>
   );
 }
 

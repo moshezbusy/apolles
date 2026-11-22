@@ -57,14 +57,15 @@ model Agency {
   lowBalanceAlerted       Boolean       @default(false)
   createdAt               DateTime      @default(now())
 
-  users          User[]
-  ledgerEntries  LedgerEntry[]
-  logo           AgencyLogo?
-  bookings       Booking[]
-  clients        Client[]
-  quotes         Quote[]
-  application    AgencyApplication?
-  recentSearches RecentSearch[]
+  users                User[]
+  ledgerEntries        LedgerEntry[]
+  logo                 AgencyLogo?
+  bookings             Booking[]
+  clients              Client[]
+  quotes               Quote[]
+  application          AgencyApplication?
+  recentSearches       RecentSearch[]
+  assistantConnections AssistantConnection[]
 
   @@index([createdAt, id])
 }
@@ -144,7 +145,7 @@ model User {
   status            AccountStatus @default(ACTIVE)
   createdAt         DateTime      @default(now())
 
-  agency               Agency?             @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  agency               Agency?               @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   sessions             Session[]
   passwordTokens       PasswordToken[]
   ledgerEntries        LedgerEntry[]
@@ -155,6 +156,8 @@ model User {
   reviewedApplications AgencyApplication[]
   recentSearches       RecentSearch[]
   trustedDevices       TrustedDevice[]
+  assistantAuthCodes   AssistantAuthCode[]
+  assistantConnections AssistantConnection[]
 
   @@index([agencyId])
 }
@@ -770,5 +773,55 @@ model TrustedDevice {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+}
+
+// Search-only AI assistant connector (plan docs/plans/2026-11-22-mcp-search-connector.md).
+// A one-time OAuth authorization code, given to the assistant after the agent pressed "Allow".
+// Only its SHA-256 is stored. Single use, 5 minutes, bound to the client, the redirect URI and
+// the PKCE challenge (S256).
+model AssistantAuthCode {
+  id            String    @id @default(cuid())
+  codeHash      String    @unique
+  clientId      String
+  userId        String
+  agencyId      String
+  redirectUri   String
+  codeChallenge String
+  resource      String
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// One AI assistant an agent connected. The access token can only search (scope search:read):
+// it is read only by the assistant search API (src/server/assistant), never by requireAgent or
+// any booking, cancel, voucher, statement, balance or wallet entry point. Only the SHA-256 of the
+// token is stored. Revoked by the agent, and automatically when the agency is suspended or the
+// user's sessions are ended (password change, lockout).
+model AssistantConnection {
+  id         String    @id @default(cuid())
+  agencyId   String
+  userId     String
+  clientId   String
+  clientName String
+  tokenHash  String    @unique
+  scope      String    @default("search:read")
+  resource   String
+  authCodeId String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId, createdAt])
   @@index([userId])
 }
