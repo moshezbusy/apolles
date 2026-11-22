@@ -63,7 +63,7 @@ export default async function AgencySettingsPage({ searchParams }: { searchParam
       <div className="mx-auto flex w-[min(1260px,calc(100%-40px))] flex-col gap-6 pb-16 pt-8">
         <div>
           <h1 className={pageTitle}>Agency settings</h1>
-          <p className="mt-1 text-[13px] text-muted">Agency profile, quote branding, preferences, balance and account.</p>
+          <p className="mt-1 text-[13px] text-muted">Agency profile, quote branding, preferences, balance and account{aiSearchEnabled() ? ", and AI assistants" : ""}.</p>
         </div>
         <nav aria-label="Settings" className="flex flex-wrap gap-1 border-b border-line">
           {tabs.map((t) => (

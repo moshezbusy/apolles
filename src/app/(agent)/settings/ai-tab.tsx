@@ -60,7 +60,7 @@ export function AiTab({
         <div className="mt-5 rounded-xl border border-line p-4">
           <h3 className="text-sm font-bold text-ink">Your connection link</h3>
           <input readOnly aria-label="Your connection link" value={connectUrl} className={`${inputUnsized} mt-2 w-full font-mono`} />
-          <p className="mt-2 text-[13px] text-muted">This link works for the next 10 minutes. Start the connection in Claude or ChatGPT now.</p>
+          <p className="mt-2 text-[13px] text-muted">Start the connection in Claude or ChatGPT within 10 minutes. After that, click Connect assistant again.</p>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
             <div>
               <h4 className="text-xs font-bold text-ink">Claude</h4>

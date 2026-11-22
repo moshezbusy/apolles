@@ -11,6 +11,7 @@ import {
   updateAgencyProfile,
 } from "@/server/agency-profile";
 import { headers } from "next/headers";
+import { aiSearchEnabled } from "@/server/ai/config";
 import { openConnectWindow, revokeConnection } from "@/server/ai/tokens";
 import { requireAgent } from "@/server/auth/guards";
 import { requestResetWithinLimits } from "@/server/auth/password-tokens";
@@ -116,6 +117,7 @@ export async function changePasswordAction(): Promise<SettingsFormState> {
 // then shows the connection link. No secret is in the redirect; the link is the public MCP address.
 export async function connectAssistantAction(): Promise<void> {
   const { userId, sessionId } = await requireAgent();
+  if (!aiSearchEnabled()) redirect("/settings");
   await openConnectWindow(userId, sessionId);
   redirect("/settings?tab=ai&connect=1");
 }
@@ -123,10 +125,10 @@ export async function connectAssistantAction(): Promise<void> {
 const CONNECTION_ID = /^[a-z0-9]{1,64}$/; // cuid
 
 // "Revoke": only this agency's open connections can change (revokeConnection scopes by agencyId);
-// another agency's, an unknown or a malformed id changes nothing and gets the same answer.
+// another agency's, an unknown or a malformed id changes nothing and shows no notice.
 export async function revokeAssistantAction(formData: FormData): Promise<void> {
   const { userId, agencyId } = await requireAgent();
   const id = formData.get("connectionId");
-  if (typeof id === "string" && CONNECTION_ID.test(id)) await revokeConnection(agencyId, id, userId);
-  redirect("/settings?tab=ai&revoked=1");
+  const done = typeof id === "string" && CONNECTION_ID.test(id) && (await revokeConnection(agencyId, id, userId));
+  redirect(done ? "/settings?tab=ai&revoked=1" : "/settings?tab=ai");
 }

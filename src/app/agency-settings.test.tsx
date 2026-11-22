@@ -241,9 +241,11 @@ describe("agency settings", () => {
       expect(html).toContain('value="Sunrise Travel"');
     });
 
-    it("the tab is listed when the switch is on", async () => {
+    it("the tab is listed when the switch is on, and the header line mentions it", async () => {
       const { default: Page } = await import("./(agent)/settings/page");
-      expect(renderToStaticMarkup(await Page())).toContain('href="/settings?tab=ai"');
+      const html = renderToStaticMarkup(await Page());
+      expect(html).toContain('href="/settings?tab=ai"');
+      expect(html).toContain("balance and account, and AI assistants.");
     });
 
     it("empty state, the can / can't lists and the notice, as in mockup 20", async () => {
@@ -257,15 +259,21 @@ describe("agency settings", () => {
     });
 
     it("lists Claude and ChatGPT with UTC dates, 'last used today' / a date / never used, and Revoke", async () => {
+      vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-20T12:00:00Z") });
       const now = new Date();
       const claude = await connection(agencyA, agentA, "Claude", { createdAt: new Date("2026-11-12T23:30:00Z"), lastUsedAt: now });
       await connection(agencyA, agentA, "ChatGPT", { createdAt: new Date("2026-11-03T08:00:00Z"), lastUsedAt: new Date("2026-11-18T10:00:00Z") });
       await connection(agencyA, agentA, "Other", { createdAt: new Date("2026-11-01T08:00:00Z") });
-      const html = await aiTab();
+      let html: string;
+      try {
+        html = await aiTab();
+      } finally {
+        vi.useRealTimers();
+      }
       expect(html).toContain("Connected Nov 12, 2026 · last used today");
       expect(html).toContain("Connected Nov 3, 2026 · last used Nov 18, 2026");
       expect(html).toContain("Connected Nov 1, 2026 · never used");
-      expect(html).toContain("AI assistant");
+      expect(html).toMatch(/<strong[^>]*>AI assistant<\/strong><span[^>]*>Connected Nov 1, 2026 · never used/);
       expect(html.match(/>Revoke</g)).toHaveLength(3);
       expect(html).toContain(`value="${claude.id}"`);
       expect(html).not.toContain("No assistants connected.");
@@ -300,7 +308,7 @@ describe("agency settings", () => {
       const html = await aiTab({ connect: "1" });
       expect(html).toContain("Your connection link");
       expect(html).toMatch(/<input[^>]*readOnly=""[^>]*value="https:\/\/mcp\.example\.test\/mcp"/);
-      expect(html).toContain("This link works for the next 10 minutes. Start the connection in Claude or ChatGPT now.");
+      expect(html).toContain("Start the connection in Claude or ChatGPT within 10 minutes. After that, click Connect assistant again.");
       for (const t of [
         "In Claude, open Settings → Connectors → Add custom connector.",
         "Paste the link above and click Add.",
@@ -308,6 +316,13 @@ describe("agency settings", () => {
         "Paste the link above as the server URL, with OAuth sign-in.",
       ]) expect(html).toContain(t);
       expect(html.match(/Sign in to Apolles when asked and click Allow\./g)).toHaveLength(2);
+    });
+
+    it("Connect assistant with the switch off opens nothing", async () => {
+      vi.stubEnv("AI_SEARCH_ENABLED", "false");
+      const { connectAssistantAction } = await import("./(agent)/settings/actions");
+      await expect(connectAssistantAction()).rejects.toThrow("NEXT_REDIRECT:/settings");
+      expect(await db.aiConnectWindow.count()).toBe(0);
     });
 
     it("Connect assistant without an agent session opens nothing", async () => {
@@ -340,8 +355,9 @@ describe("agency settings", () => {
       const userB = (await createUser({ email: "b@other.example", name: "Ben", role: "AGENT", agencyId: agencyB })).id;
       const theirs = await connection(agencyB, userB, "ChatGPT");
       const { revokeAssistantAction } = await import("./(agent)/settings/actions");
-      await expect(revokeAssistantAction(form({ connectionId: theirs.id }))).rejects.toThrow("NEXT_REDIRECT:/settings?tab=ai&revoked=1");
-      await expect(revokeAssistantAction(form({ connectionId: "../x'; DROP" }))).rejects.toThrow("NEXT_REDIRECT:/settings?tab=ai&revoked=1");
+      await expect(revokeAssistantAction(form({ connectionId: theirs.id }))).rejects.toThrow(/^NEXT_REDIRECT:\/settings\?tab=ai$/);
+      await expect(revokeAssistantAction(form({ connectionId: "../x'; DROP" }))).rejects.toThrow(/^NEXT_REDIRECT:\/settings\?tab=ai$/);
+      expect(await aiTab()).not.toContain("Assistant disconnected.");
       expect((await db.aiConnection.findUniqueOrThrow({ where: { id: theirs.id } })).revokedAt).toBeNull();
       expect(await db.auditLog.count({ where: { action: "ai.revoke" } })).toBe(0);
     });
