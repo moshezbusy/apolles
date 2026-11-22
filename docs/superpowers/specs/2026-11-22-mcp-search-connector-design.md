@@ -1,6 +1,6 @@
 # Design: search-only AI connector (MCP) for Apolles agents
 
-**Date:** 22.11.2026 · **Status:** waiting for the owner's approval · **Owner decision:** in chat, 22.11.2026
+**Date:** 22.11.2026 · **Status:** approved by the owner in chat, 22.11.2026 ("מאשר"); see `docs/decisions/2026-11-22-ai-search-connector.md` · **Owner decision:** in chat, 22.11.2026
 ("Build a search-only MCP connector for Apolles agents"), with the security requirements quoted below.
 
 Tags: **[owner]** = decided by Moshe. **[Claude]** = my call, the owner can change it. **[open]** = not decided.
@@ -63,6 +63,27 @@ more.
     response); tools without `readOnlyHint` are treated as write actions.
   - MCP spec: the server must publish RFC 9728 protected resource metadata, must check that a token was
     issued for it (audience, RFC 8707), must not pass a client's token on to a third party.
+  - **Re-check 22.11.2026 (task 1).** Claude pages were read directly; ChatGPT pages (developers.openai.com,
+    help.openai.com, learn.chatgpt.com) are blocked from the build network, so ChatGPT facts are
+    **search-only** (summaries of the official pages) and must be confirmed once on the real ChatGPT connector
+    screen before launch.
+    - Claude's CIMD `client_id` is `https://claude.ai/oauth/mcp-oauth-client-metadata` (fetched: public client,
+      `token_endpoint_auth_method: none`, redirect `https://claude.ai/api/mcp/auth_callback`). A second document
+      `.../confidential_client` (`private_key_jwt`) exists; we do not advertise `private_key_jwt`, so Claude uses
+      the first. Claude Code uses `https://claude.ai/oauth/claude-code-client-metadata` with loopback redirects;
+      it is deliberately not allowed (no localhost), so Claude Code cannot connect.
+    - Claude picks CIMD only if our authorization-server metadata has `client_id_metadata_document_supported: true`
+      **and** `"none"` in `token_endpoint_auth_methods_supported`; otherwise it needs DCR. It also needs
+      `code_challenge_methods_supported: ["S256"]`, a form-encoded token endpoint, `invalid_grant` for a bad
+      refresh token, and adds `offline_access` only if `scopes_supported` lists it.
+    - ChatGPT's CIMD `client_id` is `https://chatgpt.com/oauth/client.json` only when our server meets the
+      RFC 9207 requirement (`authorization_response_iss_parameter_supported: true` in the metadata and `iss` in
+      every authorization response, equal to the issuer). Otherwise ChatGPT uses
+      `https://chatgpt.com/oauth/{callback_id}/client.json` and redirect `https://chatgpt.com/connector/oauth/{callback_id}`.
+      With RFC 9207 it uses the stable redirect `https://chatgpt.com/connector_platform_oauth_redirect` (this exact
+      string came from one translated OpenAI page, search-only). ChatGPT requires `code_challenge_methods_supported`
+      with S256, echoes `resource`, and prefers CIMD (needs `client_id_metadata_document_supported: true`).
+    - Result: no fact contradicts the plan's Global Constraints; task 4 must publish exactly the metadata fields above.
 
 ## 4. The pieces (how it fits together)
 
