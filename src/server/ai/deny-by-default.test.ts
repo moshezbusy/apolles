@@ -107,8 +107,35 @@ async function seed() {
   const client = await db.client.create({
     data: { agencyId: agency.id, firstName: "Dana", lastName: "Levi", phone: "050-1234567", phoneDigits: "501234567", nationality: "IL" },
   });
-  const quote = await db.quote.create({ data: { agencyId: agency.id, createdById: user.id, clientId: client.id } });
-  return { userId: user.id, agencyId: agency.id, token: pair.accessToken, refreshToken: pair.refreshToken, clientId: client.id, quoteId: quote.id };
+  // A quote already shared with the client: its link is public (/q/<shareToken>).
+  const shareToken = randomBytes(24).toString("base64url");
+  const quote = await db.quote.create({
+    data: { agencyId: agency.id, createdById: user.id, clientId: client.id, shareToken, status: "SENT", sentAt: new Date() },
+  });
+  return {
+    userId: user.id,
+    agencyId: agency.id,
+    token: pair.accessToken,
+    refreshToken: pair.refreshToken,
+    clientId: client.id,
+    quoteId: quote.id,
+    shareToken,
+  };
+}
+
+// A real, verified agent session of the seeded agent (positive control).
+function signInAgent(rawSession: string): void {
+  cookieJar.clear();
+  cookieJar.set(SESSION_COOKIE, rawSession);
+  requestHeaders.current = new Headers({ cookie: `${SESSION_COOKIE}=${rawSession}`, "x-forwarded-for": "198.51.100.20" });
+}
+
+// The full rows, so a changed view count or status shows, not only a changed number of rows.
+async function quoteAndClientRows() {
+  return {
+    quotes: await db.quote.findMany({ orderBy: { id: "asc" } }),
+    clients: await db.client.findMany({ orderBy: { id: "asc" } }),
+  };
 }
 
 async function counts() {
@@ -196,6 +223,17 @@ describe("only the AI API accepts a search token", () => {
     expect(offenders.map(rel)).toEqual([]);
   });
 
+  // Only the AI API reads a token from the Authorization header (and the OAuth endpoints, which
+  // may read client credentials from it). Anywhere else, reading it could turn a search token
+  // into a key to something more.
+  it("outside src/app/api/ai/, src/app/oauth/ and src/server/ai/, no code reads an Authorization header", () => {
+    const allowed = [AI_API, join(APP, "oauth"), join(SRC, "server", "ai")];
+    const offenders = [...walk(APP), ...walk(join(SRC, "server"))]
+      .filter((f) => /\.tsx?$/.test(f) && !isTest(f) && !allowed.some((dir) => isUnder(f, dir)))
+      .filter((f) => /["']authorization["']|\.authorization\b/i.test(readFileSync(f, "utf8")));
+    expect(offenders.map(rel)).toEqual([]);
+  });
+
   // Every module the AI API routes load, directly or through other modules.
   function importGraph(entries: string[]): Set<string> {
     const seen = new Set<string>();
@@ -249,31 +287,105 @@ describe("only the AI API accepts a search token", () => {
 
 // ---------- 2. Agent GET routes: vouchers, statements, exports, logo, destinations ----------
 
-describe("agent GET routes refuse a search token", () => {
-  const ROUTES = [
-    { path: "bookings/[id]/voucher", url: "/bookings/x/voucher" },
-    { path: "bookings/[id]/statement", url: "/bookings/x/statement" },
-    { path: "bookings/export", url: "/bookings/export?tab=all" },
-    { path: "reporting/export", url: "/reporting/export?range=this-month" },
-    { path: "settings/logo", url: "/settings/logo" },
-    { path: "search/destinations", url: "/search/destinations?q=par" },
-  ];
+// Every route.ts behind the agent and admin sign-in, found on disk. A new one fails the test
+// below until it is added here (and so tested).
+const GUARDED_ROUTE_FILES = [join(APP, "(agent)"), join(APP, "admin")].flatMap((dir) => walk(dir).filter((f) => f.endsWith(`${sep}route.ts`)));
+const ROUTE_URLS: Record<string, string> = {
+  "src/app/(agent)/bookings/[id]/voucher/route.ts": "/bookings/x/voucher",
+  "src/app/(agent)/bookings/[id]/statement/route.ts": "/bookings/x/statement",
+  "src/app/(agent)/bookings/export/route.ts": "/bookings/export?tab=all",
+  "src/app/(agent)/reporting/export/route.ts": "/reporting/export?range=this-month",
+  "src/app/(agent)/settings/logo/route.ts": "/settings/logo",
+  "src/app/(agent)/search/destinations/route.ts": "/search/destinations?q=par",
+};
 
-  for (const route of ROUTES) {
+type GetRoute = { GET: (r: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response> };
+const importRoute = async (file: string) => (await import(/* @vite-ignore */ file)) as GetRoute;
+
+describe("agent and admin GET routes refuse a search token", () => {
+  it("every route.ts under (agent) and admin is in the tested list", () => {
+    expect(GUARDED_ROUTE_FILES.map(rel).sort()).toEqual(Object.keys(ROUTE_URLS).sort());
+  });
+
+  for (const file of GUARDED_ROUTE_FILES) {
+    const url = ROUTE_URLS[rel(file)] ?? "/";
     for (const carrier of CARRIERS) {
-      it(`${route.path} with the token as a ${carrier} → /login, no data`, async () => {
-        const mod = (await import(/* @vite-ignore */ join(APP, "(agent)", route.path, "route.ts"))) as {
-          GET: (r: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
-        };
+      it(`${rel(file).replace("src/app/", "")} with the token as a ${carrier} → /login, no data`, async () => {
+        const mod = await importRoute(file);
         expect(typeof mod.GET).toBe("function");
         const before = await counts();
         const headers = sendAs(carrier, s.token);
-        const request = new Request(`https://app.example.test${route.url}`, { headers });
+        const request = new Request(`https://app.example.test${url}`, { headers });
         const to = await loginRedirectOf(() => mod.GET(request, { params: Promise.resolve({ id: s.quoteId }) }));
         expect(to).toMatch(SIGN_IN);
         expect(await counts()).toEqual(before);
       });
     }
+  }
+});
+
+// ---------- Positive control: the same harness lets a real session through ----------
+
+describe("positive control: a real signed-in session is not refused by this harness", () => {
+  it("agent session cookie: search/destinations answers 200, clearRecentAction goes on to /search", async () => {
+    signInAgent(await createSession(s.userId, { verified: true }));
+    const destinations = await importRoute(join(APP, "(agent)", "search", "destinations", "route.ts"));
+    const res = await destinations.GET(new Request("https://app.example.test/search/destinations?q=par", { headers: requestHeaders.current }), {
+      params: Promise.resolve({ id: "" }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ destinations: [] });
+
+    const { clearRecentAction } = await import("@/app/(agent)/search/actions");
+    expect(await loginRedirectOf(() => clearRecentAction())).toBe("/search");
+  });
+
+  it("admin session with TOTP entered: rejectAction passes the guard (answers a form error, not /login)", async () => {
+    const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN" });
+    await db.user.update({ where: { id: admin.id }, data: { totpSecret: "JBSWY3DPEHPK3PXP", totpConfirmedAt: new Date() } });
+    const raw = await createSession(admin.id, { verified: true });
+    await db.session.updateMany({ where: { userId: admin.id }, data: { totpVerifiedAt: new Date() } });
+    signInAgent(raw);
+    const { rejectAction } = await import("@/app/admin/applications/actions");
+    const f = new FormData();
+    f.set("id", "no-such-application");
+    const result = await rejectAction(null, f);
+    expect(result).toMatchObject({ error: expect.any(String) });
+  });
+
+  it("the real share link: recordViewAction counts a view (so the /q/ checks below would see a change)", async () => {
+    const { recordViewAction } = await import("@/app/q/[token]/actions");
+    requestHeaders.current = new Headers({ "x-forwarded-for": "198.51.100.20" });
+    await recordViewAction(s.shareToken);
+    const q = await db.quote.findUniqueOrThrow({ where: { id: s.quoteId } });
+    expect(q).toMatchObject({ viewCount: 1, status: "VIEWED" });
+  });
+});
+
+// ---------- Public client quote link: the search token is not a share token ----------
+
+describe("public quote endpoints (/q/[token]) refuse a search token as the link token", () => {
+  for (const carrier of CARRIERS) {
+    it(`page, logo and both actions with the search token in the URL (and as a ${carrier}) → not found, nothing changed`, async () => {
+      const before = await quoteAndClientRows();
+      const beforeCounts = await counts();
+      sendAs(carrier, s.token);
+      const params = Promise.resolve({ token: s.token });
+
+      const { default: ClientQuotePage } = await import("@/app/q/[token]/page");
+      await expect(ClientQuotePage({ params })).rejects.toMatchObject({ digest: "NEXT_HTTP_ERROR_FALLBACK;404" });
+
+      const logo = await import("@/app/q/[token]/logo/route");
+      const res = await logo.GET(new Request(`https://app.example.test/q/${s.token}/logo`, { headers: requestHeaders.current }), { params });
+      expect(res.status).toBe(404);
+
+      const { recordViewAction, submitSelectionAction } = await import("@/app/q/[token]/actions");
+      expect(await recordViewAction(s.token)).toBeUndefined();
+      expect(await submitSelectionAction(s.token, {}, "")).toEqual({ ok: false, error: "gone" });
+
+      expect(await quoteAndClientRows()).toEqual(before);
+      expect(await counts()).toEqual(beforeCounts);
+    });
   }
 });
 
