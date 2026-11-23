@@ -17,6 +17,7 @@ import {
 import { completeSignIn } from "@/server/auth/lockout";
 import { DEVICE_COOKIE, isTrustedDevice, sendSignInCode } from "@/server/auth/signin-code";
 import { isDemoAgentWithoutCode } from "@/server/content/demo-seed";
+import { CODE_NOT_SENT_COPY } from "./verify/copy";
 
 export type LoginFormState = { error: string } | null;
 
@@ -64,6 +65,19 @@ export async function loginAction(
   if (knownDevice && !(await completeSignIn(result.userId))) return { error: LOGIN_ERROR_COPY.LOCKED };
   // Admins: verified here (their second step is TOTP, checked by requireAdmin).
   const token = await createSession(result.userId, { verified: result.needsTotp || knownDevice });
+
+  if (!result.needsTotp && !knownDevice) {
+    // The code goes out before the browser gets the session: when it cannot be sent (mail
+    // provider down, or too many codes this hour) the half-made session is removed and the
+    // agent is told the truth here, instead of landing on a page that says "we sent a code".
+    const session = await getSession(token);
+    const sent = session ? await sendSignInCode(session.sessionId) : "failed";
+    if (sent !== "sent") {
+      await destroySession(token);
+      // A fresh session cannot be "gone" or over its own cap: anything else is a failed send.
+      return { error: CODE_NOT_SENT_COPY[sent === "limited-hour" ? "limited-hour" : "failed"] };
+    }
+  }
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: true,
@@ -72,11 +86,7 @@ export async function loginAction(
     maxAge: SESSION_TTL_MS / 1000,
   });
 
-  if (!result.needsTotp && !knownDevice) {
-    const session = await getSession(token);
-    if (session) await sendSignInCode(session.sessionId);
-    redirect("/login/verify");
-  }
+  if (!result.needsTotp && !knownDevice) redirect("/login/verify");
   // Admins continue to the admin area (TOTP step is added with admin TOTP).
   redirect(result.needsTotp ? "/admin" : "/search");
 }

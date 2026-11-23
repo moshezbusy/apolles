@@ -39,6 +39,16 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/server/auth/notifications", () => ({ notifyAdminLockout: vi.fn() }));
 
+// Emails go nowhere in these tests; `mailDown` makes the provider fail like a real outage.
+let mailDown = false;
+const sentEmails: { to: string; subject: string }[] = [];
+vi.mock("@/server/email/port", () => ({
+  sendEmail: vi.fn(async (m: { to: string; subject: string }) => {
+    if (mailDown) throw new Error("Postmark send failed: HTTP 500");
+    sentEmails.push(m);
+  }),
+}));
+
 const GOOD = "abcdefg1";
 let passwordHash: string;
 
@@ -63,6 +73,45 @@ describe("loginAction", () => {
     jar.clear();
     requestHeaders.clear();
     requestHeaders.set("x-forwarded-for", "203.0.113.7");
+    mailDown = false;
+    sentEmails.length = 0;
+  });
+
+  describe("sign-in code that cannot be sent", () => {
+    it("mail provider down → a clear message, no crash, no cookie and no half-made session left", async () => {
+      await createAgent();
+      mailDown = true;
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await loginAction(null, form({ email: "agent@example.com", password: GOOD }))).toEqual({
+        error: "We could not send the code. Try again in a few minutes.",
+      });
+      expect(setCalls).toHaveLength(0);
+      expect(await db.session.count()).toBe(0);
+      logged.mockRestore();
+      // The next try, with the provider back, works as usual.
+      mailDown = false;
+      await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/login/verify");
+      expect(sentEmails.map((m) => m.subject)).toEqual(["Your Apolles sign-in code"]);
+    });
+
+    it("too many codes this hour → says so on the sign-in form instead of a page that claims a code was sent", async () => {
+      const agent = await createAgent();
+      await seedRateLimit(`signin-code:${agent.id}`, 6, 60 * 60_000);
+      expect(await loginAction(null, form({ email: "agent@example.com", password: GOOD }))).toEqual({
+        error: "Too many sign-in codes were sent to this account. Try again in an hour.",
+      });
+      expect(setCalls).toHaveLength(0);
+      expect(await db.session.count()).toBe(0);
+      expect(sentEmails).toHaveLength(0);
+    });
+
+    it("the session of an earlier sign-in in this browser is still replaced only by a complete new sign-in", async () => {
+      const agent = await createAgent();
+      jar.set(DEVICE_COOKIE, await trustDevice(agent.id));
+      await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/search");
+      expect(setCalls).toHaveLength(1);
+      expect(await db.session.count()).toBe(1);
+    });
   });
 
   it("agent on a new device → a session waiting for the email code, and /login/verify", async () => {
@@ -267,7 +316,8 @@ describe("loginAction", () => {
     });
 
     it("an office that signs in many times with right passwords is never limited", async () => {
-      await createAgent();
+      const agent = await createAgent();
+      jar.set(DEVICE_COOKIE, await trustDevice(agent.id)); // a known device: no email code
       for (let i = 0; i < limit + 2; i++) {
         await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT");
       }
