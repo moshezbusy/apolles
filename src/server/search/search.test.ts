@@ -2,15 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import { seedRateLimit } from "@/test/rate-limit";
-import { SupplierRateLimited } from "@/server/supplier/expedia/client";
+import { SupplierRateLimited, SupplierRequestRejected } from "@/server/supplier/expedia/client";
 import type { AvailabilityQuery, Offer, PropertyOffers, SupplierAdapter } from "@/server/supplier/types";
 import { suggestDestinations } from "./destinations";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
-import { cleanupSnapshots, findOffer, getHotelOffers, listResults, loadMore, searchOneHotel, searchSummary, snapshotOffers, startSearch } from "./search";
+import { cleanupSnapshots, findOffer, getHotelOffers, listResults, loadMore, offerRef, searchOneHotel, searchSummary, snapshotOffers, snapshotsToRemove, startSearch } from "./search";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 const input = { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", rooms: [{ adults: 2, childAges: [] as number[] }] };
 const twoRooms = [{ adults: 2, childAges: [9] }, { adults: 1, childAges: [] }];
+
+// Free cancellation until 7 April (hotel time), well after NOW: what a refundable rate lists.
+const FREE_UNTIL = [{ start: "2027-04-07T00:00:00.000+02:00", end: "2027-04-10T00:00:00.000+02:00", amount: null, nights: 1, percent: null }];
 
 function offer(propertyId: string, totalMinor: number, refundable = true): Offer {
   return {
@@ -20,7 +23,7 @@ function offer(propertyId: string, totalMinor: number, refundable = true): Offer
     rateId: "rt1",
     refundable,
     bedGroups: [{ id: "b1", description: "1 Queen Bed", priceCheckToken: "tok-a1" }],
-    cancelPenalties: [],
+    cancelPenalties: refundable ? FREE_UNTIL : [],
     nonrefundableDateRanges: [],
     amenities: [],
     price: { total: { minor: totalMinor, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 },
@@ -65,7 +68,8 @@ async function hotels(count: number, opts: { destinationId?: string; expediaColl
   }
 }
 
-const ctx = (agencyId = "A") => ({ agencyId, userId: "u1", supplierContext: { customerIp: "203.0.113.1" } });
+const ctx = (agencyId = "A", userId = "u1") => ({ agencyId, userId, supplierContext: { customerIp: "203.0.113.1" } });
+const A = { agencyId: "A", userId: "u1" };
 
 describe("search service", () => {
   beforeEach(async () => {
@@ -134,16 +138,70 @@ describe("search service", () => {
     expect(snap.nextIndex).toBe(500);
   });
 
-  it("an agency keeps at most 50 searches; older ones are removed", async () => {
-    await hotels(1);
-    const { adapter } = fakeAdapter(everyone);
-    for (let i = 0; i < 52; i++) {
-      await db.searchSnapshot.create({
-        data: { agencyId: "A", userId: "u1", query: {}, candidateIds: [], createdAt: new Date(NOW.getTime() - (60 - i) * 1000), expiresAt: NOW },
+  describe("stored searches are limited per user", () => {
+    const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000);
+    const stored = (userId: string, createdAt: Date, live = true, agencyId = "A") =>
+      db.searchSnapshot.create({
+        data: { agencyId, userId, query: {}, candidateIds: [], createdAt, expiresAt: live ? new Date(NOW.getTime() + 60_000) : minutesAgo(1) },
+        select: { id: true },
       });
-    }
-    await startSearch(ctx(), input, { adapter, now: NOW });
-    expect(await db.searchSnapshot.count({ where: { agencyId: "A" } })).toBe(50);
+
+    it("a user keeps at most 50 searches; a colleague's live searches are never removed to make room", async () => {
+      await hotels(1);
+      const { adapter } = fakeAdapter(everyone);
+      for (let i = 0; i < 52; i++) await stored("u1", minutesAgo(20 + i));
+      const colleague = await Promise.all([stored("u2", minutesAgo(29)), stored("u2", minutesAgo(28))]);
+      await startSearch(ctx(), input, { adapter, now: NOW });
+      expect(await db.searchSnapshot.count({ where: { agencyId: "A", userId: "u1" } })).toBe(50);
+      expect(await db.searchSnapshot.count({ where: { id: { in: colleague.map((c) => c.id) } } })).toBe(2);
+    });
+
+    it("expired searches go first, then the oldest", async () => {
+      await hotels(1);
+      const { adapter } = fakeAdapter(everyone);
+      const oldestLive = await stored("u1", minutesAgo(29));
+      for (let i = 0; i < 48; i++) await stored("u1", minutesAgo(10 + i / 10));
+      const expired = await stored("u1", minutesAgo(8), false);
+      await startSearch(ctx(), input, { adapter, now: NOW }); // the 51st
+      expect(await db.searchSnapshot.findUnique({ where: { id: expired.id } })).toBeNull();
+      expect(await db.searchSnapshot.findUnique({ where: { id: oldestLive.id } })).not.toBeNull();
+      await startSearch(ctx(), input, { adapter, now: NOW }); // the 51st again: now the oldest goes
+      expect(await db.searchSnapshot.findUnique({ where: { id: oldestLive.id } })).toBeNull();
+    });
+
+    it("a search younger than 5 minutes is never removed, even over the limit", async () => {
+      await hotels(1);
+      const { adapter } = fakeAdapter(everyone);
+      for (let i = 0; i < 55; i++) await stored("u1", minutesAgo(1 + i / 20));
+      await startSearch(ctx(), input, { adapter, now: NOW });
+      expect(await db.searchSnapshot.count({ where: { agencyId: "A", userId: "u1" } })).toBe(56);
+    });
+
+    it("the agency's backstop (300) removes expired and oldest searches only, never another agency's", async () => {
+      await hotels(1);
+      const { adapter } = fakeAdapter(everyone);
+      const rows = Array.from({ length: 301 }, (_, i) => ({
+        agencyId: "A",
+        userId: `u${2 + (i % 10)}`,
+        query: {},
+        candidateIds: [],
+        createdAt: minutesAgo(10 + i / 20),
+        expiresAt: new Date(NOW.getTime() + 60_000),
+      }));
+      await db.searchSnapshot.createMany({ data: rows });
+      const other = await stored("u1", minutesAgo(29), true, "B");
+      await startSearch(ctx(), input, { adapter, now: NOW });
+      expect(await db.searchSnapshot.count({ where: { agencyId: "A" } })).toBe(300);
+      expect(await db.searchSnapshot.findUnique({ where: { id: other.id } })).not.toBeNull();
+    });
+
+    it("snapshotsToRemove: nothing under the limit; expired before live; oldest first; the young are kept", () => {
+      const row = (id: string, ageMin: number, live = true) => ({ id, createdAt: minutesAgo(ageMin), expiresAt: live ? new Date(NOW.getTime() + 1) : NOW });
+      expect(snapshotsToRemove([row("a", 10), row("b", 9)], 2, NOW)).toEqual([]);
+      expect(snapshotsToRemove([row("a", 20), row("b", 10, false), row("c", 9)], 2, NOW)).toEqual(["b"]);
+      expect(snapshotsToRemove([row("a", 20), row("b", 10), row("c", 9)], 1, NOW)).toEqual(["a", "b"]);
+      expect(snapshotsToRemove([row("a", 4), row("b", 3), row("c", 6)], 1, NOW)).toEqual(["c"]);
+    });
   });
 
   it("stored offers are checked when read back; a damaged row gives nothing instead of a broken page", async () => {
@@ -151,7 +209,7 @@ describe("search service", () => {
     const { adapter } = fakeAdapter(everyone);
     const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
     await db.searchHotel.updateMany({ where: { snapshotId }, data: { offers: [{ broken: true }] } });
-    expect(await getHotelOffers("A", snapshotId, "1", NOW, { content: async () => new Map() })).toBeNull();
+    expect(await getHotelOffers(A, snapshotId, "1", NOW, { content: async () => new Map() })).toBeNull();
   });
 
   it("another agency's search id gives nothing (no IDOR)", async () => {
@@ -159,7 +217,7 @@ describe("search service", () => {
     const { adapter } = fakeAdapter(everyone);
     const { snapshotId } = await startSearch(ctx("A"), input, { adapter, now: NOW });
     expect(await listResults("B", snapshotId, { sort: "recommended" }, NOW)).toBeNull();
-    expect(await getHotelOffers("B", snapshotId, "1", NOW)).toBeNull();
+    expect(await getHotelOffers({ agencyId: "B", userId: "u9" }, snapshotId, "1", NOW)).toBeNull();
     expect(await loadMore(ctx("B"), snapshotId, { adapter, now: NOW })).toBeNull();
   });
 
@@ -275,6 +333,54 @@ describe("search service", () => {
     ]);
   });
 
+  it("fees are due at the property when the supplier gives only their total, with no single fee listed", async () => {
+    await hotels(1);
+    const o = offer("1", 20_000);
+    const totalOnly: Offer = { ...o, price: { ...o.price, dueAtPropertyTotal: { minor: 2_500, currency: "USD" } }, roomPrices: [{ ...o.price, dueAtPropertyTotal: { minor: 2_500, currency: "USD" } }] };
+    const { adapter } = fakeAdapter(() => [{ propertyId: "1", offers: [totalOnly] }]);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    expect((await listResults("A", snapshotId, { sort: "recommended" }, NOW))?.hotels[0]?.feesAtProperty).toBe(true);
+  });
+
+  describe("free cancellation: the filter and the badge follow the same rule as the label and the booking", () => {
+    const free = (id: string) => offer(id, 20_000, true);
+    const variants: Record<string, (id: string) => Offer> = {
+      "1": free,
+      // The supplier says refundable, but some nights cannot be refunded.
+      "2": (id) => ({ ...free(id), nonrefundableDateRanges: [{ start: "2027-04-10", end: "2027-04-11" }] }),
+      // Refundable with no charge listed: no deadline was named.
+      "3": (id) => ({ ...free(id), cancelPenalties: [] }),
+      // The first charge has already started.
+      "4": (id) => ({ ...free(id), cancelPenalties: [{ ...FREE_UNTIL[0]!, start: "2027-03-01T08:00:00.000+02:00" }] }),
+      // Free for another 10 minutes only.
+      "5": (id) => ({ ...free(id), cancelPenalties: [{ ...FREE_UNTIL[0]!, start: "2027-03-01T10:10:00.000Z" }] }),
+    };
+
+    it("only a rate with a deadline still ahead passes 'Free cancellation only' and shows the badge", async () => {
+      await hotels(5);
+      const { adapter } = fakeAdapter((q) => q.propertyIds.map((id) => ({ propertyId: id, offers: [variants[id]!(id)] })));
+      const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+      const freeOnly = await listResults("A", snapshotId, { sort: "recommended", freeCancellation: true }, NOW);
+      expect(freeOnly?.hotels.map((h) => h.propertyId)).toEqual(["1", "5"]);
+      const all = await listResults("A", snapshotId, { sort: "recommended" }, NOW);
+      expect(all?.hotels.map((h) => [h.propertyId, h.refundableAvailable])).toEqual([["1", true], ["2", false], ["3", false], ["4", false], ["5", true]]);
+      const rates = await db.searchRate.findMany({ where: { snapshotId }, orderBy: { propertyId: "asc" } });
+      expect(rates.map((r) => r.refundable)).toEqual([true, false, false, false, true]);
+      expect(rates[0]!.freeCancelUntil).toEqual(new Date("2027-04-06T22:00:00.000Z"));
+    });
+
+    it("a deadline that passes while the results are open stops counting", async () => {
+      await hotels(5);
+      const { adapter } = fakeAdapter((q) => q.propertyIds.map((id) => ({ propertyId: id, offers: [variants[id]!(id)] })));
+      const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+      const later = new Date(NOW.getTime() + 15 * 60_000);
+      const freeOnly = await listResults("A", snapshotId, { sort: "recommended", freeCancellation: true }, later);
+      expect(freeOnly?.hotels.map((h) => h.propertyId)).toEqual(["1"]);
+      const all = await listResults("A", snapshotId, { sort: "recommended" }, later);
+      expect(all?.hotels.find((h) => h.propertyId === "5")?.refundableAvailable).toBe(false);
+    });
+  });
+
   it("a filter value with LIKE wildcards is matched literally", async () => {
     await hotels(2);
     const { adapter } = fakeAdapter(everyone);
@@ -323,9 +429,60 @@ describe("search service", () => {
     const { adapter } = fakeAdapter(everyone);
     // 30 searches already made this minute, in this window and the next (seedRateLimit), so the
     // result does not depend on a minute boundary passing during the test (it once did on CI).
-    await db.rateLimitBucket.deleteMany({ where: { key: "search:agency:A" } });
-    await seedRateLimit("search:agency:A", 30, 60_000);
+    await db.rateLimitBucket.deleteMany({ where: { key: "search:user:u1" } });
+    await seedRateLimit("search:user:u1", 30, 60_000);
     await expect(startSearch(ctx(), input, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchRateLimited);
+  });
+
+  it("the limit is per user: one agent at the limit does not lock out a colleague; the agency's ceiling still holds", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    await seedRateLimit("search:user:u1", 30, 60_000);
+    await expect(startSearch(ctx("A", "u1"), input, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchRateLimited);
+    await expect(startSearch(ctx("A", "u2"), input, { adapter, now: NOW })).resolves.toMatchObject({ snapshotId: expect.any(String) });
+    // The refused agent's tries do not use up the agency's ceiling.
+    const agencyHits = await db.rateLimitBucket.findMany({ where: { key: "search:agency:A" } });
+    expect(agencyHits.reduce((n, b) => n + b.count, 0)).toBe(1);
+    await db.rateLimitBucket.deleteMany({ where: { key: "search:agency:A" } });
+    await seedRateLimit("search:agency:A", 150, 60_000);
+    await expect(startSearch(ctx("A", "u3"), input, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchRateLimited);
+  });
+
+  it("a search the supplier refuses as asked (HTTP 400) says to check the dates and guests, not that search is down", async () => {
+    await hotels(1);
+    const refusing = fakeAdapter(() => {
+      throw new SupplierRequestRejected("Expedia rejected GET /properties/availability (HTTP 400)", 400);
+    });
+    await expect(startSearch(ctx(), input, { adapter: refusing.adapter, now: NOW })).rejects.toThrow(new SearchInputInvalid("Check the dates and guests and search again."));
+  });
+
+  it("a check-in that is still today somewhere on earth (yesterday in UTC) is accepted; the day before is not", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    await expect(startSearch(ctx(), { ...input, checkin: "2027-02-28", checkout: "2027-03-02" }, { adapter, now: NOW })).resolves.toMatchObject({ snapshotId: expect.any(String) });
+    await expect(startSearch(ctx(), { ...input, checkin: "2027-02-27", checkout: "2027-03-02" }, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchInputInvalid);
+  });
+
+  it("a database error after a good supplier answer gives the batch back: the same hotels are asked for again", async () => {
+    await hotels(300);
+    const { adapter, searchAvailability } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    // The answer cannot be stored: a total too large for the column.
+    const broken = fakeAdapter((q) => q.propertyIds.map((id) => ({ propertyId: id, offers: [offer(id, 3_000_000_000)] })));
+    await expect(loadMore(ctx(), snapshotId, { adapter: broken.adapter, now: NOW })).rejects.toThrow();
+    expect((await db.searchSnapshot.findUniqueOrThrow({ where: { id: snapshotId } })).nextIndex).toBe(250);
+    expect(await loadMore(ctx(), snapshotId, { adapter, now: NOW })).toEqual({ added: 50, hasMore: false });
+    expect(searchAvailability.mock.calls[1]![0].propertyIds).toHaveLength(50);
+    expect((await listResults("A", snapshotId, { sort: "recommended" }, NOW))?.total).toBe(300);
+  });
+
+  it("tells how far the search got: hotels asked for so far, of all the destination's hotels", async () => {
+    await hotels(300);
+    const { adapter } = fakeAdapter((q) => q.propertyIds.filter((id) => Number(id) % 2 === 0).map((id) => ({ propertyId: id, offers: [offer(id, 10_000)] })));
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    expect(await listResults("A", snapshotId, { sort: "recommended" }, NOW)).toMatchObject({ total: 125, loaded: 250, candidates: 300, hasMoreFromSupplier: true });
+    await loadMore(ctx(), snapshotId, { adapter, now: NOW });
+    expect(await listResults("A", snapshotId, { sort: "recommended" }, NOW)).toMatchObject({ total: 150, loaded: 300, candidates: 300, hasMoreFromSupplier: false });
   });
 
   it("one hotel (booking from a quote): only that hotel is asked; bad input, an inactive hotel and the rate limit refuse", async () => {
@@ -340,15 +497,15 @@ describe("search service", () => {
     await expect(searchOneHotel(ctx(), { ...input, checkin: "2020-01-01", propertyId: "2" }, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchInputInvalid);
     await db.property.update({ where: { id: "3" }, data: { active: false } });
     await expect(searchOneHotel(ctx(), { ...input, propertyId: "3" }, { adapter, now: NOW })).rejects.toThrow(/can no longer be booked/);
-    await db.rateLimitBucket.deleteMany({ where: { key: "search:agency:A" } });
-    await seedRateLimit("search:agency:A", 30, 60_000);
+    await db.rateLimitBucket.deleteMany({ where: { key: "search:user:u1" } });
+    await seedRateLimit("search:user:u1", 30, 60_000);
     await expect(searchOneHotel(ctx(), { ...input, propertyId: "2" }, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchRateLimited);
   });
 
   it("the 30th search in a minute is still allowed", async () => {
     await hotels(1);
     const { adapter } = fakeAdapter(everyone);
-    await seedRateLimit("search:agency:A", 29, 60_000);
+    await seedRateLimit("search:user:u1", 29, 60_000);
     await expect(startSearch(ctx(), input, { adapter, now: NOW })).resolves.toMatchObject({ snapshotId: expect.any(String) });
   });
 
@@ -358,14 +515,14 @@ describe("search service", () => {
     const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
     const later = new Date(NOW.getTime() + 31 * 60_000);
     expect(await listResults("A", snapshotId, { sort: "recommended" }, later)).toMatchObject({ expired: true, hotels: [] });
-    expect(await getHotelOffers("A", snapshotId, "1", later)).toBeNull();
+    expect(await getHotelOffers(A, snapshotId, "1", later)).toBeNull();
   });
 
   it("getHotelOffers returns the stored offers of one hotel", async () => {
     await hotels(2);
     const { adapter } = fakeAdapter(everyone);
     const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
-    const result = await getHotelOffers("A", snapshotId, "2", NOW, { content: async () => new Map() });
+    const result = await getHotelOffers(A, snapshotId, "2", NOW, { content: async () => new Map() });
     expect(result?.offers[0]).toMatchObject({ propertyId: "2", price: { total: { minor: 10_002 } } });
     expect(result?.hotel).toEqual({ name: "Hotel 2", city: "Paris", starRating: "4.5" });
   });
@@ -377,18 +534,21 @@ describe("search service", () => {
     const broken = async () => {
       throw new Error("EXPEDIA_API_KEY is not set");
     };
-    const result = await getHotelOffers("A", snapshotId, "1", NOW, { content: broken });
+    const result = await getHotelOffers(A, snapshotId, "1", NOW, { content: broken });
     expect(result?.content).toBeNull();
     expect(result?.offers).toHaveLength(1);
   });
 
-  it("opening hotel pages is rate limited per agency (120 a minute)", async () => {
+  it("opening hotel pages is rate limited per user (120 a minute); a colleague is not locked out", async () => {
     await hotels(1);
     const { adapter } = fakeAdapter(everyone);
     const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
     const none = async () => new Map();
-    for (let i = 0; i < 120; i++) await getHotelOffers("A", snapshotId, "1", NOW, { content: none });
-    await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none })).rejects.toBeInstanceOf(SearchRateLimited);
+    await getHotelOffers(A, snapshotId, "1", NOW, { content: none });
+    await db.rateLimitBucket.deleteMany({ where: { key: "hotel:user:u1" } });
+    await seedRateLimit("hotel:user:u1", 120, 60_000);
+    await expect(getHotelOffers(A, snapshotId, "1", NOW, { content: none })).rejects.toBeInstanceOf(SearchRateLimited);
+    await expect(getHotelOffers({ agencyId: "A", userId: "u2" }, snapshotId, "1", NOW, { content: none })).resolves.toMatchObject({ offers: [expect.anything()] });
   });
 
   it("findOffer returns one rate of the agency's own search, never another agency's or an expired one", async () => {
@@ -401,6 +561,24 @@ describe("search service", () => {
     expect(await findOffer("B", ref, NOW)).toBeNull();
     expect(await findOffer("A", { ...ref, bedGroupId: "nope" }, NOW)).toBeNull();
     expect(await findOffer("A", ref, new Date(NOW.getTime() + 31 * 60_000))).toBeNull();
+  });
+
+  it("a rate is found by its room and its rate id together; a plain rate id (an older link) still works", async () => {
+    await hotels(1);
+    // Two rooms that carry the same rate id, as a supplier may give them.
+    const garden = { ...offer("1", 20_000), roomId: "garden", rateId: "flex", roomName: "Garden Double" };
+    const ocean = { ...offer("1", 50_000), roomId: "ocean", rateId: "flex", roomName: "Ocean Suite" };
+    const { adapter } = fakeAdapter(() => [{ propertyId: "1", offers: [garden, ocean] }]);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const ref = { snapshotId, propertyId: "1", bedGroupId: "b1" };
+    expect(offerRef(ocean)).toBe("ocean~flex");
+    expect((await findOffer("A", { ...ref, rateId: offerRef(ocean) }, NOW))?.offer).toMatchObject({ roomId: "ocean", price: { total: { minor: 50_000 } } });
+    expect((await findOffer("A", { ...ref, rateId: offerRef(garden) }, NOW))?.offer.roomId).toBe("garden");
+    // An older link names the rate only: the first rate with that id, as before.
+    expect((await findOffer("A", { ...ref, rateId: "flex" }, NOW))?.offer.roomId).toBe("garden");
+    expect(await findOffer("A", { ...ref, rateId: "nope~flex2" }, NOW)).toBeNull();
+    // A reference too long for the forms falls back to the rate id alone.
+    expect(offerRef({ roomId: "r".repeat(125), rateId: "rate-1" })).toBe("rate-1");
   });
 
   it("cleanup deletes searches that expired more than an hour ago", async () => {
@@ -492,8 +670,8 @@ describe("search service: several rooms", () => {
     const { adapter, searchAvailability } = fakeAdapter(forRooms);
     const { snapshotId } = await startSearch(ctx(), { ...input, rooms: twoRooms }, { adapter, now: NOW });
     vi.stubEnv("SUPPLIER_MODE", "expedia");
-    await db.rateLimitBucket.deleteMany({ where: { key: "search:agency:A" } });
-    await seedRateLimit("search:agency:A", 30, 60_000); // a rate-limit answer would hide the room check
+    await db.rateLimitBucket.deleteMany({ where: { key: "search:user:u1" } });
+    await seedRateLimit("search:user:u1", 30, 60_000); // a rate-limit answer would hide the room check
     await expect(loadMore(ctx(), snapshotId, { adapter, now: NOW })).rejects.toThrow(new SearchInputInvalid("Several rooms are not available yet."));
     expect(searchAvailability).toHaveBeenCalledTimes(1); // the first search only
   });
@@ -534,7 +712,7 @@ describe("search service: several rooms", () => {
 
     await save({ ...good, price: { ...good.price, total: { minor: 21_001, currency: "USD" } } }); // 10,000 + 11,000 ≠ 21,001
     expect(await findOffer("A", ref, NOW)).toBeNull();
-    expect(await getHotelOffers("A", snapshotId, "1", NOW, { content: none })).toBeNull();
+    expect(await getHotelOffers(A, snapshotId, "1", NOW, { content: none })).toBeNull();
     expect(await snapshotOffers("A", snapshotId, "1", NOW)).toEqual([]);
     expect((await listResults("A", snapshotId, { sort: "recommended" }, NOW))?.hotels[0]?.best).toBeNull();
 
@@ -543,7 +721,7 @@ describe("search service: several rooms", () => {
 
     await save({ ...good, price: { ...good.price, total: { minor: 10_000, currency: "USD" } }, roomPrices: [good.roomPrices[0]!] }); // one room's price, two rooms searched
     expect(await findOffer("A", ref, NOW)).toBeNull();
-    expect(await getHotelOffers("A", snapshotId, "1", NOW, { content: none })).toBeNull();
+    expect(await getHotelOffers(A, snapshotId, "1", NOW, { content: none })).toBeNull();
 
     await save(good);
     expect(await findOffer("A", ref, NOW)).not.toBeNull();
