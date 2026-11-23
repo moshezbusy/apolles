@@ -46,7 +46,7 @@ export async function seedDemoContent(): Promise<{ destinations: number; hotels:
 
 // A ready demo login for the owner (staging demo only): the "Demo Travel Agency" with
 // USD 10,000 of demo balance, and its agent. No password is ever written in code: while the
-// agent has no password, each start issues a fresh one-time set-password link (60 minutes),
+// agent has no password, each start issues a fresh one-time set-password link (72 hours),
 // which the start-up script prints to the server log.
 export const DEMO_AGENT_EMAIL = "demo-agent@apolles.test";
 const DEMO_AGENCY_ID = "demo-agency";

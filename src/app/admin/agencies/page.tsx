@@ -60,6 +60,9 @@ export default async function AgenciesPage({ searchParams }: { searchParams: Sea
                         {agency.agentEmail ? (
                           <span className="block text-xs text-muted">{agency.agentEmail}</span>
                         ) : null}
+                        {agency.agentInvited ? (
+                          <span className="block text-xs font-semibold text-[#6f5a20]">Invited, not signed in yet</span>
+                        ) : null}
                       </td>
                       <td data-label="Country" className={td}>{agency.country}</td>
                       <td data-label="Bank reference" className={`${td} font-mono text-[13px]`}>{agency.bankReference}</td>

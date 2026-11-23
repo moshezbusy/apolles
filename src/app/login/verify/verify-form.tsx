@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { alertError, alertSuccess, btnPrimary, codeInput, label } from "@/components/ui";
-import type { VerifyState } from "./actions";
+import type { VerifyState } from "./copy";
 
 export function VerifyForm({ verify, resend }: { verify: (p: VerifyState, f: FormData) => Promise<VerifyState>; resend: () => Promise<VerifyState> }) {
   const [state, formAction, pending] = useActionState<VerifyState, FormData>(verify, null);

@@ -16,8 +16,43 @@ function headersFor(all: HeaderRule[], source: string): Record<string, string> {
 describe("next.config headers", () => {
   it("no page can be shown inside a frame on another site (clickjacking), on every route", async () => {
     const all = headersFor(await rules(), "/:path*");
-    expect(all["Content-Security-Policy"]).toBe("frame-ancestors 'none'");
+    expect(all["Content-Security-Policy"]).toContain("frame-ancestors 'none'");
     expect(all["X-Frame-Options"]).toBe("DENY");
+  });
+
+  // These used to exist only in a hand-edited proxy file; the app now sends them itself.
+  it("every route: HTTPS only, no type guessing, a short Referer, no camera / microphone / location", async () => {
+    const all = headersFor(await rules(), "/:path*");
+    expect(all["Strict-Transport-Security"]).toBe("max-age=31536000");
+    expect(all["X-Content-Type-Options"]).toBe("nosniff");
+    expect(all["Referrer-Policy"]).toBe("strict-origin-when-cross-origin");
+    expect(all["Permissions-Policy"]).toBe("camera=(), microphone=(), geolocation=()");
+  });
+
+  it("every route: no plugins, no <base> hijack, forms post only to this site", async () => {
+    const csp = headersFor(await rules(), "/:path*")["Content-Security-Policy"] ?? "";
+    expect(csp.split(";").map((part) => part.trim())).toEqual([
+      "frame-ancestors 'none'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ]);
+  });
+
+  // When two rules set the same header for one path, Next.js uses the later rule: the default
+  // must come first so the stricter per-route values still win.
+  it("the default Referrer-Policy comes before the stricter per-route ones, which override it", async () => {
+    const list = await rules();
+    const index = (source: string) => list.findIndex((r) => r.source === source);
+    expect(index("/:path*")).toBe(0);
+    for (const source of ["/set-password/:token*", "/q/:token*"]) {
+      expect(index(source)).toBeGreaterThan(0);
+      expect(headersFor(list, source)["Referrer-Policy"]).toBe("no-referrer");
+    }
+  });
+
+  it("does not announce the framework in an X-Powered-By header", () => {
+    expect(nextConfig.poweredByHeader).toBe(false);
   });
 
   it("keeps the existing per-route headers", async () => {

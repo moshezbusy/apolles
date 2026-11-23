@@ -8,6 +8,7 @@ import { hashPassword, verifyPassword } from "@/server/auth/password";
 import { createSession } from "@/server/auth/session";
 import {
   PASSWORD_TOKEN_TTL_MS,
+  checkPasswordLink,
   consumePasswordToken,
   findUsablePasswordToken,
   issuePasswordToken,
@@ -20,6 +21,7 @@ vi.mock("@/server/email/port", () => ({ sendEmail: vi.fn() }));
 const APP_URL = "http://localhost:3000";
 const OLD = "oldpass12";
 const NEW = "newpass34";
+const ADMIN_NEW = `${NEW}-long`; // admins need at least 12 characters
 
 async function createAgent(email = "agent@example.com") {
   const agency = await db.agency.create({
@@ -71,9 +73,43 @@ describe("password tokens", () => {
     expect(row.tokenHash).toBe(createHash("sha256").update(raw).digest("hex"));
     expect(row.purpose).toBe("RESET");
     expect(row.usedAt).toBeNull();
-    expect(PASSWORD_TOKEN_TTL_MS).toBe(60 * 60 * 1000);
-    expect(row.expiresAt.getTime()).toBeGreaterThanOrEqual(before + PASSWORD_TOKEN_TTL_MS);
-    expect(row.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + PASSWORD_TOKEN_TTL_MS);
+    expect(PASSWORD_TOKEN_TTL_MS.RESET).toBe(60 * 60 * 1000);
+    expect(row.expiresAt.getTime()).toBeGreaterThanOrEqual(before + PASSWORD_TOKEN_TTL_MS.RESET);
+    expect(row.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + PASSWORD_TOKEN_TTL_MS.RESET);
+  });
+
+  it("an invitation (SET) link is valid for 72 hours: approval and a first read take days", async () => {
+    const agent = await createAgent();
+    const before = Date.now();
+    await issuePasswordToken(agent.id, "SET");
+    const row = await db.passwordToken.findFirstOrThrow();
+    expect(PASSWORD_TOKEN_TTL_MS.SET).toBe(72 * 60 * 60 * 1000);
+    expect(row.expiresAt.getTime()).toBeGreaterThanOrEqual(before + PASSWORD_TOKEN_TTL_MS.SET);
+    expect(row.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + PASSWORD_TOKEN_TTL_MS.SET);
+  });
+
+  it("an invitation still works after 71 hours and is expired after 73", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const start = new Date("2026-11-08T10:00:00Z");
+    vi.setSystemTime(start);
+    const agent = await createAgent();
+    const raw = await issuePasswordToken(agent.id, "SET");
+
+    vi.setSystemTime(start.getTime() + 71 * 60 * 60 * 1000);
+    expect(await checkPasswordLink(raw)).toEqual({ usable: true, purpose: "SET", role: "AGENT" });
+    vi.setSystemTime(start.getTime() + 73 * 60 * 60 * 1000);
+    // Expired, but the page can still tell it was an invitation.
+    expect(await checkPasswordLink(raw)).toEqual({ usable: false, purpose: "SET", role: null });
+    expect(await consumePasswordToken(raw, NEW)).toBe("EXPIRED");
+  });
+
+  it("checkPasswordLink: a link that was never issued has no purpose; a used reset link keeps its purpose", async () => {
+    const agent = await createAgent();
+    expect(await checkPasswordLink("never-issued")).toEqual({ usable: false, purpose: null, role: null });
+    expect(await checkPasswordLink("")).toEqual({ usable: false, purpose: null, role: null });
+    const raw = await issuePasswordToken(agent.id, "RESET");
+    expect(await consumePasswordToken(raw, NEW)).toBe("OK");
+    expect(await checkPasswordLink(raw)).toEqual({ usable: false, purpose: "RESET", role: null });
   });
 
   it("token used twice → second EXPIRED and password unchanged", async () => {
@@ -88,12 +124,12 @@ describe("password tokens", () => {
     expect(await storedHash(agent.id)).toBe(afterFirst);
   });
 
-  it("token after 61 minutes → EXPIRED", async () => {
+  it("reset token after 61 minutes → EXPIRED", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const start = new Date("2026-11-08T10:00:00Z");
     vi.setSystemTime(start);
     const agent = await createAgent();
-    const raw = await issuePasswordToken(agent.id, "SET");
+    const raw = await issuePasswordToken(agent.id, "RESET");
 
     vi.setSystemTime(start.getTime() + 61 * 60 * 1000);
     expect(await findUsablePasswordToken(raw)).toBeNull();
@@ -148,13 +184,85 @@ describe("password tokens", () => {
     await db.user.update({ where: { id: admin.id }, data: { failedLogins: 2, lockedUntil } });
     const raw = await issuePasswordToken(admin.id, "RESET");
 
-    expect(await consumePasswordToken(raw, NEW)).toBe("OK");
+    expect(await consumePasswordToken(raw, ADMIN_NEW)).toBe("OK");
 
     const row = await db.user.findUniqueOrThrow({ where: { id: admin.id } });
-    expect(await verifyPassword(row.passwordHash!, NEW)).toBe(true);
+    expect(await verifyPassword(row.passwordHash!, ADMIN_NEW)).toBe(true);
     expect(row.lockedUntil?.getTime()).toBe(lockedUntil.getTime());
     expect(row.failedLogins).toBe(2);
     expect(await db.session.count({ where: { userId: admin.id } })).toBe(0);
+  });
+
+  it("an admin needs at least 12 characters: an 8-character password is refused and the link stays usable", async () => {
+    const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN", passwordHash: await hashPassword(OLD) });
+    const raw = await issuePasswordToken(admin.id, "RESET");
+    expect(await checkPasswordLink(raw)).toEqual({ usable: true, purpose: "RESET", role: "ADMIN" });
+    expect(await consumePasswordToken(raw, NEW)).toBe("INVALID_ADMIN_PASSWORD");
+    expect(await consumePasswordToken(raw, "abcdefghij1")).toBe("INVALID_ADMIN_PASSWORD");
+    expect(await verifyPassword(await storedHash(admin.id), OLD)).toBe(true);
+    expect(await consumePasswordToken(raw, ADMIN_NEW)).toBe("OK");
+  });
+
+  it("a most-common password is refused for an agent and an admin, and the link stays usable", async () => {
+    const agent = await createAgent();
+    const raw = await issuePasswordToken(agent.id, "RESET");
+    for (const common of "password1 Password123 qwerty123".split(" ")) expect(await consumePasswordToken(raw, common)).toBe("COMMON_PASSWORD");
+    expect(await verifyPassword(await storedHash(agent.id), OLD)).toBe(true);
+    const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN" });
+    const adminRaw = await issuePasswordToken(admin.id, "SET");
+    expect(await consumePasswordToken(adminRaw, `Password${1234}`)).toBe("COMMON_PASSWORD");
+    expect(await consumePasswordToken(raw, NEW)).toBe("OK");
+  });
+
+  it("a dead link answers EXPIRED whatever the password is (the rule is only checked for a live link)", async () => {
+    expect(await consumePasswordToken("never-issued", "short")).toBe("EXPIRED");
+    expect(await consumePasswordToken("never-issued", NEW)).toBe("EXPIRED");
+  });
+
+  it("a password change is audited and the owner is told by email; nothing secret in either", async () => {
+    const agent = await createAgent();
+    const raw = await issuePasswordToken(agent.id, "RESET");
+    expect(await consumePasswordToken(raw, NEW)).toBe("OK");
+
+    const rows = await db.auditLog.findMany({ where: { action: { startsWith: "user.password." } } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ action: "user.password.change", actorUserId: agent.id, targetType: "User", targetId: agent.id });
+    expect(rows[0]?.after).toEqual({ via: "link" });
+    expect(JSON.stringify(rows)).not.toContain(NEW);
+    expect(JSON.stringify(rows)).not.toContain(raw);
+
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    const msg = vi.mocked(sendEmail).mock.calls[0]![0];
+    expect(msg).toMatchObject({ to: "agent@example.com", subject: "Your Apolles password was changed" });
+    expect(msg.text).toContain("Hello Agent,");
+    expect(msg.text).toMatch(/was changed on \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/);
+    expect(msg.text).toContain("Every device that was signed in was signed out.");
+    expect(msg.text).toContain(`${APP_URL}/forgot-password`);
+    expect(msg.text).not.toContain(NEW);
+    expect(msg.text).not.toContain("/set-password/");
+  });
+
+  it("the first password of an invited account is audited as set, with its own email", async () => {
+    const agency = await db.agency.create({ data: { name: "New Agency", country: "IL", bankReference: "APL-0009" } });
+    const invited = await createUser({ email: "new@example.com", name: "New", role: "AGENT", agencyId: agency.id });
+    const raw = await issuePasswordToken(invited.id, "SET");
+    expect(await consumePasswordToken(raw, NEW)).toBe("OK");
+    expect(await db.auditLog.findFirstOrThrow({ where: { action: "user.password.set" } })).toMatchObject({ actorUserId: invited.id, targetId: invited.id });
+    expect(vi.mocked(sendEmail).mock.calls[0]![0]).toMatchObject({ to: "new@example.com", subject: "Your Apolles password was set" });
+  });
+
+  it("a refused or failed change writes no audit row and sends no email; a mail failure does not undo the change", async () => {
+    const agent = await createAgent();
+    const raw = await issuePasswordToken(agent.id, "RESET");
+    expect(await consumePasswordToken(raw, "short")).toBe("INVALID_PASSWORD");
+    expect(await db.auditLog.count()).toBe(0);
+    expect(sendEmail).not.toHaveBeenCalled();
+
+    vi.mocked(sendEmail).mockRejectedValueOnce(new Error("Postmark send failed: HTTP 500"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await consumePasswordToken(raw, NEW)).toBe("OK");
+    expect(await verifyPassword(await storedHash(agent.id), NEW)).toBe(true);
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("agent@example.com");
   });
 
   it("INVALID_PASSWORD leaves the token usable", async () => {
@@ -276,6 +384,23 @@ describe("password tokens", () => {
     expect(await verifyPassword(await storedHash(agent.id), NEW)).toBe(true);
   });
 
+  it("requestReset for an account that never set a password sends a fresh 72-hour set-up link, not a reset", async () => {
+    const agency = await db.agency.create({ data: { name: "New Agency", country: "IL", bankReference: "APL-0009" } });
+    const invited = await createUser({ email: "new@example.com", name: "New", role: "AGENT", agencyId: agency.id });
+    const before = Date.now();
+    await requestReset("new@example.com");
+
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    const msg = vi.mocked(sendEmail).mock.calls[0]![0];
+    expect(msg.subject).toBe("Set your Apolles password");
+    expect(msg.text).toContain("This link expires in 72 hours and can be used once.");
+    const raw = tokenFromEmail(msg.text);
+    expect(await checkPasswordLink(raw)).toEqual({ usable: true, purpose: "SET", role: "AGENT" });
+    expect((await db.passwordToken.findFirstOrThrow()).expiresAt.getTime()).toBeGreaterThanOrEqual(before + PASSWORD_TOKEN_TTL_MS.SET);
+    expect(await consumePasswordToken(raw, NEW)).toBe("OK");
+    expect(await verifyPassword(await storedHash(invited.id), NEW)).toBe(true);
+  });
+
   it("requestReset for a suspended user or suspended agency → no email", async () => {
     const agent = await createAgent();
     await db.user.update({ where: { id: agent.id }, data: { status: "SUSPENDED" } });
@@ -317,7 +442,9 @@ describe("password tokens", () => {
     const msg = vi.mocked(sendEmail).mock.calls[0]![0];
     expect(msg.to).toBe("admin@example.com");
     expect(msg.subject).toBe("Set your Apolles password");
-    expect(msg.text).toContain("This link expires in 60 minutes and can be used once.");
+    expect(msg.text).toContain("This link expires in 72 hours and can be used once.");
+    expect(msg.text).toContain('choose "Forgot password" on the sign-in page to get a new one');
+    expect(msg.text).not.toContain("60 minutes");
     expect(await findUsablePasswordToken(tokenFromEmail(msg.text))).toBe("SET");
   });
 

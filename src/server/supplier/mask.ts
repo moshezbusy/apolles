@@ -2,6 +2,13 @@
 // strings, before they are stored in the supplier log. Keys are matched by name at any depth;
 // the structure is kept so the log still shows which fields were sent. Hotel names, ids,
 // amounts and country codes are not personal data and stay visible.
+//
+// Two more places hold such data whatever the key is called:
+// - Expedia answers a refused request with the offending input echoed back under
+//   errors[].fields[] ({ name, type, value }): the guest's email, phone or name can be in
+//   `value`. Every `value` in a `fields` list is masked; `name` still says which field it was.
+// - Rapid links (links.*.href) end in ?token=...: that token is a key to the price check or
+//   the booking. The token value is masked inside every text, under any key.
 
 // A leaf value under one of these keys is masked (strings, numbers, and arrays of them).
 const PII_KEYS = new Set([
@@ -39,6 +46,32 @@ const PII_QUERY_PARAMS = new Set(["email", "token"]);
 const MASK = "[masked]";
 export const MAX_LOG_BODY_BYTES = 256_000;
 
+// Error field lists: each entry's `value` is what the caller sent, echoed back.
+const ECHO_LIST_KEY = "fields";
+const ECHO_VALUE_KEY = "value";
+
+// "…?token=abc&x=1" → "…?token=[masked]&x=1" (every occurrence; the rest of the text stays).
+const TOKEN_IN_TEXT = /(token=)[^&#\s"'<>]*/gi;
+
+function maskTokens(text: string): string {
+  return text.replace(TOKEN_IN_TEXT, `$1${MASK}`);
+}
+
+// Every leaf masked, whatever the shape (null stays null).
+function maskAll(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map(maskAll);
+  if (typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, maskAll(inner)]));
+  return MASK;
+}
+
+function maskEchoedFields(list: unknown[]): unknown[] {
+  return list.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return maskPii(entry);
+    return Object.fromEntries(Object.entries(entry).map(([key, inner]) => [key, key === ECHO_VALUE_KEY ? maskAll(inner) : maskPii(inner)]));
+  });
+}
+
 function maskLeaf(value: unknown): unknown {
   if (value === null) return null;
   if (Array.isArray(value)) return value.map(maskLeaf);
@@ -52,11 +85,12 @@ export function maskPii(value: unknown): unknown {
       Object.entries(value as Record<string, unknown>).map(([key, inner]) => {
         if (PII_SUBTREES.has(key)) return [key, inner === null ? null : MASK];
         if (PII_KEYS.has(key)) return [key, maskLeaf(inner)];
+        if (key === ECHO_LIST_KEY && Array.isArray(inner)) return [key, maskEchoedFields(inner)];
         return [key, maskPii(inner)];
       }),
     );
   }
-  return value;
+  return typeof value === "string" ? maskTokens(value) : value;
 }
 
 // "/itineraries?email=a%40b.c&token=x" → "/itineraries?email=%5Bmasked%5D&token=%5Bmasked%5D".

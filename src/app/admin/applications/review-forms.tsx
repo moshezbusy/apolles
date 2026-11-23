@@ -40,3 +40,25 @@ export function ReviewForms({ id, approve, reject }: { id: string; approve: Acti
     </div>
   );
 }
+
+// For an application that was approved but whose agency was never opened (an interrupted
+// approval): the same approve action completes it. Nothing to reject at this point.
+export function FinishApprovalForm({ id, approve }: { id: string; approve: Action }) {
+  const [state, approveForm, approving] = useActionState<ReviewState, FormData>(approve, null);
+  return (
+    <div className="flex flex-col gap-3">
+      {state?.error ? (
+        <p role="alert" className={alertError}>
+          {state.error}
+        </p>
+      ) : null}
+      <p className="text-sm text-muted">This application was approved, but opening the agency did not finish. Finish it here: the agency and its agent login are made, and the contact gets the set-up email.</p>
+      <form action={approveForm}>
+        <input type="hidden" name="id" value={id} />
+        <button type="submit" disabled={approving} className={`self-start ${btnPrimary}`}>
+          {approving ? "Opening…" : "Finish opening the agency"}
+        </button>
+      </form>
+    </div>
+  );
+}

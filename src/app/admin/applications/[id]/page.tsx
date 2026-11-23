@@ -5,7 +5,7 @@ import { card, link, pageTitle } from "@/components/ui";
 import { getApplication } from "@/server/applications";
 import { requireAdmin } from "@/server/auth/guards";
 import { approveAction, rejectAction } from "../actions";
-import { ReviewForms } from "../review-forms";
+import { FinishApprovalForm, ReviewForms } from "../review-forms";
 
 export const metadata: Metadata = { title: "Application · Apolles", robots: { index: false, follow: false } };
 
@@ -56,7 +56,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
                 Open the agency
               </Link>
             ) : (
-              <p className="text-sm text-muted">Approved. The agency is in the agencies list (it could not be linked here).</p>
+              <FinishApprovalForm id={a.id} approve={approveAction} />
             )}
           </div>
         </section>

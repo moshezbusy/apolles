@@ -27,7 +27,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 const browser: { session: string | null; forwardedFor: string | null } = { session: null, forwardedFor: null };
 vi.mock("next/headers", () => ({
   headers: vi.fn(async () => new Headers(browser.forwardedFor ? { "x-forwarded-for": browser.forwardedFor } : {})),
-  cookies: vi.fn(async () => ({ get: (name: string) => (name === "apl_session" && browser.session ? { name, value: browser.session } : undefined) })),
+  cookies: vi.fn(async () => ({ get: (name: string) => (name === "__Host-apl_session" && browser.session ? { name, value: browser.session } : undefined) })),
 }));
 // The real content cache, with the fetching read watched: the public page must never use it.
 vi.mock("@/server/content/content-cache", async (original) => {

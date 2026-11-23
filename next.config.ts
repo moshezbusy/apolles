@@ -7,16 +7,39 @@ const nextConfig: NextConfig = {
   // pdfkit reads its font metric files from its own folder at run time: load it from
   // node_modules instead of bundling it (src/server/booking/voucher.ts).
   serverExternalPackages: ["pdfkit"],
+  // No "X-Powered-By: Next.js" header: do not tell scanners which framework to try.
+  poweredByHeader: false,
   async headers() {
     return [
-      // No page may be shown inside a frame on another site (clickjacking: a hidden admin
-      // page under a fake button). CSP frame-ancestors for current browsers, X-Frame-Options
-      // for older ones.
+      // Defaults for every route (pages, downloads, API). This rule must stay FIRST: when two
+      // rules set the same header for a path, Next.js uses the later one, so the stricter
+      // per-route values below (Referrer-Policy: no-referrer) still win.
+      //
+      // - No page may be shown inside a frame on another site (clickjacking: a hidden admin
+      //   page under a fake button). CSP frame-ancestors for current browsers, X-Frame-Options
+      //   for older ones.
+      // - The rest of the CSP: no plugins (object-src), no <base> tag pointing links elsewhere
+      //   (base-uri), forms post only to this site (form-action). There is no script-src rule:
+      //   Next.js writes inline scripts into every page, and limiting those needs a per-request
+      //   nonce on every page, which is a separate, carefully tested change.
+      // - Strict-Transport-Security: the browser uses HTTPS only for a year (ignored over plain
+      //   http, so local development is not affected). Not includeSubDomains: other sites live
+      //   on other subdomains.
+      // - X-Content-Type-Options: a download (PDF, CSV, logo) is never guessed to be HTML.
+      // - Referrer-Policy: other sites learn the site name at most, never the page address.
+      // - Permissions-Policy: no page here uses the camera, microphone or location.
       {
         source: "/:path*",
         headers: [
-          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'",
+          },
           { key: "X-Frame-Options", value: "DENY" },
+          { key: "Strict-Transport-Security", value: "max-age=31536000" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         ],
       },
       // Set-password links carry a secret token in the URL: never send it on in a Referer

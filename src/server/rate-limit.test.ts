@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
-import { RATE_LIMITS, emailKey, hitRateLimit, ipKey } from "@/server/rate-limit";
+import { RATE_LIMITS, emailKey, hitRateLimit, ipKey, refundRateLimit } from "@/server/rate-limit";
 
 // Deterministic: the window start comes from the database clock, so instead of faking time
 // these tests either use a window so long that no boundary can fall inside a test run
@@ -93,6 +93,19 @@ describe("hitRateLimit", () => {
     expect((await buckets()).map((r) => r.key).sort()).toEqual(["recent", "t:ip:1"]);
   });
 
+  it("refundRateLimit gives one hit of the current window back, never below zero, and never throws", async () => {
+    for (let i = 0; i < 3; i++) await hitRateLimit("t:ip:1", 3, HUGE, NEVER_PRUNE);
+    await refundRateLimit("t:ip:1", HUGE);
+    expect((await buckets()).map((r) => [r.key, r.count])).toEqual([["t:ip:1", 2]]);
+    expect((await hitRateLimit("t:ip:1", 3, HUGE, NEVER_PRUNE)).allowed).toBe(true);
+    for (let i = 0; i < 5; i++) await refundRateLimit("t:ip:1", HUGE);
+    expect((await buckets()).map((r) => [r.key, r.count])).toEqual([["t:ip:1", 0]]);
+    // No bucket for this key, or another key's bucket: nothing changes.
+    await refundRateLimit("t:ip:none", HUGE);
+    expect(await buckets()).toHaveLength(1);
+    await expect(refundRateLimit("", HUGE)).resolves.toBeUndefined();
+  });
+
   it("rejects a bad limit, window or key (programming error)", async () => {
     await expect(hitRateLimit("k", 0, HUGE)).rejects.toThrow();
     await expect(hitRateLimit("k", 1.5, HUGE)).rejects.toThrow();
@@ -102,9 +115,11 @@ describe("hitRateLimit", () => {
 });
 
 describe("rate-limit keys and limits", () => {
-  it("ipKey: <action>:ip:<ip>", () => {
+  it("ipKey: <action>:ip:<ip>, with IPv6 counted per /64 network", () => {
     expect(ipKey("signin", "203.0.113.7")).toBe("signin:ip:203.0.113.7");
-    expect(ipKey("totp", "2001:db8::1")).toBe("totp:ip:2001:db8::1");
+    expect(ipKey("totp", "2001:db8::1")).toBe("totp:ip:2001:db8:0:0::/64");
+    expect(ipKey("signin", "2001:db8:1:2::1")).toBe(ipKey("signin", "2001:db8:1:2:aaaa:bbbb:cccc:dddd"));
+    expect(ipKey("signin", "2001:db8:1:2::1")).not.toBe(ipKey("signin", "2001:db8:1:3::1"));
     expect(ipKey("forgot", "unknown")).toBe("forgot:ip:unknown");
     expect(ipKey("set-password", "203.0.113.7")).toBe("set-password:ip:203.0.113.7");
   });

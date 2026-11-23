@@ -6,6 +6,7 @@ import { getAgencyProfile, setAgencyLogo } from "@/server/agency-profile";
 import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
+import { makePng } from "@/test/png";
 
 vi.mock("next/navigation", () => ({
   redirect: vi.fn((url: string) => {
@@ -17,13 +18,7 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/server/auth/guards", () => ({ requireAgent: vi.fn() }));
 vi.mock("@/server/auth/password-tokens", () => ({ requestResetWithinLimits: vi.fn(async () => {}) }));
 
-function png(width: number, height: number): Uint8Array {
-  const b = new Uint8Array(33);
-  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52], 0);
-  new DataView(b.buffer).setUint32(16, width);
-  new DataView(b.buffer).setUint32(20, height);
-  return b;
-}
+const png = (width: number, height: number): Uint8Array => makePng(width, height);
 
 function form(fields: Record<string, string | Blob>): FormData {
   const data = new FormData();
@@ -58,17 +53,31 @@ describe("agency settings", () => {
       expect(html).toContain('value="Sunrise Travel"');
       expect(html).toContain('value="office@sunrise.example"');
       expect(html).toContain('value="+972 50 123 4567"');
-      expect(html).toMatch(/<option value="IL" selected="">Israel<\/option>/);
       expect(html).toContain("PNG or JPEG, at least 300px wide, up to 500 KB.");
       expect(html).not.toContain("Other Agency");
     });
 
-    it("an unknown stored country shows 'Choose a country', never a silent first option", async () => {
+    // The country is the point of sale sent to the hotel supplier and the name is the legal
+    // name on vouchers: an agent can read them but not change them.
+    it("shows the agency name and country read-only, with who to ask for a change", async () => {
+      const { default: Page } = await import("./(agent)/settings/page");
+      const html = renderToStaticMarkup(await Page());
+      expect(html).toMatch(/<input[^>]*readOnly=""[^>]*value="Sunrise Travel"|<input[^>]*value="Sunrise Travel"[^>]*readOnly=""/);
+      expect(html).toMatch(/<input[^>]*readOnly=""[^>]*value="Israel"|<input[^>]*value="Israel"[^>]*readOnly=""/);
+      expect(html).toContain("Contact Apolles to change the agency name or country.");
+      expect(html).not.toContain('name="name"');
+      expect(html).not.toContain('name="country"');
+      expect(html).not.toContain("<select");
+      // Email and phone stay editable.
+      expect(html).toContain('name="email"');
+      expect(html).toContain('name="phone"');
+    });
+
+    it("an unknown stored country code is shown as it is", async () => {
       await db.agency.update({ where: { id: agencyA }, data: { country: "UK" } });
       const { default: Page } = await import("./(agent)/settings/page");
       const html = renderToStaticMarkup(await Page());
-      expect(html).toMatch(/<option value="" disabled="" selected="">Choose a country<\/option>/);
-      expect(html).not.toMatch(/<option value="AF" selected="">/);
+      expect(html).toMatch(/<input[^>]*value="UK"/);
     });
 
     it("shows the logo from /settings/logo once there is one", async () => {
@@ -81,24 +90,30 @@ describe("agency settings", () => {
   });
 
   describe("actions", () => {
-    it("saves the profile of the session's agency, ignoring any agencyId in the form", async () => {
+    it("saves the email and phone of the session's agency, ignoring any agencyId in the form", async () => {
       const { updateProfileAction } = await import("./(agent)/settings/actions");
-      const state = await updateProfileAction(
-        null,
-        form({ name: "Sunrise Ltd", email: "a@b.example", phone: "+972501234567", country: "IL", agencyId: agencyB }),
-      );
+      const state = await updateProfileAction(null, form({ email: "a@b.example", phone: "+972501234567", agencyId: agencyB }));
       expect(state).toEqual({ status: "success", message: "Changes saved." });
-      expect(await getAgencyProfile(agencyA)).toMatchObject({ name: "Sunrise Ltd", email: "a@b.example" });
+      expect(await getAgencyProfile(agencyA)).toMatchObject({ name: "Sunrise Travel", email: "a@b.example", phone: "+972501234567", country: "IL" });
       expect(await getAgencyProfile(agencyB)).toMatchObject({ name: "Other Agency", email: null });
+    });
+
+    it("an agent cannot change the agency name or country, even by posting them by hand", async () => {
+      const { updateProfileAction } = await import("./(agent)/settings/actions");
+      const state = await updateProfileAction(null, form({ name: "Renamed Ltd", country: "US", email: "a@b.example", phone: "+972501234567" }));
+      expect(state).toEqual({ status: "success", message: "Changes saved." });
+      expect(await getAgencyProfile(agencyA)).toMatchObject({ name: "Sunrise Travel", country: "IL", email: "a@b.example" });
+      const row = await db.auditLog.findFirstOrThrow({ where: { action: "agency.profile.update" } });
+      expect(JSON.stringify(row)).not.toContain("Renamed");
     });
 
     it("returns an error and saves nothing on invalid input", async () => {
       const { updateProfileAction } = await import("./(agent)/settings/actions");
-      const state = await updateProfileAction(null, form({ name: "S", email: "x", phone: "1", country: "XX" }));
-      expect(state?.status).toBe("error");
+      const state = await updateProfileAction(null, form({ email: "x", phone: "1" }));
+      expect(state).toMatchObject({ status: "error", message: "Check the form: a valid business email and a phone number with 7 to 15 digits." });
       // What the agent typed comes back, so the form can show it again instead of resetting.
-      expect(state && "values" in state ? state.values : null).toEqual({ name: "S", email: "x", phone: "1", country: "XX" });
-      expect(await getAgencyProfile(agencyA)).toMatchObject({ name: "Sunrise Travel" });
+      expect(state && "values" in state ? state.values : null).toEqual({ email: "x", phone: "1" });
+      expect(await getAgencyProfile(agencyA)).toMatchObject({ name: "Sunrise Travel", email: null });
     });
 
     it("uploads a logo for the session's agency and refuses an SVG", async () => {
@@ -116,9 +131,9 @@ describe("agency settings", () => {
       vi.mocked(requireAgent).mockRejectedValue(new Error("NEXT_REDIRECT:/login"));
       const { updateProfileAction } = await import("./(agent)/settings/actions");
       await expect(
-        updateProfileAction(null, form({ name: "Hacked", email: "a@b.example", phone: "+972501234567", country: "IL" })),
+        updateProfileAction(null, form({ email: "a@b.example", phone: "+972501234567" })),
       ).rejects.toThrow("NEXT_REDIRECT:/login");
-      expect(await getAgencyProfile(agencyA)).toMatchObject({ name: "Sunrise Travel" });
+      expect(await getAgencyProfile(agencyA)).toMatchObject({ name: "Sunrise Travel", email: null });
     });
   });
 

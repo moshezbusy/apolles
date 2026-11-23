@@ -2,9 +2,19 @@ import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import { MAX_RAW_TOKEN_LENGTH as MAX_TOKEN_LENGTH, generateRawToken, hashToken } from "@/server/auth/token";
 
-export const SESSION_COOKIE = "apl_session";
+// The "__Host-" prefix makes the browser itself refuse the cookie unless it is Secure, has
+// Path=/ and no Domain: another subdomain, or anything over plain http, can never set or
+// replace the session cookie. (Browsers treat http://localhost as secure, so development and
+// the browser tests keep working.) Every writer uses sessionCookieOptions below.
+export const SESSION_COOKIE = "__Host-apl_session";
 // Sessions end 12 hours after sign-in, with no "remember me" and no sliding renewal.
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+// The attributes of the session cookie, in one place (the __Host- prefix needs exactly these:
+// secure, path "/", and no domain). maxAge 0 clears it.
+export function sessionCookieOptions(maxAgeSeconds: number = SESSION_TTL_MS / 1000) {
+  return { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: maxAgeSeconds } as const;
+}
 
 // What callers get about the signed-in user. Never includes passwordHash or totpSecret.
 const userSelect = {
@@ -55,6 +65,24 @@ export async function createSession(userId: string, opts: { verified: boolean })
     },
   });
   return rawToken;
+}
+
+// Gives a session a new token; the old one stops working at once. Called when the second
+// sign-in step succeeds (email code, admin TOTP code): a token that someone saw or planted
+// while the session was only half signed in is useless once it is fully signed in. The end of
+// the session (12 hours after sign-in) does not move. Returns the raw token for the cookie
+// and how long the cookie should live, or null when the session is gone.
+export async function rotateSessionToken(sessionId: string): Promise<{ token: string; maxAgeSeconds: number } | null> {
+  const token = generateRawToken();
+  const now = new Date();
+  const rows = await db.session.updateManyAndReturn({
+    where: { id: sessionId, expiresAt: { gt: now } },
+    data: { tokenHash: hashToken(token) },
+    select: { expiresAt: true },
+  });
+  const row = rows[0];
+  if (!row) return null;
+  return { token, maxAgeSeconds: Math.max(1, Math.floor((row.expiresAt.getTime() - now.getTime()) / 1000)) };
 }
 
 // Checked on every request, so a suspension takes effect at once, not after 12 hours.

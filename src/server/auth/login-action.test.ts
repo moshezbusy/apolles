@@ -39,6 +39,16 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/server/auth/notifications", () => ({ notifyAdminLockout: vi.fn() }));
 
+// Emails go nowhere in these tests; `mailDown` makes the provider fail like a real outage.
+let mailDown = false;
+const sentEmails: { to: string; subject: string }[] = [];
+vi.mock("@/server/email/port", () => ({
+  sendEmail: vi.fn(async (m: { to: string; subject: string }) => {
+    if (mailDown) throw new Error("Postmark send failed: HTTP 500");
+    sentEmails.push(m);
+  }),
+}));
+
 const GOOD = "abcdefg1";
 let passwordHash: string;
 
@@ -63,6 +73,62 @@ describe("loginAction", () => {
     jar.clear();
     requestHeaders.clear();
     requestHeaders.set("x-forwarded-for", "203.0.113.7");
+    mailDown = false;
+    sentEmails.length = 0;
+  });
+
+  describe("sign-in audit", () => {
+    it("an agent on a known device: one user.sign-in row; a wrong password or a new device (code still pending) writes none", async () => {
+      const agent = await createAgent();
+      await loginAction(null, form({ email: "agent@example.com", password: "nope12345" }));
+      await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/login/verify");
+      expect(await db.auditLog.count({ where: { action: "user.sign-in" } })).toBe(0);
+
+      jar.set(DEVICE_COOKIE, await trustDevice(agent.id));
+      await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/search");
+      const rows = await db.auditLog.findMany({ where: { action: "user.sign-in" } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ actorUserId: agent.id, targetType: "User", targetId: agent.id });
+      expect(rows[0]?.after).toEqual({ secondStep: "known-device" });
+      expect(JSON.stringify(rows)).not.toContain(GOOD);
+    });
+  });
+
+  describe("sign-in code that cannot be sent", () => {
+    it("mail provider down → a clear message, no crash, no cookie and no half-made session left", async () => {
+      await createAgent();
+      mailDown = true;
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await loginAction(null, form({ email: "agent@example.com", password: GOOD }))).toEqual({
+        error: "We could not send the code. Try again in a few minutes.",
+      });
+      expect(setCalls).toHaveLength(0);
+      expect(await db.session.count()).toBe(0);
+      logged.mockRestore();
+      // The next try, with the provider back, works as usual.
+      mailDown = false;
+      await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/login/verify");
+      expect(sentEmails.map((m) => m.subject)).toEqual(["Your Apolles sign-in code"]);
+    });
+
+    it("too many codes this hour → says so on the sign-in form instead of a page that claims a code was sent", async () => {
+      const agent = await createAgent();
+      await seedRateLimit(`signin-code:${agent.id}`, 6, 60 * 60_000);
+      expect(await loginAction(null, form({ email: "agent@example.com", password: GOOD }))).toEqual({
+        error: "Too many sign-in codes were sent to this account. Try again in an hour.",
+      });
+      expect(setCalls).toHaveLength(0);
+      expect(await db.session.count()).toBe(0);
+      expect(sentEmails).toHaveLength(0);
+    });
+
+    it("the session of an earlier sign-in in this browser is still replaced only by a complete new sign-in", async () => {
+      const agent = await createAgent();
+      jar.set(DEVICE_COOKIE, await trustDevice(agent.id));
+      await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/search");
+      expect(setCalls).toHaveLength(1);
+      expect(await db.session.count()).toBe(1);
+    });
   });
 
   it("agent on a new device → a session waiting for the email code, and /login/verify", async () => {
@@ -252,17 +318,46 @@ describe("loginAction", () => {
       expect(await db.session.count()).toBe(0);
     });
 
-    it("counts every sign-in attempt, right or wrong, by the client IP the proxy appended", async () => {
+    it("counts only failed sign-ins, by the client IP the proxy appended: a right password hands its count back", async () => {
       await createAgent();
       // The left entry is chosen by the client; only the right-most one (the proxy's) counts.
       requestHeaders.set("x-forwarded-for", "1.1.1.1, 203.0.113.7");
       await loginAction(null, form({ email: "agent@example.com", password: "nope12345" }));
+      await loginAction(null, form({ email: "nobody@example.com", password: "nope12345" }));
       requestHeaders.set("x-forwarded-for", "9.9.9.9, 203.0.113.7");
       await expect(
         loginAction(null, form({ email: "agent@example.com", password: GOOD })),
       ).rejects.toThrow("NEXT_REDIRECT");
       const rows = await db.rateLimitBucket.findMany({ where: { key: { startsWith: "signin:ip:" } } });
       expect(rows.map((r) => [r.key, r.count])).toEqual([["signin:ip:203.0.113.7", 2]]);
+    });
+
+    it("an office that signs in many times with right passwords is never limited", async () => {
+      const agent = await createAgent();
+      jar.set(DEVICE_COOKIE, await trustDevice(agent.id)); // a known device: no email code
+      for (let i = 0; i < limit + 2; i++) {
+        await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT");
+      }
+      const rows = await db.rateLimitBucket.findMany({ where: { key: { startsWith: "signin:ip:" } } });
+      expect(rows.map((r) => r.count)).toEqual([0]);
+    });
+
+    it("a suspended or locked account's right password still counts (it is not a sign-in)", async () => {
+      const agent = await createAgent();
+      await db.user.update({ where: { id: agent.id }, data: { status: "SUSPENDED" } });
+      await loginAction(null, form({ email: "agent@example.com", password: GOOD }));
+      const rows = await db.rateLimitBucket.findMany({ where: { key: { startsWith: "signin:ip:" } } });
+      expect(rows.map((r) => r.count)).toEqual([1]);
+    });
+
+    it("IPv6: one /64 network shares the counter", async () => {
+      await createAgent();
+      requestHeaders.set("x-forwarded-for", "2001:db8:1:2::1");
+      await loginAction(null, form({ email: "agent@example.com", password: "nope12345" }));
+      requestHeaders.set("x-forwarded-for", "2001:db8:1:2:aaaa::9");
+      await loginAction(null, form({ email: "nobody@example.com", password: "nope12345" }));
+      const rows = await db.rateLimitBucket.findMany({ where: { key: { startsWith: "signin:ip:" } } });
+      expect(rows.map((r) => [r.key, r.count])).toEqual([["signin:ip:2001:db8:1:2::/64", 2]]);
     });
 
     it("another IP is not affected", async () => {

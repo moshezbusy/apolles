@@ -3,10 +3,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { LedgerEntryType } from "@/generated/prisma/enums";
-import { card, cell, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
+import { alertError, card, cell, emptyState, link, pageTitle, sectionTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
+import { getAgencyInvitation } from "@/server/admin/agencies";
 import { getAgencyWallet } from "@/server/admin/money";
 import { requireAdmin } from "@/server/auth/guards";
+import { resendSetupEmailAction } from "../../actions";
+import { SetupEmailForm } from "../../setup-email-form";
 import { confirmTopupAction, recordAdjustmentAction, recordPayoutAction } from "./actions";
 import { AdjustmentForm, PayoutForm, TopupForm } from "./wallet-forms";
 
@@ -14,7 +17,7 @@ export const metadata: Metadata = { title: "Wallet · Apolles", robots: { index:
 
 type Props = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ cursor?: string | string[] }>;
+  searchParams: Promise<{ cursor?: string | string[]; email?: string | string[] }>;
 };
 
 const TYPE_LABEL: Record<LedgerEntryType, string> = {
@@ -34,7 +37,7 @@ function formatWhen(date: Date): string {
 export default async function AgencyWalletPage({ params, searchParams }: Props) {
   await requireAdmin();
   const { id } = await params;
-  const { cursor } = await searchParams;
+  const { cursor, email } = await searchParams;
   const walletPath = `/admin/agencies/${encodeURIComponent(id)}/wallet`;
 
   let wallet;
@@ -46,6 +49,9 @@ export default async function AgencyWalletPage({ params, searchParams }: Props) 
   }
   if (!wallet) notFound();
   const { agency, balance } = wallet;
+  // The agent who was invited and has not set a password yet (after "New agency" or an approved
+  // application). ?email=failed comes from the approval when the set-up email could not be sent.
+  const invitation = await getAgencyInvitation(agency.id);
 
   // A fresh key for each render of the payout / adjustment forms: posting the same form twice
   // (double click, retry) records the entry once. After each post the page renders again with
@@ -66,6 +72,22 @@ export default async function AgencyWalletPage({ params, searchParams }: Props) 
             Bank reference <span className="font-mono font-semibold text-ink">{agency.bankReference}</span>
           </p>
         </div>
+
+        {invitation?.pending ? (
+          <section aria-label="Invitation" className={`${card} flex flex-col gap-3 p-6`}>
+            {email === "failed" ? (
+              <p role="alert" className={alertError}>
+                The agency was opened, but the set-up email to the agent could not be sent. Send it again below.
+              </p>
+            ) : null}
+            <h2 className={sectionTitle}>Invited, not signed in yet</h2>
+            <p className="text-sm text-muted">
+              <span className="font-semibold text-ink">{invitation.agentEmail}</span> has not set a password yet. The set-up link in the email works for 72 hours;
+              sending it again makes the earlier link stop working.
+            </p>
+            <SetupEmailForm agencyId={agency.id} action={resendSetupEmailAction} />
+          </section>
+        ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className={`${card} p-6`}>

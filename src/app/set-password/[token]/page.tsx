@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AuthShell } from "@/components/AuthShell";
-import { findUsablePasswordToken } from "@/server/auth/password-tokens";
+import { checkPasswordLink } from "@/server/auth/password-tokens";
 import { ExpiredLink } from "./expired-link";
 import { SetPasswordForm } from "./set-password-form";
 
@@ -21,11 +21,16 @@ export default async function SetPasswordPage({
 }) {
   const { token } = await params;
   // Only checks the link; it is used up when the form is submitted.
-  const purpose = await findUsablePasswordToken(token);
+  const link = await checkPasswordLink(token);
+  const invitation = link.purpose === "SET";
 
   return (
     <AuthShell>
-      {purpose ? <SetPasswordForm token={token} title={TITLES[purpose]} /> : <ExpiredLink />}
+      {link.usable && link.purpose && link.role ? (
+        <SetPasswordForm token={token} title={TITLES[link.purpose]} invitation={invitation} role={link.role} />
+      ) : (
+        <ExpiredLink invitation={invitation} />
+      )}
     </AuthShell>
   );
 }

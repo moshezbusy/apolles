@@ -14,6 +14,17 @@ vi.mock("@/server/admin/agencies", () => ({
         bankReference: "APL-0001",
         status: "ACTIVE",
         agentEmail: "agent@test.local",
+        agentInvited: false,
+        balanceCents: 0,
+      },
+      {
+        id: "ag2",
+        name: "New Travel",
+        country: "IL",
+        bankReference: "APL-0002",
+        status: "ACTIVE",
+        agentEmail: "new@test.local",
+        agentInvited: true,
         balanceCents: 0,
       },
     ],
@@ -28,9 +39,16 @@ describe("/admin/agencies table", () => {
     const { default: Page } = await import("./admin/agencies/page");
     const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
     const cells = [...html.matchAll(/<td[^>]*class="([^"]*)"/g)].map((m) => m[1] ?? "");
-    expect(cells.length).toBe(6);
+    expect(cells.length).toBe(12);
     for (const cls of cells) expect(cls).toContain(td);
     expect(html).toContain("APL-0001");
     expect(html).toContain("USD 0.00");
+  });
+
+  it("marks an agency whose agent has not set a password yet, and only that one", async () => {
+    const { default: Page } = await import("./admin/agencies/page");
+    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+    expect(html.split("Invited, not signed in yet").length - 1).toBe(1);
+    expect(html.indexOf("Invited, not signed in yet")).toBeGreaterThan(html.indexOf("New Travel"));
   });
 });

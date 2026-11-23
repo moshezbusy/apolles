@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { requireAdmin } from "@/server/auth/guards";
 import { db } from "@/server/db";
+import { sendEmail } from "@/server/email/port";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 
@@ -14,6 +15,14 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// `after()` runs its callback once the response is sent. Here the callbacks are kept, so a
+// test can check that nothing was sent before the answer and then run them.
+const afterTasks: (() => Promise<unknown>)[] = [];
+vi.mock("next/server", () => ({
+  after: vi.fn((task: () => Promise<unknown>) => {
+    afterTasks.push(task);
+  }),
+}));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers({ "x-forwarded-for": "203.0.113.7" })) }));
 vi.mock("@/server/auth/guards", () => ({ requireAdmin: vi.fn() }));
 vi.mock("@/server/email/port", () => ({ sendEmail: vi.fn(async () => {}) }));
@@ -32,6 +41,8 @@ beforeEach(async () => {
   await resetTestDb();
   admin = (await createUser({ email: "admin@apolles.test", name: "Admin", role: "ADMIN" })).id;
   vi.mocked(requireAdmin).mockResolvedValue({ userId: admin });
+  afterTasks.length = 0;
+  vi.mocked(sendEmail).mockClear();
 });
 
 describe("join (02, 03)", () => {
@@ -58,7 +69,39 @@ describe("join (02, 03)", () => {
   });
 });
 
+describe("join emails", () => {
+  it("are sent after the response, never before the answer (same timing for a new and a known address)", async () => {
+    await createUser({ email: "taken@agency.example", name: "X", role: "ADMIN" });
+    const { joinAction } = await import("./join/actions");
+    await expect(joinAction(null, form(FIELDS))).rejects.toThrow("NEXT_REDIRECT:/join/received");
+    await expect(joinAction(null, form({ ...FIELDS, email: "taken@agency.example" }))).rejects.toThrow("NEXT_REDIRECT:/join/received");
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(afterTasks).toHaveLength(2);
+    for (const task of afterTasks) await task();
+    expect(vi.mocked(sendEmail).mock.calls.map(([m]) => m.subject).sort()).toEqual([
+      "New Apolles agency application",
+      "You already have an Apolles account",
+      "Your Apolles application was received",
+    ]);
+  });
+});
+
 describe("admin applications", () => {
+  it("an application left Approved with no agency says so truthfully and offers to finish opening the agency", async () => {
+    const app = await db.agencyApplication.create({
+      data: { agencyName: "Stuck Travel", contactName: "Dana Cohen", email: "stuck@agency.example", phone: "+972 50 555 0100", country: "IL", website: "x.example", license: "", notes: "", status: "APPROVED", reviewedAt: new Date(), reviewedById: admin },
+    });
+    const { default: Detail } = await import("./admin/applications/[id]/page");
+    const html = renderToStaticMarkup(await Detail({ params: Promise.resolve({ id: app.id }) }));
+    expect(html).toContain("This application was approved, but opening the agency did not finish.");
+    expect(html).toContain("Finish opening the agency");
+    expect(html).not.toContain("The agency is in the agencies list");
+    expect(html).not.toContain(">Reject<");
+    const { approveAction } = await import("./admin/applications/actions");
+    await expect(approveAction(null, form({ id: app.id }))).rejects.toThrow(/NEXT_REDIRECT:\/admin\/agencies\/.+\/wallet/);
+    expect(await db.agency.count({ where: { name: "Stuck Travel" } })).toBe(1);
+  });
+
   it("lists pending applications and approves one into an agency", async () => {
     const { joinAction } = await import("./join/actions");
     await joinAction(null, form(FIELDS)).catch(() => {});

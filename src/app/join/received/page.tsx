@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Application received | Apolles", rob
 const STEPS = [
   { title: "Application submitted", text: "Your details are on file." },
   { title: "Agency review", text: "Usually within 2 to 3 business days." },
-  { title: "Set your password", text: "Once approved, you get an email with a link to set your password and sign in." },
+  { title: "Set your password", text: "Once approved, you get an email with a link to set your password and sign in. The link works for 72 hours." },
 ];
 
 // Screen 03. The email address is not shown (it is not put in the URL).

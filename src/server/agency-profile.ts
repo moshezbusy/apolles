@@ -1,19 +1,20 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { isCountryCode } from "@/lib/countries";
-import { readImageInfo } from "@/lib/image-info";
+import { IMAGE_MAX_PIXELS, IMAGE_MAX_SIDE, readImageInfo, validateImage } from "@/lib/image-info";
 import { audit } from "@/server/audit";
 import { db } from "@/server/db";
 import { normalizeEmail } from "@/server/users";
 
-// The agency profile the agent edits on /settings: name, business email, phone, country and
-// logo (spec 7א: the voucher shows them). Every function takes the agencyId from the
-// caller's session (requireAgent), never from the request, and audits each change in the
-// same transaction as the change.
+// The agency profile on /settings (spec 7א: the voucher shows it). The agent edits the
+// business email, the phone and the logo. The agency NAME and COUNTRY are shown but are not
+// the agent's to change: the country is the point of sale sent to the hotel supplier with
+// every search and booking (it decides which rates and taxes apply), and the name is the legal
+// name the admin approved. They are set when the admin opens the agency.
+// Every function takes the agencyId from the caller's session (requireAgent), never from the
+// request, and audits each change in the same transaction as the change.
 
 export const LOGO_MAX_BYTES = 512_000;
 const LOGO_MIN_WIDTH = 300;
-const LOGO_MAX_SIDE = 4_000;
 
 export const LOGO_RULE_COPY = "PNG or JPEG, at least 300px wide, up to 500 KB.";
 
@@ -29,19 +30,11 @@ const phone = z
     return digits >= 7 && digits <= 15;
   });
 
+// What an agent may change. Strict: a posted name or country (or anything else) is refused.
 export const agencyProfileInput = z
   .object({
-    // No control or invisible formatting characters (NUL, line breaks, right-to-left
-    // overrides): the name is shown in the admin list and printed on vouchers.
-    name: z
-      .string()
-      .trim()
-      .min(2)
-      .max(100)
-      .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value)),
     email: z.string().trim().max(254).pipe(z.email()),
     phone,
-    country: z.string().trim().refine(isCountryCode),
   })
   .strict();
 
@@ -89,7 +82,7 @@ export async function updateAgencyProfile(
     await tx.$queryRaw`SELECT id FROM "Agency" WHERE id = ${agencyId} FOR UPDATE`;
     const before = await tx.agency.findUniqueOrThrow({
       where: { id: agencyId },
-      select: { name: true, email: true, phone: true, country: true },
+      select: { email: true, phone: true },
     });
     await tx.agency.update({ where: { id: agencyId }, data: after });
     await audit(actorUserId, "agency.profile.update", "Agency", agencyId, before, after, tx);
@@ -99,7 +92,10 @@ export async function updateAgencyProfile(
 export type SetLogoResult = { ok: true } | { ok: false; error: string };
 
 // The type and size are read from the file's own bytes (never its name or the browser's
-// claim), so SVG, HTML and anything else that is not a real PNG or JPEG is refused.
+// claim), so SVG, HTML and anything else that is not a real PNG or JPEG is refused. Then the
+// whole file is checked (validateImage): the logo is later drawn into voucher PDFs, where a
+// crafted or damaged image would exhaust the server's memory or hang the request. Only a file
+// that passes is stored.
 export async function setAgencyLogo(
   actorUserId: string,
   agencyId: string,
@@ -109,8 +105,15 @@ export async function setAgencyLogo(
   if (bytes.length > LOGO_MAX_BYTES) return { ok: false, error: `The file is too large. ${LOGO_RULE_COPY}` };
   const info = readImageInfo(bytes);
   if (!info) return { ok: false, error: `This file is not a PNG or JPEG image. ${LOGO_RULE_COPY}` };
-  if (info.width < LOGO_MIN_WIDTH || info.width > LOGO_MAX_SIDE || info.height > LOGO_MAX_SIDE) {
-    return { ok: false, error: `The image is ${info.width}×${info.height}px. ${LOGO_RULE_COPY} At most 4000px per side.` };
+  if (info.width < LOGO_MIN_WIDTH) return { ok: false, error: `The image is ${info.width}×${info.height}px. ${LOGO_RULE_COPY}` };
+  if (info.width > IMAGE_MAX_SIDE || info.height > IMAGE_MAX_SIDE || info.width * info.height > IMAGE_MAX_PIXELS) {
+    return {
+      ok: false,
+      error: `The image is ${info.width}×${info.height}px, which is too large. Use an image of at most ${IMAGE_MAX_SIDE}px per side and 2 million pixels in total (for example 2000×1000px).`,
+    };
+  }
+  if (!validateImage(bytes)) {
+    return { ok: false, error: "This image file is damaged or in a format we cannot print. Save it again as a standard PNG or JPEG and upload it." };
   }
 
   const sha256 = createHash("sha256").update(bytes).digest("hex");

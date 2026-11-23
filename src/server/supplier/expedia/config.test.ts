@@ -38,6 +38,19 @@ describe("readExpediaConfig", () => {
     expect(() => readExpediaConfig()).toThrow();
   });
 
+  it("a production build with APP_ENV unset or misspelled never falls back to the test endpoint", () => {
+    vi.stubEnv("EXPEDIA_API_KEY", "k");
+    vi.stubEnv("EXPEDIA_SHARED_SECRET", "s");
+    vi.stubEnv("EXPEDIA_BASE_URL", "");
+    vi.stubEnv("NODE_ENV", "production");
+    for (const appEnv of ["", "prod", "Production"]) {
+      vi.stubEnv("APP_ENV", appEnv);
+      expect(() => readExpediaConfig(), appEnv).toThrow(/APP_ENV/);
+    }
+    vi.stubEnv("APP_ENV", "staging");
+    expect(readExpediaConfig()).toMatchObject({ baseUrl: "https://test.ean.com/v3", production: false });
+  });
+
   it("names a missing variable without printing any value", () => {
     vi.stubEnv("EXPEDIA_API_KEY", "");
     vi.stubEnv("EXPEDIA_SHARED_SECRET", "secret-value");

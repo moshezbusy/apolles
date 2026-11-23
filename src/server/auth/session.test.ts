@@ -4,11 +4,14 @@ import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import {
+  SESSION_COOKIE,
   SESSION_TTL_MS,
   createSession,
   destroySession,
   destroyUserSessions,
   getSession,
+  rotateSessionToken,
+  sessionCookieOptions,
 } from "@/server/auth/session";
 
 async function createAgency(bankReference = "APL-0001") {
@@ -41,6 +44,44 @@ describe("sessions", () => {
     expect(row.tokenHash).not.toContain(raw);
     expect(row.expiresAt.getTime() - row.createdAt.getTime()).toBe(SESSION_TTL_MS);
     expect(SESSION_TTL_MS).toBe(12 * 60 * 60 * 1000);
+  });
+
+  it("rotateSessionToken: the session gets a new token, the old one stops working, nothing else changes", async () => {
+    const agent = await createAgent();
+    const old = await createSession(agent.id, { verified: true });
+    const before = await getSession(old);
+
+    const renewed = await rotateSessionToken(before!.sessionId);
+    expect(renewed).not.toBeNull();
+    expect(renewed!.token).not.toBe(old);
+    expect(Buffer.from(renewed!.token, "base64url")).toHaveLength(32);
+    expect(await getSession(old)).toBeNull();
+    const after = await getSession(renewed!.token);
+    expect(after).toMatchObject({ sessionId: before!.sessionId, emailVerifiedAt: before!.emailVerifiedAt });
+    expect(await db.session.count()).toBe(1);
+    // Only the hash of the new token is stored, and the 12-hour end of the session is not moved.
+    const row = await db.session.findFirstOrThrow();
+    expect(row.tokenHash).toBe(createHash("sha256").update(renewed!.token).digest("hex"));
+    expect(row.expiresAt.getTime() - row.createdAt.getTime()).toBe(SESSION_TTL_MS);
+    expect(renewed!.maxAgeSeconds).toBeGreaterThan(SESSION_TTL_MS / 1000 - 60);
+    expect(renewed!.maxAgeSeconds).toBeLessThanOrEqual(SESSION_TTL_MS / 1000);
+  });
+
+  it("rotateSessionToken: an unknown or expired session gets nothing", async () => {
+    const agent = await createAgent();
+    const raw = await createSession(agent.id, { verified: true });
+    const { sessionId } = (await getSession(raw))!;
+    expect(await rotateSessionToken("nope")).toBeNull();
+    await db.session.update({ where: { id: sessionId }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    expect(await rotateSessionToken(sessionId)).toBeNull();
+  });
+
+  // The __Host- prefix makes the browser refuse the cookie unless it is Secure, has Path=/ and
+  // no Domain: it cannot be set or overwritten from another subdomain or over plain http.
+  it("the session cookie uses the __Host- prefix, with the attributes the prefix requires", () => {
+    expect(SESSION_COOKIE).toBe("__Host-apl_session");
+    expect(sessionCookieOptions(3600)).toEqual({ httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 3600 });
+    expect(sessionCookieOptions(3600)).not.toHaveProperty("domain");
   });
 
   it("valid agent session → user and agency, without secrets", async () => {

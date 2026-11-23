@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@/generated/prisma/client";
+import { ipBucket } from "@/server/client-ip";
 import { db } from "@/server/db";
 import { normalizeEmail } from "@/server/users";
 
@@ -41,8 +42,10 @@ export const SIGN_IN_RATE_LIMIT_COPY =
 // Shown when a set-password submit is refused by the per-IP limit.
 export const SET_PASSWORD_RATE_LIMIT_COPY = "Too many attempts. Try again later.";
 
+// IPv6 is counted per /64 network (ipBucket): one home or office line owns billions of
+// addresses, so a counter per address would never fill.
 export function ipKey(action: IpRateLimitAction, ip: string): string {
-  return `${action}:ip:${ip}`;
+  return `${action}:ip:${ipBucket(ip)}`;
 }
 
 // Never the raw email: a sha256 hex digest of the normalized address.
@@ -92,6 +95,24 @@ export async function hitRateLimit(
   return { allowed: row.count <= limit, retryAfterMs: Math.max(0, Math.ceil(row.retryAfterMs)) };
 }
 
+// Gives back one hit of `key` in the current window (never below zero). For limits that should
+// count only failures: every request is counted BEFORE its check (so parallel requests can not
+// slip past the limit) and a request that turns out fine hands its hit back. Best effort: a
+// window that ended meanwhile, or an error, leaves the count as it is (the stricter side), and
+// never fails the request. The key is not logged (it holds an IP).
+export async function refundRateLimit(key: string, windowMs: number): Promise<void> {
+  try {
+    assertValid(key, 1, windowMs);
+    await db.$executeRaw`
+      UPDATE "RateLimitBucket" SET "count" = "count" - 1
+      WHERE "key" = ${key} AND "windowStart" = ${windowStartSql(windowMs)} AND "count" > 0`;
+  } catch (error) {
+    console.error("rate limit refund failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 // Best effort: an error here must not fail the request that triggered it (the count above is
 // already saved). The key is not logged (it holds an IP).
 async function pruneOldBuckets(): Promise<void> {
@@ -110,4 +131,9 @@ async function pruneOldBuckets(): Promise<void> {
 export async function hitIpRateLimit(action: IpRateLimitAction, ip: string): Promise<RateLimitResult> {
   const { limit, windowMs } = RATE_LIMITS[action];
   return hitRateLimit(ipKey(action, ip), limit, windowMs);
+}
+
+// Hands back the hit hitIpRateLimit counted for a request that turned out fine.
+export async function refundIpRateLimit(action: IpRateLimitAction, ip: string): Promise<void> {
+  await refundRateLimit(ipKey(action, ip), RATE_LIMITS[action].windowMs);
 }

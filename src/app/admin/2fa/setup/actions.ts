@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { requireAdminPendingTotp } from "@/server/auth/guards";
+import { renewSessionCookie, requireAdminPendingTotp } from "@/server/auth/guards";
 import { getClientIp } from "@/server/client-ip";
 import { SIGN_IN_RATE_LIMIT_COPY, hitIpRateLimit } from "@/server/rate-limit";
 import { confirmTotpForSession, startTotpEnrollment } from "@/server/auth/totp";
@@ -25,7 +25,10 @@ export async function confirmTotpAction(
 
   const code = parseCode(formData);
   if (code === null) return { error: TOTP_WRONG_COPY };
-  return respondToTotpCheck(await confirmTotpForSession(sessionId, code));
+  const result = await confirmTotpForSession(sessionId, code);
+  // Fully signed in now: the session gets a new token; the one from before the code stops working.
+  if (result === "OK") await renewSessionCookie(sessionId);
+  return respondToTotpCheck(result);
 }
 
 // "Generate a new key" button: replaces the unconfirmed key (e.g. the old one was lost or

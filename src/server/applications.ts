@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { ApplicationStatus, Prisma } from "@/generated/prisma/client";
 import { isCountryCode } from "@/lib/countries";
-import { DUPLICATE_EMAIL_MESSAGE, createAgency } from "@/server/admin/agencies";
+import { createAgencyInput, createAgencyRows, isDuplicateUserEmail, sendAgencyInvitation } from "@/server/admin/agencies";
 import { audit } from "@/server/audit";
+import { ipBucket } from "@/server/client-ip";
 import { db } from "@/server/db";
 import { sendEmail } from "@/server/email/port";
 import { hitRateLimit } from "@/server/rate-limit";
@@ -63,39 +64,32 @@ function appUrl(): string {
   return parsed.success ? parsed.data.replace(/\/$/, "") : "";
 }
 
-// IPv6 counts per /64 (one home or office network), IPv4 per address.
-function ipBucket(ip: string): string {
-  if (!ip.includes(":")) return ip;
-  const full = expandIpv6(ip);
-  return full ? `${full.slice(0, 4).join(":")}::/64` : ip;
-}
-
-function expandIpv6(ip: string): string[] | null {
-  const [head = "", tail = ""] = ip.split("::");
-  const a = head ? head.split(":") : [];
-  const b = ip.includes("::") ? (tail ? tail.split(":") : []) : [];
-  const missing = 8 - a.length - b.length;
-  if (missing < 0 || (!ip.includes("::") && a.length !== 8)) return null;
-  return [...a, ...Array(ip.includes("::") ? missing : 0).fill("0"), ...b];
-}
-
-// Overall caps, whatever the network: applications an hour, and admin alerts (one per 10 minutes
-// is enough to know there is something to review).
+// Overall caps, whatever the network. Over ALL_LIMIT applications an hour the form stays open
+// (one flood must not close it for everyone): the application is still saved, but no email at
+// all goes out for it, so the form can never be used to send mail to many addresses. Admin
+// alerts: one per 10 minutes is enough to know there is something to review.
 const ALL_LIMIT = { limit: 30, windowMs: 60 * 60_000 };
 const ALERT_LIMIT = { limit: 1, windowMs: 10 * 60_000 };
 
+// How the emails of an application are run. The join action passes Next's `after()`, so they
+// go out once the answer has been sent; the default runs them at once (tests, scripts).
+export type RunLater = (work: () => Promise<void>) => unknown;
+const runNow: RunLater = (work) => work();
+
 // The answer is the same whether or not the email already has a login or an application, so the
 // form never tells who is a user. An existing user gets a short note by email instead. No text the
-// applicant typed is ever put in an email.
-export async function submitApplication(raw: ApplicationInput | Record<string, string>, ip: string): Promise<SubmitResult> {
+// applicant typed is ever put in an email. The emails are not part of the answer: they run
+// through `runLater`, so neither the reply nor how long it takes shows which case it was.
+export async function submitApplication(raw: ApplicationInput | Record<string, string>, ip: string, runLater: RunLater = runNow): Promise<SubmitResult> {
   const parsed = applicationInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "invalid" };
   const v = parsed.data;
   if (v.company !== "") return { ok: true };
+  // IPv6 counts per /64 (one home or office network), IPv4 per address (ipBucket).
   if (!(await hitRateLimit(`join:ip:${ipBucket(ip)}`, IP_LIMIT.limit, IP_LIMIT.windowMs)).allowed) return { ok: false, error: "limited" };
   const email = normalizeEmail(v.email);
   if (!(await hitRateLimit(emailKey(email), EMAIL_LIMIT.limit, EMAIL_LIMIT.windowMs)).allowed) return { ok: false, error: "limited" };
-  if (!(await hitRateLimit("join:all", ALL_LIMIT.limit, ALL_LIMIT.windowMs)).allowed) return { ok: false, error: "limited" };
+  const quiet = !(await hitRateLimit("join:all", ALL_LIMIT.limit, ALL_LIMIT.windowMs)).allowed;
 
   const outcome = await db.$transaction(async (tx) => {
     // One at a time per email (approve takes the same lock), so two quick posts make one application.
@@ -113,7 +107,12 @@ export async function submitApplication(raw: ApplicationInput | Record<string, s
     return "saved" as const;
   });
 
-  // Best effort: nothing here changes the answer (logged by name only).
+  if (!quiet && outcome !== "open") await runLater(() => sendApplicationEmails(outcome, email));
+  return { ok: true };
+}
+
+// Best effort, after the answer: nothing here changes it (failures are logged by name only).
+async function sendApplicationEmails(outcome: "user" | "saved", email: string): Promise<void> {
   const base = appUrl();
   const fail = (what: string) => (error: unknown) => console.error("join email failed", { what, error: error instanceof Error ? error.name : "Error" });
   if (outcome === "user") {
@@ -122,23 +121,25 @@ export async function submitApplication(raw: ApplicationInput | Record<string, s
       subject: "You already have an Apolles account",
       text: `Hello,\n\nSomeone asked to join Apolles with this email address, which already has an account. To sign in, go to ${base}/login. If you forgot your password, choose "Forgot password" there.\n\nIf this was not you, you can ignore this email.\n\nApolles`,
     }).catch(fail("join existing-account email"));
-    return { ok: true };
+    return;
   }
-  if (outcome === "open") return { ok: true };
   await sendEmail({
     to: email,
     subject: "Your Apolles application was received",
-    text: "Hello,\n\nThanks for applying to Apolles. We will review your agency details, usually within 2 to 3 business days.\n\nOnce approved, you get an email with a link to set your password and sign in. If we need more details, we will email you.\n\nIf you did not apply, you can ignore this email.\n\nApolles",
+    text: "Hello,\n\nThanks for applying to Apolles. We will review your agency details, usually within 2 to 3 business days.\n\nOnce approved, you get an email with a link to set your password and sign in. The link works for 72 hours. If we need more details, we will email you.\n\nIf you did not apply, you can ignore this email.\n\nApolles",
   }).catch(fail("application email"));
-  const admin = z.email().safeParse(process.env.ADMIN_ALERT_EMAIL);
-  if (admin.success && (await hitRateLimit("join:alert", ALERT_LIMIT.limit, ALERT_LIMIT.windowMs)).allowed) {
-    await sendEmail({
-      to: admin.data,
-      subject: "New Apolles agency application",
-      text: `New agency applications are waiting for review.\n\n${base}/admin/applications`,
-    }).catch(fail("application alert"));
+  try {
+    const admin = z.email().safeParse(process.env.ADMIN_ALERT_EMAIL);
+    if (admin.success && (await hitRateLimit("join:alert", ALERT_LIMIT.limit, ALERT_LIMIT.windowMs)).allowed) {
+      await sendEmail({
+        to: admin.data,
+        subject: "New Apolles agency application",
+        text: `New agency applications are waiting for review.\n\n${base}/admin/applications`,
+      });
+    }
+  } catch (error) {
+    fail("application alert")(error);
   }
-  return { ok: true };
 }
 
 const SELECT = {
@@ -183,41 +184,59 @@ export async function getApplication(id: string): Promise<ApplicationRow | null>
 export type ReviewResult = { ok: true; agencyId?: string; emailSent?: boolean } | { ok: false; error: string };
 
 const NOT_PENDING = "This application was already reviewed.";
+const DUPLICATE_USER = "A user with this email already exists.";
 
-// Approve: the application is claimed first (Pending → Approved, one click only), then the agency
-// and its agent user are made as with "New agency" (set-password email included). If that fails
-// (the email got a user meanwhile), the claim is undone and the application stays pending.
+// Thrown inside the approval transaction to roll it back with a plain answer.
+class ApprovalRefused extends Error {}
+
+// Approve, in ONE transaction: the application is claimed (Pending → Approved, one click only),
+// the agency and its agent user are made as with "New agency", and the application is linked to
+// the agency. Either all of it happens or none: a crash or an error in the middle leaves the
+// application pending, never "approved with no agency". The set-password email goes out after
+// the commit.
+// An application that an older version left Approved with no agency is completed the same
+// way: approving it again opens the agency, or, when its agent already exists (the agency was
+// opened and only the link failed), links that agency and makes nothing new.
 export async function approveApplication(actor: string, id: string): Promise<ReviewResult> {
   const app = await getApplication(id);
   if (!app) return { ok: false, error: "This application was not found." };
-  // Under the same per-email lock as the join form: no new application can slip in meanwhile.
-  const claimed = await db.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`join:${app.email}`}))`;
-    return tx.agencyApplication.updateMany({ where: { id: app.id, status: "PENDING" }, data: { status: "APPROVED", reviewedAt: new Date(), reviewedById: actor } });
-  });
-  if (claimed.count === 0) return { ok: false, error: NOT_PENDING };
-  let created: Awaited<ReturnType<typeof createAgency>>;
+  const input = createAgencyInput.safeParse({ name: app.agencyName, country: app.country, agentName: app.contactName, agentEmail: app.email });
+  if (!input.success) return { ok: false, error: "This application's details are not valid for an agency. Reject it and ask the agency to apply again." };
+
+  let outcome: { agencyId: string; created: { agencyId: string; userId: string } | null };
   try {
-    created = await createAgency(actor, { name: app.agencyName, country: app.country, agentName: app.contactName, agentEmail: app.email });
-  } catch (error) {
-    await db.agencyApplication.update({ where: { id: app.id }, data: { status: "PENDING", reviewedAt: null, reviewedById: null } });
-    if (error instanceof Error && error.message === DUPLICATE_EMAIL_MESSAGE) return { ok: false, error: "A user with this email already exists." };
-    throw error;
-  }
-  // The agency exists now. Linking it is retried once; if it still fails, the admin is told (the
-  // application stays Approved, and the agency is in the agencies list).
-  const link = () =>
-    db.$transaction(async (tx) => {
+    outcome = await db.$transaction(async (tx) => {
+      // Under the same per-email lock as the join form: no new application can slip in meanwhile.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`join:${app.email}`}))`;
+      const claimed = await tx.agencyApplication.updateMany({
+        where: { id: app.id, OR: [{ status: "PENDING" }, { status: "APPROVED", agencyId: null }] },
+        data: { status: "APPROVED", reviewedAt: new Date(), reviewedById: actor },
+      });
+      if (claimed.count === 0) throw new ApprovalRefused(NOT_PENDING);
+
+      // Only for an application that was already Approved: its agent may exist from the first try.
+      const existing = app.status === "APPROVED" ? await tx.user.findUnique({ where: { email: app.email }, select: { role: true, agencyId: true } }) : null;
+      if (existing) {
+        if (existing.role !== "AGENT" || !existing.agencyId) throw new ApprovalRefused(DUPLICATE_USER);
+        await tx.agencyApplication.update({ where: { id: app.id }, data: { agencyId: existing.agencyId } });
+        await audit(actor, "application.approve", "AgencyApplication", app.id, undefined, { agencyId: existing.agencyId, linkedExisting: true }, tx);
+        return { agencyId: existing.agencyId, created: null };
+      }
+
+      const created = await createAgencyRows(tx, actor, input.data);
       await tx.agency.update({ where: { id: created.agencyId }, data: { email: app.email, phone: app.phone } });
       await tx.agencyApplication.update({ where: { id: app.id }, data: { agencyId: created.agencyId } });
       await audit(actor, "application.approve", "AgencyApplication", app.id, undefined, { agencyId: created.agencyId }, tx);
+      return { agencyId: created.agencyId, created };
     });
-  try {
-    await link().catch(link);
   } catch (error) {
-    console.error("application link failed", { error: error instanceof Error ? error.name : "Error", applicationId: app.id, agencyId: created.agencyId });
+    if (error instanceof ApprovalRefused) return { ok: false, error: error.message };
+    // The email got a user since the application was sent: everything rolled back, still pending.
+    if (isDuplicateUserEmail(error)) return { ok: false, error: DUPLICATE_USER };
+    throw error;
   }
-  return { ok: true, agencyId: created.agencyId, emailSent: created.emailSent };
+  if (!outcome.created) return { ok: true, agencyId: outcome.agencyId };
+  return { ok: true, agencyId: outcome.agencyId, emailSent: await sendAgencyInvitation(outcome.created) };
 }
 
 export async function rejectApplication(actor: string, id: string): Promise<ReviewResult> {

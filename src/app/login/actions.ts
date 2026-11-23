@@ -5,18 +5,20 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { LOGIN_ERROR_COPY, login } from "@/server/auth/login";
 import { PASSWORD_MAX_LENGTH } from "@/server/auth/password";
+import { audit } from "@/server/audit";
 import { getClientIp } from "@/server/client-ip";
-import { SIGN_IN_RATE_LIMIT_COPY, hitIpRateLimit } from "@/server/rate-limit";
+import { SIGN_IN_RATE_LIMIT_COPY, hitIpRateLimit, refundIpRateLimit } from "@/server/rate-limit";
 import {
   SESSION_COOKIE,
-  SESSION_TTL_MS,
   createSession,
   destroySession,
   getSession,
+  sessionCookieOptions,
 } from "@/server/auth/session";
 import { completeSignIn } from "@/server/auth/lockout";
 import { DEVICE_COOKIE, isTrustedDevice, sendSignInCode } from "@/server/auth/signin-code";
 import { isDemoAgentWithoutCode } from "@/server/content/demo-seed";
+import { CODE_NOT_SENT_COPY } from "./verify/copy";
 
 export type LoginFormState = { error: string } | null;
 
@@ -33,8 +35,11 @@ export async function loginAction(
   formData: FormData,
 ): Promise<LoginFormState> {
   // Per-IP limit first: a refused request never reaches the account (no attempt slot, no
-  // change to failedLogins, no password check).
-  const { allowed } = await hitIpRateLimit("signin", getClientIp(await headers()));
+  // change to failedLogins, no password check). Every request is counted here, before the
+  // check; a right password hands its count back below, so only failed attempts add up and an
+  // office that shares one address is not shut out by its own normal sign-ins.
+  const ip = getClientIp(await headers());
+  const { allowed } = await hitIpRateLimit("signin", ip);
   if (!allowed) return { error: SIGN_IN_RATE_LIMIT_COPY };
 
   const parsed = loginInput.safeParse({
@@ -45,6 +50,7 @@ export async function loginAction(
 
   const result = await login(parsed.data.email, parsed.data.password);
   if (!result.ok) return { error: LOGIN_ERROR_COPY[result.reason] };
+  await refundIpRateLimit("signin", ip);
 
   const cookieStore = await cookies();
   // A new sign-in always gets a fresh token; the old session from this browser is ended.
@@ -60,19 +66,25 @@ export async function loginAction(
   if (knownDevice && !(await completeSignIn(result.userId))) return { error: LOGIN_ERROR_COPY.LOCKED };
   // Admins: verified here (their second step is TOTP, checked by requireAdmin).
   const token = await createSession(result.userId, { verified: result.needsTotp || knownDevice });
-  cookieStore.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_TTL_MS / 1000,
-  });
 
   if (!result.needsTotp && !knownDevice) {
+    // The code goes out before the browser gets the session: when it cannot be sent (mail
+    // provider down, or too many codes this hour) the half-made session is removed and the
+    // agent is told the truth here, instead of landing on a page that says "we sent a code".
     const session = await getSession(token);
-    if (session) await sendSignInCode(session.sessionId);
-    redirect("/login/verify");
+    const sent = session ? await sendSignInCode(session.sessionId) : "failed";
+    if (sent !== "sent") {
+      await destroySession(token);
+      // A fresh session cannot be "gone" or over its own cap: anything else is a failed send.
+      return { error: CODE_NOT_SENT_COPY[sent === "limited-hour" ? "limited-hour" : "failed"] };
+    }
   }
+  // An agent on a known device is signed in now: audited here. A new device is audited when
+  // its email code is right (signin-code.ts), an admin when the TOTP code is (totp.ts).
+  if (knownDevice) await audit(result.userId, "user.sign-in", "User", result.userId, undefined, { secondStep: "known-device" });
+  cookieStore.set(SESSION_COOKIE, token, sessionCookieOptions());
+
+  if (!result.needsTotp && !knownDevice) redirect("/login/verify");
   // Admins continue to the admin area (TOTP step is added with admin TOTP).
   redirect(result.needsTotp ? "/admin" : "/search");
 }

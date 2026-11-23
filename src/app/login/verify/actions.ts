@@ -2,10 +2,9 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { requireAgentPendingCode } from "@/server/auth/guards";
+import { renewSessionCookie, requireAgentPendingCode } from "@/server/auth/guards";
 import { DEVICE_COOKIE, DEVICE_TTL_MS, sendSignInCode, trustDevice, verifySignInCode } from "@/server/auth/signin-code";
-
-export type VerifyState = { error?: string; notice?: string } | null;
+import { CODE_NOT_SENT_COPY, CODE_SENT_NOTICE, type VerifyState } from "./copy";
 
 // The 6-digit code from the email (plan 8e). Right: this browser is remembered for 90 days.
 export async function verifyCodeAction(_previous: VerifyState, formData: FormData): Promise<VerifyState> {
@@ -16,6 +15,9 @@ export async function verifyCodeAction(_previous: VerifyState, formData: FormDat
   if (result === "locked") redirect("/login?code=locked");
   if (result === "expired") return { error: "This code has expired. Send a new code." };
   if (result === "wrong") return { error: "That code is not right. Check the email and try again." };
+  // The sign-in is complete: the session gets a new token (the one from before the code stops
+  // working), and this browser is remembered.
+  await renewSessionCookie(sessionId);
   (await cookies()).set(DEVICE_COOKIE, await trustDevice(userId), { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: DEVICE_TTL_MS / 1000 });
   redirect("/search");
 }
@@ -24,5 +26,5 @@ export async function resendCodeAction(): Promise<VerifyState> {
   const { sessionId } = await requireAgentPendingCode();
   const result = await sendSignInCode(sessionId);
   if (result === "gone") redirect("/login");
-  return result === "sent" ? { notice: "A new code is on its way. It expires in 10 minutes." } : { error: "Too many codes for this sign-in. Sign in again to get a new one." };
+  return result === "sent" ? { notice: CODE_SENT_NOTICE } : { error: CODE_NOT_SENT_COPY[result] };
 }

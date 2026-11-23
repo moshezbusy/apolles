@@ -13,6 +13,10 @@ import { isIP } from "node:net";
 // itself (R51). The result is always a valid IPv4/IPv6 literal or
 // "unknown", so a client cannot put arbitrary text into a rate-limit key.
 // Never logged.
+//
+// "unknown" means every visitor shares one rate-limit counter (safe, but one busy visitor can
+// use it up for all). In a production build that is almost always a wrong proxy setting, so
+// it is reported in the log, one line a minute at most (no header values).
 
 export const UNKNOWN_IP = "unknown";
 const DEFAULT_HOPS = 1;
@@ -54,6 +58,55 @@ export function getClientIp(
 ): string {
   const hops = parseTrustedProxyHops(trustedProxyHops);
   const candidate = fromForwardedFor(headers.get("x-forwarded-for"), hops);
-  if (candidate === null) return UNKNOWN_IP;
-  return normalizeIp(candidate) ?? UNKNOWN_IP;
+  const ip = candidate === null ? null : normalizeIp(candidate);
+  if (ip === null) {
+    reportUnknownIp();
+    return UNKNOWN_IP;
+  }
+  return ip;
+}
+
+const UNKNOWN_IP_REPORT_EVERY_MS = 60_000;
+// Only a throttle for the log line below (per server process); nothing depends on it.
+let lastUnknownIpReport = Number.NEGATIVE_INFINITY;
+
+function reportUnknownIp(): void {
+  if (process.env.NODE_ENV !== "production") return;
+  const now = Date.now();
+  if (now - lastUnknownIpReport < UNKNOWN_IP_REPORT_EVERY_MS) return;
+  lastUnknownIpReport = now;
+  console.error(
+    "client IP unknown: X-Forwarded-For is missing, not an IP address, or has fewer entries than TRUSTED_PROXY_HOPS. " +
+      "Every visitor now shares one rate-limit counter. Check the proxy in front of the app and TRUSTED_PROXY_HOPS.",
+  );
+}
+
+// What a per-IP rate limit counts under. IPv4: the address. IPv6: its /64 network (one home or
+// office line owns a whole /64, so a counter per address would never fill). The same network
+// written differently (leading zeros, capitals, a zone) gives the same bucket, and an IPv4
+// address written as IPv6 (::ffff:1.2.3.4) counts as that IPv4 address.
+export function ipBucket(ip: string): string {
+  if (isIP(ip) !== 6) return ip; // IPv4, or "unknown"
+  const groups = expandIpv6(ip);
+  if (!groups) return ip;
+  const [g5 = 0, g6 = 0, g7 = 0] = groups.slice(5);
+  if (groups.slice(0, 5).every((g) => g === 0) && g5 === 0xffff) return `${g6 >> 8}.${g6 & 0xff}.${g7 >> 8}.${g7 & 0xff}`;
+  return `${groups.slice(0, 4).map((g) => g.toString(16)).join(":")}::/64`;
+}
+
+// A valid IPv6 literal as its 8 groups. A trailing dotted IPv4 part counts as two groups.
+function expandIpv6(ip: string): number[] | null {
+  let text = (ip.split("%")[0] ?? "").toLowerCase();
+  const dotted = /^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text);
+  if (dotted) {
+    const [a, b, c, d] = dotted.slice(2).map(Number) as [number, number, number, number];
+    text = `${dotted[1]}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head = "", tail] = text.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const missing = 8 - left.length - right.length;
+  if (tail === undefined ? missing !== 0 : missing < 1) return null;
+  const groups = [...left, ...new Array<string>(tail === undefined ? 0 : missing).fill("0"), ...right].map((g) => Number.parseInt(g, 16));
+  return groups.every((g) => Number.isInteger(g) && g >= 0 && g <= 0xffff) ? groups : null;
 }

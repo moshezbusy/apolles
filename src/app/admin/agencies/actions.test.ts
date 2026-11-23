@@ -5,7 +5,7 @@ import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import { SESSION_COOKIE, createSession } from "@/server/auth/session";
 import { sendEmail } from "@/server/email/port";
-import { createAgencyAction, setAgencyStatusAction } from "@/app/admin/agencies/actions";
+import { createAgencyAction, resendSetupEmailAction, setAgencyStatusAction } from "@/app/admin/agencies/actions";
 
 const jar = new Map<string, string>();
 
@@ -160,5 +160,51 @@ describe("agency server actions", () => {
     ).rejects.toThrow("NEXT_REDIRECT:/admin/agencies");
     expect((await db.agency.findUniqueOrThrow({ where: { id: agency.id } })).status).toBe("ACTIVE");
     expect(await db.auditLog.count()).toBe(0);
+  });
+
+  describe("resendSetupEmailAction", () => {
+    async function invitedAgency() {
+      const agency = await db.agency.create({ data: { name: "A", country: "IL", bankReference: "APL-9" } });
+      const agent = await createUser({ email: "ag@example.com", name: "Ag", role: "AGENT", agencyId: agency.id });
+      return { agency, agent };
+    }
+
+    it("needs a fully signed-in admin: no session, a pending code and an agent are all sent away", async () => {
+      const { agency, agent } = await invitedAgency();
+      await expect(resendSetupEmailAction(null, form({ agencyId: agency.id }))).rejects.toThrow("NEXT_REDIRECT:/login");
+      jar.set(SESSION_COOKIE, await createSession(agent.id, { verified: true }));
+      await expect(resendSetupEmailAction(null, form({ agencyId: agency.id }))).rejects.toThrow("NEXT_REDIRECT:/login");
+      jar.clear();
+      await signInAdmin(false);
+      await expect(resendSetupEmailAction(null, form({ agencyId: agency.id }))).rejects.toThrow("NEXT_REDIRECT:/admin/2fa");
+      expect(sendEmail).not.toHaveBeenCalled();
+      expect(await db.passwordToken.count()).toBe(0);
+    });
+
+    it("sends the set-up email and says so; the audit actor is the admin", async () => {
+      const admin = await signInAdmin();
+      const { agency } = await invitedAgency();
+      expect(await resendSetupEmailAction(null, form({ agencyId: agency.id }))).toEqual({
+        status: "success",
+        message: "The set-up email was sent. The link works for 72 hours.",
+      });
+      expect(vi.mocked(sendEmail).mock.calls[0]![0].to).toBe("ag@example.com");
+      expect((await db.auditLog.findFirstOrThrow({ where: { action: "agency.setup-email.resend" } })).actorUserId).toBe(admin.id);
+    });
+
+    it("says what to do when it cannot send: mail down, password already set, bad input", async () => {
+      await signInAdmin();
+      const { agency, agent } = await invitedAgency();
+      vi.mocked(sendEmail).mockRejectedValue(new Error("down"));
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await resendSetupEmailAction(null, form({ agencyId: agency.id }))).toEqual({
+        status: "error",
+        message: "The email could not be sent. Try again in a few minutes.",
+      });
+      await db.user.update({ where: { id: agent.id }, data: { passwordHash: "x" } });
+      expect((await resendSetupEmailAction(null, form({ agencyId: agency.id })))?.message).toMatch(/already set a password/);
+      expect(await resendSetupEmailAction(null, form({}))).toEqual({ status: "error", message: "This agency was not found." });
+      expect(await resendSetupEmailAction(null, form({ agencyId: "x".repeat(101) }))).toEqual({ status: "error", message: "This agency was not found." });
+    });
   });
 });
