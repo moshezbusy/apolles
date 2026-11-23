@@ -30,7 +30,7 @@ describe("dailyCleanup", () => {
         job("done-old", "booking.reconcile", "DONE", days(-31), "booking.reconcile:b1:x"),
         job("done-new", "booking.reconcile", "DONE", days(-29), "booking.reconcile:b1:y"),
         job("daily-old", "content.catalog", "DONE", days(-40), "content.catalog:2027-01-20"),
-        job("nokey-old", "search.cleanup", "DONE", days(-40)),
+        job("plain-old", "search.cleanup", "DONE", days(-40)),
         job("failed-old", "booking.reconcile", "FAILED", days(-91), "booking.reconcile:b2:x"),
         job("failed-new", "booking.reconcile", "FAILED", days(-60), "booking.reconcile:b2:y"),
         job("email-old", "email.booking", "DONE", days(-400), "email.booking:b1:confirmed"),

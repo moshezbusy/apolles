@@ -363,7 +363,7 @@ describe("admin money actions", () => {
     it("another amount, another kind, another agency or an entry older than 10 minutes is not a look-alike", async () => {
       await fund(100000);
       const other = await makeAgency("Other", "APL-0002");
-      await credit({ agencyId: other, type: "TOPUP_BANK", amountCents: 100000, reason: "seed", idempotencyKey: "seed-other" });
+      await credit({ agencyId: other, type: "TOPUP_BANK", amountCents: 100000, reason: "seed", idempotencyKey: "seed2" });
       await payout();
       expect((await payout({ amountCents: 2501 })).alreadyRecorded).toBe(false);
       expect((await adjust({ amountCents: -2500 })).alreadyRecorded).toBe(false); // an adjustment, not a payout

@@ -53,6 +53,7 @@ const PRICE_CHECK_FRESH_MS = 60_000;
 const PRICE_CHECK_LIMIT = { limit: 12, windowMs: 10 * 60_000 };
 const RECONCILE_DELAY_MS = 2 * 60_000;
 const QUICK_RECHECK_MS = 30_000; // the supplier accepted the booking but its status could not be read yet
+const QUICK_RECHECKS = 4;
 const SAFETY_NET_MS = 5 * 60_000; // queued with every pending change, before the supplier call
 const CANCEL_RESTORE_AFTER_MS = 30 * 60_000; // a cancellation still "booked" this long after the request did not go through
 // After a cancellation was put back, the supplier is looked at again at these times: a
@@ -739,11 +740,14 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
   };
 
   if (booking.status === "PENDING_CONFIRMATION" && booking.holdId) {
+    // A booking the supplier took (it gave us an itinerary) is usually readable there within a
+    // minute or two: its first looks come quickly (30 seconds, then 1, 2 and 4 minutes).
+    const again = booking.supplierItineraryId && attempt <= QUICK_RECHECKS ? QUICK_RECHECK_MS * 2 ** (attempt - 1) : RECONCILE_DELAY_MS * 2;
     let found;
     try {
       found = await pendingView(booking, supplier);
     } catch (error) {
-      if (error instanceof SupplierError) return retry(RECONCILE_DELAY_MS * 2);
+      if (error instanceof SupplierError) return retry(again);
       throw error;
     }
     if (found) {
@@ -757,11 +761,11 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
         rooms > 1 ? `Reconciled: supplier has all ${rooms} rooms` : "Reconciled: supplier has the booking",
         deps,
       );
-      return settled === "wait" ? retry(RECONCILE_DELAY_MS * 2) : settled;
+      return settled === "wait" ? retry(again) : settled;
     }
     // The supplier took this booking (it gave us an itinerary): "not found" is then never "no
     // booking", only "not readable yet". It stays pending, and after many tries an admin looks.
-    if (booking.supplierItineraryId) return retry(RECONCILE_DELAY_MS * 2);
+    if (booking.supplierItineraryId) return retry(again);
     if (booking.lastNotFoundAt && now.getTime() - booking.lastNotFoundAt.getTime() >= NOT_FOUND_CONFIRM_MS) {
       await failBooking(booking.id, booking.holdId, null, NOT_FOUND_REASON, LATE_NOT_FOUND_CHECKS_MS.map((ms) => new Date(now.getTime() + ms)));
       return "failed";

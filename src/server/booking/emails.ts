@@ -86,8 +86,8 @@ export async function sendBookingEmail(bookingId: string, event: BookingEmailEve
     await sendEmail({
       to: adminAlertAddress(),
       subject: `Apolles: booking ${b.reference} needs attention`,
-      // Sent for any reason a booking is flagged (the supplier check gave up, the supplier's rooms
-      // do not match ours, only some rooms were cancelled): the text names none of them, and no
+      // Sent for any reason a booking is flagged (the supplier gives no clear answer, its rooms do
+      // not match ours, only some rooms were cancelled): the text names none of them, and no
       // personal data. The admin page says what happened.
       text: `Booking ${b.reference} (status ${b.status}) needs an admin to check it with the supplier and fix it by hand.\n${appUrl()}/admin/bookings/${b.id}\n`,
     });

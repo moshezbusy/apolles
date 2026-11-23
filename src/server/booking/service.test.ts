@@ -580,6 +580,16 @@ describe("booking: reconcile", () => {
       const { bookingId, total } = await reviewed();
       const unreadable = supplier({ retrieve: async () => { throw new SupplierRequestRejected("not yet", 404); }, findByAffiliateReference: async () => null });
       expect((await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: unreadable, now: later(2) })).kind).toBe("pending");
+      // The first looks come quickly (30 seconds, 1, 2 and 4 minutes), so the agent is not kept waiting.
+      const seconds = (n: number) => new Date(later(2).getTime() + n * 1_000);
+      const nextCheck = async () => (await db.job.findMany({ where: { kind: "booking.reconcile", status: "QUEUED" }, orderBy: { runAt: "asc" } })).map((j) => j.runAt);
+      expect(await nextCheck()).toEqual([seconds(30), later(7)]);
+      await db.job.deleteMany({ where: { kind: "booking.reconcile" } });
+      expect(await reconcile(bookingId, { supplier: unreadable, now: seconds(30) })).toBe("retry");
+      expect(await nextCheck()).toEqual([seconds(60)]);
+      await db.job.deleteMany({ where: { kind: "booking.reconcile" } });
+      expect(await reconcile(bookingId, { supplier: unreadable, now: seconds(60) })).toBe("retry");
+      expect(await nextCheck()).toEqual([seconds(120)]);
       // Not found twice, more than 20 minutes apart: a booking the supplier did not take would fail here.
       expect(await reconcile(bookingId, { supplier: unreadable, now: later(5) })).toBe("retry");
       expect(await reconcile(bookingId, { supplier: unreadable, now: later(40) })).toBe("retry");
