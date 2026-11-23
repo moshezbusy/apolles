@@ -12,7 +12,7 @@ export default function ForgotPasswordPage() {
     <AuthShell
       eyebrow="Password help"
       title="Forgot your password?"
-      subtitle="Enter your email and we will send you a link to create a new password."
+      subtitle="Enter your email and we will send you a link to create a new password. This also works when your set-up link has expired."
     >
       <ForgotPasswordForm />
     </AuthShell>

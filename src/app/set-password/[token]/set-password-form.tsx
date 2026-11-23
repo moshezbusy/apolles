@@ -12,7 +12,7 @@ import { setPasswordAction, type SetPasswordState } from "./actions";
 import { ExpiredLink } from "./expired-link";
 
 
-export function SetPasswordForm({ token, title }: { token: string; title: string }) {
+export function SetPasswordForm({ token, title, invitation = false }: { token: string; title: string; invitation?: boolean }) {
   const [state, formAction, pending] = useActionState<SetPasswordState, FormData>(
     setPasswordAction,
     null,
@@ -21,7 +21,7 @@ export function SetPasswordForm({ token, title }: { token: string; title: string
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
 
-  if (state && "status" in state) return <ExpiredLink />;
+  if (state && "status" in state) return <ExpiredLink invitation={invitation} />;
 
   // Same rule as the server, which checks again on submit.
   const ready = isValidPassword(password) && password === confirm;

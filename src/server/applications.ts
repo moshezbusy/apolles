@@ -114,7 +114,7 @@ export async function submitApplication(raw: ApplicationInput | Record<string, s
   await sendEmail({
     to: email,
     subject: "Your Apolles application was received",
-    text: "Hello,\n\nThanks for applying to Apolles. We will review your agency details, usually within 2 to 3 business days.\n\nOnce approved, you get an email with a link to set your password and sign in. If we need more details, we will email you.\n\nIf you did not apply, you can ignore this email.\n\nApolles",
+    text: "Hello,\n\nThanks for applying to Apolles. We will review your agency details, usually within 2 to 3 business days.\n\nOnce approved, you get an email with a link to set your password and sign in. The link works for 72 hours. If we need more details, we will email you.\n\nIf you did not apply, you can ignore this email.\n\nApolles",
   }).catch(fail("application email"));
   const admin = z.email().safeParse(process.env.ADMIN_ALERT_EMAIL);
   if (admin.success && (await hitRateLimit("join:alert", ALERT_LIMIT.limit, ALERT_LIMIT.windowMs)).allowed) {

@@ -9,8 +9,13 @@ import { forgetDevices } from "@/server/auth/signin-code";
 import { MAX_RAW_TOKEN_LENGTH, generateRawToken, hashToken } from "@/server/auth/token";
 import { RATE_LIMITS, emailKey, hitIpRateLimit, hitRateLimit } from "@/server/rate-limit";
 
-// Set-password and reset links work for 60 minutes, once.
-export const PASSWORD_TOKEN_TTL_MS = 60 * 60 * 1000;
+// How long a link works (once). A reset link is asked for and used right away: 60 minutes.
+// A set-up link (SET) is the invitation a new agent or admin gets, often days after applying
+// and not read at once: 72 hours.
+export const PASSWORD_TOKEN_TTL_MS: Readonly<Record<PasswordTokenPurpose, number>> = {
+  SET: 72 * 60 * 60 * 1000,
+  RESET: 60 * 60 * 1000,
+};
 
 export type ConsumePasswordTokenResult = "OK" | "EXPIRED" | "INVALID_PASSWORD";
 
@@ -60,25 +65,37 @@ export async function issuePasswordToken(
         tokenHash: hashToken(raw),
         userId,
         purpose,
-        expiresAt: new Date(now.getTime() + PASSWORD_TOKEN_TTL_MS),
+        expiresAt: new Date(now.getTime() + PASSWORD_TOKEN_TTL_MS[purpose]),
       },
     });
   });
   return raw;
 }
 
-// For the set-password page: is this link still usable, and is it a SET or a RESET link?
-// Only reads; the token is not consumed. Unknown, used, expired, or belonging to a
-// suspended account all look the same (null).
-export async function findUsablePasswordToken(raw: string): Promise<PasswordTokenPurpose | null> {
-  if (!isPlausibleToken(raw)) return null;
+// What the set-password page needs to know about a link. `purpose` is given for a link that
+// can no longer be used too (used, expired, suspended account), so the page can say "this
+// set-up link has expired" to someone who was invited; it is null only for a link that was
+// never issued. Knowing the purpose needs the whole secret link, so it tells nothing about
+// who has an account.
+export type PasswordLink = { usable: boolean; purpose: PasswordTokenPurpose | null };
+
+// Only reads; the token is not consumed.
+export async function checkPasswordLink(raw: string): Promise<PasswordLink> {
+  if (!isPlausibleToken(raw)) return { usable: false, purpose: null };
   const row = await db.passwordToken.findUnique({
     where: { tokenHash: hashToken(raw) },
     select: { purpose: true, usedAt: true, expiresAt: true, user: { select: accountSelect } },
   });
-  if (!row || row.usedAt !== null || row.expiresAt.getTime() <= Date.now()) return null;
-  if (!isAccountActive(row.user)) return null;
-  return row.purpose;
+  if (!row) return { usable: false, purpose: null };
+  const usable = row.usedAt === null && row.expiresAt.getTime() > Date.now() && isAccountActive(row.user);
+  return { usable, purpose: row.purpose };
+}
+
+// Is this link still usable, and is it a SET or a RESET link? Unknown, used, expired, or
+// belonging to a suspended account all look the same (null).
+export async function findUsablePasswordToken(raw: string): Promise<PasswordTokenPurpose | null> {
+  const link = await checkPasswordLink(raw);
+  return link.usable ? link.purpose : null;
 }
 
 // Sets a new password through a link. The password rule is checked first, so a weak
@@ -148,7 +165,11 @@ function appUrl(): string {
   return parsed.data.replace(/\/+$/, "");
 }
 
-const EXPIRY_LINE = "This link expires in 60 minutes and can be used once.";
+// Each email says how long its own link works.
+const EXPIRY_LINE: Readonly<Record<PasswordTokenPurpose, string>> = {
+  SET: "This link expires in 72 hours and can be used once.",
+  RESET: "This link expires in 60 minutes and can be used once.",
+};
 
 function passwordEmail(
   purpose: PasswordTokenPurpose,
@@ -162,7 +183,8 @@ function passwordEmail(
       text:
         `Hello ${user.name},\n\n` +
         `Open this link to set the password for your Apolles account:\n${link}\n\n` +
-        `${EXPIRY_LINE}\n`,
+        `${EXPIRY_LINE.SET}\n\n` +
+        `If the link has expired, choose "Forgot password" on the sign-in page to get a new one.\n`,
     };
   }
   return {
@@ -172,7 +194,7 @@ function passwordEmail(
       `Hello ${user.name},\n\n` +
       `Someone asked to reset the password of your Apolles account. ` +
       `Open this link to create a new password:\n${link}\n\n` +
-      `${EXPIRY_LINE}\n\n` +
+      `${EXPIRY_LINE.RESET}\n\n` +
       `If you did not ask for this, ignore this email. Your password stays the same.\n`,
   };
 }
@@ -197,18 +219,20 @@ export async function sendSetPasswordEmail(userId: string): Promise<void> {
 }
 
 // "Forgot password". Always resolves the same way, whether or not the email has an account,
-// so the answer does not reveal who has one. A RESET link is emailed only to an active user
-// (of an active agency, for agents). Failures are logged without the email address or link.
+// so the answer does not reveal who has one. A link is emailed only to an active user (of an
+// active agency, for agents): a RESET link, or, for an account that never set a password (an
+// invitation that expired or got lost), a fresh set-up link with the invitation's lifetime.
+// Failures are logged without the email address or link.
 export async function requestReset(email: string): Promise<void> {
   let userId: string | undefined;
   try {
     const user = await db.user.findUnique({
       where: { email: normalizeEmail(email) },
-      select: { id: true, email: true, name: true, ...accountSelect },
+      select: { id: true, email: true, name: true, passwordHash: true, ...accountSelect },
     });
     if (!user || !isAccountActive(user)) return;
     userId = user.id;
-    await sendPasswordEmail(user, "RESET");
+    await sendPasswordEmail(user, user.passwordHash === null ? "SET" : "RESET");
   } catch (error) {
     console.error("password reset email failed", {
       userId,
