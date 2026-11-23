@@ -231,7 +231,17 @@ the agent may see a price different from the assistant's; the hotel page is the 
   per-agency bucket (`ai-search:agency:{id}`, 10 per minute) instead of sharing the screens' 30. Search
   snapshots get a `source` column (`WEB` / `AI`); the "keep the newest 50 per agency" cleanup counts and
   deletes each source separately (AI: newest 20), so an assistant can never delete the search behind a
-  booking the agent is making. The hotel-page limit (120/min) is shared.
+  booking the agent is making. Assistant rate lookups (`get_hotel_rates`) also have their own per-agency
+  bucket (`ai-hotel:agency:{id}`, 60 per minute) instead of sharing the hotel pages' 120 (final review,
+  F11).
+- Internal AI API, per IP (final review, F4). Every call reaches the app from the MCP server's one
+  address, so the MCP server passes the assistant's own address on in `X-Apolles-Client-Ip` (the
+  right-most `X-Forwarded-For` entry it received from Caddy, else its socket address; only one IP literal).
+  The app reads that header only after the service key matched, and keys on it: a loose ceiling
+  `ai-api:ip:{clientIp}` (600 per minute) and `ai-api:badtoken:ip:{clientIp}` (after 30 invalid tokens in
+  15 minutes, that address gets 429 before any token lookup). Wrong service keys are counted per request
+  address (`ai-api:keyfail:ip:{ip}`) and logged, louder at 10 in 15 minutes, but never lock out a right
+  key.
 - OAuth: Claude and ChatGPT call from shared cloud addresses, so per-IP limits would lock out every agent
   at once. `/oauth/token`: per client and per connection (60 per 15 minutes), plus a loose per-IP ceiling
   (2,000 per 15 minutes). `/oauth/register`: per IP 100 per hour (only allowlisted redirect URIs register
@@ -247,17 +257,24 @@ the agent may see a price different from the assistant's; the hotel page is the 
 - `AI_SEARCH_ENABLED` (default off), one switch for every active agency **[Claude]** (a per-agency switch
   would be new admin scope; ask if wanted). Off: the AI tab is hidden, `/oauth/*`, `/api/ai/*` and the
   discovery documents answer 404.
-- The AI API is internal only: the MCP container calls the app over the private Docker network
-  (`http://apolles-staging:3000`); Caddy refuses `/api/ai/*` from the internet (owner adds the rule; steps in
-  the README). The app also checks the service key in constant time and counts a per-IP limit **before** the
-  key check, so guessing the key is slow and visible. **[owner]** "Do not go live before Expedia's answer": staging may turn it on (fake
+- The AI API is internal only: the MCP container calls the app over the shared Docker network
+  `n8n_default` (`http://apolles-staging:3000`); it is **not** on the database network
+  `apolles_staging_net` (final review, F5). Caddy refuses `/api/ai/*` from the internet (owner adds the
+  rule; steps in the README), and the app itself answers 404 to any request that names its public host
+  (`Host` or `X-Forwarded-Host` equal to `APP_URL`'s), so the block does not depend on the Caddy rule
+  alone (F10; `X-Forwarded-For` cannot be the signal, because Next.js adds one to every request that has
+  none). The app checks the service key in constant time on every call and refuses a configured key under
+  32 characters; the MCP server refuses to start with one (F9). **[owner]** "Do not go live before Expedia's answer": staging may turn it on (fake
   supplier); production only when the owner turns it on after Expedia says yes.
 - New settings, documented in `.env.example`: `AI_SEARCH_ENABLED`, `MCP_PUBLIC_URL`,
   `AI_MCP_SERVICE_KEY` (app side: stored as a hash or compared in constant time), `APP_PUBLIC_URL`.
 - MCP server: `src/mcp/` in this repository, run as its own container (`apolles-staging-mcp`) from the same
   image with its own entrypoint, and **only** these variables: `MCP_PUBLIC_URL`, `APOLLES_INTERNAL_URL`,
   `AI_MCP_SERVICE_KEY`, `PORT`. No `env_file`, so no database URL or Expedia key reaches it. A lint rule and
-  a test forbid `src/mcp/**` from importing `src/server/**`, `src/generated/**` or the database.
+  a test forbid `src/mcp/**` from importing `src/server/**`, `src/generated/**` or the database. On staging
+  the container is under the compose profile `ai` with `${VAR:-}` values, so a plain `docker compose up`
+  (the automatic update) keeps working before the owner adds its settings; the server itself refuses to
+  start without them (final review, F1).
 - Staging: a new public subdomain for the MCP server behind the existing Caddy (owner adds the route;
   steps in `deploy/staging/README.md`). Production: owner's action, as always.
 
