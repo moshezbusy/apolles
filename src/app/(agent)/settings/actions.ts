@@ -24,7 +24,7 @@ function text(value: FormDataEntryValue | null): string {
   return typeof value === "string" ? value.slice(0, 300) : "";
 }
 
-const PROFILE_ERROR = "Check the form: a valid business email and a phone number with 7–15 digits.";
+const PROFILE_ERROR = "Check the form: a valid business email and a phone number with 7 to 15 digits.";
 
 export async function updateProfileAction(
   _previous: SettingsFormState,

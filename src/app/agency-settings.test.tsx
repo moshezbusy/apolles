@@ -110,7 +110,7 @@ describe("agency settings", () => {
     it("returns an error and saves nothing on invalid input", async () => {
       const { updateProfileAction } = await import("./(agent)/settings/actions");
       const state = await updateProfileAction(null, form({ email: "x", phone: "1" }));
-      expect(state).toMatchObject({ status: "error", message: "Check the form: a valid business email and a phone number with 7–15 digits." });
+      expect(state).toMatchObject({ status: "error", message: "Check the form: a valid business email and a phone number with 7 to 15 digits." });
       // What the agent typed comes back, so the form can show it again instead of resetting.
       expect(state && "values" in state ? state.values : null).toEqual({ email: "x", phone: "1" });
       expect(await getAgencyProfile(agencyA)).toMatchObject({ name: "Sunrise Travel", email: null });
