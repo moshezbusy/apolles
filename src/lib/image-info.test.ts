@@ -116,7 +116,7 @@ describe("validateImage: PNG", () => {
     const good = makePng(320, 100);
     expect(validateImage(good.subarray(0, good.length - 1))).toBeNull();
     expect(validateImage(good.subarray(0, good.length - 12))).toBeNull();
-    expect(validateImage(Buffer.concat([good, Buffer.from("<script>")]))).toBeNull();
+    expect(validateImage(Buffer.concat([good, Buffer.from([0x3c, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x3e])]))).toBeNull(); // "<script>" after the image end
     expect(validateImage(Buffer.concat([good, pngChunk("IEND")]))).toBeNull();
   });
 

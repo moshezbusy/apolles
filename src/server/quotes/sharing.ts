@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { audit } from "@/server/audit";
+import { ipBucket } from "@/server/client-ip";
 import { db } from "@/server/db";
 import { sendEmail } from "@/server/email/port";
 import { PHONE_NEEDS_COUNTRY_CODE, toE164Digits } from "@/lib/phone";
@@ -352,7 +353,7 @@ export async function clientQuoteForAgency(agencyId: string, quoteId: string, no
 // after page (each load reads the quote and its photos from the database).
 export async function clientPageAllowed(ip: string): Promise<boolean> {
   const limit = ip === "unknown" ? PAGE_LIMIT.unknownLimit : PAGE_LIMIT.limit;
-  return (await hitRateLimit(`quote-page:ip:${ip}`, limit, PAGE_LIMIT.windowMs)).allowed;
+  return (await hitRateLimit(`quote-page:ip:${ipBucket(ip)}`, limit, PAGE_LIMIT.windowMs)).allowed;
 }
 
 function clientState(q: { status: ClientQuote["status"]; closedAt: Date | null; validUntil: Date | null; stays: { checkin: string }[] }, now: Date): ClientQuoteState {
@@ -510,7 +511,7 @@ export async function clientLogo(token: string) {
 // A view never changes the quote's place in the agent's list (that follows the agent's edits).
 export async function recordView(token: string, ip: string, viewerAgencyId?: string | null): Promise<void> {
   if (!validToken(token)) return;
-  const { allowed } = await hitRateLimit(`quote-view:ip:${ip}`, VIEW_LIMIT.limit, VIEW_LIMIT.windowMs);
+  const { allowed } = await hitRateLimit(`quote-view:ip:${ipBucket(ip)}`, VIEW_LIMIT.limit, VIEW_LIMIT.windowMs);
   if (!allowed) return;
   await db.$transaction(async (tx) => {
     // Locked by the token itself: a link withdrawn meanwhile (new link, other client) finds nothing.
@@ -549,14 +550,14 @@ export async function submitSelection(token: string, raw: SelectionInput, ip: st
   const parsed = selectionInput.safeParse({ picks: raw.picks, seen: raw.seen ?? {}, note: raw.note });
   if (!parsed.success) return { ok: false, error: "invalid" };
   // Per IP whatever the link, counted before anything is looked up.
-  const perIpAll = await hitRateLimit(`quote-select:ip:${ip}`, ip === "unknown" ? SELECT_IP_LIMIT.unknownLimit : SELECT_IP_LIMIT.limit, SELECT_IP_LIMIT.windowMs);
+  const perIpAll = await hitRateLimit(`quote-select:ip:${ipBucket(ip)}`, ip === "unknown" ? SELECT_IP_LIMIT.unknownLimit : SELECT_IP_LIMIT.limit, SELECT_IP_LIMIT.windowMs);
   if (!perIpAll.allowed) return { ok: false, error: "limited" };
   // Only a link that exists gets counters of its own: made-up tokens write nothing more.
   const exists = await db.quote.findUnique({ where: { shareToken: token }, select: { id: true } });
   if (!exists) return { ok: false, error: "gone" };
   // Per IP (when known) and per quote, so neither a changing IP nor a shared one gets around it.
   if (ip !== "unknown") {
-    const perIp = await hitRateLimit(`quote-select:${ip}:${token.slice(0, 12)}`, SELECT_LIMIT.limit, SELECT_LIMIT.windowMs);
+    const perIp = await hitRateLimit(`quote-select:${ipBucket(ip)}:${token.slice(0, 12)}`, SELECT_LIMIT.limit, SELECT_LIMIT.windowMs);
     if (!perIp.allowed) return { ok: false, error: "limited" };
   }
   const perQuote = await hitRateLimit(`quote-select:quote:${token.slice(0, 16)}`, SELECT_QUOTE_LIMIT.limit, SELECT_QUOTE_LIMIT.windowMs);
