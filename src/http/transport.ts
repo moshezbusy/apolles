@@ -1,7 +1,7 @@
 import { SupplierError } from '../core/errors.js';
 import type { CallContext } from '../core/supplier.js';
 import type { AuditSink } from '../audit/audit.js';
-import { NullAuditSink } from '../audit/audit.js';
+import { DEFAULT_AUDIT_BODY_BYTES, NullAuditSink, truncateForAudit } from '../audit/audit.js';
 import { redactHeaders, redactText } from '../security/redact.js';
 import { TokenBucket } from './rate-limit.js';
 
@@ -43,6 +43,8 @@ export interface TransportOptions {
   fetchImpl?: typeof fetch;
   /** Responses bigger than this are refused (protects memory). */
   maxResponseBytes?: number;
+  /** Bodies bigger than this are cut in the audit log (default 256 KB each). */
+  auditMaxBodyBytes?: number;
 }
 
 export class HttpTransport {
@@ -53,6 +55,7 @@ export class HttpTransport {
   private readonly limiter?: TokenBucket;
   private readonly fetchImpl: typeof fetch;
   private readonly maxResponseBytes: number;
+  private readonly auditMaxBodyBytes: number;
 
   constructor(opts: TransportOptions) {
     this.supplierId = opts.supplierId;
@@ -62,6 +65,7 @@ export class HttpTransport {
     this.limiter = opts.rateLimitPerSecond ? new TokenBucket(opts.rateLimitPerSecond) : undefined;
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.maxResponseBytes = opts.maxResponseBytes ?? 20 * 1024 * 1024;
+    this.auditMaxBodyBytes = opts.auditMaxBodyBytes ?? DEFAULT_AUDIT_BODY_BYTES;
   }
 
   async send(req: HttpRequest, ctx: CallContext): Promise<HttpResponse> {
@@ -146,25 +150,39 @@ export class HttpTransport {
       throw err;
     } finally {
       const mask = (t: string) => maskValues(redactText(t), req.sensitiveValues);
-      await Promise.resolve(
-        this.audit.record({
-          at: new Date(started).toISOString(),
-          requestId: ctx.requestId,
-          supplierId: this.supplierId,
-          operation: req.operation,
-          attempt,
-          method: req.method,
-          url: mask(req.url),
-          requestHeaders: redactHeaders(headers),
-          requestBody: req.body === undefined ? undefined : mask(req.body),
-          status,
-          responseBody: body === undefined ? undefined : mask(body),
-          durationMs: Date.now() - started,
-          error: error === undefined ? undefined : mask(error),
-        }),
-      ).catch(() => {
-        /* audit must never break a booking */
-      });
+      // Mask first, cut second: cutting first could split a card number so it is no longer recognised.
+      const truncated: ('requestBody' | 'responseBody')[] = [];
+      const logBody = (t: string | undefined, name: 'requestBody' | 'responseBody') => {
+        if (t === undefined) return undefined;
+        const cut = truncateForAudit(mask(t), this.auditMaxBodyBytes);
+        if (cut.truncated) truncated.push(name);
+        return cut.text;
+      };
+      const requestBody = logBody(req.body, 'requestBody');
+      const responseBody = logBody(body, 'responseBody');
+      await Promise.resolve()
+        .then(() =>
+          this.audit.record({
+            at: new Date(started).toISOString(),
+            requestId: ctx.requestId,
+            supplierId: this.supplierId,
+            operation: req.operation,
+            attempt,
+            method: req.method,
+            url: mask(req.url),
+            requestHeaders: redactHeaders(headers),
+            requestBody,
+            status,
+            responseBody,
+            durationMs: Date.now() - started,
+            error: error === undefined ? undefined : mask(error),
+            ...(truncated.length ? { truncated } : {}),
+          }),
+        )
+        .catch((err: unknown) => {
+          // The audit log must never break a booking, but a lost entry is not silent.
+          reportAuditFailure(err);
+        });
     }
   }
 
@@ -216,6 +234,16 @@ function isRedirectError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const cause = err.cause instanceof Error ? err.cause.message : '';
   return /redirect/i.test(`${err.message} ${cause}`);
+}
+
+let lastAuditFailureLogged = -Infinity;
+
+/** Sinks wrapped in MonitoredAuditSink never get here; this covers the rest. At most one line a minute. */
+function reportAuditFailure(err: unknown): void {
+  const now = Date.now();
+  if (now - lastAuditFailureLogged < 60_000) return;
+  lastAuditFailureLogged = now;
+  console.error(`Audit log entry not written: ${err instanceof Error ? err.message : String(err)}`);
 }
 
 function maskValues(text: string, values: string[] | undefined): string {
