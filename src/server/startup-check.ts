@@ -4,7 +4,10 @@
 // console email adapter would only fail later, request by request.
 //
 // Called from src/instrumentation.ts when the server starts (never during `next build`).
-// Kept free of imports so it can run anywhere, and it names variables only: never a value.
+// Kept free of imports so it can run anywhere (the one import, the second supplier's settings
+// check, has no imports either), and it names variables only: never a value.
+
+import { fxProblems, layerConfigProblems, readSupplierList } from "./supplier/hotelbeds-layer/config";
 
 export type Env = Record<string, string | undefined>;
 
@@ -51,7 +54,20 @@ export function startupProblems(env: Env): string[] {
   if (isSet(env, "TOTP_ENCRYPTION_KEY") && !isValidTotpKey(env.TOTP_ENCRYPTION_KEY ?? "")) {
     problems.push("TOTP_ENCRYPTION_KEY must be 32 random bytes written as base64 (make one with: openssl rand -base64 32).");
   }
+  // The second supplier (Hotelbeds through the supplier layer) and the temporary staging-only
+  // currency conversion: the conversion is refused in production (fxProblems says so).
+  let suppliers: ReturnType<typeof readSupplierList> = { main: null, hotelbeds: false };
+  try {
+    suppliers = readSupplierList(env);
+  } catch (error) {
+    problems.push(error instanceof Error ? `${error.message}.` : "SUPPLIERS cannot be read.");
+  }
+  if (suppliers.hotelbeds) problems.push(...layerConfigProblems(env));
+  problems.push(...fxProblems(env));
   if (appEnv !== "production") return problems;
+  if (suppliers.main === "fake") {
+    problems.push('SUPPLIERS must not name "fake" in production. The fake supplier is only for development and the staging demo.');
+  }
 
   const supplierMode = env.SUPPLIER_MODE ?? "";
   if (supplierMode !== "" && supplierMode !== "expedia") {
