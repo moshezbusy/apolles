@@ -2,19 +2,22 @@ import type { Metadata } from "next";
 import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { alertError, alertInfo, alertSuccess, btnDanger, card, link, pageTitle, sectionTitle } from "@/components/ui";
+import { alertError, alertInfo, alertSuccess, card, link, pageTitle, sectionTitle } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { supportContact } from "@/server/app-info";
 import { requireAgent } from "@/server/auth/guards";
 import { STATUS_LABEL } from "@/server/booking/list";
-import { cancelQuote, getBooking, getBookingRooms } from "@/server/booking/service";
+import { CANCEL_MESSAGES, cancelQuote, getBooking, getBookingRooms } from "@/server/booking/service";
 import { getContent } from "@/server/content/content-cache";
+import { recentSearches } from "@/server/search/recent";
 import type { CancelPenalty, PriceBreakdown, PropertyContent } from "@/server/supplier/types";
 import { type StoredGuest, guestLines, oneRoomConfirmation, roomGuestLines, roomHeading } from "../../_components/guests";
 import { CancellationPolicy, Policies, PriceDetails } from "../../_components/hotel-info";
 import { shortDate, stayText } from "../../search/parts";
 import { SellingPrice } from "../../_components/selling-price";
 import { cancelAction, emailClientAction, sellingPriceAction } from "./actions";
+import { CancelButton } from "./cancel-button";
+import { PendingRefresh } from "./pending-refresh";
 import { EmailToClient } from "./email-client";
 import { clientEmailDefault } from "@/server/booking/client-email";
 
@@ -26,11 +29,15 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 const NOTICES: Record<string, { tone: "ok" | "info" | "error"; text: string }> = {
   cancelled: { tone: "ok", text: "The booking is cancelled. The refund is in your balance." },
   cancel_pending: { tone: "info", text: "The cancellation was sent. We are waiting for the hotel to confirm it; the refund follows." },
-  cancel_refused: { tone: "error", text: "The hotel did not accept the cancellation. Contact Apolles support." },
-  cancel_part_refused: { tone: "error", text: "The hotel did not cancel every room. Apolles support will finish the cancellation; the refund follows once every room is cancelled." },
   cancel_not_allowed: { tone: "error", text: "This booking cannot be cancelled online right now. Contact Apolles support." },
   cancel_confirm: { tone: "info", text: "Nothing was cancelled. Tick \"I understand\" to confirm the cancellation." },
+  // A cancellation that was not done: the server's own sentence for the code it answered with
+  // ("cancel_" + code). Only these fixed sentences are ever shown; never text from the URL.
+  ...Object.fromEntries(Object.entries(CANCEL_MESSAGES).map(([code, text]) => [`cancel_${code}`, { tone: "error" as const, text }])),
 };
+
+// A cancellation put back to confirmed is said on the page for this long.
+const RESTORED_SHOWN_MS = 7 * 86_400_000;
 
 const PAID_DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
@@ -48,19 +55,25 @@ const STATUS_TONE: Record<string, string> = {
 // several rooms (plan 10) has a Rooms card (each room's guests, hotel confirmation and price); a
 // one-room booking looks as before.
 export default async function BookingPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
-  const { agencyId } = await requireAgent();
+  const { agencyId, userId } = await requireAgent();
   const { id } = await params;
   const q = await searchParams;
   const b = await getBooking(agencyId, id);
   if (!b || b.status === "DRAFT" || b.status === "EXPIRED") notFound();
-  const notice = typeof q.notice === "string" ? NOTICES[q.notice] : undefined;
+  const notice = typeof q.notice === "string" && Object.hasOwn(NOTICES, q.notice) ? NOTICES[q.notice] : undefined;
+  const waiting = b.status === "PENDING_CONFIRMATION" || b.status === "CANCEL_PENDING";
+  const now = new Date();
+  const cancelPutBack = b.status === "CONFIRMED" && b.cancelRestoredAt !== null && now.getTime() - b.cancelRestoredAt.getTime() < RESTORED_SHOWN_MS;
+  // Not confirmed: "search again" opens the agent's own recent search of the same dates (the
+  // destination, dates and guests filled in), or the empty search when there is none.
+  const searchedBefore = b.status === "FAILED" ? (await recentSearches({ agencyId, userId })).find((r) => r.checkin === b.checkin && r.checkout === b.checkout) : undefined;
   const price = b.price as unknown as PriceBreakdown;
   // Plan 10: the charge is every room's own charge, added up (the rooms read without their supplier links).
   const rooms = await getBookingRooms(agencyId, b.id);
   const severalRooms = rooms.length > 1;
   const stay = stayText({ nights: price.nights, rooms: severalRooms ? rooms : [{ adults: b.adults, childAges: b.childAges }] });
   const waitingText = b.status === "CONFIRMED" ? "Shown here once the hotel sends it" : "—";
-  const quote = cancelQuote(b, rooms, new Date());
+  const quote = cancelQuote(b, rooms, now);
   const support = supportContact();
   // Hotel policies after booking too (EXP), best effort: the booking page works without them.
   let content: PropertyContent | null = null;
@@ -84,14 +97,33 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
           {notice.text}
         </p>
       ) : null}
+      {waiting ? <PendingRefresh /> : null}
       {b.status === "PENDING_CONFIRMATION" ? (
         <p role="status" className={`${alertInfo} mt-4`}>
           Waiting for the hotel to confirm. {formatUsd(b.totalMinor)} is on hold from your balance until then. This page shows the result as soon as it arrives.
         </p>
       ) : null}
+      {b.status === "CANCEL_PENDING" ? (
+        <p role="status" className={`${alertInfo} mt-4`}>
+          Waiting for the hotel to confirm the cancellation. The refund is added to your balance once it does. This page shows the result as soon as it arrives.
+        </p>
+      ) : null}
+      {cancelPutBack ? (
+        <p role="status" className={`${alertError} mt-4`}>
+          The hotel did not confirm your cancellation. The booking is still confirmed and nothing was charged or refunded. Cancel it again below, or contact Apolles support.
+        </p>
+      ) : null}
+      {b.status === "CANCELLED_BY_SUPPLIER" ? (
+        <p role="status" className={`${alertError} mt-4`}>
+          The hotel or its booking system cancelled this booking. Nothing was refunded automatically: Apolles support checks the cancellation and records the refund in your balance. Contact Apolles support with any question.
+        </p>
+      ) : null}
       {b.status === "FAILED" ? (
         <p role="status" className={`${alertError} mt-4`}>
-          The hotel did not confirm this booking. Nothing was charged: the money is back in your balance.
+          The hotel did not confirm this booking. Nothing was charged: the money is back in your balance.{" "}
+          <Link href={searchedBefore ? `/search?again=${searchedBefore.id}` : "/search"} className={link}>
+            {searchedBefore ? "Search this hotel again" : "Search again"}
+          </Link>
         </p>
       ) : null}
 
@@ -289,9 +321,7 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
                     <input type="checkbox" name="confirmFinal" required className="mt-0.5 h-4 w-4 accent-[#9b3b2e]" />
                     <span>I understand that cancelling is final and cannot be undone.</span>
                   </label>
-                  <button type="submit" className={btnDanger}>
-                    Cancel this booking
-                  </button>
+                  <CancelButton />
                   <p className="text-xs text-muted">Changed your mind? Do nothing: the booking stays as it is.</p>
                 </form>
               ) : (

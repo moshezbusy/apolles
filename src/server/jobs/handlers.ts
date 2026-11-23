@@ -2,12 +2,16 @@ import { z } from "zod";
 import { cleanupSupplierLog } from "@/server/admin/bookings";
 import { BOOKING_EMAIL_EVENTS, sendBookingEmail, sendFreeCancelReminders } from "@/server/booking/emails";
 import { lowBalanceCheck, sendTopupEmail } from "@/server/wallet/notifications";
-import { reconcile } from "@/server/booking/service";
+import { flagReconcileFailed, reconcile } from "@/server/booking/service";
+import { checkConfirmedAtSupplier, sweepWaitingBookings } from "@/server/booking/upkeep";
 import { syncCatalog } from "@/server/content/catalog-sync";
 import { syncInactive } from "@/server/content/inactive-sync";
 import { syncRegions } from "@/server/content/regions-sync";
 import { cleanupSnapshots } from "@/server/search/search";
-import type { Handlers } from "./runner";
+import { dailyCleanup } from "./cleanup";
+import type { FinalFailureHandler, Handlers } from "./runner";
+
+const reconcilePayload = z.object({ bookingId: z.string().min(1).max(64) }).strict();
 
 // The handler of every job kind (plan 2b). A kind without a handler fails visibly
 // (lastError "no handler") instead of being skipped.
@@ -49,7 +53,29 @@ export const HANDLERS: Handlers = {
   },
   // A booking or cancellation without a clear supplier answer (plan 3). It never books again.
   "booking.reconcile": async (payload) => {
-    const { bookingId } = z.object({ bookingId: z.string().min(1).max(64) }).strict().parse(payload);
+    const { bookingId } = reconcilePayload.parse(payload);
     await reconcile(bookingId);
   },
+  // Every 10 minutes: a booking waiting for the supplier always has a check queued.
+  "booking.sweep": async () => {
+    await sweepWaitingBookings();
+  },
+  // Daily (and once more for bookings about to check in): confirmed bookings are read at the
+  // supplier, so a cancellation by the hotel or the supplier is found.
+  "booking.supplier-check": async (payload) => {
+    const { scope } = z.object({ scope: z.enum(["window", "eve"]) }).strict().parse(payload);
+    await checkConfirmedAtSupplier(scope);
+  },
+  // Daily: old drafts expire, and expired sessions, tokens, finished jobs and old hotel content go.
+  "cleanup.daily": async () => {
+    await dailyCleanup();
+  },
+};
+
+// A job that failed for the last time. The runner has logged it; a booking check that died this
+// way also flags its booking for an admin (the sweeper queues a new check, so it goes on).
+export const onFinalFailure: FinalFailureHandler = async (job) => {
+  if (job.kind !== "booking.reconcile") return;
+  const payload = reconcilePayload.safeParse(job.payload);
+  if (payload.success) await flagReconcileFailed(payload.data.bookingId);
 };

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import { enqueue } from "./queue";
@@ -59,6 +59,70 @@ describe("runPending", () => {
     );
     expect(lockedDuringRun).not.toBeNull();
     expect(lockedDuringRun!.getTime()).toBeGreaterThan(NOW.getTime());
+  });
+
+  describe("failures are never silent", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it("every handler failure is logged with the kind, id and attempt; an email address in the message is masked", async () => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { id } = await enqueue("search.cleanup", {}, { runAt: NOW });
+      await runPending(() => NOW, { "search.cleanup": async () => { throw new TypeError("could not send to dana@example.com"); } });
+      expect(log).toHaveBeenCalledTimes(1);
+      const line = String(log.mock.calls[0]![0]);
+      expect(line).toBe(`job failed: search.cleanup ${id} attempt 1 of 3, will retry: TypeError: could not send to [email]`);
+    });
+
+    it("the last failure is logged as final and handed to onFinalFailure, once", async () => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { id } = await enqueue("booking.reconcile", { bookingId: "bk-1" }, { runAt: NOW });
+      await db.job.update({ where: { id }, data: { attempts: 2 } });
+      const final = vi.fn(async () => {});
+      await runPending(() => NOW, { "booking.reconcile": async () => { throw new Error("boom"); } }, () => false, { onFinalFailure: final });
+      expect(final).toHaveBeenCalledTimes(1);
+      expect(final).toHaveBeenCalledWith(expect.objectContaining({ id, kind: "booking.reconcile", payload: { bookingId: "bk-1" } }));
+      expect(String(log.mock.calls[0]![0])).toBe(`job failed: booking.reconcile ${id} attempt 3 of 3, final: Error: boom`);
+      expect((await db.job.findUniqueOrThrow({ where: { id } })).status).toBe("FAILED");
+    });
+
+    it("a failure that will be retried is not handed to onFinalFailure", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await enqueue("booking.reconcile", { bookingId: "bk-1" }, { runAt: NOW });
+      const final = vi.fn(async () => {});
+      await runPending(() => NOW, { "booking.reconcile": async () => { throw new Error("boom"); } }, () => false, { onFinalFailure: final });
+      expect(final).not.toHaveBeenCalled();
+    });
+
+    it("a job abandoned on its last attempt (the worker died) is logged and handed to onFinalFailure too", async () => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { id } = await enqueue("booking.reconcile", { bookingId: "bk-1" }, { runAt: NOW });
+      await db.job.update({ where: { id }, data: { status: "RUNNING", attempts: 3, lockedAt: new Date(NOW.getTime() - 11 * 60_000) } });
+      const final = vi.fn(async () => {});
+      expect(await runPending(() => NOW, {}, () => false, { onFinalFailure: final })).toBe(0);
+      expect(final).toHaveBeenCalledWith(expect.objectContaining({ id, kind: "booking.reconcile" }));
+      expect(String(log.mock.calls[0]![0])).toBe(`job failed: booking.reconcile ${id} attempt 3 of 3, final: abandoned, the worker stopped during the last attempt`);
+    });
+
+    it("an onFinalFailure that throws never stops the run", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const first = await enqueue("booking.reconcile", { bookingId: "bk-1" }, { runAt: NOW });
+      await db.job.update({ where: { id: first.id }, data: { attempts: 2 } });
+      await enqueue("search.cleanup", {}, { runAt: new Date(NOW.getTime() + 1) });
+      const ran = await runPending(() => new Date(NOW.getTime() + 1), { "booking.reconcile": async () => { throw new Error("boom"); }, "search.cleanup": async () => {} }, () => false, { onFinalFailure: async () => { throw new Error("flag failed"); } });
+      expect(ran).toBe(2);
+      expect(await db.job.count({ where: { kind: "search.cleanup", status: "DONE" } })).toBe(1);
+    });
+  });
+
+  it("a lane runs only its own jobs", async () => {
+    const ranKinds: string[] = [];
+    await enqueue("content.inactive", {}, { runAt: NOW });
+    await enqueue("search.cleanup", {}, { runAt: NOW });
+    const handlers = { "content.inactive": async () => { ranKinds.push("content.inactive"); }, "search.cleanup": async () => { ranKinds.push("search.cleanup"); } };
+    expect(await runPending(() => NOW, handlers, () => false, { lane: "long" })).toBe(1);
+    expect(ranKinds).toEqual(["content.inactive"]);
+    expect(await runPending(() => NOW, handlers, () => false, { lane: "short" })).toBe(1);
+    expect(ranKinds).toEqual(["content.inactive", "search.cleanup"]);
   });
 
   it("stops when asked to, between jobs", async () => {

@@ -4,6 +4,15 @@ import type { CancelPenalty } from "@/server/supplier/types";
 // minor units. The refund is total − charge. Nothing is rounded: a charge that cannot be worked
 // out exactly (a number of nights, a percentage that does not divide, another currency) is
 // "unknown", and the cancellation goes to Apolles support instead of guessing an amount.
+// Cancelling is free only before the first penalty starts. After that, a moment that no penalty
+// window covers (a gap between windows, a window of no length, a last window that ends before
+// check-in) is charged the highest charge of the windows that already started: cancelling later
+// is never cheaper than an earlier penalty, and never silently free.
+
+// Our request reaches the supplier a little after the agent's click, and the supplier charges by
+// the moment it gets it: every penalty counts as starting this much earlier than the supplier
+// says, wherever the charge is worked out or shown.
+export const CANCEL_MARGIN_MS = 10 * 60_000;
 
 export type ChargeResult = { kind: "charge"; minor: number } | { kind: "unknown" } | { kind: "stay_started" };
 
@@ -32,7 +41,7 @@ export function cancelChargeAt(input: Input, now: Date): ChargeResult {
   const t = now.getTime();
   const checkinUtc = Date.parse(`${input.checkin}T00:00:00Z`);
   const windows = input.penalties
-    .map((p) => ({ p, start: Date.parse(p.start), end: Date.parse(p.end) }))
+    .map((p) => ({ p, start: Date.parse(p.start) - CANCEL_MARGIN_MS, end: Date.parse(p.end) }))
     .filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end));
   if (windows.length !== input.penalties.length) return { kind: "unknown" };
 
@@ -44,19 +53,24 @@ export function cancelChargeAt(input: Input, now: Date): ChargeResult {
   if (!input.refundable) {
     return t >= checkinUtc ? { kind: "stay_started" } : { kind: "charge", minor: input.totalMinor };
   }
-  const active = windows.filter((w) => w.start <= t && t < w.end);
-  if (active.length > 0) {
+  // The highest charge of these windows, or null when one of them cannot be worked out exactly.
+  const highest = (of: typeof windows): number | null => {
     let max = 0;
-    for (const w of active) {
+    for (const w of of) {
       const c = chargeOf(w.p, input.totalMinor, input.currency);
-      if (c === null) return { kind: "unknown" };
+      if (c === null) return null;
       max = Math.max(max, c);
     }
-    return { kind: "charge", minor: max };
-  }
+    return max;
+  };
+  const charged = (minor: number | null): ChargeResult => (minor === null ? { kind: "unknown" } : { kind: "charge", minor });
+  const active = windows.filter((w) => w.start <= t && t < w.end);
+  if (active.length > 0) return charged(highest(active));
   const lastEnd = Math.max(checkinUtc, ...windows.map((w) => w.end));
   if (t >= lastEnd) return { kind: "stay_started" };
-  return { kind: "charge", minor: 0 }; // before every penalty: free
+  // No window covers this moment. Before every penalty: free. After the first one started: the
+  // highest charge so far (0 only when there are no penalties at all).
+  return charged(highest(windows.filter((w) => w.start <= t)));
 }
 
 // Several rooms (plan 10): every room is charged on its own total, from the rate's penalties

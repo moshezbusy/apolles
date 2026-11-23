@@ -55,7 +55,8 @@ export default async function AgencyWalletPage({ params, searchParams }: Props) 
 
   // A fresh key for each render of the payout / adjustment forms: posting the same form twice
   // (double click, retry) records the entry once. After each post the page renders again with
-  // new keys.
+  // new keys, so the key cannot tell the same entry typed a second time: the server stops an
+  // entry that looks like one just recorded and asks the admin to confirm again (money.ts).
   const payoutKey = randomUUID();
   const adjustmentKey = randomUUID();
 

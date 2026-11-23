@@ -24,7 +24,7 @@ export default async function QuotePreviewPage({ params }: { params: Params }) {
           Preview: this is what your client sees. <Link href={`/quotes/${id}`} className={link}>Back to the quote</Link>
         </p>
       </div>
-      <Proposal quote={data.view} token={null} logoSrc="/settings/logo" photos={await proposalPhotos(data)} />
+      <Proposal quote={data.view} token={null} logoSrc="/settings/logo" photos={await proposalPhotos(data, "fetch")} />
     </>
   );
 }

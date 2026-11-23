@@ -25,3 +25,22 @@ export function guestsText(adults: number, childAges: number[]): string {
   if (childAges.length) parts.push(`${childAges.length} ${childAges.length === 1 ? "child" : "children"}`);
   return parts.join(" · ");
 }
+
+// The quote's pill with what the status alone does not say: closed by the agent, an offer that ran
+// out, or a trip booked in part.
+export function QuotePill({ status, closed, expired, partlyBooked }: { status: QuoteListItem["status"]; closed: boolean; expired: boolean; partlyBooked: boolean }) {
+  const extra = closed
+    ? { label: "Closed", className: "bg-[#f1efe9] text-[#5f6863]" }
+    : expired
+      ? { label: "Expired", className: "bg-[#fbecea] text-[#9b3b2e]" }
+      : partlyBooked
+        ? { label: "Partly booked", className: "bg-brand-soft text-brand" }
+        : null;
+  if (!extra) return <StatusPill status={status} />;
+  return (
+    <span className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${extra.className}`}>
+      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+      {extra.label}
+    </span>
+  );
+}

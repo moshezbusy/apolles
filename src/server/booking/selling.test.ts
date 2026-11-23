@@ -64,6 +64,24 @@ describe("selling price of a booking (screens 11, 12)", () => {
     expect(bookingSale({ ...base, sellMarkupType: "FIXED", sellMarkupValue: -1_000 })).toMatchObject({ saleMinor: 98_999, profitMinor: -1_000 });
   });
 
+  it("a booking from a quote: the sale is the price quoted to the client, the profit what is left after the charge", () => {
+    // Quoted 1,000.00 at a net of 900.00; the charge was 960.00.
+    const quoted = { status: "CONFIRMED" as const, totalMinor: 96_000, chargedMinor: 96_000, sellMarkupType: "FIXED" as const, sellMarkupValue: 10_000, sellMinor: 100_000 };
+    expect(bookingSale(quoted)).toEqual({ netMinor: 96_000, saleMinor: 100_000, profitMinor: 4_000, priced: true });
+    // The net rose above the client's price: a loss, not hidden.
+    expect(bookingSale({ ...quoted, chargedMinor: 104_000 })).toMatchObject({ saleMinor: 100_000, profitMinor: -4_000 });
+    expect(bookingSale({ ...quoted, sellMarkupType: null, sellMarkupValue: null })).toMatchObject({ saleMinor: 100_000, priced: true });
+    expect(bookingSale({ ...quoted, status: "CANCELLED" })).toEqual({ netMinor: 0, saleMinor: 0, profitMinor: 0, priced: true });
+    // Priced by hand (no quoted price): the markup on the charge, as before.
+    expect(bookingSale({ ...quoted, sellMinor: null })).toMatchObject({ saleMinor: 106_000, profitMinor: 10_000 });
+  });
+
+  it("a selling price set by hand replaces the quoted price", async () => {
+    const b = await booking("A", { sellMinor: 120_000, sellMarkupType: "FIXED", sellMarkupValue: 20_000 });
+    expect(await setSellingPrice("u-A", "A", b.id, { markupType: "PERCENT", markupValue: "5" })).toEqual({ ok: true });
+    expect(await db.booking.findUniqueOrThrow({ where: { id: b.id } })).toMatchObject({ sellMinor: null, sellMarkupType: "PERCENT", sellMarkupValue: 500 });
+  });
+
   it("is set and cleared for the agency's own booking only, with an audit row, never changing the charge", async () => {
     const b = await booking("A");
     expect(await setSellingPrice("u-A", "A", b.id, { markupType: "PERCENT", markupValue: "10" })).toEqual({ ok: true });

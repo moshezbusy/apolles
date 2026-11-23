@@ -3,9 +3,11 @@ import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import {
   SupplierAuthError,
+  SupplierNotSent,
   SupplierOutcomeUnknown,
   SupplierRateLimited,
   SupplierRequestRejected,
+  SupplierResponseTooLarge,
   SupplierTimeout,
   SupplierUnavailable,
   expediaRequest,
@@ -99,6 +101,33 @@ describe("expediaRequest", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  // A check of our own that fails before anything is sent is a definite "nothing happened":
+  // the booking service releases the hold at once instead of waiting for a check that can only
+  // find nothing.
+  it("a call that changes something and fails a local check (no Test header, a missing or wrong setting) is 'not sent'", async () => {
+    const post = () => expediaRequest({ method: "POST", path: "/itineraries", body: {}, context: { ...context, test: "standard" }, timeoutMs: 60_000 });
+    await expect(expediaRequest({ method: "POST", path: "/itineraries", body: {}, context, timeoutMs: 60_000 })).rejects.toBeInstanceOf(SupplierNotSent);
+    await expect(expediaRequest({ method: "DELETE", path: "/itineraries/1/rooms/2", context, timeoutMs: 60_000 })).rejects.toBeInstanceOf(SupplierNotSent);
+    vi.stubEnv("EXPEDIA_API_KEY", "");
+    await expect(post()).rejects.toBeInstanceOf(SupplierNotSent);
+    await expect(post()).rejects.toThrow("EXPEDIA_API_KEY is not set");
+    vi.stubEnv("EXPEDIA_API_KEY", "api-key-1");
+    vi.stubEnv("EXPEDIA_SHARED_SECRET", "");
+    await expect(post()).rejects.toBeInstanceOf(SupplierNotSent);
+    vi.stubEnv("EXPEDIA_SHARED_SECRET", SECRET);
+    vi.stubEnv("EXPEDIA_BASE_URL", "https://api.ean.com/v3"); // the live endpoint outside production
+    await expect(post()).rejects.toBeInstanceOf(SupplierNotSent);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await db.supplierCallLog.count()).toBe(0);
+  });
+
+  it("a GET with a missing setting still fails loudly as a configuration error, not as a supplier answer", async () => {
+    vi.stubEnv("EXPEDIA_API_KEY", "");
+    const get = expediaRequest({ method: "GET", path: "/properties/availability", context, timeoutMs: 15_000 });
+    await expect(get).rejects.toThrow("EXPEDIA_API_KEY is not set");
+    await expect(get).rejects.not.toBeInstanceOf(SupplierNotSent);
+  });
+
   it("sends the Test header when given", async () => {
     fetchMock.mockResolvedValue(json(200, []));
     await expediaRequest({ method: "GET", path: "/properties/availability", context: { ...context, test: "standard" }, timeoutMs: 15_000 });
@@ -173,6 +202,36 @@ describe("expediaRequest", () => {
       expediaRequest({ method: "POST", path: "/itineraries", body: {}, context: { ...context, test: "standard" }, timeoutMs: 60_000 }),
     ).rejects.toBeInstanceOf(SupplierOutcomeUnknown);
     expect(await db.supplierCallLog.count()).toBe(1);
+  });
+
+  it("an answer larger than the limit is given up on: a supplier error, logged, not asked again", async () => {
+    fetchMock.mockImplementation(async () => json(200, { text: "x".repeat(5_000) }));
+    await expect(
+      expediaRequest({ method: "GET", path: "/properties/availability", context, timeoutMs: 15_000, maxResponseBytes: 1_000 }),
+    ).rejects.toBeInstanceOf(SupplierResponseTooLarge);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const row = await db.supplierCallLog.findFirstOrThrow();
+    expect(row).toMatchObject({ status: null, error: "too_large" });
+    // Under the limit the same answer is read as before.
+    const ok = await expediaRequest({ method: "GET", path: "/properties/availability", context, timeoutMs: 15_000, maxResponseBytes: 10_000 });
+    expect(ok.data).toEqual({ text: "x".repeat(5_000) });
+  });
+
+  it("a booking answer larger than the limit means the booking may exist: SupplierOutcomeUnknown", async () => {
+    fetchMock.mockResolvedValue(json(201, { text: "x".repeat(5_000) }));
+    await expect(
+      expediaRequest({ method: "POST", path: "/itineraries", body: {}, context: { ...context, test: "standard" }, timeoutMs: 60_000, maxResponseBytes: 1_000 }),
+    ).rejects.toBeInstanceOf(SupplierOutcomeUnknown);
+  });
+
+  it("a rate limit answer carries how long Expedia asked us to wait (Retry-After), when it says", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 429, headers: { "Retry-After": "30" } }));
+    const limited = await expediaRequest({ method: "GET", path: "/regions", context, timeoutMs: 15_000 }).catch((error: unknown) => error);
+    expect(limited).toBeInstanceOf(SupplierRateLimited);
+    expect((limited as SupplierRateLimited).retryAfterMs).toBe(30_000);
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 429 }));
+    const plain = await expediaRequest({ method: "GET", path: "/regions", context, timeoutMs: 15_000 }).catch((error: unknown) => error);
+    expect((plain as SupplierRateLimited).retryAfterMs).toBeNull();
   });
 
   it("calls to the test endpoint always need the Test header for non-GET, even with APP_ENV=production", async () => {

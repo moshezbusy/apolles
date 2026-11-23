@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { BookInput, BookResult, BookingSupplier, RetrievedItinerary, SupplierContext, SupplierLinks, SupplierRoomStatus } from "../types";
-import { SupplierError, SupplierOutcomeUnknown, expediaRequest, recordUnknownFields } from "./client";
+import { SupplierError, SupplierNotSent, SupplierOutcomeUnknown, expediaRequest, readConfigOrNotSent, recordUnknownFields } from "./client";
 import { readExpediaConfig } from "./config";
-import { ParseNotes, check, type ObjectFactory } from "./parse";
+import { ParseNotes, check, isLinkToken, type ObjectFactory } from "./parse";
 
 // Rapid booking calls (plan 3), from the official spec (docs/research/expedia-api/
 // rapid-3-specs.yaml; fixtures in ./fixtures):
@@ -13,7 +13,7 @@ import { ParseNotes, check, type ObjectFactory } from "./parse";
 // Every link is Expedia's own href, checked to stay on the API host and under /v3.
 // Outside production every non-GET carries the Test header ("standard").
 
-export class SupplierNotSent extends SupplierError {} // nothing reached the supplier (local check)
+export { SupplierNotSent }; // nothing reached the supplier (a local check failed): see ./client
 
 const BOOK_TIMEOUT_MS = 60_000; // booking can be slow; an unclear answer is reconciled
 const RETRIEVE_TIMEOUT_MS = 20_000;
@@ -100,13 +100,14 @@ function toItinerary(value: z.infer<typeof lenient.itinerary>): RetrievedItinera
   };
 }
 
-const TOKEN_IN_QUERY = /^[A-Za-z0-9._~-]{1,512}$/;
 const NAME = /^[^<>()&]{1,60}$/;
 const MAX_ROOMS = 8; // Rapid: "Up to 8 rooms may be requested or booked at once"
 
 export class ExpediaBooking implements BookingSupplier {
   async book(input: BookInput, context: SupplierContext): Promise<BookResult> {
-    if (!TOKEN_IN_QUERY.test(input.bookToken)) throw new SupplierNotSent("Invalid book token");
+    readConfigOrNotSent(); // a missing or wrong setting: nothing is sent, and the caller knows it
+    // The book link's token, as the price check gave it (long, and not only letters: parse.ts).
+    if (!isLinkToken(input.bookToken)) throw new SupplierNotSent("Invalid book token");
     if (!/^[A-Za-z0-9-]{3,28}$/.test(input.affiliateReferenceId)) throw new SupplierNotSent("Invalid affiliate reference");
     if (input.rooms.length < 1 || input.rooms.length > MAX_ROOMS) throw new SupplierNotSent(`A booking has 1 to ${MAX_ROOMS} rooms`);
     if (!input.rooms.every((room) => NAME.test(room.givenName) && NAME.test(room.familyName))) throw new SupplierNotSent("Invalid guest name");
@@ -128,7 +129,7 @@ export class ExpediaBooking implements BookingSupplier {
     const { data, logId } = await expediaRequest({
       method: "POST",
       path: "/itineraries",
-      query: { token: input.bookToken },
+      rawQuery: `token=${input.bookToken}`, // exactly as given, never encoded again
       body,
       context: { ...context, ...testHeader() },
       timeoutMs: BOOK_TIMEOUT_MS,
@@ -174,6 +175,7 @@ export class ExpediaBooking implements BookingSupplier {
   }
 
   async cancelRoom(cancelLink: string, context: SupplierContext): Promise<void> {
+    readConfigOrNotSent();
     const { status } = await expediaRequest({ method: "DELETE", path: linkPath(cancelLink), context: { ...context, ...testHeader() }, timeoutMs: RETRIEVE_TIMEOUT_MS });
     // 204: cancelled. 202: accepted but the result is not known yet: check with a retrieve.
     if (status !== 204) throw new SupplierOutcomeUnknown(`Expedia cancellation not confirmed yet (HTTP ${status})`);

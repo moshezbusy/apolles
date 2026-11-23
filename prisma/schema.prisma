@@ -53,6 +53,8 @@ model Agency {
   defaultMarkupType       MarkupType    @default(PERCENT)
   defaultMarkupValue      Int           @default(0)
   defaultShowCancellation Boolean       @default(true)
+  // "Offer valid for (days)": how long a shared quote's prices stay open to the client (1 to 30).
+  quoteValidDays          Int           @default(7)
   // "Your Apolles balance is low" was sent and the balance is still under USD 500 (email #19).
   lowBalanceAlerted       Boolean       @default(false)
   createdAt               DateTime      @default(now())
@@ -194,6 +196,8 @@ model PasswordToken {
   @@index([userId])
 }
 
+// The wallet ledger: append-only. A database trigger (migration ledger_append_only) refuses any
+// UPDATE or DELETE of a row; a correction is a new ADJUSTMENT entry.
 model LedgerEntry {
   id             String          @id @default(cuid())
   agencyId       String
@@ -320,12 +324,15 @@ model Property {
 
 // One run of a content sync job (catalog, regions, inactive), for auditing and for "since".
 model ContentSyncRun {
-  id         String            @id @default(cuid())
-  kind       String
-  status     ContentSyncStatus @default(RUNNING)
-  startedAt  DateTime          @default(now())
-  finishedAt DateTime?
-  counts     Json?
+  id          String            @id @default(cuid())
+  kind        String
+  status      ContentSyncStatus @default(RUNNING)
+  startedAt   DateTime          @default(now())
+  finishedAt  DateTime?
+  counts      Json?
+  // The last sign of life of a RUNNING run (sync-run.ts): a run with none for 10 minutes is a
+  // dead worker's, and the next try takes over. Null on runs from before this column.
+  heartbeatAt DateTime?
 
   @@index([kind, status, startedAt])
 }
@@ -384,6 +391,7 @@ model SearchSnapshot {
   rates        SearchRate[]
 
   @@index([agencyId, createdAt])
+  @@index([userId, createdAt])
   @@index([expiresAt])
 }
 
@@ -410,15 +418,19 @@ model SearchHotel {
 // free cancellation, price) match one rate on all of them, and the card shows the cheapest
 // matching rate, so a hotel's "from" price is always a rate the agent can actually pick.
 model SearchRate {
-  snapshotId     String
-  propertyId     String
-  rateIndex      Int // position in SearchHotel.offers
-  roomName       String // lowercased, for the room-name filter
-  refundable     Boolean
-  totalMinor     Int
-  currency       String
-  feesAtProperty Boolean // something is paid at the hotel on top of the total (BP4)
-  snapshot       SearchSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  snapshotId      String
+  propertyId      String
+  rateIndex       Int // position in SearchHotel.offers
+  roomName        String // lowercased, for the room-name filter
+  refundable      Boolean // free cancellation when the search ran (src/lib/cancellation.ts)
+  // When free cancellation ends (the first charge starts); null: none promised. The results
+  // filter and the "free cancellation" badge compare it with the clock, so a deadline that
+  // passes while the results are open stops counting. Null on rows from before this column.
+  freeCancelUntil DateTime?
+  totalMinor      Int
+  currency        String
+  feesAtProperty  Boolean // something is paid at the hotel on top of the total (BP4)
+  snapshot        SearchSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
 
   @@id([snapshotId, propertyId, rateIndex])
   @@index([snapshotId, totalMinor])
@@ -488,7 +500,7 @@ model Booking {
   reconcileAttempts       Int           @default(0)
   lastNotFoundAt          DateTime?
   cancelRequestedAt       DateTime?
-  needsAttention          Boolean       @default(false) // reconciliation gave up: an admin must look
+  needsAttention          Boolean       @default(false) // something needs an admin: the booking's event trail says what
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt
   confirmedAt             DateTime?
@@ -502,12 +514,28 @@ model Booking {
   // voucher. A markup on the charged total, as on quotes (percent in basis points, fixed in cents).
   sellMarkupType       MarkupType?
   sellMarkupValue      Int?
+  // A booking made from a quote: the price the client was quoted, in cents. When set it is the
+  // sale in reports (profit = this price minus the charge), whatever the net became since.
+  sellMinor            Int?
   // Requests sent to the hotel with the booking (not guaranteed; plan 8b). No personal details.
   specialRequest       String      @default("")
   // When free cancellation ends (the first charge starts), and when the 72-hour reminder went
   // out (email #14, plan 8c).
   freeCancelEndsAt     DateTime?
   freeCancelReminderAt DateTime?
+  // A cancellation the supplier did not confirm put the booking back to CONFIRMED at this time,
+  // with this charge quoted to the agent. The supplier is checked for 24 hours after it: if the
+  // cancellation went through late after all, it is finished with that charge.
+  cancelRestoredAt          DateTime?
+  cancelRestoredChargeMinor Int?
+  // When the daily check last read this confirmed booking at the supplier (a cancellation by the
+  // hotel or the supplier is found there).
+  supplierCheckedAt         DateTime?
+  // The agent's IP address and browser when the booking was entered and booked: the supplier asks
+  // for them on every call about the booking, also the ones made later in the background.
+  // Personal data: server-only, blanked when a draft expires.
+  agentIp                   String?
+  agentUserAgent            String?
 
   agency    Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   user      User           @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -522,6 +550,7 @@ model Booking {
   @@index([status, freeCancelEndsAt])
   @@index([agencyId, status, checkin])
   @@index([status, updatedAt])
+  @@index([status, checkin])
   @@index([needsAttention])
 }
 
@@ -601,7 +630,12 @@ enum MarkupType {
 
 model Quote {
   id               String        @id @default(cuid())
-  number           Int           @unique @default(autoincrement()) // shown as "Q-" + number
+  number           Int           @unique @default(autoincrement()) // internal: one sequence for all agencies
+  // The agency's own running number, shown as "Q-" + number (to agents and clients). Null only
+  // on a row made before it existed and not yet backfilled: the internal number shows then.
+  // Given under a lock on the agency's row (src/server/quotes/quotes.ts), so two quotes made at
+  // the same moment never share one.
+  agencyNumber     Int?
   agencyId         String
   createdById      String
   clientId         String?
@@ -623,8 +657,17 @@ model Quote {
   viewCount        Int           @default(0)
   selectedAt       DateTime? // when the client last sent selections
   clientNote       String        @default("") // the client's note with the selections
+  // The offer's last moment (the start of a UTC day): set each time the quote is shared, sent or
+  // extended. After it the client page is read-only until the agent extends the offer.
+  validUntil       DateTime?
+  // "Close quote": the agent finished with it (a partly booked trip, a client who went quiet).
+  // The client page is read-only while it is set; "Reopen quote" clears it.
+  closedAt         DateTime?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
+  // The agent's last edit: the list's order and "Last updated". A client's view or selection
+  // never moves it.
+  editedAt         DateTime      @default(now())
 
   agency    Agency      @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   createdBy User        @relation(fields: [createdById], references: [id], onDelete: Restrict)
@@ -634,6 +677,9 @@ model Quote {
 
   @@index([agencyId, updatedAt(sort: Desc), id(sort: Desc)])
   @@index([agencyId, status, updatedAt(sort: Desc), id(sort: Desc)])
+  @@index([agencyId, editedAt(sort: Desc), id(sort: Desc)])
+  @@index([agencyId, status, editedAt(sort: Desc), id(sort: Desc)])
+  @@index([agencyId, agencyNumber])
   @@index([clientId])
 }
 

@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useEffect, useId, useRef, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { alertError, btnPrimary, input, label } from "@/components/ui";
 import { DateRangeField } from "@/components/date-picker/DateRangeField";
+import { localToday } from "./dates";
 import { DestinationPicker } from "./destination-picker";
 import type { SearchFormState, SearchFormValues } from "./form-state";
 
@@ -40,6 +41,13 @@ export function SearchForm({
 }) {
   const [state, formAction, pending] = useActionState<SearchFormState, FormData>(action, null);
   const shown = state?.values ?? values;
+  // The calendar starts at the agent's own today. The server (UTC) cannot know it, so it sends
+  // the earliest date it accepts (minDate) and the browser moves the start to its own date.
+  const earliest = useSyncExternalStore(
+    noSubscription,
+    () => localToday(minDate, maxDate),
+    () => minDate,
+  );
   return (
     <form key={JSON.stringify(shown)} action={formAction} noValidate className="flex flex-col gap-3">
       {state ? (
@@ -48,9 +56,14 @@ export function SearchForm({
         </p>
       ) : null}
       {quoteId ? <input type="hidden" name="quote" value={quoteId} /> : null}
-      <Fields shown={shown} minDate={minDate} maxDate={maxDate} pending={pending} compact={compact} multiRoomAllowed={multiRoomAllowed} />
+      <Fields shown={shown} minDate={earliest} maxDate={maxDate} pending={pending} compact={compact} multiRoomAllowed={multiRoomAllowed} />
     </form>
   );
+}
+
+// The agent's date does not change while the page is open in any way the form must follow.
+function noSubscription(): () => void {
+  return () => undefined;
 }
 
 export function ageText(age: string): string {

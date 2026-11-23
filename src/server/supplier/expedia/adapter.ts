@@ -17,8 +17,8 @@ import type {
   SupplierContext,
 } from "@/server/supplier/types";
 import { PriceSumInvalid, sumBreakdowns } from "@/server/supplier/price";
-import { SupplierError, expediaRequest, recordUnknownFields } from "./client";
-import { type ObjectFactory, ParseNotes, check } from "./parse";
+import { SupplierError, SupplierRequestRejected, expediaRequest, recordUnknownFields } from "./client";
+import { type ObjectFactory, ParseNotes, check, isLinkToken, rawQueryValue } from "./parse";
 
 // Expedia Rapid v3 → the supplier-neutral model (src/server/supplier/types.ts).
 // Built from the official OpenAPI spec (docs/research/expedia-api/rapid-3-specs.yaml).
@@ -42,9 +42,13 @@ export class SupplierResponseInvalid extends SupplierError {}
 
 const SHOPPING_TIMEOUT_MS = 15_000;
 const MAX_PROPERTIES_PER_CALL = 250;
+// Rapid's rate_plan_count: "the number of rates to return per property ... between 1 and 250".
+// The hotel page lists every rate from this same answer, so the most Rapid gives is asked for.
+// (Its own number: it only happens to equal the properties-per-call limit.)
+const RATES_PER_PROPERTY = 250;
 const MAX_ROOMS = 8; // Rapid: "Up to 8 rooms may be requested or booked at once"
 const CURRENCY = "USD";
-const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/; // property, room and rate ids and tokens in a path or query
+const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/; // property, room and rate ids in a path (tokens: isLinkToken)
 
 // ---------- schemas ----------
 // Built twice from one definition (see parse.ts).
@@ -175,6 +179,8 @@ const LINE_ORDER: PriceLineKind[] = ["room_rate", "taxes_and_fees", "taxes", "ex
 
 // A rate we drop: not sellable in phase 1 (currency, unknown charge type) or not well formed.
 class DropRate extends Error {}
+// A link whose token could not be sent back as given: the rate cannot be checked or booked.
+class LinkTokenUnusable extends DropRate {}
 
 function money(value: string, currency: string, allowNegative = false): Money {
   try {
@@ -214,9 +220,11 @@ function roomsPriced(pricings: Pricing[]): { price: PriceBreakdown; roomPrices: 
   }
 }
 
+// The link's token exactly as written in the href (see isLinkToken in parse.ts).
 function tokenOf(href: string): string {
-  const token = new URL(href, "https://test.ean.com").searchParams.get("token");
+  const token = rawQueryValue(href, "token");
   if (!token) throw new DropRate("link has no token");
+  if (!isLinkToken(token)) throw new LinkTokenUnusable("link token has characters that cannot be sent back");
   return token;
 }
 
@@ -276,7 +284,9 @@ export function amenityNames(raw: unknown): string[] {
   return names;
 }
 
-function toOffer(propertyId: string, room: { id: string; room_name: string }, rate: Rate, occupancies: string[]): Offer | null {
+// `note` records a rate dropped for a token we cannot send back, so the supplier log shows it
+// (otherwise such rates would vanish without a trace).
+function toOffer(propertyId: string, room: { id: string; room_name: string }, rate: Rate, occupancies: string[], note: () => void = () => undefined): Offer | null {
   if (rate.sale_scenario?.package) return null; // AP4: no package rates
   if (rate.merchant_of_record !== undefined && rate.merchant_of_record !== "expedia") return null; // no property collect
   const pricings = occupancies.map((key) => rate.occupancy_pricing[key]);
@@ -310,6 +320,7 @@ function toOffer(propertyId: string, room: { id: string; room_name: string }, ra
       ...roomsPriced(pricings),
     };
   } catch (error) {
+    if (error instanceof LinkTokenUnusable) note();
     if (error instanceof DropRate) return null;
     throw error;
   }
@@ -343,7 +354,7 @@ export class ExpediaAdapter implements SupplierAdapter {
         language: "en-US",
         occupancy,
         property_id: query.propertyIds,
-        rate_plan_count: MAX_PROPERTIES_PER_CALL,
+        rate_plan_count: RATES_PER_PROPERTY,
         sales_channel: "agent_tool",
         sales_environment: "hotel_only",
       },
@@ -363,8 +374,9 @@ export class ExpediaAdapter implements SupplierAdapter {
         const room = check(lenient.room, strict.room, rawRoom, `[${p}].rooms[${r}]`, notes);
         if (!room) return;
         room.rates.forEach((rawRate, t) => {
-          const rate = check(lenient.rate, strict.rate, rawRate, `[${p}].rooms[${r}].rates[${t}]`, notes);
-          const offer = rate ? toOffer(property.property_id, room, rate, occupancy) : null;
+          const at = `[${p}].rooms[${r}].rates[${t}]`;
+          const rate = check(lenient.rate, strict.rate, rawRate, at, notes);
+          const offer = rate ? toOffer(property.property_id, room, rate, occupancy, () => notes.invalid(`${at}.bed_groups.links.price_check.href`)) : null;
           if (offer) offers.push(offer);
         });
       });
@@ -375,14 +387,18 @@ export class ExpediaAdapter implements SupplierAdapter {
   }
 
   async priceCheck(ref: PriceCheckRef, context: SupplierContext): Promise<PriceCheckResult> {
-    for (const value of [ref.propertyId, ref.roomId, ref.rateId, ref.token]) {
-      if (!SAFE_ID.test(value)) throw new Error("priceCheck: invalid id or token");
+    // A stored id or token that cannot be sent is a definite "no" (nothing reaches Expedia): a
+    // supplier error like any other rejection, so the page says the rate cannot be checked
+    // instead of failing. The token goes back exactly as Expedia gave it (rawQuery).
+    for (const value of [ref.propertyId, ref.roomId, ref.rateId]) {
+      if (!SAFE_ID.test(value)) throw new SupplierRequestRejected("priceCheck: invalid id");
     }
+    if (!isLinkToken(ref.token)) throw new SupplierRequestRejected("priceCheck: invalid token");
     const keys = occupancyKeys(ref.occupancies);
     const { data, logId } = await expediaRequest({
       method: "GET",
       path: `/properties/${ref.propertyId}/rooms/${ref.roomId}/rates/${ref.rateId}`,
-      query: { token: ref.token },
+      rawQuery: `token=${ref.token}`,
       context,
       timeoutMs: SHOPPING_TIMEOUT_MS,
     });
@@ -399,6 +415,8 @@ export class ExpediaAdapter implements SupplierAdapter {
       const status = value.status === "price_changed" ? "price_changed" : "available";
       return { status, ...roomsPriced(pricings), bookToken: tokenOf(book.href) };
     } catch (error) {
+      // A book link we cannot follow is a broken answer, not a sold-out room.
+      if (error instanceof LinkTokenUnusable) throw new SupplierResponseInvalid("Expedia price check book link has no usable token");
       // A rate that cannot be sold as priced now (e.g. no longer USD) is treated as sold out.
       if (error instanceof DropRate) return { status: "sold_out" };
       throw error;

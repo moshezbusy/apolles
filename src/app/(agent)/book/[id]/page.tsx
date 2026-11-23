@@ -18,7 +18,10 @@ import { shortDate, stayText } from "../../search/parts";
 import { bookAction } from "../actions";
 import { SellingPrice } from "../../_components/selling-price";
 import { sellingPriceAction } from "../../bookings/[id]/actions";
-import { lastFreeDay } from "@/server/quotes/pricing";
+import { formatMinor } from "@/lib/supplier-money";
+import { dayAhead, lastFreeDay, todayIso } from "@/server/quotes/pricing";
+import { type QuoteReview, quoteReview } from "@/server/quotes/quote-booking";
+import { quoteCode } from "@/server/quotes/quotes";
 import { Steps } from "../../_components/steps";
 import { BookForm } from "./book-form";
 
@@ -72,7 +75,8 @@ export default async function ReviewPage({ params }: { params: Params }) {
   } catch {
     content = null; // the rates and policies of the rate itself are still shown
   }
-  const [{ balanceCents }, rooms] = await Promise.all([getBalance(agencyId), getBookingRooms(agencyId, b.id)]);
+  // From a quote: what the client was quoted, next to what was just checked (the quote never sets the price).
+  const [{ balanceCents }, rooms, fromQuote] = await Promise.all([getBalance(agencyId), getBookingRooms(agencyId, b.id), quoteReview(agencyId, b)]);
   const shortfall = Math.max(0, b.totalMinor - balanceCents);
   // Several rooms (plan 10) list each room with its guests and price; one room looks as before.
   const severalRooms = rooms.length > 1;
@@ -176,6 +180,7 @@ export default async function ReviewPage({ params }: { params: Params }) {
         </div>
 
         <aside className="flex flex-col gap-5">
+          {fromQuote ? <FromQuote review={fromQuote} /> : null}
           <section aria-labelledby="price-title" className={`${card} bg-white p-5`}>
             <h2 id="price-title" className={sectionTitle}>
               Price
@@ -211,11 +216,11 @@ export default async function ReviewPage({ params }: { params: Params }) {
             />
           </section>
           <section className={`${card} bg-white p-5`}>
-            <BookForm action={bookAction} bookingId={b.id} expectedTotal={b.totalMinor} terms={termsLinks()} canPay={shortfall === 0} />
+            <BookForm action={bookAction} bookingId={b.id} expectedTotal={b.totalMinor} terms={termsLinks()} canPay={shortfall === 0} quoteCheck={fromQuote?.needsCheck === true} />
             {(() => {
               // A free day already past (booking inside the penalty window) is not shown as free.
               const last = lastFreeDay({ refundable: b.refundable, cancelPenalties: b.cancelPenalties as unknown as CancelPenalty[] });
-              const free = last && last >= new Date().toISOString().slice(0, 10) ? last : null;
+              const free = last && dayAhead(last, todayIso(new Date())) ? last : null;
               return (
                 <p className={`mt-3 text-center text-xs font-semibold ${free ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>
                   {free ? `Free cancellation until ${shortDate(free)} (hotel time)` : b.refundable ? "See the cancellation policy before booking" : "Non-refundable"}
@@ -230,5 +235,74 @@ export default async function ReviewPage({ params }: { params: Params }) {
         </aside>
       </div>
     </Shell>
+  );
+}
+
+// "From quote Q-n": the price and the cancellation date the client was quoted, set against the
+// rate as the supplier has it now. Days can pass between a quote and its booking: the net may be
+// higher (less profit, or a loss) and free cancellation may be gone. When any of that is worse
+// than what was quoted, "Book" asks for a tick (checked again on the server).
+function FromQuote({ review }: { review: QuoteReview }) {
+  const money = (minor: number) => formatMinor(minor, review.currency);
+  const row = "flex justify-between gap-3";
+  return (
+    <section aria-labelledby="from-quote-title" className={`${card} bg-white p-5`}>
+      <h2 id="from-quote-title" className={sectionTitle}>
+        From quote{" "}
+        <Link href={`/quotes/${review.quoteId}#selections`} className="underline">
+          {quoteCode(review.number)}
+        </Link>
+      </h2>
+      {review.rateChanged ? (
+        <p role="alert" className={`${alertInfo} mt-2`}>
+          The rate changed. The supplier no longer has the exact rate that was quoted: this is another rate of the same hotel. Check the room, what it includes and its cancellation policy on this page.
+        </p>
+      ) : null}
+      <dl className="mt-3 flex flex-col gap-1.5 text-[13px]">
+        <div className={row}>
+          <dt>{review.priced ? "Price quoted to the client" : "The client saw (no markup was set)"}</dt>
+          <dd className="font-bold tabular-nums text-ink">{money(review.quotedMinor)}</dd>
+        </div>
+        {review.chosenAtMinor !== null ? (
+          <div className={row}>
+            <dt>Price when the client chose</dt>
+            <dd className="tabular-nums">{money(review.chosenAtMinor)}</dd>
+          </div>
+        ) : null}
+        <div className={row}>
+          <dt>Net now</dt>
+          <dd className="tabular-nums">
+            <strong className="text-ink">{money(review.netNowMinor)}</strong>
+            {review.netNowMinor !== review.netThenMinor ? <span className="block text-xs text-muted">was {money(review.netThenMinor)} when quoted</span> : null}
+          </dd>
+        </div>
+        <div className={row}>
+          <dt>Your profit</dt>
+          <dd className={`tabular-nums ${review.profitNowMinor <= 0 ? "text-[#9b3b2e]" : "text-ink"}`}>
+            <strong>{money(review.profitNowMinor)}</strong>
+            {review.profitLower ? <span className="block text-xs">was {money(review.profitThenMinor)}</span> : null}
+          </dd>
+        </div>
+        <div className={row}>
+          <dt>Free cancellation the client saw</dt>
+          <dd className="text-right">{review.clientFreeDay ? `Until ${shortDate(review.clientFreeDay)}` : review.freeThenDay ? `Not shown (the rate had it until ${shortDate(review.freeThenDay)})` : "None"}</dd>
+        </div>
+        <div className={row}>
+          <dt>Free cancellation now</dt>
+          <dd className={`text-right font-bold ${review.freeNowDay ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>{review.freeNowDay ? `Until ${shortDate(review.freeNowDay)} (hotel time)` : "None: this booking cannot be cancelled for free"}</dd>
+        </div>
+      </dl>
+      {review.needsCheck ? (
+        <p role="alert" className={`${alertError} mt-3`}>
+          {[review.profitLower ? "your profit is lower than when the client chose" : "", review.termsWorse ? "the cancellation terms are worse than what was quoted" : "", review.rateChanged ? "the rate is not the one that was quoted" : ""]
+            .filter(Boolean)
+            .join(", ")
+            .replace(/^./, (c) => c.toUpperCase())}
+          . Check with the client if needed, then tick the box below to book.
+        </p>
+      ) : (
+        <p className="mt-3 text-xs text-muted">The price and the terms are as good as what the client was quoted.</p>
+      )}
+    </section>
   );
 }

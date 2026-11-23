@@ -23,6 +23,7 @@ const LISTED: BookingStatus[] = ["PENDING_CONFIRMATION", "CONFIRMED", "FAILED", 
 const DEFAULT_TAKE = 20;
 const MAX_TAKE = 100;
 const CSV_MAX_ROWS = 5_000;
+const UTF8_BOM = "\uFEFF";
 
 type Options = { tab: BookingTab; q?: string; cursor?: string; take?: number };
 
@@ -63,6 +64,7 @@ const SELECT = {
   chargedMinor: true,
   sellMarkupType: true,
   sellMarkupValue: true,
+  sellMinor: true,
   refundable: true,
   cancelPenalties: true,
   currency: true,
@@ -111,8 +113,14 @@ export function cell(value: string): string {
   return `"${safe.replace(/"/g, '""')}"`;
 }
 
-export async function bookingsCsv(agencyId: string, opts: Omit<Options, "cursor" | "take">, now: Date = new Date()): Promise<string> {
-  const rows = (await db.booking.findMany({ where: whereFor(agencyId, opts, now), select: SELECT, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: CSV_MAX_ROWS })).map(withRoomCount);
+// The file starts with the UTF-8 byte order mark, so Excel reads names in any script. At most
+// 5,000 bookings, newest first; an export that was cut says so in a last row, with how many
+// bookings are missing (the file never looks complete when it is not).
+export async function bookingsCsv(agencyId: string, opts: Omit<Options, "cursor" | "take">, now: Date = new Date(), limits: { maxRows?: number } = {}): Promise<string> {
+  const maxRows = Math.min(Math.max(1, Math.trunc(limits.maxRows ?? CSV_MAX_ROWS)), CSV_MAX_ROWS);
+  const where = whereFor(agencyId, opts, now);
+  const rows = (await db.booking.findMany({ where, select: SELECT, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: maxRows })).map(withRoomCount);
+  const missing = rows.length < maxRows ? 0 : Math.max(0, (await db.booking.count({ where })) - rows.length);
   // "Rooms" is the last column (plan 10), so the earlier columns keep their places.
   const header = ["Reference", "Status", "Hotel", "City", "Lead guest", "Check-in", "Check-out", "Total", "Currency", "Booked at (UTC)", "Rooms"].join(",");
   const lines = rows.map((r) =>
@@ -130,5 +138,9 @@ export async function bookingsCsv(agencyId: string, opts: Omit<Options, "cursor"
       String(r.roomCount),
     ].join(","),
   );
-  return `${[header, ...lines].join("\r\n")}\r\n`;
+  const cut =
+    missing > 0
+      ? [cell(`This export was cut at ${rows.length.toLocaleString("en-US")} rows: ${missing.toLocaleString("en-US")} more ${missing === 1 ? "booking is" : "bookings are"} not in this file. Narrow the list with the tabs or the search box, then export again.`)]
+      : [];
+  return `${UTF8_BOM}${[header, ...lines, ...cut].join("\r\n")}\r\n`;
 }

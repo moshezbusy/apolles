@@ -2,7 +2,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { removeNul } from "@/lib/strip-nul";
 import { db } from "@/server/db";
 import { forLog, maskQuery } from "@/server/supplier/mask";
-import { TEST_BASE_URL, readExpediaConfig } from "./config";
+import { TEST_BASE_URL, readExpediaConfig, type ExpediaConfig } from "./config";
 import { authHeader } from "./signature";
 
 // The one HTTP client for Expedia Rapid v3. It signs every call, sends the required headers,
@@ -20,7 +20,10 @@ export class SupplierError extends Error {
   }
 }
 export class SupplierAuthError extends SupplierError {}
-export class SupplierRateLimited extends SupplierError {}
+// HTTP 429. retryAfterMs: how long Expedia asked us to wait (its Retry-After header), if it said.
+export class SupplierRateLimited extends SupplierError {
+  retryAfterMs: number | null = null;
+}
 export class SupplierRequestRejected extends SupplierError {}
 export class SupplierUnavailable extends SupplierError {}
 export class SupplierTimeout extends SupplierError {}
@@ -28,6 +31,23 @@ export class SupplierTimeout extends SupplierError {}
 // answer: timeout, network error, 5xx, or a body that never arrived. The booking (or the
 // cancellation) may exist, so callers must reconcile and never retry blindly.
 export class SupplierOutcomeUnknown extends SupplierError {}
+// Nothing reached the supplier: a check of our own failed first (a setting that is missing or
+// wrong, the Test header guard, an invalid value). A definite "nothing happened": the booking
+// service releases the hold at once instead of waiting for a check that can only find nothing.
+export class SupplierNotSent extends SupplierError {}
+
+// The settings for a call that changes something (book, cancel): a missing or wrong one means
+// nothing was sent. The message names the setting, never its value.
+export function readConfigOrNotSent(): ExpediaConfig {
+  try {
+    return readExpediaConfig();
+  } catch (error) {
+    throw new SupplierNotSent(error instanceof Error ? error.message : "The Expedia settings could not be read");
+  }
+}
+// An answer larger than the limit: reading stops there, so one huge body cannot fill the memory
+// of the app server.
+export class SupplierResponseTooLarge extends SupplierError {}
 
 export type RequestContext = {
   customerIp?: string; // the agent's IP, not ours
@@ -40,17 +60,25 @@ export type ExpediaRequest = {
   method: "GET" | "POST" | "PUT" | "DELETE";
   path: string; // e.g. "/properties/availability"
   query?: Record<string, string | number | boolean | (string | number)[] | undefined>;
+  // A piece of query sent exactly as given, never encoded again: a link token ("token=…"), which
+  // must go back byte for byte. The caller checks it first (isLinkToken in parse.ts). It is kept
+  // out of `path`, so it never appears in an error message.
+  rawQuery?: string;
   body?: unknown;
   context: RequestContext;
   timeoutMs: number;
   affiliateReferenceId?: string;
   // false for answers that hold a signed link or another secret: the log keeps the status only.
   logResponseBody?: boolean;
+  // The most bytes of the answer (after unzipping) that are read; default MAX_RESPONSE_BYTES.
+  maxResponseBytes?: number;
 };
+
+export const MAX_RESPONSE_BYTES = 50 * 1024 * 1024; // far above any real answer (250 hotels with every rate)
 
 const FALLBACK_USER_AGENT = "Apolles/1.0";
 
-function buildUrl(baseUrl: string, path: string, query: ExpediaRequest["query"]): string {
+function buildUrl(baseUrl: string, path: string, query: ExpediaRequest["query"], rawQuery = ""): string {
   // A path may already carry a query (a "next page" link from Expedia, kept exactly as given).
   const [pathOnly = "", given = ""] = path.split("?", 2);
   const params = new URLSearchParams();
@@ -58,7 +86,7 @@ function buildUrl(baseUrl: string, path: string, query: ExpediaRequest["query"])
     if (value === undefined) continue;
     for (const item of Array.isArray(value) ? value : [value]) params.append(key, String(item));
   }
-  const search = [given, params.toString()].filter(Boolean).join("&");
+  const search = [given, rawQuery, params.toString()].filter(Boolean).join("&");
   return `${baseUrl}${pathOnly}${search ? `?${search}` : ""}`;
 }
 
@@ -89,8 +117,35 @@ export function nextFromLink(header: string | null, baseUrl: string): string | n
   return `${target.pathname.slice(base.pathname.length)}${target.search}`;
 }
 
-async function readBody(response: Response): Promise<unknown> {
-  const text = await response.text();
+// "Retry-After: 30" (seconds) or an HTTP date → milliseconds from now; null when absent or unreadable.
+function retryAfterMs(header: string | null): number | null {
+  if (!header) return null;
+  const wait = /^\d{1,6}$/.test(header.trim()) ? Number(header.trim()) * 1000 : Date.parse(header) - Date.now();
+  return Number.isFinite(wait) && wait >= 0 ? wait : null;
+}
+
+// The body as text, read piece by piece and given up on past the limit.
+async function readText(response: Response, maxBytes: number): Promise<string> {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new SupplierResponseTooLarge(`Expedia answer is larger than ${maxBytes} bytes`);
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+
+async function readBody(response: Response, maxBytes: number): Promise<unknown> {
+  const text = await readText(response, maxBytes);
   if (!text) return undefined;
   try {
     // NUL is removed from supplier text here, once, so no later write to Postgres fails on it.
@@ -108,7 +163,7 @@ async function writeLog(entry: {
   affiliateReferenceId: string | undefined;
   requestBody: unknown;
   responseBody?: unknown;
-  error?: "timeout" | "network";
+  error?: "timeout" | "network" | "too_large";
 }): Promise<string | null> {
   const requestBody = forLog(entry.requestBody) as Prisma.InputJsonValue | undefined;
   const responseBody = forLog(entry.responseBody) as Prisma.InputJsonValue | undefined;
@@ -151,16 +206,16 @@ export async function recordUnknownFields(logId: string | null, names: string[])
 export async function expediaRequest(
   request: ExpediaRequest,
 ): Promise<{ status: number; data: unknown; logId: string | null; next: string | null }> {
-  const config = readExpediaConfig();
   const { method, path, context } = request;
   const changesState = method !== "GET";
+  const config = changesState ? readConfigOrNotSent() : readExpediaConfig();
   // On test.ean.com a booking WITHOUT the Test header is a real booking. A call that changes
   // something must carry it outside production, and always when the endpoint is the test one.
   if (changesState && !context.test && (!config.production || config.baseUrl === TEST_BASE_URL)) {
-    throw new Error("Every non-GET Expedia call to the test endpoint must send the Test header");
+    throw new SupplierNotSent("Every non-GET Expedia call to the test endpoint must send the Test header");
   }
 
-  const url = buildUrl(config.baseUrl, path, request.query);
+  const url = buildUrl(config.baseUrl, path, request.query, request.rawQuery);
   const logPath = maskQuery(url.slice(config.baseUrl.length));
   const attempts = changesState ? 1 : 2;
 
@@ -181,6 +236,7 @@ export async function expediaRequest(
     let status: number;
     let data: unknown;
     let link: string | null = null;
+    let retryAfter: string | null = null;
     try {
       const response = await fetch(url, {
         method,
@@ -190,9 +246,11 @@ export async function expediaRequest(
       });
       status = response.status;
       link = response.headers.get("link");
-      data = await readBody(response); // the timeout covers the body too
+      retryAfter = response.headers.get("retry-after");
+      data = await readBody(response, request.maxResponseBytes ?? MAX_RESPONSE_BYTES); // the timeout covers the body too
     } catch (error) {
       const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      const tooLarge = error instanceof SupplierResponseTooLarge;
       await writeLog({
         method,
         path: logPath,
@@ -200,11 +258,12 @@ export async function expediaRequest(
         durationMs: elapsed(),
         affiliateReferenceId: request.affiliateReferenceId,
         requestBody: request.body,
-        error: timedOut ? "timeout" : "network",
+        error: timedOut ? "timeout" : tooLarge ? "too_large" : "network",
       });
       if (changesState) {
-        throw new SupplierOutcomeUnknown(`Expedia ${method} ${path}: no clear answer (${timedOut ? "timeout" : "network"})`);
+        throw new SupplierOutcomeUnknown(`Expedia ${method} ${path}: no clear answer (${timedOut ? "timeout" : tooLarge ? "answer too large" : "network"})`);
       }
+      if (tooLarge) throw error; // asking again would only bring the same answer
       if (timedOut) throw new SupplierTimeout(`Expedia ${method} ${path} timed out`);
       if (attempt < attempts) continue;
       throw new SupplierUnavailable(`Expedia ${method} ${path} could not be reached`);
@@ -224,7 +283,11 @@ export async function expediaRequest(
     // never turn a successful booking into an error.
     if (status >= 200 && status < 300) return { status, data, logId, next: method === "GET" ? nextFromLink(link, config.baseUrl) : null };
     if (status === 401 || status === 403) throw new SupplierAuthError(`Expedia refused the credentials (HTTP ${status})`, status);
-    if (status === 429) throw new SupplierRateLimited("Expedia rate limit reached (HTTP 429)", status);
+    if (status === 429) {
+      const limited = new SupplierRateLimited("Expedia rate limit reached (HTTP 429)", status);
+      limited.retryAfterMs = retryAfterMs(retryAfter);
+      throw limited;
+    }
     if (status >= 500) {
       if (changesState) throw new SupplierOutcomeUnknown(`Expedia ${method} ${path}: no clear answer (HTTP ${status})`, status);
       if (attempt < attempts) continue;

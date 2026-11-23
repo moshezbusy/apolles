@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enterChoice, noMatchText } from "./destination-picker";
+import { DESTINATION_PLACEHOLDER, TOO_MANY_TEXT, enterChoice, noMatchText } from "./destination-picker";
 
 const rome = { id: "rome", label: "Rome, Lazio, Italy", type: "city" };
 const roma = { id: "roma-area", label: "Roma Nord, Italy", type: "area" };
@@ -17,7 +17,12 @@ describe("destination picker", () => {
     expect(enterChoice([], -1)).toBeNull();
   });
 
-  it("no match: says so, with the typed text", () => {
-    expect(noMatchText("pariss")).toBe('No destination matches "pariss". Check the spelling.');
+  it("no match: says so, with the typed text, and that the search finds cities and areas, not hotel names", () => {
+    expect(noMatchText("pariss")).toBe('No city or area matches "pariss". Check the spelling, or type the city the hotel is in: hotel names are not searched.');
+    expect(DESTINATION_PLACEHOLDER).toBe("City or area, for example Paris");
+  });
+
+  it("too many requests: a message that says what to do, never an empty list", () => {
+    expect(TOO_MANY_TEXT).toBe("Too many searches. Wait a moment, then type again.");
   });
 });

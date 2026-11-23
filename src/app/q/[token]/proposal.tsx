@@ -1,20 +1,21 @@
 import { initials } from "@/components/Header";
 import { safeImageUrl } from "@/lib/supplier-image";
-import { getContent } from "@/server/content/content-cache";
+import { getCachedContent, getContent } from "@/server/content/content-cache";
 import type { ClientQuote, ClientQuoteData } from "@/server/quotes/sharing";
 import { Selection, ViewPing } from "./selection";
 import { day, texts, type Lang } from "./texts";
 
 // The proposal as the client sees it. The agent's Preview (/quotes/[id]/preview) draws the same
 // page with `token` null: nothing is counted and nothing can be sent from it.
-// Hotel photos for the proposal, best effort: the page still works without them.
 // Hotel photos for the proposal, by our own hotel id (the supplier's id stays on the server).
-// Best effort: the page still works without them.
-export async function proposalPhotos(data: ClientQuoteData): Promise<Record<string, string>> {
+// Best effort: the page still works without them. "cache": the public client page, which reads
+// our own cache only and never calls the supplier. "fetch": the signed-in agent's Preview, which
+// may fetch missing content (and so fills the cache for the client).
+export async function proposalPhotos(data: ClientQuoteData, source: "cache" | "fetch"): Promise<Record<string, string>> {
   const photos: Record<string, string> = {};
   try {
     const ids = [...new Set(Object.values(data.propertyByHotel))];
-    const content = ids.length ? await getContent(ids) : new Map();
+    const content = ids.length === 0 ? new Map() : source === "cache" ? await getCachedContent(ids) : await getContent(ids);
     for (const [hotelId, propertyId] of Object.entries(data.propertyByHotel)) {
       const url = safeImageUrl(content.get(propertyId)?.heroImage?.url);
       if (url) photos[hotelId] = url;
@@ -31,7 +32,9 @@ export function Proposal({ quote, token, logoSrc, photos }: { quote: ClientQuote
 
   const checkins = quote.stays.map((s) => s.checkin).sort();
   const checkouts = quote.stays.map((s) => s.checkout).sort();
-  const phoneDigits = quote.agency.phone?.replace(/\D/g, "") ?? "";
+  // The agency's number in its international form; none when it cannot be made for sure (a
+  // button to a wrong number is worse than no button).
+  const phoneDigits = quote.agency.phoneE164;
   const hasRooms = quote.stays.some((s) => s.hotels.length > 0);
   const greeting = quote.message || (lang === "HE" ? `היי${quote.clientFirstName ? ` ${quote.clientFirstName}` : ""}, בחרתי עבורך את אפשרויות המלונות האלה. בחרו את המלון והחדר שאתם מעדיפים בכל יעד.` : `Hi${quote.clientFirstName ? ` ${quote.clientFirstName}` : ""}, I selected these hotel options for your trip. Choose the hotel and room you prefer in each destination.`);
 
@@ -88,6 +91,7 @@ export function Proposal({ quote, token, logoSrc, photos }: { quote: ClientQuote
               {quote.childAges.length ? ` · ${t.children(quote.childAges.length)}` : ""}
             </span>
             <span className="rounded-full bg-white/15 px-3 py-1">{t.destinations(quote.stays.length)}</span>
+            {quote.state === "open" && quote.validLastDay ? <span className="rounded-full bg-white/15 px-3 py-1">{t.validUntil(day(quote.validLastDay, lang, true))}</span> : null}
           </p>
         </section>
 
@@ -107,6 +111,25 @@ export function Proposal({ quote, token, logoSrc, photos }: { quote: ClientQuote
         </footer>
       </main>
     </div>
+  );
+}
+
+// Too many page loads from one address in a minute: a short notice in both languages (nothing of
+// the quote is read).
+export function Busy() {
+  const en = texts("EN");
+  const he = texts("HE");
+  return (
+    <main className="mx-auto flex w-[min(640px,calc(100%-32px))] flex-1 flex-col gap-6 py-16 text-center">
+      <section>
+        <h1 className="font-serif text-[28px] text-ink">{en.busyTitle}</h1>
+        <p className="mt-2 text-[14px] text-muted">{en.busyText}</p>
+      </section>
+      <section dir="rtl" lang="he">
+        <h2 className="font-serif text-[24px] text-ink">{he.busyTitle}</h2>
+        <p className="mt-2 text-[14px] text-muted">{he.busyText}</p>
+      </section>
+    </main>
   );
 }
 

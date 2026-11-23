@@ -332,7 +332,11 @@ describe("booking screens", () => {
 
     const { cancelAction } = await import("./(agent)/bookings/[id]/actions");
     // One room's charge is not the booking's charge: refused, nothing cancelled.
-    expect(await redirectOf(cancelAction(form({ bookingId: id, expectedCharge: String(penalty!.amount.minor), confirmFinal: "on" })))).toBe(`/bookings/${id}?notice=cancel_not_allowed`);
+    expect(await redirectOf(cancelAction(form({ bookingId: id, expectedCharge: String(penalty!.amount.minor), confirmFinal: "on" })))).toBe(`/bookings/${id}?notice=cancel_charge_changed`);
+    // The page shows the server's own sentence for that answer, with the charge to check.
+    const changed = renderToStaticMarkup(await SummaryPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({ notice: "cancel_charge_changed" }) }));
+    expect(changed).toContain("The cancellation charge changed. Check the new charge below, then cancel again.");
+    expect(changed).toContain(`name="expectedCharge" value="${charge}"`);
     expect((await db.booking.findUniqueOrThrow({ where: { id } })).status).toBe("CONFIRMED");
     expect(await redirectOf(cancelAction(form({ bookingId: id, expectedCharge: String(charge), confirmFinal: "on" })))).toBe(`/bookings/${id}?notice=cancelled`);
     expect(await db.booking.findUniqueOrThrow({ where: { id } })).toMatchObject({ status: "CANCELLED", refundMinor: booking.totalMinor - charge });
@@ -376,6 +380,87 @@ describe("booking screens", () => {
     await redirectOf(cancelAction(form({ bookingId: id, expectedCharge: "0", confirmFinal: "on" })));
     const after = renderToStaticMarkup(await SummaryPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({}) }));
     expect(after.match(/>Cancelled</g)?.length).toBeGreaterThanOrEqual(3); // the status, and each of the 2 rooms
+  });
+
+  it("the cancel result is the server's own message for its code; text in the URL is never shown", async () => {
+    signInAs("A");
+    const { snapshotId, offers } = await seed();
+    const id = await draftFor(snapshotId, offers[1]!);
+    const { default: ReviewPage } = await import("./(agent)/book/[id]/page");
+    renderToStaticMarkup(await ReviewPage({ params: Promise.resolve({ id }) }));
+    const booking = await db.booking.findUniqueOrThrow({ where: { id } });
+    const { bookAction } = await import("./(agent)/book/actions");
+    await redirectOf(bookAction(null, form({ bookingId: id, expectedTotal: String(booking.totalMinor), acceptedTerms: "on" })));
+    const { default: SummaryPage } = await import("./(agent)/bookings/[id]/page");
+    const page = async (notice: string) => renderToStaticMarkup(await SummaryPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({ notice }) }));
+    const { CANCEL_MESSAGES } = await import("@/server/booking/service");
+    for (const [code, text] of Object.entries(CANCEL_MESSAGES)) expect(await page(`cancel_${code}`), code).toContain(text.replace(/'/g, "&#x27;"));
+    expect(await page("cancel_try_later")).toContain("Try again in a few minutes.");
+    expect(await page("cancel_already")).toContain("This booking is already being cancelled.");
+    const made = await page("Your booking was hacked, call 555");
+    expect(made).not.toContain("hacked");
+    expect(made).not.toContain('role="status"');
+    // The button says what it does (its sending state is in cancel-button.test.tsx).
+    expect(await page("x")).toContain(">Cancel this booking<");
+    // No text for agents has a dash or an exclamation mark.
+    for (const text of Object.values(CANCEL_MESSAGES)) expect(text).not.toMatch(/[—–!]/);
+  });
+
+  it("a booking waiting for the hotel says so and keeps itself up to date; a failed one links back to the search", async () => {
+    signInAs("A");
+    const { snapshotId, offers } = await seed();
+    const id = await draftFor(snapshotId, offers[1]!);
+    const { default: ReviewPage } = await import("./(agent)/book/[id]/page");
+    renderToStaticMarkup(await ReviewPage({ params: Promise.resolve({ id }) }));
+    const { default: SummaryPage } = await import("./(agent)/bookings/[id]/page");
+    const page = async () => renderToStaticMarkup(await SummaryPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({}) }));
+    const refreshes = "data-refresh-every=\"15\"";
+
+    const draft = await db.booking.findUniqueOrThrow({ where: { id } });
+    await db.booking.update({ where: { id }, data: { status: "PENDING_CONFIRMATION", chargedMinor: draft.totalMinor } });
+    let html = await page();
+    expect(html).toContain("Waiting for the hotel to confirm.");
+    expect(html).toContain(refreshes);
+
+    await db.booking.update({ where: { id }, data: { status: "CANCEL_PENDING" } });
+    html = await page();
+    expect(html).toContain("Waiting for the hotel to confirm the cancellation.");
+    expect(html).toContain(refreshes);
+
+    await db.booking.update({ where: { id }, data: { status: "CONFIRMED" } });
+    html = await page();
+    expect(html).not.toContain(refreshes);
+    expect(html).not.toContain("did not confirm your cancellation");
+    // A cancellation that was put back: the page says so, with the cancel box still there.
+    await db.booking.update({ where: { id }, data: { cancelRestoredAt: new Date(), cancelRestoredChargeMinor: 0 } });
+    html = await page();
+    expect(html).toContain("The hotel did not confirm your cancellation. The booking is still confirmed and nothing was charged or refunded.");
+    expect(html).toContain(">Cancel this booking<");
+
+    // Cancelled by the hotel: said plainly, no voucher, no cancel box.
+    await db.booking.update({ where: { id }, data: { status: "CANCELLED_BY_SUPPLIER" } });
+    html = await page();
+    expect(html).toContain("The hotel or its booking system cancelled this booking.");
+    expect(html).not.toContain(`href="/bookings/${id}/voucher"`);
+    expect(html).not.toContain(">Cancel this booking<");
+    const { GET: voucher } = await import("./(agent)/bookings/[id]/voucher/route");
+    expect((await voucher(new Request(`http://localhost/bookings/${id}/voucher`), { params: Promise.resolve({ id }) })).status).toBe(404);
+
+    // Not confirmed: back to the search this booking came from (the agent's own recent search).
+    await db.booking.update({ where: { id }, data: { status: "FAILED" } });
+    html = await page();
+    expect(html).toContain("The hotel did not confirm this booking.");
+    expect(html).toContain('href="/search"');
+    expect(html).toContain(">Search again<");
+    const b = await db.booking.findUniqueOrThrow({ where: { id } });
+    const recent = await db.recentSearch.create({ data: { agencyId: "A", userId: "u-A", destinationId: "paris", destinationName: "Paris, France", checkin: b.checkin, checkout: b.checkout, adults: 2, childAges: [6] } });
+    html = await page();
+    expect(html).toContain(`href="/search?again=${recent.id}"`);
+    expect(html).toContain(">Search this hotel again<");
+    // Another agent's recent search is never used.
+    signInAs("B");
+    await db.booking.update({ where: { id }, data: { agencyId: "B", userId: "u-B" } });
+    expect(await page()).toContain('href="/search"');
   });
 
   it("another agency's booking id gives not found everywhere (no IDOR)", async () => {

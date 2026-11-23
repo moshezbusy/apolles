@@ -17,6 +17,24 @@ const SHORT_TIMEOUT_MS = 15_000;
 const MAX_IDS = 250;
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const IMAGE_SIZES = ["1000px", "350px", "200px", "70px"]; // the largest available is used
+// Only the parts of a hotel's content the pages show (Rapid's `include`: any top-level field of
+// the content answer; property_id always comes). The full answer for 250 hotels is many times
+// larger (statistics, themes, attributes, airports, ...) and none of that is used.
+const CONTENT_FIELDS = [
+  "name",
+  "address",
+  "ratings",
+  "location",
+  "checkin",
+  "checkout",
+  "fees",
+  "policies",
+  "descriptions",
+  "onsite_payments",
+  "images",
+  "amenities",
+  "rooms",
+];
 
 function schemas(object: ObjectFactory) {
   const unused = z.unknown().optional();
@@ -222,7 +240,7 @@ export class ExpediaContentSource implements ContentSource {
     const { data, logId } = await expediaRequest({
       method: "GET",
       path: "/properties/content",
-      query: { property_id: ids, language: LANGUAGE, supply_source: SUPPLY_SOURCE },
+      query: { property_id: ids, language: LANGUAGE, supply_source: SUPPLY_SOURCE, include: CONTENT_FIELDS },
       context: {},
       timeoutMs: CONTENT_TIMEOUT_MS,
     });

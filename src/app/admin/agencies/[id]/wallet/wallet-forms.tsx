@@ -23,6 +23,14 @@ export function topUpConfirmText(cents: number, agencyName: string, v: Record<st
 
 type Action = (previous: WalletFormState, formData: FormData) => Promise<WalletFormState>;
 
+// What the form does after the server answered. "duplicate" (it looks like an entry already
+// recorded, nothing was written): stay on the confirm step, so the admin reads the warning and
+// either confirms again (recorded anyway) or goes back. An error keeps what was typed.
+export function afterSubmit(result: WalletFormState): { stayOnConfirm: boolean; clearValues: boolean } {
+  const duplicate = result?.status === "duplicate";
+  return { stayOnConfirm: duplicate, clearValues: !duplicate && result?.status !== "error" };
+}
+
 type Field = {
   name: string;
   label: string;
@@ -36,9 +44,9 @@ type Field = {
 
 function Message({ state }: { state: WalletFormState }) {
   if (!state) return null;
-  const style = state.status === "success" ? alertSuccess : state.status === "info" ? alertInfo : alertError;
+  const style = state.status === "success" ? alertSuccess : state.status === "info" || state.status === "duplicate" ? alertInfo : alertError;
   return (
-    <p role={state.status === "error" ? "alert" : "status"} className={style}>
+    <p role={state.status === "error" || state.status === "duplicate" ? "alert" : "status"} className={style}>
       {state.message}
     </p>
   );
@@ -47,6 +55,8 @@ function Message({ state }: { state: WalletFormState }) {
 // Step 1: the admin fills in the fields and clicks Review (nothing is sent).
 // Step 2: the amount is shown in USD and the admin confirms; only then is the form posted.
 // The server action checks everything again, so this check is only a convenience.
+// When the server says the entry looks like one already recorded, the form stays on step 2 with
+// that warning; a second confirm sends confirmDuplicate and records it anyway.
 function TwoStepForm({
   title,
   fields,
@@ -69,11 +79,14 @@ function TwoStepForm({
   const [values, setValues] = useState<Record<string, string>>(empty);
   const [reviewCents, setReviewCents] = useState<number | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [confirmDuplicate, setConfirmDuplicate] = useState(false);
   const [state, formAction, pending] = useActionState<WalletFormState, FormData>(
     async (previous, formData) => {
       const result = await action(previous, formData);
-      setReviewCents(null);
-      if (result?.status !== "error") setValues(empty);
+      const next = afterSubmit(result);
+      if (!next.stayOnConfirm) setReviewCents(null);
+      setConfirmDuplicate(next.stayOnConfirm);
+      if (next.clearValues) setValues(empty);
       return result;
     },
     null,
@@ -162,6 +175,7 @@ function TwoStepForm({
           {fields.map((field) => (
             <input key={field.name} type="hidden" name={field.name} value={values[field.name] ?? ""} />
           ))}
+          {confirmDuplicate ? <input type="hidden" name="confirmDuplicate" value="1" /> : null}
           <p className="text-sm font-semibold text-ink">{confirmText(reviewCents, values)}</p>
           <div className="flex items-center gap-4">
             <button
@@ -169,12 +183,15 @@ function TwoStepForm({
               disabled={pending}
               className={btnPrimary}
             >
-              {pending ? "Saving…" : confirmLabel}
+              {pending ? "Saving…" : confirmDuplicate ? `${confirmLabel} anyway` : confirmLabel}
             </button>
             <button
               type="button"
               disabled={pending}
-              onClick={() => setReviewCents(null)}
+              onClick={() => {
+                setReviewCents(null);
+                setConfirmDuplicate(false);
+              }}
               className={link}
             >
               Back

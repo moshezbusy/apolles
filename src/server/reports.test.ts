@@ -132,4 +132,15 @@ describe("agency report (screen 19)", () => {
     expect(csv).toContain(",1000.00,1100.00,100.00");
     expect(csv).not.toContain("9999.99");
   });
+
+  it("a booking made from a quote counts the price the client was quoted, not a markup on today's net", async () => {
+    // Quoted USD 1,000.00 when the net was 900.00; the net was 960.00 on the day of booking. The
+    // old markup of 100.00 would report a sale of 1,060.00 and a profit of 100.00.
+    await booking("A", { chargedMinor: 96_000, totalMinor: 96_000, sellMinor: 100_000, sellMarkupType: "FIXED", sellMarkupValue: 10_000 });
+    const period = reportPeriod({ range: "month" }, now);
+    const r = await agencyReport("A", period, now);
+    expect(r.totals).toMatchObject({ grossSalesMinor: 100_000, profitMinor: 4_000, withoutPriceCount: 0 });
+    expect(r.recent[0]).toMatchObject({ saleMinor: 100_000, profitMinor: 4_000 });
+    expect(await reportCsv("A", period)).toContain(",960.00,1000.00,40.00");
+  });
 });
