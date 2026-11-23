@@ -9,11 +9,17 @@ export interface OfferCache {
   getOffer(offerId: string): Promise<RateOffer | undefined>;
   putQuote(quote: Quote, ttlMs: number): Promise<void>;
   getQuote(quoteId: string): Promise<Quote | undefined>;
+  /**
+   * A quote can be booked once. Marks the quote as used by this booking
+   * reference; false when another reference already took it (or the quote
+   * is gone). Check and mark must be one atomic step.
+   */
+  claimQuote(quoteId: string, clientReference: string): Promise<boolean>;
 }
 
 export class InMemoryOfferCache implements OfferCache {
   private readonly offers = new Map<string, { v: RateOffer; exp: number }>();
-  private readonly quotes = new Map<string, { v: Quote; exp: number }>();
+  private readonly quotes = new Map<string, { v: Quote; exp: number; claimedBy?: string }>();
 
   constructor(private readonly now: () => number = Date.now, private readonly maxEntries = 200_000) {}
 
@@ -28,6 +34,13 @@ export class InMemoryOfferCache implements OfferCache {
   }
   async getQuote(id: string): Promise<Quote | undefined> {
     return this.read(this.quotes, id);
+  }
+  async claimQuote(id: string, clientReference: string): Promise<boolean> {
+    const e = this.quotes.get(id);
+    if (!e || e.exp <= this.now()) return false;
+    if (e.claimedBy !== undefined && e.claimedBy !== clientReference) return false;
+    e.claimedBy = clientReference;
+    return true;
   }
 
   private set<T>(map: Map<string, { v: T; exp: number }>, k: string, v: T, ttl: number): void {

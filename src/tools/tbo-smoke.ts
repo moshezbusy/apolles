@@ -80,7 +80,7 @@ async function main(): Promise<void> {
   step('Cheapest', `${name} | ${cheapest.rooms[0]?.roomName} | ${cheapest.board} | ${moneyToDecimal(cheapest.total)} ${cheapest.total.currency} | refundable=${cheapest.cancellation.refundable}`);
 
   const offer: RateOffer = {
-    ...cheapest, offerId: 'smoke', supplierId: 'tbo', hotelId: cheapest.supplierHotelCode, board: cheapest.board ?? 'OTHER',
+    ...cheapest, offerId: 'smoke', supplierId: 'tbo', environment: 'test', hotelId: cheapest.supplierHotelCode, board: cheapest.board ?? 'OTHER',
     checkIn, checkOut, occupancy: [{ adults: 2, childrenAges: [] }],
   };
   const q = await adapter.checkRate(offer, ctx);

@@ -12,7 +12,7 @@ import type {
   SupplierQuote,
   SupplierSearchRequest,
 } from '../../core/supplier.js';
-import type { BoardCode, CancellationPenalty, CancellationPolicy, RateOffer } from '../../core/types.js';
+import type { BoardCode, CancellationPenalty, CancellationPolicy, Environment, RateOffer } from '../../core/types.js';
 import type { HttpTransport } from '../../http/transport.js';
 import type { SecretProvider } from '../../security/secrets.js';
 
@@ -87,6 +87,7 @@ interface TboHotelResult { HotelCode?: string; Currency?: string; Rooms?: TboRoo
 
 export class TboAdapter implements SupplierAdapter {
   readonly id: string;
+  readonly environment: Environment;
   readonly capabilities: SupplierCapabilities = {
     multiRoom: true,
     maxHotelsPerSearch: 100,
@@ -101,6 +102,7 @@ export class TboAdapter implements SupplierAdapter {
       throw new Error(`${cfg.id}: TBO certification not signed off; production is blocked`);
     }
     this.id = cfg.id;
+    this.environment = cfg.environment;
   }
 
   async search(req: SupplierSearchRequest, ctx: CallContext): Promise<SupplierOffer[]> {

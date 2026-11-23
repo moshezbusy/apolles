@@ -4,6 +4,7 @@ import { compareMoney, percentChange, type Money } from '../core/money.js';
 import type { SupplierOffer } from '../core/supplier.js';
 import type {
   BookRequest,
+  BookingAnswer,
   BookingRecord,
   BookingStatus,
   Quote,
@@ -132,6 +133,7 @@ export class SupplierService {
     return {
       offerId: `${supplierId}~${randomUUID()}`,
       supplierId,
+      environment: this.registry.require(supplierId).adapter.environment,
       hotelId,
       supplierHotelCode: o.supplierHotelCode,
       ratePlanCode: o.ratePlanCode,
@@ -171,6 +173,7 @@ export class SupplierService {
     const expiresAt = new Date(Math.min(now + this.opts.quoteTtlMs, supplierExpiry)).toISOString();
     const quote: Quote = {
       quoteId: randomUUID(),
+      environment: fresh.environment,
       offer: fresh,
       searchedTotal: offer.total,
       priceChanged: !sameMoney(offer.total, fresh.total),
@@ -183,13 +186,13 @@ export class SupplierService {
 
   // ------------------------------------------------------------------ book
 
-  async book(input: BookRequest, requestId: string = randomUUID()): Promise<BookingRecord> {
+  async book(input: BookRequest, requestId: string = randomUUID()): Promise<BookingAnswer> {
     // Checks every field and upper-cases the reference, before any record exists.
     const req = parseBookRequest(input);
 
     // Idempotency: same clientReference never books twice.
     const existing = await this.bookings.get(req.clientReference);
-    if (existing) return existing;
+    if (existing) return this.replay(existing, req);
 
     const quote = await this.cache.getQuote(req.quoteId);
     if (!quote || Date.parse(quote.expiresAt) <= this.opts.now().getTime()) {
@@ -203,12 +206,20 @@ export class SupplierService {
     }
 
     const s = this.registry.require(offer.supplierId);
+    // A quote is good for one booking. Without this, the same quote under a
+    // second reference would book the same room twice.
+    if (!(await this.cache.claimQuote(req.quoteId, req.clientReference))) {
+      throw new RequestError('QUOTE_ALREADY_USED', 'This quote was already used for another booking; get a new quote', 409);
+    }
     const now = this.iso();
     const record: BookingRecord = {
       clientReference: req.clientReference,
       supplierId: offer.supplierId,
+      environment: s.adapter.environment,
       hotelId: offer.hotelId,
       status: 'PENDING',
+      quoteId: req.quoteId,
+      approvedTotal: req.approvedTotal,
       offer,
       total: offer.total,
       holder: req.holder,
@@ -221,9 +232,12 @@ export class SupplierService {
     };
     if (!(await this.bookings.create(record))) {
       // Lost a race with a parallel request using the same reference.
-      return (await this.bookings.get(req.clientReference))!;
+      return this.replay((await this.bookings.get(req.clientReference))!, req);
     }
 
+    // Set by the transport right before the request leaves. Still false in
+    // the catch below = the error happened on our side and nothing was sent.
+    let sent = false;
     try {
       const res = await s.adapter.book(
         {
@@ -234,7 +248,7 @@ export class SupplierService {
           payment: req.payment,
           specialRequests: req.specialRequests,
         },
-        { requestId },
+        { requestId, onSend: () => { sent = true; } },
       );
       record.supplierBookingRef = res.supplierBookingRef;
       record.hotelConfirmationNumber = res.hotelConfirmationNumber;
@@ -248,15 +262,35 @@ export class SupplierService {
         record.failureReason = `${err.code}: ${err.message}`;
         this.transition(record, 'FAILED', record.failureReason);
         await this.bookings.update(record);
-        return record;
+        return this.answer(record);
+      }
+      if (!sent && !(err instanceof SupplierError && err.outcomeUnknown)) {
+        // Missing secret, no card vault, a bug in building the request:
+        // the supplier never saw this booking, so it definitely does not exist.
+        record.failureReason = `Not sent to the supplier: ${errorMessage(err)}`;
+        this.transition(record, 'FAILED', record.failureReason);
+        await this.bookings.update(record);
+        return this.answer(record);
       }
       // We do not know whether the supplier created the booking.
       this.transition(record, 'UNKNOWN', errorMessage(err));
       await this.bookings.update(record);
     }
 
-    if (record.status === 'UNKNOWN') return this.reconcileNow(record, requestId);
-    return record;
+    if (record.status === 'UNKNOWN') return this.answer(await this.reconcileNow(record, requestId));
+    return this.answer(record);
+  }
+
+  /** The same reference again: the same booking, unless it asks for something else. */
+  private replay(existing: BookingRecord, req: BookRequest): BookingAnswer {
+    if (existing.quoteId !== undefined && existing.quoteId !== req.quoteId) {
+      throw new RequestError(
+        'REFERENCE_REUSED',
+        'This clientReference already belongs to a booking made with a different quote. Use a new reference for a new booking.',
+        409,
+      );
+    }
+    return this.answer(existing);
   }
 
   private async reconcileNow(record: BookingRecord, requestId: string): Promise<BookingRecord> {
@@ -315,24 +349,28 @@ export class SupplierService {
   }
 
   /** Run from a scheduler (e.g. every minute) to settle all UNKNOWN bookings. */
-  async reconcilePending(): Promise<BookingRecord[]> {
+  async reconcilePending(): Promise<BookingAnswer[]> {
     const pending = await this.bookings.listByStatus(['UNKNOWN']);
-    const out: BookingRecord[] = [];
-    for (const r of pending) out.push(await this.reconcileOne(r));
+    const out: BookingAnswer[] = [];
+    for (const r of pending) out.push(this.answer(await this.reconcileOne(r)));
     return out;
   }
 
   // ------------------------------------------------------- get / cancel
 
-  async getBooking(clientReference: string): Promise<BookingRecord> {
+  async getBooking(clientReference: string): Promise<BookingAnswer> {
+    return this.answer(await this.load(clientReference));
+  }
+
+  private async load(clientReference: string): Promise<BookingRecord> {
     const r = await this.bookings.get(normalizeClientReference(clientReference));
     if (!r) throw new RequestError('NOT_FOUND', 'Booking not found', 404);
     return r;
   }
 
-  async cancel(clientReference: string, requestId: string = randomUUID()): Promise<BookingRecord> {
-    const record = await this.getBooking(clientReference);
-    if (record.status === 'CANCELLED') return record;
+  async cancel(clientReference: string, requestId: string = randomUUID()): Promise<BookingAnswer> {
+    const record = await this.load(clientReference);
+    if (record.status === 'CANCELLED') return this.answer(record);
     if (record.status !== 'CONFIRMED' && record.status !== 'ON_REQUEST') {
       throw new RequestError('NOT_CANCELLABLE', `Booking is ${record.status}`, 409);
     }
@@ -361,10 +399,15 @@ export class SupplierService {
       this.transition(record, 'NEEDS_REVIEW', `cancel outcome unknown: ${errorMessage(err)}`);
     }
     await this.bookings.update(record);
-    return record;
+    return this.answer(record);
   }
 
   // ------------------------------------------------------------- helpers
+
+  /** `booked` is true only when the supplier confirmed: the one field a caller needs to check. */
+  private answer(record: BookingRecord): BookingAnswer {
+    return { ...record, booked: record.status === 'CONFIRMED' };
+  }
 
   private checkPrice(current: Money, approved: Money): void {
     if (current.currency !== approved.currency) {

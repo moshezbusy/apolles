@@ -11,6 +11,13 @@ export type SupplierId = string;
 /** Internal Apolles hotel id (stable, ours, independent of any supplier). */
 export type HotelId = string;
 
+/**
+ * Which side of a supplier we talk to. A "test" booking is not a real
+ * reservation; every offer, quote and booking answer carries this so nobody
+ * mistakes one for the other.
+ */
+export type Environment = 'test' | 'production';
+
 /** ISO date, YYYY-MM-DD. */
 export type IsoDate = string;
 /** ISO date-time with offset, e.g. 2026-12-01T00:00:00Z. */
@@ -64,6 +71,8 @@ export interface RateOffer {
   /** Opaque id Apolles uses to refer to this offer (quote/book). */
   offerId: string;
   supplierId: SupplierId;
+  /** Supplier's test or production system. A test offer cannot become a real booking. */
+  environment: Environment;
   hotelId: HotelId;
   supplierHotelCode: string;
   ratePlanCode: string;
@@ -105,6 +114,7 @@ export interface SearchResult {
 
 export interface Quote {
   quoteId: string;
+  environment: Environment;
   offer: RateOffer;
   /** Price shown at search time. */
   searchedTotal: Money;
@@ -170,8 +180,14 @@ export type BookingStatus =
 export interface BookingRecord {
   clientReference: string;
   supplierId: SupplierId;
+  /** Test or production, fixed when the booking was made. */
+  environment: Environment;
   hotelId: HotelId;
   status: BookingStatus;
+  /** The quote this reference was booked with; a replay with another quote is refused. */
+  quoteId?: string;
+  /** The price the client approved, kept to check the supplier's final total against. */
+  approvedTotal?: Money;
   offer: RateOffer;
   total: Money;
   holder: Holder;
@@ -187,3 +203,10 @@ export interface BookingRecord {
   updatedAt: IsoDateTime;
   history: { at: IsoDateTime; status: BookingStatus; note?: string }[];
 }
+
+/**
+ * What the API returns for a booking: the record plus `booked`, which is
+ * true only when the supplier confirmed the booking. FAILED, UNKNOWN,
+ * NEEDS_REVIEW, ON_REQUEST, PENDING and CANCELLED are all `booked: false`.
+ */
+export type BookingAnswer = BookingRecord & { booked: boolean };

@@ -114,6 +114,7 @@ export class HttpTransport {
     let body: string | undefined;
     let error: string | undefined;
     try {
+      ctx.onSend?.(); // from here on the supplier may have seen the request
       const res = await this.fetchImpl(req.url, { method: req.method, headers, body: req.body, signal });
       status = res.status;
       const len = Number(res.headers.get('content-length') ?? '0');

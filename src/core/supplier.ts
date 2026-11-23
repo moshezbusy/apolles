@@ -3,6 +3,7 @@ import type {
   BoardCode,
   BookingStatus,
   CancellationPolicy,
+  Environment,
   Guest,
   Holder,
   IsoDate,
@@ -19,6 +20,8 @@ import type {
  */
 export interface SupplierAdapter {
   readonly id: SupplierId;
+  /** The supplier's test or production system; shown on every offer and booking. */
+  readonly environment: Environment;
   readonly capabilities: SupplierCapabilities;
 
   /** Live availability + prices for the given supplier hotel codes. */
@@ -60,6 +63,13 @@ export interface CallContext {
   /** Correlates all supplier calls of one Apolles operation in the audit log. */
   requestId: string;
   signal?: AbortSignal;
+  /**
+   * Called right before a request leaves for the supplier (HttpTransport
+   * does it). The service uses it on book: an error raised before this was
+   * ever called means nothing was sent, so the booking is FAILED, not
+   * UNKNOWN. An adapter that sends without HttpTransport must call it itself.
+   */
+  onSend?: () => void;
 }
 
 export interface SupplierSearchRequest {

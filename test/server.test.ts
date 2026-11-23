@@ -33,7 +33,19 @@ describe('http api', () => {
       payment: { type: 'AGENCY_CREDIT' },
     });
     expect(b.status).toBe(201);
-    expect((await b.json()).status).toBe('CONFIRMED');
+    expect(await b.json()).toMatchObject({ status: 'CONFIRMED', booked: true, environment: 'test' });
+    expect(q.environment).toBe('test');
+    expect(s.offers[0].environment).toBe('test');
+    // the same reference with another quote: 409, not a second booking
+    const q2 = await (await post('/v1/quotes', { offerId: s.offers[0].offerId })).json();
+    const replay = await post('/v1/bookings', {
+      clientReference: 'HTTP-0001', quoteId: q2.quoteId, approvedTotal: q2.offer.total,
+      holder: { firstName: 'Dana', lastName: 'Levi' },
+      guests: [[{ firstName: 'Dana', lastName: 'Levi', type: 'ADULT' }, { firstName: 'Avi', lastName: 'Levi', type: 'ADULT' }]],
+      payment: { type: 'AGENCY_CREDIT' },
+    });
+    expect(replay.status).toBe(409);
+    expect((await replay.json()).error).toBe('REFERENCE_REUSED');
     const g = await fetch(`${base}/v1/bookings/HTTP-0001`, { headers: { 'x-api-key': KEY } });
     expect((await g.json()).status).toBe('CONFIRMED');
     expect((await (await post('/v1/bookings/HTTP-0001/cancel', {})).json()).status).toBe('CANCELLED');

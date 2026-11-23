@@ -75,7 +75,7 @@ describe('OTA adapter', () => {
   it('books with the virtual card; card never reaches the audit log', async () => {
     const { adapter, sent, audit } = make([fixture('res-rs.xml')]);
     const offer: RateOffer = {
-      offerId: 'x', supplierId: 'omnibees', hotelId: 'APL-1', supplierHotelCode: 'PLAYA-123', ratePlanCode: 'AI-FLEX',
+      offerId: 'x', supplierId: 'omnibees', environment: 'test', hotelId: 'APL-1', supplierHotelCode: 'PLAYA-123', ratePlanCode: 'AI-FLEX',
       rooms: [{ occupancyIndex: 0, supplierRoomCode: 'JSOV', roomName: 'JS' }], board: 'AI',
       total: { minor: 200000, currency: 'USD' }, taxesIncluded: true, paymentModel: 'PREPAID',
       cancellation: { refundable: true, penalties: [] }, checkIn: '2027-03-01', checkOut: '2027-03-05',

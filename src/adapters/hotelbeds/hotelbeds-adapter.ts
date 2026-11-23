@@ -13,7 +13,7 @@ import type {
   SupplierQuote,
   SupplierSearchRequest,
 } from '../../core/supplier.js';
-import type { BoardCode, CancellationPenalty, Occupancy, RateOffer } from '../../core/types.js';
+import type { BoardCode, CancellationPenalty, Environment, Occupancy, RateOffer } from '../../core/types.js';
 import type { HttpResponse, HttpTransport } from '../../http/transport.js';
 import type { SecretProvider } from '../../security/secrets.js';
 
@@ -107,6 +107,7 @@ interface FlatRate { room: HbRoom; rate: HbRate }
 
 export class HotelbedsAdapter implements SupplierAdapter {
   readonly id: string;
+  readonly environment: Environment;
   readonly capabilities: SupplierCapabilities = {
     multiRoom: true,
     maxHotelsPerSearch: 100,
@@ -121,6 +122,7 @@ export class HotelbedsAdapter implements SupplierAdapter {
       throw new Error(`${cfg.id}: Hotelbeds certification not signed off; production is blocked`);
     }
     this.id = cfg.id;
+    this.environment = cfg.environment;
   }
 
   // ------------------------------------------------------------- search

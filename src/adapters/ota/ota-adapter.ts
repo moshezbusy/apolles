@@ -12,7 +12,7 @@ import type {
   SupplierQuote,
   SupplierSearchRequest,
 } from '../../core/supplier.js';
-import type { RateOffer } from '../../core/types.js';
+import type { Environment, RateOffer } from '../../core/types.js';
 import type { HttpTransport } from '../../http/transport.js';
 import type { CardDetails, CardVault } from '../../security/card-vault.js';
 import type { SecretProvider } from '../../security/secrets.js';
@@ -51,6 +51,7 @@ export interface OtaAdapterConfig {
  */
 export class OtaAdapter implements SupplierAdapter {
   readonly id: string;
+  readonly environment: Environment;
   readonly capabilities: SupplierCapabilities;
   private readonly profile: OtaVendorProfile;
 
@@ -62,6 +63,7 @@ export class OtaAdapter implements SupplierAdapter {
       );
     }
     this.id = cfg.id;
+    this.environment = cfg.environment;
     this.profile = cfg.profile;
     this.capabilities = {
       multiRoom: cfg.profile.capabilities.multiRoom,

@@ -84,7 +84,7 @@ async function main(): Promise<void> {
 
   // 4. CheckRate.
   const offer: RateOffer = {
-    ...pick, offerId: 'smoke', supplierId: 'hotelbeds', hotelId: pick.supplierHotelCode, board: pick.board ?? 'OTHER',
+    ...pick, offerId: 'smoke', supplierId: 'hotelbeds', environment: 'test', hotelId: pick.supplierHotelCode, board: pick.board ?? 'OTHER',
     checkIn, checkOut, occupancy: rooms,
   };
   const q = await adapter.checkRate(offer, ctx);

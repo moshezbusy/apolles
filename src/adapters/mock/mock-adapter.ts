@@ -33,6 +33,10 @@ export interface MockScenario {
   /** book throws OUTCOME_UNKNOWN and the booking does NOT exist. */
   timeoutNotBooked?: boolean;
   rejectBooking?: boolean;
+  /** book fails on our side before anything is sent (e.g. no card vault). */
+  localErrorBeforeSend?: boolean;
+  /** book is sent and stored at the "supplier", then our code crashes on the answer. */
+  crashAfterSend?: boolean;
   searchDelayMs?: number;
   searchFails?: boolean;
 }
@@ -42,6 +46,8 @@ export interface MockScenario {
  * whole booking flow be tested before any supplier contract is signed.
  */
 export class MockSupplierAdapter implements SupplierAdapter {
+  /** The mock is never a real booking system. */
+  readonly environment = 'test' as const;
   readonly capabilities: SupplierCapabilities = {
     multiRoom: true,
     maxHotelsPerSearch: 50,
@@ -82,12 +88,15 @@ export class MockSupplierAdapter implements SupplierAdapter {
     };
   }
 
-  async book(req: SupplierBookRequest): Promise<SupplierBookingResult> {
+  async book(req: SupplierBookRequest, ctx?: CallContext): Promise<SupplierBookingResult> {
+    if (this.scenario.localErrorBeforeSend) throw new Error('No card vault configured: card payments are disabled');
     this.calls.push('book');
+    ctx?.onSend?.(); // what HttpTransport does for a real supplier
     if (this.scenario.rejectBooking) throw new SupplierError(this.id, 'SOLD_OUT', 'mock: no rooms');
     if (this.scenario.timeoutNotBooked) throw new SupplierError(this.id, 'OUTCOME_UNKNOWN', 'mock timeout');
     const ref = `MOCK-${randomUUID().slice(0, 8).toUpperCase()}`;
     this.bookings.set(req.clientReference, { ref, status: 'CONFIRMED', offer: req.offer });
+    if (this.scenario.crashAfterSend) throw new Error('mock: crashed while reading the answer');
     if (this.scenario.timeoutButBooked) throw new SupplierError(this.id, 'OUTCOME_UNKNOWN', 'mock timeout');
     return { status: 'CONFIRMED', supplierBookingRef: ref, hotelConfirmationNumber: `H-${ref}`, total: req.offer.total };
   }

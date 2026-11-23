@@ -20,9 +20,9 @@ async function tempFile(): Promise<string> {
 function record(ref: string, status: BookingRecord['status'] = 'PENDING'): BookingRecord {
   const at = '2026-11-14T10:00:00.000Z';
   return {
-    clientReference: ref, supplierId: 'alpha', hotelId: 'APL-1', status,
+    clientReference: ref, supplierId: 'alpha', hotelId: 'APL-1', status, environment: 'test',
     offer: {
-      offerId: 'o', supplierId: 'alpha', hotelId: 'APL-1', supplierHotelCode: 'A1', ratePlanCode: 'BAR-RO',
+      offerId: 'o', supplierId: 'alpha', hotelId: 'APL-1', supplierHotelCode: 'A1', ratePlanCode: 'BAR-RO', environment: 'test',
       rooms: [{ occupancyIndex: 0, supplierRoomCode: 'DBL', roomName: 'Double room' }], board: 'RO',
       total: { minor: 80000, currency: 'USD' }, taxesIncluded: true, paymentModel: 'PREPAID',
       cancellation: { refundable: true, penalties: [] }, checkIn: '2027-03-01', checkOut: '2027-03-05',
