@@ -6,7 +6,7 @@ import { renewSessionCookie, requireAdminPendingTotp } from "@/server/auth/guard
 import { getClientIp } from "@/server/client-ip";
 import { SIGN_IN_RATE_LIMIT_COPY, hitIpRateLimit } from "@/server/rate-limit";
 import { confirmTotpForSession, startTotpEnrollment } from "@/server/auth/totp";
-import { TOTP_WRONG_COPY, parseCode, respondToTotpCheck } from "../code-result";
+import { TOTP_WRONG_COPY, parseCode, rememberAdminBrowser, respondToTotpCheck } from "../code-result";
 import type { TotpFormState } from "../form-state";
 
 // First admin sign-in: the code proves the authenticator app has the key. Confirms TOTP
@@ -15,7 +15,7 @@ export async function confirmTotpAction(
   _previous: TotpFormState,
   formData: FormData,
 ): Promise<TotpFormState> {
-  const { sessionId, totpConfirmed } = await requireAdminPendingTotp();
+  const { userId, sessionId, totpConfirmed } = await requireAdminPendingTotp();
   if (totpConfirmed) redirect("/admin/2fa");
 
   // Per-IP limit before the code is looked at: a refused request takes no attempt slot.
@@ -27,8 +27,12 @@ export async function confirmTotpAction(
   if (code === null) return { error: TOTP_WRONG_COPY };
   const result = await confirmTotpForSession(sessionId, code);
   // Fully signed in now: the session gets a new token; the one from before the code stops working.
-  if (result === "OK") await renewSessionCookie(sessionId);
-  return respondToTotpCheck(result);
+  if (result === "OK") {
+    await renewSessionCookie(sessionId);
+    await rememberAdminBrowser(userId);
+  }
+  // A new authenticator: the admin goes on to create recovery codes for a lost phone.
+  return respondToTotpCheck(result, "/admin/security");
 }
 
 // "Generate a new key" button: replaces the unconfirmed key (e.g. the old one was lost or

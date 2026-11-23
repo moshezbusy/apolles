@@ -186,11 +186,18 @@ export type AgencyListItem = {
   heldCents: number;
 };
 
+export type AgencyFilters = {
+  // Part of the agency's name, its business email, or the email of one of its users.
+  q?: string;
+  status?: AccountStatus;
+};
+
 // Newest first (createdAt desc, id desc). `cursor` is the id of the last agency of the
 // previous page. Balances for the whole page come from one grouped query.
 export async function listAgencies(
   cursor?: string,
   take = DEFAULT_PAGE_SIZE,
+  filters: AgencyFilters = {},
 ): Promise<{ agencies: AgencyListItem[]; nextCursor: string | null }> {
   const size = Number.isFinite(take)
     ? Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(take)))
@@ -209,8 +216,21 @@ export async function listAgencies(
       ],
     };
   }
+  const and: Prisma.AgencyWhereInput[] = [where];
+  if (filters.status) and.push({ status: filters.status });
+  const q = filters.q?.trim().slice(0, 100);
+  if (q) {
+    const term = q.replace(/[\\%_]/g, (c) => `\\${c}`);
+    and.push({
+      OR: [
+        { name: { contains: term, mode: "insensitive" } },
+        { email: { contains: term, mode: "insensitive" } },
+        { users: { some: { email: { contains: term.toLowerCase() } } } },
+      ],
+    });
+  }
   const rows = await db.agency.findMany({
-    where,
+    where: { AND: and },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: size + 1,
     select: {

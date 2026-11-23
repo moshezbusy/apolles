@@ -15,12 +15,16 @@ import { getBalance } from "@/server/wallet/ledger";
 //   cancelled_by_supplier (agent) and cancelled_by_supplier_admin: the hotel or the supplier
 //     cancelled a confirmed booking; no refund is made automatically.
 //   found_after_failed (admin): a booking failed as "not found" turned up at the supplier.
+//   cancelled_by_support (agent): an admin cancelled the booking for the agent (spec 7a).
+//   refund_recorded (agent): an admin recorded the refund of a booking cancelled by the hotel.
+//   change_request (admin): an agent asked for a change to a booking (change-requests.ts).
 
-export const BOOKING_EMAIL_EVENTS = ["confirmed", "failed", "cancelled", "needs_attention", "cancel_not_done", "cancelled_by_supplier", "cancelled_by_supplier_admin", "found_after_failed"] as const;
+export const BOOKING_EMAIL_EVENTS = ["confirmed", "failed", "cancelled", "needs_attention", "cancel_not_done", "cancelled_by_supplier", "cancelled_by_supplier_admin", "found_after_failed", "cancelled_by_support", "refund_recorded", "change_request"] as const;
 export type BookingEmailEvent = (typeof BOOKING_EMAIL_EVENTS)[number];
 
-// The status a booking must still have for the email to be true ("needs attention" fits any).
-const STATUS_FOR: Record<Exclude<BookingEmailEvent, "needs_attention">, string> = {
+// The status a booking must still have for the email to be true ("needs attention" and a change
+// request fit any).
+const STATUS_FOR: Record<Exclude<BookingEmailEvent, "needs_attention" | "change_request">, string> = {
   confirmed: "CONFIRMED",
   failed: "FAILED",
   cancelled: "CANCELLED",
@@ -28,6 +32,8 @@ const STATUS_FOR: Record<Exclude<BookingEmailEvent, "needs_attention">, string> 
   cancelled_by_supplier: "CANCELLED_BY_SUPPLIER",
   cancelled_by_supplier_admin: "CANCELLED_BY_SUPPLIER",
   found_after_failed: "FAILED",
+  cancelled_by_support: "CANCELLED",
+  refund_recorded: "CANCELLED_BY_SUPPLIER",
 };
 
 function adminAlertAddress(): string {
@@ -72,7 +78,7 @@ export async function sendBookingEmail(bookingId: string, event: BookingEmailEve
   const severalRooms = b.rooms.length > 1;
   // The booking may have moved on since the job was queued: never send a message that is no
   // longer true (a newer email follows the newer change).
-  if (event !== "needs_attention" && b.status !== STATUS_FOR[event]) return;
+  if (event !== "needs_attention" && event !== "change_request" && b.status !== STATUS_FOR[event]) return;
   // Only while the booking is still the one that was put back (not cancelled again since).
   if (event === "cancel_not_done" && b.cancelRestoredAt === null) return;
   const link = `${appUrl()}/bookings/${b.id}`;
@@ -103,6 +109,15 @@ export async function sendBookingEmail(bookingId: string, event: BookingEmailEve
     });
     return;
   }
+  if (event === "change_request") {
+    await sendEmail({
+      to: adminAlertAddress(),
+      subject: `Apolles: change requested for booking ${b.reference}`,
+      // The agent's text may hold personal details: it is on the admin page, not in the email.
+      text: `An agent asked for a change to booking ${b.reference}. Read the request and mark it done once it is handled.\n${appUrl()}/admin/change-requests\n${adminLink}\n`,
+    });
+    return;
+  }
   if (event === "found_after_failed") {
     await sendEmail({
       to: adminAlertAddress(),
@@ -122,6 +137,27 @@ export async function sendBookingEmail(bookingId: string, event: BookingEmailEve
         `${hello}The hotel did not confirm the cancellation of booking ${b.reference}. The booking is still confirmed, and nothing was charged or refunded.\n\n${stay}\n${lead}\n\n` +
         `What to do: open the booking and cancel it again. If it does not go through again, contact Apolles support${support ? ` at ${support}` : ""}.\n` +
         `If the hotel completes the cancellation later after all, we finish it for you and the refund is added to your balance.\n\n${link}\n`,
+    });
+    return;
+  }
+  if (event === "refund_recorded") {
+    const { balanceCents } = await getBalance(b.agencyId);
+    await sendEmail({
+      to: b.user.email,
+      subject: `Refund recorded: ${b.reference}`,
+      text:
+        `${hello}Booking ${b.reference} was cancelled by the hotel. Apolles support checked the cancellation and recorded the refund.\n\n${stay}\n\n` +
+        `Paid from your balance: ${paid}\nRefunded to your balance: ${formatUsd(b.refundMinor ?? 0)}\nYour balance now: ${formatUsd(balanceCents)}\n\n${link}\n`,
+    });
+    return;
+  }
+  if (event === "cancelled_by_support") {
+    await sendEmail({
+      to: b.user.email,
+      subject: `Booking cancelled by Apolles support: ${b.reference}`,
+      text:
+        `${hello}Apolles support cancelled booking ${b.reference} for you.\n\n${stay}\n${lead}\n\n` +
+        `Cancellation charge: ${formatUsd(b.cancelChargeMinor ?? 0)}\nRefunded to your balance: ${formatUsd(b.refundMinor ?? 0)}\nYour balance now: ${formatUsd((await getBalance(b.agencyId)).balanceCents)}\n\n${link}\n`,
     });
     return;
   }

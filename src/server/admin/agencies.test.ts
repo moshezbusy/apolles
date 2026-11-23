@@ -212,6 +212,24 @@ describe("admin agencies", () => {
       expect(all.nextCursor).toBeNull();
     });
 
+    it("search by name or email (agency or agent), and filter by status, with the cursor", async () => {
+      const a = await createAgency(adminId, { ...input, name: "Sunrise Travel", agentEmail: "ruth@sunrise.example" });
+      const b = await createAgency(adminId, { ...input, name: "Blue_Sky 100%", agentEmail: "dan@bluesky.example" });
+      await db.agency.update({ where: { id: b.agencyId }, data: { status: "SUSPENDED", email: "office@bluesky.example" } });
+      const names = async (filters: Parameters<typeof listAgencies>[2]) => (await listAgencies(undefined, 50, filters)).agencies.map((x) => x.id);
+      expect(await names({ q: "sunrise" })).toEqual([a.agencyId]);
+      expect(await names({ q: "RUTH@" })).toEqual([a.agencyId]);
+      expect(await names({ q: "office@" })).toEqual([b.agencyId]);
+      // Wildcards are plain text.
+      expect(await names({ q: "%" })).toEqual([b.agencyId]);
+      expect(await names({ q: "_" })).toEqual([b.agencyId]);
+      expect(await names({ status: "SUSPENDED" })).toEqual([b.agencyId]);
+      expect(await names({ status: "ACTIVE", q: "bluesky" })).toEqual([]);
+      const first = await listAgencies(undefined, 1, { status: "ACTIVE" });
+      expect(first.agencies.map((x) => x.id)).toEqual([a.agencyId]);
+      expect(first.nextCursor).toBeNull();
+    });
+
     it("clamps take to 1..100 and rejects an unknown cursor", async () => {
       await createAgency(adminId, input);
       expect((await listAgencies(undefined, 0)).agencies).toHaveLength(1);

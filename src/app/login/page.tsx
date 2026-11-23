@@ -22,7 +22,7 @@ export default async function LoginPage({
       ) : null}
       {code === "locked" ? (
         <p role="alert" className={`mb-4 ${alertInfo}`}>
-          Too many wrong codes. For your security, sign in again to get a new code.
+          Too many wrong codes. For your security, wait 15 minutes, then sign in again to get a new code.
         </p>
       ) : null}
       {expired === "1" ? (

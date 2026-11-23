@@ -199,12 +199,14 @@ describe("loginAction", () => {
     });
   });
 
-  it("known device: the sign-in is complete, so earlier wrong passwords stop counting", async () => {
+  it("known device: signs in even when wrong passwords paused this network and the code step is locked (the device is the second step)", async () => {
     const agent = await createAgent();
-    await db.user.update({ where: { id: agent.id }, data: { failedLogins: 2 } });
+    for (let i = 0; i < 3; i++) await loginAction(null, form({ email: "agent@example.com", password: "nope12345" }));
+    await db.user.update({ where: { id: agent.id }, data: { failedLogins: 2, lockedUntil: new Date(Date.now() + 60_000) } });
     jar.set(DEVICE_COOKIE, await trustDevice(agent.id));
     await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/search");
-    expect((await db.user.findUniqueOrThrow({ where: { id: agent.id } })).failedLogins).toBe(0);
+    // The code counter is neither checked nor cleared by a known device.
+    expect((await db.user.findUniqueOrThrow({ where: { id: agent.id } })).failedLogins).toBe(2);
   });
 
   it("new device: a correct password alone does not clear earlier wrong tries (the code does)", async () => {
@@ -263,7 +265,7 @@ describe("loginAction", () => {
     await loginAction(null, fd());
     await loginAction(null, fd());
     expect(await loginAction(null, fd())).toEqual({
-      error: "Too many attempts. Try again in 15 minutes, or reset your password.",
+      error: expect.stringMatching(/^Too many attempts\. Try again in 1?\d minutes?, or reset your password with Forgot password\.$/),
     });
   });
 

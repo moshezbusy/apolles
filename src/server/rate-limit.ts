@@ -17,7 +17,8 @@ import { normalizeEmail } from "@/server/users";
 const PRUNE_PROBABILITY = 0.01;
 const MAX_KEY_LENGTH = 200;
 
-export type RateLimitResult = { allowed: boolean; retryAfterMs: number };
+// count = hits in this window so far, this one included (count === limit: this hit took the last one).
+export type RateLimitResult = { allowed: boolean; retryAfterMs: number; count: number };
 
 export type HitRateLimitOptions = {
   // Source of randomness for the occasional prune (tests pass a fixed value).
@@ -92,7 +93,7 @@ export async function hitRateLimit(
 
   if (random() < PRUNE_PROBABILITY) await pruneOldBuckets();
 
-  return { allowed: row.count <= limit, retryAfterMs: Math.max(0, Math.ceil(row.retryAfterMs)) };
+  return { allowed: row.count <= limit, retryAfterMs: Math.max(0, Math.ceil(row.retryAfterMs)), count: row.count };
 }
 
 // Gives back one hit of `key` in the current window (never below zero). For limits that should

@@ -40,11 +40,36 @@ describe("admin booking and supplier log pages", () => {
     const { default: DetailPage } = await import("./admin/bookings/[id]/page");
     const detail = renderToStaticMarkup(await DetailPage({ params: Promise.resolve({ id: "bk1" }) }));
     // True for every reason a booking is flagged (the check gave up, rooms that do not match, a part-refused cancellation).
-    expect(detail).toContain("Needs attention: this booking needs an admin to check it with the supplier and fix it by hand.");
+    expect(detail).toContain("Needs attention: check this booking with the supplier, fix it with the tools on this page, then mark it resolved.");
     expect(detail).not.toContain("gave up");
     expect(detail).not.toContain(">Rooms<"); // one room: as before plan 10
     expect(detail).toContain('href="/admin/supplier-log?ref=APL-ADMIN001"');
+    expect(detail).toContain('href="/admin/agencies/A/wallet"');
     await expect(DetailPage({ params: Promise.resolve({ id: "nope" }) })).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+
+  it("the admin tools shown depend on the booking's status", async () => {
+    const { default: DetailPage } = await import("./admin/bookings/[id]/page");
+    const tools = async () => {
+      const html = renderToStaticMarkup(await DetailPage({ params: Promise.resolve({ id: "bk1" }) }));
+      return ["Mark resolved", "Check with the supplier now", "Cancel for the agent", "Review refund", "Release the hold"].filter((t) => html.includes(">" + t + "</button>"));
+    };
+    expect(await tools()).toEqual(["Mark resolved", "Check with the supplier now"]);
+    await db.booking.update({ where: { id: "bk1" }, data: { holdId: "h1", needsAttention: false } });
+    expect(await tools()).toEqual(["Check with the supplier now", "Release the hold"]);
+    await db.booking.update({ where: { id: "bk1" }, data: { status: "CANCELLED_BY_SUPPLIER", chargedMinor: 10_000 } });
+    expect(await tools()).toEqual(["Review refund"]);
+    await db.booking.update({ where: { id: "bk1" }, data: { refundMinor: 10_000 } });
+    expect(await tools()).toEqual([]);
+  });
+
+  it("the list filters by status, agency and booking date; the flagged bookings come first", async () => {
+    const { default: ListPage } = await import("./admin/bookings/page");
+    const html = renderToStaticMarkup(await ListPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("Needs attention (1)");
+    for (const name of ["status", "agency", "from", "to", "q"]) expect(html).toContain(`name="${name}"`);
+    const none = renderToStaticMarkup(await ListPage({ searchParams: Promise.resolve({ status: "CONFIRMED" }) }));
+    expect(none).toContain("No bookings match these filters.");
   });
 
   it("several rooms (plan 10): a rooms table with each room's guests, supplier room id, hotel confirmation, status and price; never a cancel link or token", async () => {
