@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keptParams, resultsHref } from "./kept-params";
+import { hotelHref, keptParams, resultsHref } from "./kept-params";
 
 describe("kept params of the results page", () => {
   it("keeps the filters, sort, page and quote; drops everything else", () => {
@@ -19,5 +19,10 @@ describe("kept params of the results page", () => {
   it("builds the results link, with or without params", () => {
     expect(resultsHref("abc", new URLSearchParams())).toBe("/search/abc");
     expect(resultsHref("abc", keptParams({ sort: "price_desc" }), { notice: "limited" })).toBe("/search/abc?sort=price_desc&notice=limited");
+  });
+
+  it("builds a hotel's link in a search, with or without the quote", () => {
+    expect(hotelHref("abc", "p_1", new URLSearchParams())).toBe("/search/abc/hotels/p_1");
+    expect(hotelHref("abc", "p 1", keptParams({ quote: "q".repeat(25) }))).toBe(`/search/abc/hotels/p%201?quote=${"q".repeat(25)}`);
   });
 });

@@ -318,6 +318,8 @@ model Property {
   catalogSeenRunId String
   updatedAt        DateTime @updatedAt
 
+  // Hotel-name search in the search box uses a GIN index on the words of the name of searchable
+  // hotels ("property_name_words"), added in the migration's raw SQL.
   @@index([active, expediaCollect, rank])
   @@index([countryCode, catalogSeenRunId])
 }
@@ -790,7 +792,8 @@ model RecentSearch {
   agencyId        String
   userId          String
   destinationId   String
-  destinationName String
+  destinationName String // a hotel chosen by name: the hotel's name
+  propertyId      String? // a hotel chosen by name in the search box; null for a destination search
   checkin         String // YYYY-MM-DD
   checkout        String
   adults          Int // over all rooms
