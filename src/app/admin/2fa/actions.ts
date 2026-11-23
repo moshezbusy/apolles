@@ -6,7 +6,7 @@ import { renewSessionCookie, requireAdminPendingTotp } from "@/server/auth/guard
 import { getClientIp } from "@/server/client-ip";
 import { SIGN_IN_RATE_LIMIT_COPY, hitIpRateLimit } from "@/server/rate-limit";
 import { checkTotpForSession } from "@/server/auth/totp";
-import { TOTP_WRONG_COPY, parseCode, respondToTotpCheck } from "./code-result";
+import { TOTP_WRONG_COPY, parseCode, rememberAdminBrowser, respondToTotpCheck } from "./code-result";
 import type { TotpFormState } from "./form-state";
 
 // Sign-in step 2 for admins: the code from the authenticator app verifies this session.
@@ -14,7 +14,7 @@ export async function verifyTotpAction(
   _previous: TotpFormState,
   formData: FormData,
 ): Promise<TotpFormState> {
-  const { sessionId, totpConfirmed } = await requireAdminPendingTotp();
+  const { userId, sessionId, totpConfirmed } = await requireAdminPendingTotp();
   if (!totpConfirmed) redirect("/admin/2fa/setup");
 
   // Per-IP limit before the code is looked at: a refused request takes no attempt slot.
@@ -26,6 +26,9 @@ export async function verifyTotpAction(
   if (code === null) return { error: TOTP_WRONG_COPY };
   const result = await checkTotpForSession(sessionId, code);
   // Fully signed in now: the session gets a new token; the one from before the code stops working.
-  if (result === "OK") await renewSessionCookie(sessionId);
+  if (result === "OK") {
+    await renewSessionCookie(sessionId);
+    await rememberAdminBrowser(userId);
+  }
   return respondToTotpCheck(result);
 }

@@ -15,6 +15,7 @@ vi.mock("@/server/auth/notifications", () => ({ notifyAdminLockout: vi.fn() }));
 const GOOD = "abcdefg1";
 const BAD = "wrong-pass1";
 const FIFTEEN_MIN = 15 * 60 * 1000;
+const CTX = { ip: "203.0.113.7" };
 
 let passwordHash: string;
 
@@ -36,14 +37,13 @@ describe("unlockUser", () => {
     vi.mocked(notifyAdminLockout).mockClear();
   });
 
-  it("unlocks a locked admin; the next correct password + TOTP code signs in", async () => {
+  it("unlocks an admin whose password attempts are paused on a network; the next correct password + TOTP code signs in there", async () => {
     const { admin, secret } = await adminWithTotp();
-    await login(admin.email, BAD);
-    await login(admin.email, BAD);
-    expect(await login(admin.email, BAD)).toEqual({ ok: false, reason: "LOCKED" });
-    expect(await login(admin.email, GOOD)).toEqual({ ok: false, reason: "LOCKED" });
+    await login(admin.email, BAD, CTX);
+    await login(admin.email, BAD, CTX);
+    expect(await login(admin.email, BAD, CTX)).toMatchObject({ ok: false, reason: "LOCKED" });
+    expect(await login(admin.email, GOOD, CTX)).toMatchObject({ ok: false, reason: "LOCKED" });
     const before = await db.user.findUniqueOrThrow({ where: { id: admin.id } });
-    expect(before.lockedUntil).not.toBeNull();
 
     expect(await unlockUser("  Admin@Example.COM ")).toBe("UNLOCKED");
 
@@ -53,11 +53,19 @@ describe("unlockUser", () => {
     expect(row.passwordHash).toBe(before.passwordHash);
     expect(row.totpSecret).toBe(secret);
     expect(row.totpConfirmedAt).not.toBeNull();
+    expect((await auditRows())[0]?.before).toEqual({ failedLogins: 0, passwordsPaused: true, locked: false });
 
-    expect(await login(admin.email, GOOD)).toEqual({ ok: true, userId: admin.id, needsTotp: true });
+    expect(await login(admin.email, GOOD, CTX)).toMatchObject({ ok: true, userId: admin.id, needsTotp: true });
     const session = await getSession(await createSession(admin.id, { verified: true }));
     if (!session) throw new Error("no session");
     expect(await checkTotpForSession(session.sessionId, await generate({ secret }))).toBe("OK");
+  });
+
+  it("unlocks an admin whose authenticator codes are locked", async () => {
+    const { admin } = await adminWithTotp();
+    await db.user.update({ where: { id: admin.id }, data: { lockedUntil: new Date(Date.now() + FIFTEEN_MIN) } });
+    expect(await unlockUser(admin.email)).toBe("UNLOCKED");
+    expect(await db.user.findUniqueOrThrow({ where: { id: admin.id } })).toMatchObject({ lockedUntil: null });
   });
 
   it("unlocks a stuck row at 3 with no lock", async () => {
@@ -74,7 +82,7 @@ describe("unlockUser", () => {
     });
     const rows = await auditRows();
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.before).toEqual({ failedLogins: 3, locked: false });
+    expect(rows[0]?.before).toEqual({ failedLogins: 3, passwordsPaused: false, locked: false });
   });
 
   it("writes an audit row: actor = the unlocked user, no secrets", async () => {
@@ -91,7 +99,7 @@ describe("unlockUser", () => {
       action: "user.unlock",
       targetType: "User",
       targetId: user.id,
-      before: { failedLogins: 1, locked: true },
+      before: { failedLogins: 1, passwordsPaused: false, locked: true },
       after: { via: "owner-command" },
     });
   });
@@ -106,7 +114,8 @@ describe("unlockUser", () => {
 
   it("a user who signed in successfully once (reservation timestamp left behind) → NOT_LOCKED, no write, no audit row", async () => {
     const user = await createUser({ email: "a@example.com", name: "A", role: "ADMIN", passwordHash });
-    expect(await login(user.email, GOOD)).toMatchObject({ ok: true });
+    expect(await login(user.email, GOOD, CTX)).toMatchObject({ ok: true });
+    await db.user.update({ where: { id: user.id }, data: { attemptReservedAt: new Date() } });
     const before = await db.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(before.attemptReservedAt).not.toBeNull();
     expect(before.failedLogins).toBe(0);

@@ -22,7 +22,16 @@ describe("notifyAdminLockout", () => {
     expect(msg.subject).toContain("agent@example.com");
     expect(msg.text).toContain("agent@example.com");
     expect(msg.text).toContain("2026-11-08 10:15 UTC");
-    expect(msg.text).toContain(`after ${MAX_FAILED_LOGINS} failed sign-in attempts`);
+    expect(msg.text).toContain(`had ${MAX_FAILED_LOGINS} wrong sign-in codes in a row`);
+  });
+
+  it("wrong passwords: says guessing is paused and the owner can still sign in elsewhere", async () => {
+    vi.stubEnv("ADMIN_ALERT_EMAIL", "alerts@test.local");
+    await notifyAdminLockout({ id: "u1", email: "agent@example.com", lockedUntil: new Date("2026-11-08T10:15:00.000Z"), step: "password" });
+    const msg = vi.mocked(sendEmail).mock.calls[0]![0];
+    expect(msg.subject).toBe("Apolles: sign-in paused (agent@example.com)");
+    expect(msg.text).toContain("paused until 2026-11-08 10:15 UTC");
+    expect(msg.text).toContain("can still sign in");
   });
 
   it("refuses to send when ADMIN_ALERT_EMAIL is missing or not an email", async () => {

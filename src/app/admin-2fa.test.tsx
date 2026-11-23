@@ -42,7 +42,7 @@ vi.mock("@/server/auth/notifications", () => ({ notifyAdminLockout: vi.fn() }));
 
 const SECRET = generateSecret(); // fresh random key per run
 const WRONG_COPY = "Wrong code. Try again.";
-const LOCKED_COPY = "Too many attempts. Try again in 15 minutes, or reset your password.";
+const LOCKED_COPY = "Too many wrong codes. Wait 15 minutes, then sign in again.";
 
 function form(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -109,7 +109,10 @@ describe("admin 2FA", () => {
       const before = jar.get(SESSION_COOKIE)!;
       await expect(verifyTotpAction(null, form({ code: await generate({ secret: SECRET }) }))).rejects.toThrow(/^NEXT_REDIRECT:\/admin$/);
 
-      expect(setCalls).toHaveLength(1);
+      // The session cookie, then the device cookie (this browser is remembered for the
+      // password step; it never skips the code).
+      expect(setCalls.map((c) => c.name)).toEqual([SESSION_COOKIE, "apl_device"]);
+      expect(setCalls[1]!.options).toMatchObject({ httpOnly: true, secure: true, sameSite: "lax", path: "/" });
       const call = setCalls[0]!;
       expect(call.name).toBe(SESSION_COOKIE);
       expect(call.value).not.toBe(before);
@@ -128,8 +131,8 @@ describe("admin 2FA", () => {
       const before = jar.get(SESSION_COOKIE)!;
       const { otpauthUrl } = await startTotpEnrollment(admin.id);
       const secret = new URL(otpauthUrl).searchParams.get("secret")!;
-      await expect(confirmTotpAction(null, form({ code: await generate({ secret }) }))).rejects.toThrow(/^NEXT_REDIRECT:\/admin$/);
-      expect(setCalls.map((c) => c.name)).toEqual([SESSION_COOKIE]);
+      await expect(confirmTotpAction(null, form({ code: await generate({ secret }) }))).rejects.toThrow(/^NEXT_REDIRECT:\/admin\/security$/);
+      expect(setCalls.map((c) => c.name)).toEqual([SESSION_COOKIE, "apl_device"]);
       expect(await getSession(before)).toBeNull();
       expect((await getSession(setCalls[0]!.value))?.totpVerifiedAt).not.toBeNull();
     });
@@ -159,7 +162,7 @@ describe("admin 2FA", () => {
       expect(setCalls).toHaveLength(0);
     });
 
-    it("locked earlier by wrong passwords → lockout copy, code not checked, this session ended", async () => {
+    it("locked earlier by wrong codes → lockout copy, code not checked, this session ended", async () => {
       const admin = await signedInAdmin({ confirmed: true });
       await db.user.update({
         where: { id: admin.id },
@@ -192,11 +195,11 @@ describe("admin 2FA", () => {
       return new URL(otpauthUrl).searchParams.get("secret")!;
     }
 
-    it("valid code → TOTP confirmed, this session verified, redirect to /admin", async () => {
+    it("valid code → TOTP confirmed, this session verified, on to the recovery codes", async () => {
       const admin = await signedInAdmin({ confirmed: false });
       const secret = await enrolledSecret(admin.id);
       const code = await generate({ secret });
-      await expect(confirmTotpAction(null, form({ code }))).rejects.toThrow(/^NEXT_REDIRECT:\/admin$/);
+      await expect(confirmTotpAction(null, form({ code }))).rejects.toThrow(/^NEXT_REDIRECT:\/admin\/security$/);
       expect(await requireAdmin()).toEqual({ userId: admin.id });
     });
 

@@ -7,6 +7,7 @@ import { sendEmail, type EmailMessage } from "@/server/email/port";
 import { normalizeEmail } from "@/server/users";
 import { hashPassword } from "@/server/auth/password";
 import { destroyUserSessions } from "@/server/auth/session";
+import { clearPasswordFailures } from "@/server/auth/lockout";
 import { forgetDevices } from "@/server/auth/signin-code";
 import { MAX_RAW_TOKEN_LENGTH, generateRawToken, hashToken } from "@/server/auth/token";
 import { RATE_LIMITS, emailKey, hitIpRateLimit, hitRateLimit } from "@/server/rate-limit";
@@ -151,9 +152,11 @@ export async function consumePasswordToken(
     if (user.role !== link.role) return null;
     const firstPassword = (await tx.user.count({ where: { id: userId, passwordHash: null } })) === 1;
 
-    // Agents: a new password also clears the lockout. Admins (R36): it does not, because
-    // the lockout also counts wrong TOTP codes, and a reset link must not let anyone with
-    // the admin's mailbox skip the wait between code guesses.
+    // Every account: the paused password attempts of this email start over (lockout.ts), so a
+    // reset is a way back in after someone guessed passwords. Agents: the second-step counter
+    // (wrong email codes) is cleared too. Admins (R36): it is not, because it counts wrong
+    // TOTP codes, and a reset link must not let anyone with the admin's mailbox skip the wait
+    // between code guesses.
     await tx.user.update({
       where: { id: userId },
       data:
@@ -161,6 +164,7 @@ export async function consumePasswordToken(
           ? { passwordHash }
           : { passwordHash, failedLogins: 0, lockedUntil: null },
     });
+    await clearPasswordFailures(user.email, tx);
     await tx.passwordToken.updateMany({
       where: { userId, usedAt: null },
       data: { usedAt: now },

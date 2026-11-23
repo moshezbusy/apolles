@@ -3,7 +3,7 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { LOGIN_ERROR_COPY, login } from "@/server/auth/login";
+import { LOGIN_ERROR_COPY, login, loginErrorCopy } from "@/server/auth/login";
 import { PASSWORD_MAX_LENGTH } from "@/server/auth/password";
 import { audit } from "@/server/audit";
 import { getClientIp } from "@/server/client-ip";
@@ -15,8 +15,7 @@ import {
   getSession,
   sessionCookieOptions,
 } from "@/server/auth/session";
-import { completeSignIn } from "@/server/auth/lockout";
-import { DEVICE_COOKIE, isTrustedDevice, sendSignInCode } from "@/server/auth/signin-code";
+import { DEVICE_COOKIE, sendSignInCode } from "@/server/auth/signin-code";
 import { isDemoAgentWithoutCode } from "@/server/content/demo-seed";
 import { CODE_NOT_SENT_COPY } from "./verify/copy";
 
@@ -35,8 +34,7 @@ export async function loginAction(
   formData: FormData,
 ): Promise<LoginFormState> {
   // Per-IP limit first: a refused request never reaches the account (no attempt slot, no
-  // change to failedLogins, no password check). Every request is counted here, before the
-  // check; a right password hands its count back below, so only failed attempts add up and an
+  // password check). Every request is counted here, before the check; a right password hands its count back below, so only failed attempts add up and an
   // office that shares one address is not shut out by its own normal sign-ins.
   const ip = getClientIp(await headers());
   const { allowed } = await hitIpRateLimit("signin", ip);
@@ -48,22 +46,23 @@ export async function loginAction(
   });
   if (!parsed.success) return { error: LOGIN_ERROR_COPY.INVALID };
 
-  const result = await login(parsed.data.email, parsed.data.password);
-  if (!result.ok) return { error: LOGIN_ERROR_COPY[result.reason] };
+  const cookieStore = await cookies();
+  // The device cookie of a browser where this user finished a sign-in before: such a browser has
+  // its own attempt pool, so wrong guesses from elsewhere never keep the owner out (lockout.ts).
+  const result = await login(parsed.data.email, parsed.data.password, { ip, deviceToken: cookieStore.get(DEVICE_COOKIE)?.value });
+  if (!result.ok) return { error: loginErrorCopy(result) };
   await refundIpRateLimit("signin", ip);
 
-  const cookieStore = await cookies();
   // A new sign-in always gets a fresh token; the old session from this browser is ended.
   const previousToken = cookieStore.get(SESSION_COOKIE)?.value;
   if (previousToken) await destroySession(previousToken);
 
   // Plan 8e: an agent on a device Apolles does not know must enter an email code first.
-  // The staging demo agent counts as a known device (demo-seed.ts).
-  const knownDevice =
-    !result.needsTotp &&
-    ((await isTrustedDevice(result.userId, cookieStore.get(DEVICE_COOKIE)?.value)) || (await isDemoAgentWithoutCode(result.userId)));
-  // A known agent device completes the sign-in now (the run of failures is over).
-  if (knownDevice && !(await completeSignIn(result.userId))) return { error: LOGIN_ERROR_COPY.LOCKED };
+  // The staging demo agent counts as a known device (demo-seed.ts). A known agent device
+  // completes the sign-in now; it neither checks nor clears the second-step counter (that one
+  // counts wrong codes, and here the device is the second step). Admins always enter their TOTP
+  // code: for them the device cookie only picks the attempt pool (login.ts).
+  const knownDevice = !result.needsTotp && (result.trustedDevice || (await isDemoAgentWithoutCode(result.userId)));
   // Admins: verified here (their second step is TOTP, checked by requireAdmin).
   const token = await createSession(result.userId, { verified: result.needsTotp || knownDevice });
 
