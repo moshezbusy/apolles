@@ -1,6 +1,7 @@
 # Apolles container image (staging). Build from the repository root:
 #   docker build -t apolles-staging-app .
-# or let deploy/staging/docker-compose.yml build it (see deploy/staging/README.md).
+# or let the staging compose file build it (on the server, the pinned copy in
+# /opt/apolles-staging-deploy/; see deploy/staging/README.md, section 5).
 # No secrets go into the image: every setting comes from the environment at run time.
 
 FROM node:22-bookworm-slim AS base
@@ -22,6 +23,8 @@ RUN corepack enable && pnpm --version
 # Same rules as local and CI: the lockfile is the only source of versions, and pnpm 10 runs
 # no dependency install scripts (none are allow-listed).
 RUN pnpm install --frozen-lockfile
+# The whole build context, minus what .dockerignore leaves out (.env files, keys, node_modules,
+# build output, test results, docs and tooling). Keep that list up to date when adding files.
 COPY . .
 RUN pnpm exec prisma generate && pnpm exec next build
 # Prisma downloads its schema engine on first use (not in an install script). Fetch it now,

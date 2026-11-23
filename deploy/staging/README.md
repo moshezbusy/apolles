@@ -17,9 +17,18 @@ Browser → Cloudflare → shared Caddy (HTTPS, network n8n_default) → apolles
   process (`src/worker.ts`). It runs the job queue (daily hotel content refresh and, later,
   booking reconciliation and emails). It does not run migrations; the app container does.
   It is capped at 256 MB. Logs: `docker compose -p apolles-staging logs --tail 50 apolles-staging-worker`.
-- No container publishes a port. The only way in is through Caddy. Other containers on
-  the `n8n_default` network can still reach `apolles-staging:3000` directly, bypassing
-  Cloudflare and `cf_only`. That is acceptable for demo-only staging; revisit it for production.
+- No container publishes a port. The only way in is through Caddy. **Known open item:**
+  staging still shares the Docker network `n8n_default` with other services on the server
+  (Caddy and other containers). They can reach `apolles-staging:3000` directly,
+  bypassing Cloudflare and `cf_only`. That is accepted for demo-only staging; it must be
+  closed before production.
+- The app and the worker run with no Linux capabilities (`cap_drop: [ALL]`) and cannot gain
+  new ones (`no-new-privileges`).
+- **The server runs pinned copies, not this folder.** Since 2026-11-23 cron runs a copy of
+  `auto-update.sh` and `docker-compose.yml` kept in `/opt/apolles-staging-deploy/` and owned by
+  root, so no commit on `main` can change how the server runs staging. The two files in this
+  folder are the reviewed source of those copies: editing them here changes nothing on the
+  server until the owner copies a reviewed change to `/opt` by hand (section 5).
 - Staging has no email provider yet (`EMAIL_PROVIDER=staging-log`). Every email the app
   would send, including set-password and reset links, is written as one JSON line to the
   app container's log, and the operator passes the links on by hand. This works only together
@@ -93,6 +102,9 @@ What each setting means:
 | `SEED_ADMIN_EMAIL` | owner | The first admin account, created by the seed. |
 
 ### 1.3 Build and start
+
+This is for a first install on a new server only. Once section 5 is set up, containers are
+started from the pinned copy in `/opt/apolles-staging-deploy/`, not from this folder.
 
 From `deploy/staging`. Note that `--build` runs the Next.js build on the VPS itself. It
 briefly uses a lot of memory (about 1 to 2 GB), on a server shared with the other sites, so
@@ -189,7 +201,15 @@ other sites with the `cf_only` snippet. To add staging:
 
 ## 3. Updating to a new commit
 
-From `/home/moshezbusy/apolles-staging`:
+On the current server this is done by the pinned script (section 5): it moves the checkout to
+the latest `main` and rebuilds. To update right away instead of waiting up to 5 minutes, run the
+pinned script by hand: `/opt/apolles-staging-deploy/auto-update.sh`. Do not run
+`docker compose ... up` from `deploy/staging` on that server: it would start the containers
+from the unpinned file in the checkout. (`ps`, `logs` and `exec` only read or use the running
+containers and are fine from there.)
+
+The steps below are for a server set up by hand (section 1) without the pinned runner. From
+`/home/moshezbusy/apolles-staging`:
 
 ```sh
 git fetch
@@ -207,7 +227,7 @@ change. The database volume and `.env` are kept. Old app images can be listed wi
 Stop staging, keeping the data: `docker compose -p apolles-staging down`.
 **Never** add `-v` to that command: it deletes the database volume.
 
-## 4. Visitor IP addresses (rate limits) — why `header_up` and `TRUSTED_PROXY_HOPS=1`
+## 4. Visitor IP addresses (rate limits): why `header_up` and `TRUSTED_PROXY_HOPS=1`
 
 The app limits sign-in and password attempts per visitor IP. It reads the IP from the
 `X-Forwarded-For` header and trusts only the last `TRUSTED_PROXY_HOPS` entries, the ones
@@ -240,27 +260,67 @@ Tested locally with Caddy 2.11. A request with `X-Forwarded-For: 6.6.6.6` and
 `CF-Connecting-IP: 203.0.113.7` reached the app as `X-Forwarded-For: 203.0.113.7`. Without the
 line, it arrived as the proxy's own address.
 
-## 5. Automatic updates from `main`
+## 5. Automatic updates from `main` (pinned copies in `/opt`)
 
-`deploy/staging/auto-update.sh` keeps staging on the latest `main` without anyone logging in.
-Cron runs it every 5 minutes. When `main` has not moved, it does nothing. When `main` has
-moved, it moves the checkout to the new commit and rebuilds the app container. New migrations
-apply on start, as in section 3.
+Cron runs the update script every 5 minutes. When `main` has not moved, it does nothing. When
+`main` has moved, it moves the checkout (`/home/moshezbusy/apolles-staging`) to the new commit and
+rebuilds the app container from it. New migrations apply on start, as in section 3.
 
-Install it once, from `/home/moshezbusy/apolles-staging`:
+**What runs is a pinned copy, not the checkout.** Since 2026-11-23 cron runs
+`/opt/apolles-staging-deploy/auto-update.sh`, which starts the containers with
+`/opt/apolles-staging-deploy/docker-compose.yml`. Both are owned by root. So:
 
-1. Run it once by hand and read the output. It must end with `staging is now at <commit>`.
-   This also proves that `git fetch` works without a password prompt, which cron needs.
+- The app's code, the `Dockerfile` and the migrations still follow `main` (that is the point of
+  staging).
+- How the server runs it does not: which networks the containers join, their privileges, their
+  settings file and what the update script itself does can only change when the owner changes
+  the files in `/opt`. No commit on `main` can do it.
+- The pinned compose file drops every Linux capability (`cap_drop: [ALL]`) and sets
+  `no-new-privileges` for the app and the worker. `deploy/staging/docker-compose.yml` has the
+  same lines, so the two stay in step.
+
+`deploy/staging/auto-update.sh` and `deploy/staging/docker-compose.yml` in the repository are the
+**reviewed source** of the pinned copies. Editing them in the repo, or merging a change to them,
+**does not change the server**. The pinned copies differ from them only where they must, to run
+from `/opt` against the checkout.
+
+### 5.1 Changing how the server runs staging
+
+1. Make the change to the file in this folder in a pull request.
+2. On the server, the owner reads the change (for example
+   `git -C /home/moshezbusy/apolles-staging log -p -- deploy/staging/`) and, if it is right,
+   copies it by hand into the pinned file in `/opt/apolles-staging-deploy/` (with `sudo`; the
+   files stay owned by root and writable by root only).
+3. Run the pinned script once by hand and read its output (section 5.2, step 3).
+
+### 5.2 Install (once per server)
+
+1. Copy the reviewed `auto-update.sh` and `docker-compose.yml` to `/opt/apolles-staging-deploy/`,
+   adjusted to run from there against the checkout, owned by root and writable by root only:
 
    ```sh
-   deploy/staging/auto-update.sh
+   sudo chown -R root:root /opt/apolles-staging-deploy
+   sudo chmod 755 /opt/apolles-staging-deploy /opt/apolles-staging-deploy/auto-update.sh
+   sudo chmod 644 /opt/apolles-staging-deploy/docker-compose.yml
+   ls -l /opt/apolles-staging-deploy
    ```
 
-2. Add the cron line. The command replaces any older line for this script, so running it
-   twice is safe:
+2. Point cron at the pinned script, never at the one in the checkout. The command replaces
+   any older line for the staging script (pinned or in the checkout), so running it twice is
+   safe:
 
    ```sh
-   (crontab -l 2>/dev/null | grep -v 'apolles-staging/deploy/staging/auto-update.sh'; echo '*/5 * * * * /home/moshezbusy/apolles-staging/deploy/staging/auto-update.sh >> /home/moshezbusy/apolles-staging-update.log 2>&1') | crontab -
+   (crontab -l 2>/dev/null | grep -v -e 'apolles-staging/deploy/staging/auto-update.sh' -e 'apolles-staging-deploy/auto-update.sh'; echo '*/5 * * * * /opt/apolles-staging-deploy/auto-update.sh >> /home/moshezbusy/apolles-staging-update.log 2>&1') | crontab -
+   crontab -l | grep 'apolles-staging.*auto-update.sh'
+   ```
+
+   The last command must show one line, with `/opt/apolles-staging-deploy/`.
+3. Run the pinned script once by hand and read the output. It must end with
+   `staging is now at <commit>` (or print nothing when staging is already up to date). This
+   also proves that `git fetch` works without a password prompt, which cron needs.
+
+   ```sh
+   /opt/apolles-staging-deploy/auto-update.sh
    ```
 
 What to expect:
@@ -270,10 +330,12 @@ What to expect:
 - **A failed build:** the previous version keeps running. That commit is not tried again;
   the next commit on `main` is. To retry the same commit, delete
   `~/.apolles-staging-failed` and wait 5 minutes.
-- **Local edits:** if someone edits a tracked file on the server, git refuses to move and the
+- **Local edits:** if someone edits a tracked file in the checkout, git refuses to move and the
   log shows it. The edit is never discarded.
 - **Memory:** a build can start at any time of day and briefly uses 1 to 2 GB (see 1.3). The
   container limits still protect the other sites.
+- **Known open item:** staging still shares the Docker network `n8n_default` with other
+  services on the server (see the top of this page).
 - **To stop:** remove the line with `crontab -e`.
 
 ## Good to know
@@ -291,7 +353,7 @@ What to expect:
 
 ## 6. Demo mode (until Expedia's test keys arrive)
 
-`docker-compose.yml` sets `SUPPLIER_MODE: fake` for the app and the worker (both must agree: the
+The compose file (the pinned copy, and its source here) sets `SUPPLIER_MODE: fake` for the app and the worker (both must agree: the
 worker's jobs check and follow up the same demo bookings). While it is set:
 
 - search, hotel pages and bookings use made-up hotels and rates (`src/server/supplier/fake.ts`);
@@ -305,8 +367,10 @@ worker's jobs check and follow up the same demo bookings). While it is set:
 The app refuses the fake supplier whenever `APP_ENV=production`.
 
 When the Expedia test keys are on the server, delete both `environment:` blocks with `SUPPLIER_MODE`
-(app and worker) from `docker-compose.yml` and restart. The next catalog sync then marks the demo hotels inactive,
-because they are not in Expedia's file.
+(app and worker): in `deploy/staging/docker-compose.yml` through a reviewed pull request, and by
+hand in the pinned copy in `/opt/apolles-staging-deploy/` (section 5.1), which is the one the
+server runs. Then restart with the pinned file. The next catalog sync then marks the demo hotels
+inactive, because they are not in Expedia's file.
 
 ### 6.1 Demo login (agent)
 

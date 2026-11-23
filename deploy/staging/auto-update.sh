@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Staging auto-update. Run by cron every 5 minutes on the VPS (see README section 5).
-# If `main` on GitHub moved, it moves this checkout to it and rebuilds the app container.
-# Otherwise it does nothing. Staging only: never point this at a production checkout.
+# Staging auto-update. If `main` on GitHub moved, it moves the staging checkout to it and
+# rebuilds the app container. Otherwise it does nothing. Staging only: never point this at a
+# production checkout.
+#
+# The server does NOT run this file from the checkout. Since 2026-11-23 cron runs a pinned copy,
+# owned by root, in /opt/apolles-staging-deploy/ (with the pinned docker-compose.yml), so that no
+# commit on main can change how the server runs staging. This file is the reviewed source of that
+# copy: the owner reviews a change here and then copies it to /opt by hand. Editing it in the
+# repo, or merging a change to it, does not change the server (README section 5).
 #
 # Safe by design:
 # - One run at a time (flock). A run that finds another one still building just exits.
