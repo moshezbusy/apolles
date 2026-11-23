@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { submitApplication } from "@/server/applications";
 import { getClientIp } from "@/server/client-ip";
 
@@ -10,14 +11,16 @@ export type JoinState = { error: string; values: Record<string, string> } | null
 const FIELDS = ["agencyName", "contactName", "email", "phone", "country", "website", "license", "notes", "terms", "company"];
 
 // "Apply for Access" (screen 02). Public: everything is checked in the service, and limited per
-// IP and per email. Nothing about the applicant is logged.
+// IP and per email. Nothing about the applicant is logged. The emails run after the response
+// is sent (`after`), as on "Forgot password": how long the answer takes does not show whether
+// the email address already has a login.
 export async function joinAction(_previous: JoinState, formData: FormData): Promise<JoinState> {
   const values: Record<string, string> = {};
   for (const key of FIELDS) {
     const v = formData.get(key);
     values[key] = typeof v === "string" ? v.slice(0, key === "notes" ? 1200 : 300) : "";
   }
-  const result = await submitApplication(values, getClientIp(await headers()));
+  const result = await submitApplication(values, getClientIp(await headers()), after);
   if (result.ok) redirect("/join/received");
   const error =
     result.error === "limited"

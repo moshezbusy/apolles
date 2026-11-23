@@ -40,7 +40,7 @@ const MAX_PAGE_SIZE = 100;
 // Only a clash on User.email counts as "email already exists". With the driver adapter the
 // constraint name is in meta.driverAdapterError.cause.constraint.index ("User_email_key");
 // meta.target (array of fields) is checked as well for other client setups.
-function isDuplicateUserEmail(error: unknown): boolean {
+export function isDuplicateUserEmail(error: unknown): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
     return false;
   }
@@ -59,71 +59,82 @@ function isDuplicateUserEmail(error: unknown): boolean {
   return false;
 }
 
-// One transaction: agency (with a temporary reference), its final bank reference built from
-// the sequence number, the AGENT user (no password yet) and the audit row. A duplicate
-// email rolls everything back. The SET-password email goes out after the commit; if it
-// fails the agency stays and `emailSent` is false (the admin sends it again from the agency's
-// page, resendSetupEmail below; "Forgot password" also sends a fresh set-up link).
-export async function createAgency(
+// The rows of a new agency, inside the caller's transaction: the agency (with a temporary
+// reference), its final bank reference built from the sequence number, the AGENT user (no
+// password yet) and the audit row. A duplicate email fails the transaction (see
+// isDuplicateUserEmailError).
+export async function createAgencyRows(
+  tx: Prisma.TransactionClient,
   actor: string,
-  rawInput: CreateAgencyInput,
-): Promise<{ agencyId: string; userId: string; emailSent: boolean }> {
-  const input = createAgencyInput.parse(rawInput);
-  const agentEmail = normalizeEmail(input.agentEmail);
+  input: z.output<typeof createAgencyInput>,
+): Promise<{ agencyId: string; userId: string }> {
+  const pending = await tx.agency.create({
+    data: {
+      name: input.name,
+      country: input.country,
+      bankReference: `pending-${crypto.randomUUID()}`,
+    },
+  });
+  const bankReference = `APL-${String(pending.bankRefNo).padStart(4, "0")}`;
+  const agency = await tx.agency.update({
+    where: { id: pending.id },
+    data: { bankReference },
+  });
+  const user = await createUser(
+    { email: normalizeEmail(input.agentEmail), name: input.agentName, role: "AGENT", agencyId: agency.id },
+    tx,
+  );
+  await audit(
+    actor,
+    "agency.create",
+    "Agency",
+    agency.id,
+    undefined,
+    {
+      name: agency.name,
+      country: agency.country,
+      bankReference: agency.bankReference,
+      status: agency.status,
+      agentUserId: user.id,
+    },
+    tx,
+  );
+  return { agencyId: agency.id, userId: user.id };
+}
 
-  let created: { agencyId: string; userId: string };
-  try {
-    created = await db.$transaction(async (tx) => {
-      const pending = await tx.agency.create({
-        data: {
-          name: input.name,
-          country: input.country,
-          bankReference: `pending-${crypto.randomUUID()}`,
-        },
-      });
-      const bankReference = `APL-${String(pending.bankRefNo).padStart(4, "0")}`;
-      const agency = await tx.agency.update({
-        where: { id: pending.id },
-        data: { bankReference },
-      });
-      const user = await createUser(
-        { email: agentEmail, name: input.agentName, role: "AGENT", agencyId: agency.id },
-        tx,
-      );
-      await audit(
-        actor,
-        "agency.create",
-        "Agency",
-        agency.id,
-        undefined,
-        {
-          name: agency.name,
-          country: agency.country,
-          bankReference: agency.bankReference,
-          status: agency.status,
-          agentUserId: user.id,
-        },
-        tx,
-      );
-      return { agencyId: agency.id, userId: user.id };
-    });
-  } catch (error) {
-    if (isDuplicateUserEmail(error)) throw new Error(DUPLICATE_EMAIL_MESSAGE);
-    throw error;
-  }
-
-  let emailSent = true;
+// The SET-password email of a new agency's agent, after the commit. If it fails the agency
+// stays and the answer is false (the admin sends it again from the agency's page,
+// resendSetupEmail below; "Forgot password" also sends a fresh set-up link).
+export async function sendAgencyInvitation(created: { agencyId: string; userId: string }): Promise<boolean> {
   try {
     await sendSetPasswordEmail(created.userId);
+    return true;
   } catch (error) {
-    emailSent = false;
     // No email address or link in the log.
     console.error("agency created but set-password email failed", {
       agencyId: created.agencyId,
       error: error instanceof Error ? error.message : String(error),
     });
+    return false;
   }
-  return { ...created, emailSent };
+}
+
+// One transaction for the rows (createAgencyRows); a duplicate email rolls everything back.
+// The SET-password email goes out after the commit (sendAgencyInvitation).
+export async function createAgency(
+  actor: string,
+  rawInput: CreateAgencyInput,
+): Promise<{ agencyId: string; userId: string; emailSent: boolean }> {
+  const input = createAgencyInput.parse(rawInput);
+
+  let created: { agencyId: string; userId: string };
+  try {
+    created = await db.$transaction((tx) => createAgencyRows(tx, actor, input));
+  } catch (error) {
+    if (isDuplicateUserEmail(error)) throw new Error(DUPLICATE_EMAIL_MESSAGE);
+    throw error;
+  }
+  return { ...created, emailSent: await sendAgencyInvitation(created) };
 }
 
 // Suspends or reactivates an agency. The agency row is locked, so "before" is the real

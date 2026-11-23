@@ -13,6 +13,8 @@ function idOf(formData: FormData): string {
 }
 
 // Approve: the agency and its agent user are made, and the agent gets the set-password email.
+// Also completes an application that was approved but whose agency was never opened. When the
+// email could not be sent, the agency page says so and offers to send it again (?email=failed).
 export async function approveAction(_previous: ReviewState, formData: FormData): Promise<ReviewState> {
   const { userId } = await requireAdmin();
   const result = await approveApplication(userId, idOf(formData));
