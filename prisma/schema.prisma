@@ -67,8 +67,10 @@ model Agency {
   quotes         Quote[]
   application    AgencyApplication?
   recentSearches RecentSearch[]
+  changeRequests ChangeRequest[]
 
   @@index([createdAt, id])
+  @@index([status, createdAt, id]) // admin agencies list, filtered by status
 }
 
 // A client of one agency (mockup 18, plan 5a). Personal data: only the agency that owns the row
@@ -157,6 +159,9 @@ model User {
   reviewedApplications AgencyApplication[]
   recentSearches       RecentSearch[]
   trustedDevices       TrustedDevice[]
+  recoveryCodes        TotpRecoveryCode[]
+  changeRequests       ChangeRequest[]     @relation("ChangeRequestAuthor")
+  doneChangeRequests   ChangeRequest[]     @relation("ChangeRequestDoneBy")
 
   @@index([agencyId])
 }
@@ -231,6 +236,10 @@ model AuditLog {
   actor User @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
 
   @@index([targetType, targetId])
+  // The admin action log (/admin/audit): newest first, optionally by action or by actor.
+  @@index([createdAt, id])
+  @@index([action, createdAt, id])
+  @@index([actorUserId, createdAt, id])
 }
 
 // Fixed-window request counters for rate limits (src/server/rate-limit.ts). One row per key
@@ -543,6 +552,8 @@ model Booking {
   quoteStay QuoteStay?     @relation(fields: [quoteStayId], references: [id], onDelete: SetNull)
   events    BookingEvent[]
   rooms     BookingRoom[]
+  // "Request a change" (src/server/change-requests.ts).
+  changeRequests ChangeRequest[]
 
   @@index([agencyId, createdAt])
   @@index([quoteId])
@@ -552,6 +563,7 @@ model Booking {
   @@index([status, updatedAt])
   @@index([status, checkin])
   @@index([needsAttention])
+  @@index([createdAt, id]) // the admin's list of every agency's bookings, newest first
 }
 
 enum BookingRoomStatus {
@@ -817,4 +829,50 @@ model TrustedDevice {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// Admin 2FA recovery (lost phone): one-time codes, made by the admin after setting up the
+// authenticator (src/server/auth/recovery-codes.ts). Shown once when made; only a hash is kept.
+// Each one signs in once (usedAt); making a new set deletes the old one.
+model TotpRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+}
+
+enum ChangeRequestStatus {
+  OPEN
+  DONE
+}
+
+// "Request a change" on a booking (spec section 7, mockup 12): the agent writes what should
+// change; an admin handles it with the supplier and marks it done with a note
+// (src/server/change-requests.ts).
+model ChangeRequest {
+  id           String              @id @default(cuid())
+  bookingId    String
+  agencyId     String
+  authorUserId String
+  text         String // at most 2000 characters
+  status       ChangeRequestStatus @default(OPEN)
+  adminNote    String              @default("")
+  doneAt       DateTime?
+  doneById     String?
+  createdAt    DateTime            @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  agency  Agency  @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  author  User    @relation("ChangeRequestAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+  doneBy  User?   @relation("ChangeRequestDoneBy", fields: [doneById], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt, id])
+  @@index([createdAt, id])
+  @@index([bookingId, createdAt])
+  @@index([agencyId, createdAt])
 }
