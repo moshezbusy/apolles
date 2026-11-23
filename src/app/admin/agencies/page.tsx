@@ -120,7 +120,7 @@ export default async function AgenciesPage({ searchParams }: { searchParams: Sea
 
         {page.nextCursor ? (
           <Link
-            href={`/admin/agencies?${new URLSearchParams({ ...filters, cursor: page.nextCursor })}`}
+            href={"/admin/agencies?" + new URLSearchParams({ ...filters, cursor: page.nextCursor }).toString()}
             className={`mt-4 inline-block ${link}`}
           >
             Load more

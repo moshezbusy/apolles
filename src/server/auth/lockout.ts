@@ -148,13 +148,14 @@ export async function recordWrongPassword(
 }
 
 // A password change (reset link) or the owner's unlock command: the email's password pools on
-// every network start empty. Device pools are left (a password change forgets the devices).
-// Returns whether any wrong password was still counted.
-export async function clearPasswordFailures(email: string, client: Prisma.TransactionClient = db): Promise<boolean> {
+// every network start empty, and with `userId` also the pools of that user's remembered
+// browsers (a device pool is keyed by the same hash TrustedDevice stores). A password change
+// forgets the devices anyway. Returns whether any wrong password was still counted.
+export async function clearPasswordFailures(email: string, client: Prisma.TransactionClient = db, userId?: string): Promise<boolean> {
+  const devices = userId ? await client.trustedDevice.findMany({ where: { userId }, select: { tokenHash: true } }) : [];
+  const patterns = [`${accountPrefix(email)}:%`, `${networkPrefix(email)}:%`, ...devices.map((d) => `signin:pw:dev:${d.tokenHash}:%`)];
   const rows = await client.$queryRaw<{ count: number }[]>`
-    DELETE FROM "RateLimitBucket"
-    WHERE "key" LIKE ${`${accountPrefix(email)}:%`} OR "key" LIKE ${`${networkPrefix(email)}:%`}
-    RETURNING "count"`;
+    DELETE FROM "RateLimitBucket" WHERE "key" LIKE ANY (${patterns}::text[]) RETURNING "count"`;
   return rows.some((row) => row.count > 0);
 }
 

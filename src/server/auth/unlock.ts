@@ -27,7 +27,7 @@ export async function unlockUser(email: string): Promise<UnlockResult> {
     if (!user) return "NOT_FOUND";
 
     const now = new Date();
-    const passwordsPaused = await clearPasswordFailures(address, tx);
+    const passwordsPaused = await clearPasswordFailures(address, tx, user.id);
     const result = await tx.user.updateMany({
       where: {
         id: user.id,

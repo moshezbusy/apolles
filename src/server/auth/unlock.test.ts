@@ -9,6 +9,7 @@ import { login } from "@/server/auth/login";
 import { createSession, getSession } from "@/server/auth/session";
 import { checkTotpForSession, startTotpEnrollment } from "@/server/auth/totp";
 import { unlockUser } from "@/server/auth/unlock";
+import { trustDevice } from "@/server/auth/signin-code";
 
 vi.mock("@/server/auth/notifications", () => ({ notifyAdminLockout: vi.fn() }));
 
@@ -59,6 +60,15 @@ describe("unlockUser", () => {
     const session = await getSession(await createSession(admin.id, { verified: true }));
     if (!session) throw new Error("no session");
     expect(await checkTotpForSession(session.sessionId, await generate({ secret }))).toBe("OK");
+  });
+
+  it("also clears the pool of the owner's remembered browser", async () => {
+    const { admin } = await adminWithTotp();
+    const deviceToken = await trustDevice(admin.id);
+    for (let i = 0; i < 3; i++) await login(admin.email, BAD, { ...CTX, deviceToken });
+    expect(await login(admin.email, GOOD, { ...CTX, deviceToken })).toMatchObject({ ok: false, reason: "LOCKED" });
+    expect(await unlockUser(admin.email)).toBe("UNLOCKED");
+    expect(await login(admin.email, GOOD, { ...CTX, deviceToken })).toMatchObject({ ok: true, trustedDevice: true });
   });
 
   it("unlocks an admin whose authenticator codes are locked", async () => {

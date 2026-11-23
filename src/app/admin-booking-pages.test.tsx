@@ -52,7 +52,7 @@ describe("admin booking and supplier log pages", () => {
     const { default: DetailPage } = await import("./admin/bookings/[id]/page");
     const tools = async () => {
       const html = renderToStaticMarkup(await DetailPage({ params: Promise.resolve({ id: "bk1" }) }));
-      return ["Mark resolved", "Check with the supplier now", "Cancel for the agent", "Review refund", "Release the hold"].filter((t) => html.includes(`>${t}</button>`));
+      return ["Mark resolved", "Check with the supplier now", "Cancel for the agent", "Review refund", "Release the hold"].filter((t) => html.includes(">" + t + "</button>"));
     };
     expect(await tools()).toEqual(["Mark resolved", "Check with the supplier now"]);
     await db.booking.update({ where: { id: "bk1" }, data: { holdId: "h1", needsAttention: false } });
