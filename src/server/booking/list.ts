@@ -183,3 +183,11 @@ export async function bookingsCsv(agencyId: string, opts: Omit<Options, "cursor"
       : [];
   return `${UTF8_BOM}${[header, ...lines, ...cut].join("\r\n")}\r\n`;
 }
+
+// The quote a booking was made from, for the booking page's link: its id and the agency's own
+// running number ("Q-12"). null: no quote, or not this agency's.
+export async function bookingQuote(agencyId: string, quoteId: string | null): Promise<{ id: string; number: number } | null> {
+  if (!quoteId) return null;
+  const quote = await db.quote.findFirst({ where: { id: quoteId, agencyId }, select: { id: true, number: true, agencyNumber: true } });
+  return quote ? { id: quote.id, number: quote.agencyNumber ?? quote.number } : null;
+}

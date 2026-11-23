@@ -255,6 +255,45 @@ describe("booking workflow fixes", () => {
     expect(none).toContain("No bookings match these filters.");
     expect(none).toContain("0 bookings<");
   });
+
+  it("booking page (12): booked on, the client and the quote it came from, Copy details, free cancellation on top, the last email to the client", async () => {
+    signInAs("A");
+    const { snapshotId, offers } = await seed();
+    const id = await draftFor(snapshotId, offers[1]!);
+    const { default: ReviewPage } = await import("./(agent)/book/[id]/page");
+    renderToStaticMarkup(await ReviewPage({ params: Promise.resolve({ id }) }));
+    const booking = await db.booking.findUniqueOrThrow({ where: { id } });
+    const { bookAction } = await import("./(agent)/book/actions");
+    await redirectOf(bookAction(null, form({ bookingId: id, expectedTotal: String(booking.totalMinor), acceptedTerms: "on" })));
+    // A client of the agency with the lead guest's email; one of another agency too.
+    const client = await db.client.create({ data: { agencyId: "A", firstName: "Dana", lastName: "Levi", email: "dana@example.com", phone: "+972 50 123 4567", phoneDigits: "972501234567", nationality: "IL" } });
+    await db.client.create({ data: { agencyId: "B", firstName: "Other", lastName: "Agency", email: "dana@example.com", phone: "+972 50 123 4567", phoneDigits: "972501234567", nationality: "IL" } });
+    const start = "2099-01-01T00:00:00.000+02:00";
+    await db.booking.update({ where: { id }, data: { refundable: true, nonrefundableDateRanges: [], cancelPenalties: [{ start, end: "2099-01-02T00:00:00.000+02:00", amount: null, nights: 1, percent: null }], freeCancelEndsAt: new Date("2098-12-31T21:50:00Z") } });
+    await db.auditLog.create({ data: { actorUserId: "u-A", action: "booking.email-client", targetType: "Booking", targetId: id, after: { language: "EN", to: "no•••@example.com" }, createdAt: new Date("2026-11-20T09:05:00Z") } });
+
+    const { default: SummaryPage } = await import("./(agent)/bookings/[id]/page");
+    const html = renderToStaticMarkup(await SummaryPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({}) }));
+    expect(html).toMatch(/Booked on [A-Z][a-z]{2} \d{1,2}, \d{4} at \d{2}:\d{2} UTC/);
+    expect(html).toContain(`href="/clients?id=${client.id}"`);
+    expect(html).toContain("Free cancellation until Thu, Jan 1, 2099, 00:00 hotel time. Cancelling before then costs nothing.");
+    expect(html).toContain(">Copy details<");
+    expect(html).toContain("Last sent on Nov 20, 2026 at 09:05 UTC to no•••@example.com");
+    // The copied text (in the button's props) names the booking and the guests, never a price.
+    expect(html).not.toContain("From quote");
+  });
+
+  it("booking page: a booking from a quote links back to it", async () => {
+    signInAs("A");
+    const { snapshotId, offers } = await seed();
+    const id = await draftFor(snapshotId, offers[1]!);
+    const quote = await db.quote.create({ data: { agencyId: "A", createdById: "u-A", agencyNumber: 7, title: "Paris" } });
+    await db.booking.update({ where: { id }, data: { status: "CONFIRMED", quoteId: quote.id } });
+    const { default: SummaryPage } = await import("./(agent)/bookings/[id]/page");
+    const html = renderToStaticMarkup(await SummaryPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({}) }));
+    expect(html).toContain(`href="/quotes/${quote.id}"`);
+    expect(html).toContain("Q-7");
+  });
 });
 
 vi.setConfig({ testTimeout: 30_000 });

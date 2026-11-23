@@ -62,5 +62,7 @@ export async function emailClientAction(_previous: EmailClientState, formData: F
   const email = formData.get("email");
   if (typeof bookingId !== "string" || typeof email !== "string") return { status: "error", message: "Enter one valid email address." };
   const result = await emailBookingToClient(userId, agencyId, { bookingId: bookingId.slice(0, 64), email: email.slice(0, 300) });
-  return result.ok ? { status: "success", message: "The voucher was emailed to the client." } : { status: "error", message: result.error };
+  if (!result.ok) return { status: "error", message: result.error };
+  revalidatePath(`/bookings/${bookingId.slice(0, 64)}`); // the page says when it was last sent
+  return { status: "success", message: "The voucher was emailed to the client." };
 }

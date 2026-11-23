@@ -328,3 +328,47 @@ export async function clientOptions(agencyId: string): Promise<{ id: string; fir
     select: { id: true, firstName: true, lastName: true },
   });
 }
+
+export type ClientBooking = { id: string; reference: string; status: string; hotelName: string; checkin: string; checkout: string };
+
+// Which of the agency's bookings are this client's: made from one of the client's quotes, or
+// with the client's email as the lead guest's (a booking has no client field of its own).
+function bookingsOfClientWhere(agencyId: string, client: { id: string; email: string | null }): Prisma.BookingWhereInput {
+  const or: Prisma.BookingWhereInput[] = [{ quote: { clientId: client.id, agencyId } }];
+  if (client.email) or.push({ leadEmail: client.email });
+  return { agencyId, status: { notIn: ["DRAFT", "EXPIRED"] }, OR: or };
+}
+
+// The client card's bookings (screen 18): the latest 10 of the agency's own bookings for this client.
+export async function clientBookings(agencyId: string, client: { id: string; email: string | null }): Promise<ClientBooking[]> {
+  return db.booking.findMany({
+    where: bookingsOfClientWhere(agencyId, client),
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 10,
+    select: { id: true, reference: true, status: true, hotelName: true, checkin: true, checkout: true },
+  });
+}
+
+// The client a booking belongs to (the booking page's "Client" link): the quote's client when
+// it came from a quote, else the agency's client whose email is the lead guest's. null: none.
+export async function clientOfBooking(agencyId: string, booking: { quoteId: string | null; leadEmail: string }): Promise<{ id: string; firstName: string; lastName: string } | null> {
+  const select = { id: true, firstName: true, lastName: true } as const;
+  if (booking.quoteId) {
+    const fromQuote = await db.quote.findFirst({ where: { id: booking.quoteId, agencyId }, select: { client: { select } } });
+    if (fromQuote?.client) return fromQuote.client;
+  }
+  if (!booking.leadEmail) return null;
+  return db.client.findFirst({ where: { agencyId, email: booking.leadEmail.toLowerCase() }, orderBy: [{ updatedAt: "desc" }, { id: "desc" }], select });
+}
+
+// "Add client": another client of the agency with the same email or phone number, so the agent
+// is warned before making a second card for one person. null: none.
+export async function findSimilarClient(agencyId: string, input: { email: string; phone: string }, exceptId?: string): Promise<{ id: string; firstName: string; lastName: string } | null> {
+  const or: Prisma.ClientWhereInput[] = [];
+  const email = input.email.trim();
+  if (email && z.email().safeParse(email).success) or.push({ email: normalizeEmail(email) });
+  const digits = phoneDigits(input.phone);
+  if (digits.length >= 7) or.push({ phoneDigits: digits });
+  if (or.length === 0) return null;
+  return db.client.findFirst({ where: { agencyId, OR: or, ...(exceptId ? { id: { not: exceptId } } : {}) }, orderBy: [{ updatedAt: "desc" }, { id: "desc" }], select: { id: true, firstName: true, lastName: true } });
+}

@@ -7,12 +7,13 @@ type State = { status: "success" | "error"; message: string } | null;
 type Action = (previous: State, formData: FormData) => Promise<State>;
 
 // "Email to client" (screen 12, plan 8g): the voucher goes to the address the agent types, in the
-// agency's name, without any price.
-export function EmailToClient({ action, bookingId, defaultEmail }: { action: Action; bookingId: string; defaultEmail: string }) {
+// agency's name, without any price. `lastSent`: when, and to whom, it was last sent.
+export function EmailToClient({ action, bookingId, defaultEmail, lastSent }: { action: Action; bookingId: string; defaultEmail: string; lastSent?: string | null }) {
   const [state, formAction, pending] = useActionState<State, FormData>(action, null);
   return (
     <details className="mt-1">
       <summary className="cursor-pointer text-sm font-semibold text-brand">Email to client</summary>
+      {lastSent ? <p className="mt-1 text-xs text-muted">{lastSent}</p> : null}
       <form action={formAction} className="mt-2 flex flex-col gap-2">
         <input type="hidden" name="bookingId" value={bookingId} />
         <label className={label}>
