@@ -1,5 +1,10 @@
 node_modules
 dist
 audit-logs
-.env
 .git
+# Secrets and live data must never enter the build context or an image.
+.env
+.env.*
+!.env.example
+deploy/.env
+deploy/data

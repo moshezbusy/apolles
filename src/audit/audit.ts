@@ -71,11 +71,15 @@ export class JsonlFileAuditSink implements AuditSink {
     this.ready ??= (async () => {
       try {
         await mkdir(this.dir, { recursive: true, mode: 0o700 });
-        await chmod(this.dir, 0o700);
         await access(this.dir, constants.W_OK);
       } catch (err) {
         throw new Error(`Audit log directory ${this.dir} cannot be created or written: ${err instanceof Error ? err.message : String(err)}`);
       }
+      // A directory that exists but belongs to another user can be writable
+      // and still refuse chmod. That is worth a warning, not a refusal to start.
+      await chmod(this.dir, 0o700).catch((err: unknown) => {
+        console.warn(`Audit log directory ${this.dir}: could not set mode 0700 (${err instanceof Error ? err.message : String(err)}); check its owner`);
+      });
     })();
     return this.ready;
   }
@@ -86,8 +90,10 @@ export class JsonlFileAuditSink implements AuditSink {
     await appendFile(file, `${JSON.stringify(entry)}\n`, { encoding: 'utf8', mode: 0o600 });
     if (!this.secured.has(file)) {
       // `mode` only applies when the file is created; a file from an older version may be wider.
-      await chmod(file, 0o600);
       this.secured.add(file);
+      await chmod(file, 0o600).catch((err: unknown) => {
+        console.warn(`Audit log file ${file}: could not set mode 0600 (${err instanceof Error ? err.message : String(err)}); check its owner`);
+      });
     }
   }
 

@@ -1,6 +1,10 @@
 # Apolles supplier layer on the VPS. Only the CRM (same Docker network) can reach it; no port is published.
 #   cd /home/ubuntu/apolles-suppliers && docker compose -f deploy/docker-compose.yml up -d --build
 # Secrets: deploy/.env (APOLLES_API_KEY, HOTELBEDS_API_KEY, HOTELBEDS_SECRET). Never in git.
+#
+# deploy/data must belong to the user the container runs as (uid 1000, "node"):
+#   mkdir -p deploy/data && sudo chown -R 1000:1000 deploy/data
+# The service refuses to start if it cannot write the audit log or the bookings file there.
 services:
   suppliers:
     build: ..
@@ -12,9 +16,27 @@ services:
       - AUDIT_DIR=/data/audit-logs
       # Bookings survive restarts and rebuilds here. Back this file up.
       - BOOKINGS_FILE=/data/bookings/bookings.json
+      # Listen on the container's network interface. Set here so a HOST line
+      # in deploy/.env cannot make the service unreachable for the CRM.
+      - HOST=0.0.0.0
+      # Optional: an https webhook (e.g. n8n) that is told when a booking needs
+      # a person. Put it in deploy/.env:  ALERT_WEBHOOK_URL=https://...
     volumes:
       - ./suppliers.server.json:/app/config/suppliers.server.json:ro
       - ./data:/data
+    # GET /health answers 200 while the process is alive. Its body also shows
+    # auditOk and storeOk; watch those (or use ALERT_WEBHOOK_URL).
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # A runaway search cannot take the CRM and n8n on the same server down with it.
+    mem_limit: 512m
+    # On stop the service lets bookings in flight finish (up to 75 s) and
+    # writes everything to disk. Docker's default of 10 s would cut that off.
+    stop_grace_period: 90s
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
