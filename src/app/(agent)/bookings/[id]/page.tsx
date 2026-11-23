@@ -18,7 +18,9 @@ import { type StoredGuest, guestLines, oneRoomConfirmation, roomGuestLines, room
 import { CancellationPolicy, Policies, PriceDetails } from "../../_components/hotel-info";
 import { shortDate, stayText } from "../../search/parts";
 import { SellingPrice } from "../../_components/selling-price";
-import { cancelAction, emailClientAction, sellingPriceAction } from "./actions";
+import { cancelAction, changeRequestAction, emailClientAction, sellingPriceAction } from "./actions";
+import { ChangeRequestForm } from "./change-request";
+import { CHANGE_REQUEST_MAX_LENGTH, listChangeRequestsForBooking } from "@/server/change-requests";
 import { CancelButton } from "./cancel-button";
 import { PendingRefresh } from "./pending-refresh";
 import { EmailToClient } from "./email-client";
@@ -93,7 +95,13 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
   const quote = cancelQuote(b, rooms, now);
   const support = supportContact();
   // Where the booking came from and who it is for (links), and when it was last emailed to the client.
-  const [fromQuote, client, lastSent] = await Promise.all([bookingQuote(agencyId, b.quoteId), clientOfBooking(agencyId, b), lastClientEmail(agencyId, b.id)]);
+  const [fromQuote, client, lastSent, changes] = await Promise.all([
+    bookingQuote(agencyId, b.quoteId),
+    clientOfBooking(agencyId, b),
+    lastClientEmail(agencyId, b.id),
+    listChangeRequestsForBooking(agencyId, b.id),
+  ]);
+  const changeOpen = b.status === "CONFIRMED" || b.status === "PENDING_CONFIRMATION";
   const freeText = b.status === "CONFIRMED" ? freeCancelText(b, now) : null;
   const guestNames = severalRooms ? rooms.flatMap((room) => roomGuestLines(room)) : guestLines(b.guests as StoredGuest[], b.adults, b.childAges);
   const details = copyText(b, {
@@ -357,6 +365,29 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
               </div>
             ) : null}
           </section>
+
+          {changeOpen || changes.length > 0 ? (
+            <section aria-labelledby="change-title" className={`${card} bg-white p-5`}>
+              <h2 id="change-title" className={sectionTitle}>
+                Request a change
+              </h2>
+              {changes.length > 0 ? (
+                <ul className="mt-2 flex flex-col gap-2 text-[13px]">
+                  {changes.map((c) => (
+                    <li key={c.id} className="rounded-[10px] border border-line p-3">
+                      <p className="flex flex-wrap justify-between gap-2 text-xs text-muted">
+                        <span>Sent on {whenUtc(c.createdAt)}</span>
+                        <strong className={c.status === "DONE" ? "text-brand" : "text-[#6f5a20]"}>{c.status === "DONE" ? "Handled" : "Open"}</strong>
+                      </p>
+                      <p className="mt-1 whitespace-pre-line text-ink">{c.text}</p>
+                      {c.status === "DONE" && c.adminNote ? <p className="mt-1 whitespace-pre-line text-[#37413d]">Apolles: {c.adminNote}</p> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {changeOpen ? <ChangeRequestForm action={changeRequestAction} bookingId={b.id} maxLength={CHANGE_REQUEST_MAX_LENGTH} /> : null}
+            </section>
+          ) : null}
 
           {b.status === "CONFIRMED" ? (
             <section aria-labelledby="cancel-title" className={`${card} bg-white p-5`}>

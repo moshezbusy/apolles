@@ -35,18 +35,29 @@ export function initials(name: string): string {
   return letters.toUpperCase();
 }
 
-function DesktopMenu({ label, section, children }: { label: string; section: NavSectionId; children: React.ReactNode }) {
+// "2 new": quotes with a client selection or message the agent has not opened yet.
+function NewBadge({ count }: { count: number }) {
+  return count > 0 ? (
+    <span className="ml-1 rounded-full bg-brand px-1.5 py-0.5 text-[10.5px] font-bold leading-none text-paper">
+      {count} new<span className="sr-only"> {count === 1 ? "quote with a client selection" : "quotes with client selections"}</span>
+    </span>
+  ) : null;
+}
+
+function DesktopMenu({ label, section, badge = 0, children }: { label: string; section: NavSectionId; badge?: number; children: React.ReactNode }) {
   return (
     <details data-menu="nav" className="relative">
       <summary className={menuSummary}>
-        <SectionLabel section={section}>{label}</SectionLabel> <span aria-hidden="true" className="text-[11px] text-[#8a938e]">▾</span>
+        <SectionLabel section={section}>{label}</SectionLabel>
+        <NewBadge count={badge} /> <span aria-hidden="true" className="text-[11px] text-[#8a938e]">▾</span>
       </summary>
       <div className={dropdown}>{children}</div>
     </details>
   );
 }
 
-export function Header({ agencyName, balanceCents }: { agencyName: string; balanceCents: number }) {
+// `newSelections`: the agency's quotes with a client selection not opened yet (a badge on Quotes).
+export function Header({ agencyName, balanceCents, newSelections = 0 }: { agencyName: string; balanceCents: number; newSelections?: number }) {
   return (
     <header className="sticky top-0 z-30 h-[68px] border-b border-line bg-white">
       <div className="mx-auto flex h-full w-[min(1260px,calc(100%-40px))] items-center gap-4 sm:gap-7">
@@ -58,9 +69,10 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
           <SectionLink section="search" href="/search" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">
             Search
           </SectionLink>
-          <DesktopMenu label="Quotes" section="quotes">
+          <DesktopMenu label="Quotes" section="quotes" badge={newSelections}>
             <Link href="/quotes" className={dropdownItem}>
               All quotes
+              <NewBadge count={newSelections} />
             </Link>
             <form action={createQuoteAction}>
               <button type="submit" className={`w-full ${dropdownItem}`}>
@@ -130,6 +142,7 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
             <PhoneMenuSection title="Quotes">
               <MenuLink href="/quotes" className={phoneMenuItem}>
                 All quotes
+                <NewBadge count={newSelections} />
               </MenuLink>
               <form action={createQuoteAction}>
                 <button type="submit" className={phoneMenuItem}>

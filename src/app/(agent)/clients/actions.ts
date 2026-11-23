@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
-import { addCompanion, createClient, removeCompanion, updateClient } from "@/server/clients";
+import { addCompanion, createClient, deleteClient, findDuplicateClient, mergeClients, removeCompanion, updateClient } from "@/server/clients";
 import type { ClientFormState } from "./form-state";
 
 // Client actions (screen 18). Each one checks the agent session itself and passes the agencyId
@@ -29,9 +29,26 @@ function clientFields(formData: FormData) {
   };
 }
 
+// The same person twice: warned once, with a link to the card that exists. Saving again (the
+// form then sends confirmDuplicate) saves anyway. null: no other client with this email or phone.
+async function duplicateWarning(agencyId: string, formData: FormData, values: ReturnType<typeof clientFields>, exceptId?: string): Promise<ClientFormState> {
+  if (formData.get("confirmDuplicate") === "1") return null;
+  const same = await findDuplicateClient(agencyId, { email: values.email, phone: values.phone }, exceptId);
+  if (!same) return null;
+  const name = `${same.firstName} ${same.lastName}`;
+  return {
+    status: "error",
+    message: `${name} already has this ${same.matchedOn === "email" ? "email" : "phone number"}. Open that client, or choose Save client again to save anyway.`,
+    values,
+    duplicate: { id: same.id, name },
+  };
+}
+
 export async function createClientAction(_previous: ClientFormState, formData: FormData): Promise<ClientFormState> {
   const { userId, agencyId } = await requireAgent();
   const values = clientFields(formData);
+  const warning = await duplicateWarning(agencyId, formData, values);
+  if (warning) return warning;
   const result = await createClient(userId, agencyId, values);
   if (!result.ok) return { status: "error", message: CLIENT_ERROR, values };
   revalidatePath("/clients");
@@ -42,6 +59,8 @@ export async function updateClientAction(_previous: ClientFormState, formData: F
   const { userId, agencyId } = await requireAgent();
   const clientId = text(formData, "clientId", 50);
   const values = clientFields(formData);
+  const warning = await duplicateWarning(agencyId, formData, values, clientId);
+  if (warning) return warning;
   const result = await updateClient(userId, agencyId, clientId, values);
   if (!result.ok) return { status: "error", message: CLIENT_ERROR, values };
   revalidatePath("/clients");
@@ -68,4 +87,26 @@ export async function removeCompanionAction(formData: FormData): Promise<void> {
   const { userId, agencyId } = await requireAgent();
   await removeCompanion(userId, agencyId, text(formData, "companionId", 50));
   revalidatePath("/clients");
+}
+
+// "Delete client" (asked first in the browser): the card and its companions go; its quotes stay,
+// with no client. Another agency's id deletes nothing.
+export async function deleteClientAction(formData: FormData): Promise<void> {
+  const { userId, agencyId } = await requireAgent();
+  const result = await deleteClient(userId, agencyId, text(formData, "clientId", 50));
+  revalidatePath("/clients");
+  redirect(result.ok ? "/clients?notice=deleted" : "/clients?notice=not_found");
+}
+
+// "Merge into another client": this card's quotes and companions move to the chosen client, then
+// this card is deleted. Both must be the agency's own.
+export async function mergeClientsAction(_previous: ClientFormState, formData: FormData): Promise<ClientFormState> {
+  const { userId, agencyId } = await requireAgent();
+  const mergeId = text(formData, "clientId", 50);
+  const keepId = text(formData, "keepId", 50);
+  if (!keepId) return { status: "error", message: "Choose the client to keep." };
+  const result = await mergeClients(userId, agencyId, keepId, mergeId);
+  if (!result.ok) return { status: "error", message: result.error };
+  revalidatePath("/clients");
+  redirect(`/clients?id=${encodeURIComponent(result.id)}&notice=merged#client`);
 }

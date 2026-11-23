@@ -130,6 +130,46 @@ describe("client actions", () => {
     expect(await getClient(agencyA, daniel)).toMatchObject({ firstName: "Daniel", companions: [{ firstName: "Noa" }] });
   });
 
+  it("warns before saving a second card with the same phone or email (create and edit); saving again saves; never about another agency's client", async () => {
+    const { createClientAction, updateClientAction } = await import("./(agent)/clients/actions");
+    const fields = { firstName: "Dani", lastName: "Levi", phone: "+972 50 123 4567", email: "", nationality: "IL", notes: "" };
+    // Editing Daniel with his own details is no duplicate of himself.
+    await expect(updateClientAction(null, form({ clientId: daniel, ...DANIEL }))).rejects.toThrow(`NEXT_REDIRECT:/clients?id=${daniel}`);
+    const state = await createClientAction(null, form(fields));
+    expect(state).toMatchObject({ status: "error", duplicate: { id: daniel, name: "Daniel Levy" }, values: { firstName: "Dani" } });
+    expect(state?.status === "error" ? state.message : "").toBe("Daniel Levy already has this phone number. Open that client, or choose Save client again to save anyway.");
+    expect(await db.client.count({ where: { agencyId: agencyA } })).toBe(1);
+    await expect(createClientAction(null, form({ ...fields, confirmDuplicate: "1" }))).rejects.toThrow(/NEXT_REDIRECT/);
+    expect(await db.client.count({ where: { agencyId: agencyA } })).toBe(2);
+    // Now that two cards share the phone, editing Daniel warns about Dani (and not about himself).
+    expect(await updateClientAction(null, form({ clientId: daniel, ...DANIEL }))).toMatchObject({ duplicate: { name: "Dani Levi" } });
+    // Agency B is only ever warned about its own client.
+    signInAs(agencyB, agentB);
+    expect(await createClientAction(null, form(fields))).toMatchObject({ duplicate: { name: "Secret Person" } });
+  });
+
+  it("delete and merge: the agency's own clients only, with the Quotes link and fixed notices", async () => {
+    const html = await render({ id: daniel });
+    expect(html).toContain(`href="/quotes?client=${daniel}"`);
+    expect(html).toContain(">Delete client<");
+    const other = await createClient(agentA, agencyA, { ...DANIEL, firstName: "Danny", email: "danny@example.com", phone: "+972 52 000 0000" });
+    if (!other.ok) throw new Error("setup");
+    expect(await render({ id: daniel })).toContain(">Merge clients<");
+    const { deleteClientAction, mergeClientsAction } = await import("./(agent)/clients/actions");
+    // Another agency can neither merge nor delete agency A's clients.
+    signInAs(agencyB, agentB);
+    expect(await mergeClientsAction(null, form({ clientId: other.id, keepId: daniel }))).toMatchObject({ status: "error" });
+    await expect(deleteClientAction(form({ clientId: daniel }))).rejects.toThrow("NEXT_REDIRECT:/clients?notice=not_found");
+    expect(await db.client.count({ where: { agencyId: agencyA } })).toBe(2);
+    signInAs(agencyA, agentA);
+    await expect(mergeClientsAction(null, form({ clientId: other.id, keepId: daniel }))).rejects.toThrow(`NEXT_REDIRECT:/clients?id=${daniel}&notice=merged#client`);
+    expect(await db.client.count({ where: { agencyId: agencyA } })).toBe(1);
+    expect(await render({ id: daniel, notice: "merged" })).toContain("The clients were merged into this one.");
+    await expect(deleteClientAction(form({ clientId: daniel }))).rejects.toThrow("NEXT_REDIRECT:/clients?notice=deleted");
+    expect(await db.client.count({ where: { agencyId: agencyA } })).toBe(0);
+    expect(await render({ notice: "toString" })).not.toContain('role="status"');
+  });
+
   it("the client card lists the client's own bookings and opens on a phone where the agent is looking", async () => {
     const make = (agencyId: string, reference: string, leadEmail: string) =>
       db.booking.create({
@@ -175,4 +215,7 @@ it("the header links to Clients", () => {
   expect(html).toMatch(/<span class="font-bold text-brand[^"]*">Quotes<\/span>/);
   expect(html).toMatch(/<a aria-current="page"[^>]*href="\/clients"/);
   expect(html).not.toMatch(/<a[^>]*aria-current="page"[^>]*href="\/search"/);
+  expect(html).not.toContain(" new<");
+  // Quotes with a client selection not opened yet: a badge on Quotes.
+  expect(renderToStaticMarkup(<Header agencyName="Sunrise Travel" balanceCents={0} newSelections={2} />)).toContain(">2 new<");
 });

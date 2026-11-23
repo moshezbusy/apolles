@@ -294,6 +294,26 @@ describe("booking workflow fixes", () => {
     expect(html).toContain(`href="/quotes/${quote.id}"`);
     expect(html).toContain("Q-7");
   });
+
+  it("Request a change: sent for a confirmed booking and listed; clear messages when refused", async () => {
+    signInAs("A");
+    const { snapshotId, offers } = await seed();
+    const id = await draftFor(snapshotId, offers[1]!);
+    const { changeRequestAction } = await import("./(agent)/bookings/[id]/actions");
+    // A draft is not a booking yet.
+    expect(await changeRequestAction(null, form({ bookingId: id, text: "Change the name" }))).toMatchObject({ status: "error", message: expect.stringContaining("only while the booking is confirmed") });
+    await db.booking.update({ where: { id }, data: { status: "CONFIRMED" } });
+    expect(await changeRequestAction(null, form({ bookingId: id, text: "   " }))).toMatchObject({ status: "error", message: "Write what should change, in up to 2,000 characters." });
+    expect(await changeRequestAction(null, form({ bookingId: id, text: "Second guest is Avi Cohen" }))).toMatchObject({ status: "success" });
+    const { default: SummaryPage } = await import("./(agent)/bookings/[id]/page");
+    const html = renderToStaticMarkup(await SummaryPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({}) }));
+    expect(html).toContain("Request a change");
+    expect(html).toContain("Second guest is Avi Cohen");
+    expect(html).toContain(">Send change request<");
+    signInAs("B");
+    expect(await changeRequestAction(null, form({ bookingId: id, text: "x" }))).toMatchObject({ message: "This booking was not found. Open it again from Bookings." });
+    expect(await db.changeRequest.count()).toBe(1);
+  });
 });
 
 vi.setConfig({ testTimeout: 30_000 });

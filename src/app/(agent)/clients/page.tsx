@@ -1,19 +1,20 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { initials } from "@/components/Header";
-import { btnPrimary, btnSecondary, card, cell, emptyState, input, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
+import { alertError, alertSuccess, btnPrimary, btnSecondary, card, cell, emptyState, input, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { countryName, countryOptions } from "@/lib/countries";
 import { PHONE_NEEDS_COUNTRY_CODE, toE164Digits } from "@/lib/phone";
 import { getAgencyProfile } from "@/server/agency-profile";
 import { requireAgent } from "@/server/auth/guards";
-import { CLIENT_PAGE_SIZE, clientBookings, getClient, listClients, type ClientBooking, type ClientDetail } from "@/server/clients";
+import { CLIENT_PAGE_SIZE, clientBookings, clientOptions, getClient, listClients, type ClientBooking, type ClientDetail } from "@/server/clients";
 import { BookingStatusPill } from "../bookings/status-pill";
 import { shortDate } from "../search/parts";
 import { RemoveCompanion } from "./remove-companion";
 import { quoteCode } from "@/server/quotes/quotes";
 import { createQuoteAction } from "../quotes/actions";
 import { StatusPill } from "../quotes/parts";
-import { addCompanionAction, createClientAction, removeCompanionAction, updateClientAction } from "./actions";
+import { addCompanionAction, createClientAction, deleteClientAction, mergeClientsAction, removeCompanionAction, updateClientAction } from "./actions";
+import { DeleteClient, MergeClient } from "./client-actions";
 import { ClientForm } from "./client-form";
 import { CompanionForm } from "./companion-form";
 
@@ -27,6 +28,13 @@ function one(v: string | string[] | undefined): string {
 
 const dayMonth = new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", timeZone: "UTC" });
 const monthYear = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+
+// Fixed sentences after a delete or a merge (never text from the URL).
+const NOTICES: Record<string, { text: string; error?: boolean }> = {
+  deleted: { text: "The client was deleted. Their quotes are kept, without a client." },
+  merged: { text: "The clients were merged into this one." },
+  not_found: { text: "This client was not found. Nothing was deleted.", error: true },
+};
 
 function travelerLine(c: { relation: string; childAge: number | null }): string {
   const who = c.childAge === null ? "Adult" : `${c.childAge} ${c.childAge === 1 ? "year" : "years"} old`;
@@ -54,7 +62,10 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
   ]);
   const openId = one(params.id) || page.clients[0]?.id || "";
   const open = openId && !adding ? await getClient(agencyId, openId) : null;
-  const bookings = open ? await clientBookings(agencyId, open) : [];
+  const [bookings, options] = open ? await Promise.all([clientBookings(agencyId, open), clientOptions(agencyId)]) : [[], []];
+  const others = options.filter((o) => o.id !== open?.id).map((o) => ({ id: o.id, label: `${o.firstName} ${o.lastName}` }));
+  const noticeKey = one(params.notice);
+  const notice = Object.hasOwn(NOTICES, noticeKey) ? NOTICES[noticeKey] : undefined;
 
   // Links keep the search and how many clients are shown. A link that opens a client or a form
   // lands on it (#client).
@@ -83,6 +94,12 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
           + Add client
         </Link>
       </div>
+
+      {notice ? (
+        <p role="status" className={`mt-4 ${notice.error ? alertError : alertSuccess}`}>
+          {notice.text}
+        </p>
+      ) : null}
 
       <form method="get" action="/clients" className="mt-5 flex items-center gap-3">
         <input
@@ -180,7 +197,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
               />
             </>
           ) : open ? (
-            <ClientPanel client={open} bookings={bookings} editHref={hrefFor({ id: open.id, extra: "edit" })} country={profile?.country ?? ""} />
+            <ClientPanel client={open} bookings={bookings} others={others} editHref={hrefFor({ id: open.id, extra: "edit" })} country={profile?.country ?? ""} />
           ) : (
             <p className="text-sm text-muted">Choose a client to see their details.</p>
           )}
@@ -191,7 +208,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
 }
 
 // `country`: the agency's country, whose calling code a number typed the local way gets.
-function ClientPanel({ client, bookings, editHref, country }: { client: ClientDetail; bookings: ClientBooking[]; editHref: string; country: string }) {
+function ClientPanel({ client, bookings, others, editHref, country }: { client: ClientDetail; bookings: ClientBooking[]; others: { id: string; label: string }[]; editHref: string; country: string }) {
   const name = `${client.firstName} ${client.lastName}`;
   // The stored number is never rewritten; the agent is told when no WhatsApp link can be made from it.
   const phoneHint = toE164Digits(client.phone, country) ? null : PHONE_NEEDS_COUNTRY_CODE;
@@ -301,7 +318,12 @@ function ClientPanel({ client, bookings, editHref, country }: { client: ClientDe
       </section>
 
       <section className="border-t border-line pt-4">
-        <h3 className="mb-2 text-sm font-bold text-ink">Quotes</h3>
+        <h3 className="mb-2 flex items-center justify-between gap-3 text-sm font-bold text-ink">
+          Quotes
+          <Link href={`/quotes?client=${encodeURIComponent(client.id)}`} className="text-xs font-semibold text-brand hover:underline">
+            Quotes for this client
+          </Link>
+        </h3>
         {client.quotes.length === 0 ? (
           <p className="text-[13px] text-muted">No quotes yet.</p>
         ) : (
@@ -319,6 +341,12 @@ function ClientPanel({ client, bookings, editHref, country }: { client: ClientDe
             ))}
           </ul>
         )}
+      </section>
+
+      <section className="flex flex-col gap-3 border-t border-line pt-4">
+        <h3 className="text-sm font-bold text-ink">Manage client</h3>
+        <MergeClient action={mergeClientsAction} clientId={client.id} name={name} others={others} />
+        <DeleteClient action={deleteClientAction} clientId={client.id} name={name} />
       </section>
     </div>
   );
