@@ -245,8 +245,8 @@ describe("admin agencies", () => {
       const msg = vi.mocked(sendEmail).mock.calls[0]![0];
       expect(msg).toMatchObject({ to: "dana@example.com", subject: "Set your Apolles password" });
       expect(msg.text).toContain("72 hours");
-      expect(await checkPasswordLink(linkIn(msg.text))).toEqual({ usable: true, purpose: "SET" });
-      expect(await checkPasswordLink(first)).toEqual({ usable: false, purpose: "SET" });
+      expect(await checkPasswordLink(linkIn(msg.text))).toEqual({ usable: true, purpose: "SET", role: "AGENT" });
+      expect(await checkPasswordLink(first)).toEqual({ usable: false, purpose: "SET", role: null });
 
       const row = await db.auditLog.findFirstOrThrow({ where: { action: "agency.setup-email.resend" } });
       expect(row).toMatchObject({ actorUserId: adminId, targetType: "Agency", targetId: agencyId });
