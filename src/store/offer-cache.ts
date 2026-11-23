@@ -17,14 +17,41 @@ export interface OfferCache {
   claimQuote(quoteId: string, clientReference: string): Promise<boolean>;
 }
 
+interface Entry<T> {
+  v: T;
+  exp: number;
+  claimedBy?: string;
+}
+
+export interface OfferCacheOptions {
+  /** Most offers (and, separately, quotes) kept. One search can return thousands of offers. */
+  maxEntries?: number;
+  /** How often expired entries are removed. 0 = never (tests). */
+  sweepIntervalMs?: number;
+}
+
+/**
+ * Memory stays bounded two ways: a cap (when full, the oldest entry is
+ * dropped, one cheap step per insert) and a periodic sweep of expired
+ * entries. An insert never walks the whole cache.
+ */
 export class InMemoryOfferCache implements OfferCache {
-  private readonly offers = new Map<string, { v: RateOffer; exp: number }>();
-  private readonly quotes = new Map<string, { v: Quote; exp: number; claimedBy?: string }>();
+  readonly maxEntries: number;
+  private readonly offers = new Map<string, Entry<RateOffer>>();
+  private readonly quotes = new Map<string, Entry<Quote>>();
+  private readonly sweepIntervalMs: number;
+  private timer: NodeJS.Timeout | undefined;
+  private disposed = false;
 
-  constructor(private readonly now: () => number = Date.now, private readonly maxEntries = 200_000) {}
+  constructor(private readonly now: () => number = Date.now, opts: OfferCacheOptions = {}) {
+    this.maxEntries = Math.max(1, opts.maxEntries ?? 20_000);
+    this.sweepIntervalMs = opts.sweepIntervalMs ?? 60_000;
+  }
 
-  /** Stop background work (nothing yet). */
-  dispose(): void {}
+  /** Entries held right now, expired ones included until the next sweep. */
+  get size(): number {
+    return this.offers.size + this.quotes.size;
+  }
 
   async putOffer(offer: RateOffer, ttlMs: number): Promise<void> {
     this.set(this.offers, offer.offerId, offer, ttlMs);
@@ -46,12 +73,40 @@ export class InMemoryOfferCache implements OfferCache {
     return true;
   }
 
-  private set<T>(map: Map<string, { v: T; exp: number }>, k: string, v: T, ttl: number): void {
-    if (map.size >= this.maxEntries) this.evict(map);
-    map.set(k, { v, exp: this.now() + ttl });
+  /** Remove everything that expired. Returns how many entries went. */
+  sweep(): number {
+    const now = this.now();
+    let removed = 0;
+    for (const map of [this.offers, this.quotes] as Map<string, Entry<unknown>>[]) {
+      for (const [k, e] of map) {
+        if (e.exp <= now) {
+          map.delete(k);
+          removed += 1;
+        }
+      }
+    }
+    return removed;
   }
 
-  private read<T>(map: Map<string, { v: T; exp: number }>, k: string): T | undefined {
+  /** Stop the sweep timer (shutdown, tests). */
+  dispose(): void {
+    this.disposed = true;
+    if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+  }
+
+  private set<T>(map: Map<string, Entry<T>>, k: string, v: T, ttl: number): void {
+    // A Map remembers insertion order, so its first key is the oldest entry:
+    // dropping it is one step, however big the cache is.
+    if (!map.has(k) && map.size >= this.maxEntries) {
+      const oldest = map.keys().next().value;
+      if (oldest !== undefined) map.delete(oldest);
+    }
+    map.set(k, { v, exp: this.now() + ttl });
+    this.startSweeping();
+  }
+
+  private read<T>(map: Map<string, Entry<T>>, k: string): T | undefined {
     const e = map.get(k);
     if (!e) return undefined;
     if (e.exp <= this.now()) {
@@ -61,14 +116,10 @@ export class InMemoryOfferCache implements OfferCache {
     return e.v;
   }
 
-  private evict<T>(map: Map<string, { v: T; exp: number }>): void {
-    const now = this.now();
-    for (const [k, e] of map) if (e.exp <= now) map.delete(k);
-    // still full: drop oldest inserted
-    while (map.size >= this.maxEntries) {
-      const first = map.keys().next().value;
-      if (first === undefined) break;
-      map.delete(first);
-    }
+  /** The timer starts with the first entry and never keeps the process alive. */
+  private startSweeping(): void {
+    if (this.timer || this.disposed || this.sweepIntervalMs <= 0) return;
+    this.timer = setInterval(() => this.sweep(), this.sweepIntervalMs);
+    this.timer.unref();
   }
 }
