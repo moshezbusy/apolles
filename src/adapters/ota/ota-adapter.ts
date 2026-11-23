@@ -229,8 +229,17 @@ export class OtaAdapter implements SupplierAdapter {
 
   private errorFrom(errors: { code?: string; message: string }[], operation: string): SupplierError {
     const first = errors[0]!;
-    const mapped = first.code ? this.profile.errorMap[first.code] : undefined;
-    const code: SupplierErrorCode = mapped ?? (operation === 'book' || operation === 'cancel' ? 'VALIDATION' : 'PROTOCOL');
+    const kinds = errors.map((e) => (e.code ? this.profile.errorMap[e.code] : undefined));
+    let code: SupplierErrorCode;
+    if (operation === 'book' || operation === 'cancel') {
+      // On a write an error answer is a definite "no" only when the profile
+      // lists EVERY error code as a rejection. Anything else may hide a
+      // booking that was made: the service looks it up instead of guessing.
+      const definite = kinds.every((k) => k !== undefined && DEFINITE_REJECTIONS.has(k));
+      code = definite ? kinds[0]! : 'OUTCOME_UNKNOWN';
+    } else {
+      code = kinds[0] ?? 'PROTOCOL';
+    }
     return new SupplierError(this.id, code, `${operation}: ${errors.map((e) => `${e.code ?? '?'} ${e.message}`).join('; ')}`, {
       supplierCode: first.code,
     });
@@ -256,6 +265,9 @@ export class OtaAdapter implements SupplierAdapter {
     };
   }
 }
+
+/** Error kinds that mean "the supplier refused it, nothing was booked or cancelled". */
+const DEFINITE_REJECTIONS: ReadonlySet<SupplierErrorCode> = new Set(['VALIDATION', 'SOLD_OUT', 'RATE_CHANGED', 'AUTH', 'NOT_FOUND']);
 
 function joinUrl(base: string, p: string): string {
   if (!p) return base;

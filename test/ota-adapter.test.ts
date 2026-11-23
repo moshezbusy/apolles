@@ -107,6 +107,47 @@ describe('OTA adapter', () => {
     expect(err.code).toBe('OUTCOME_UNKNOWN');
   });
 
+  const anyOffer = { supplierHotelCode: 'H', ratePlanCode: 'R', rooms: [{ supplierRoomCode: 'X' }], occupancy: [{ adults: 1, childrenAges: [] }], total: { minor: 100, currency: 'USD' }, supplierData: {} } as unknown as RateOffer;
+  const bookWith = (xml: string, profile = omnibeesProfile) =>
+    make([xml], profile).adapter.book({
+      clientReference: 'APL-BK-0003', offer: anyOffer,
+      holder: { firstName: 'a', lastName: 'b' }, guests: [[{ firstName: 'a', lastName: 'b', type: 'ADULT' }]], payment: { type: 'AGENCY_CREDIT' },
+    }, { requestId: 'r' });
+  const resErrors = (errors: string) => `<OTA_HotelResRS xmlns="http://www.opentravel.org/OTA/2003/05"><Errors>${errors}</Errors></OTA_HotelResRS>`;
+
+  it('an <Errors> answer on book the profile does not know = OUTCOME_UNKNOWN, never a definite failure', async () => {
+    const err = (await bookWith(resErrors('<Error Code="999" ShortText="Something went wrong"/>')).catch((e) => e)) as SupplierError;
+    expect(err.code).toBe('OUTCOME_UNKNOWN');
+    const noCode = (await bookWith(resErrors('<Error ShortText="Oops"/>')).catch((e) => e)) as SupplierError;
+    expect(noCode.code).toBe('OUTCOME_UNKNOWN');
+  });
+
+  it('only error codes the profile lists as rejections are a definite failure on book', async () => {
+    const profile = mergeProfile(omnibeesProfile, { errorMap: { '450': 'SOLD_OUT', '900': 'UNAVAILABLE' } });
+    const sold = (await bookWith(resErrors('<Error Code="450" ShortText="No rooms"/>'), profile).catch((e) => e)) as SupplierError;
+    expect(sold.code).toBe('SOLD_OUT');
+    // one known and one unknown error together: not sure enough
+    const mixed = (await bookWith(resErrors('<Error Code="450" ShortText="No rooms"/><Error Code="999" ShortText="?"/>'), profile).catch((e) => e)) as SupplierError;
+    expect(mixed.code).toBe('OUTCOME_UNKNOWN');
+    // a mapped code that is not a rejection (supplier trouble) is not a "no" either
+    const down = (await bookWith(resErrors('<Error Code="900" ShortText="System busy"/>'), profile).catch((e) => e)) as SupplierError;
+    expect(down.code).toBe('OUTCOME_UNKNOWN');
+  });
+
+  it('an unknown <Errors> answer on cancel = OUTCOME_UNKNOWN', async () => {
+    const { adapter } = make(['<OTA_CancelRS xmlns="http://www.opentravel.org/OTA/2003/05"><Errors><Error Code="999" ShortText="?"/></Errors></OTA_CancelRS>']);
+    const err = (await adapter.cancel({ clientReference: 'APL-BK-0003', supplierBookingRef: 'OB-1' }, { requestId: 'r' }).catch((e) => e)) as SupplierError;
+    expect(err.code).toBe('OUTCOME_UNKNOWN');
+  });
+
+  it('a reservation status we do not know is not read as confirmed', async () => {
+    const res = (status: string) => `<OTA_HotelResRS xmlns="http://www.opentravel.org/OTA/2003/05"><Success/><HotelReservations><HotelReservation ResStatus="${status}"><ResGlobalInfo><HotelReservationIDs><HotelReservationID ResID_Type="14" ResID_Value="OB-1"/></HotelReservationIDs></ResGlobalInfo></HotelReservation></HotelReservations></OTA_HotelResRS>`;
+    expect((await bookWith(res('Denied'))).status).toBe('PENDING');
+    expect((await bookWith(res('Requested'))).status).toBe('ON_REQUEST');
+    expect((await bookWith(res('Cancelled'))).status).toBe('CANCELLED');
+    expect((await bookWith(res('Reserved'))).status).toBe('CONFIRMED');
+  });
+
   it('configured "no availability" error codes return empty results', async () => {
     const profile = mergeProfile(omnibeesProfile, { noAvailabilityErrorCodes: ['322'] });
     const { adapter } = make(['<OTA_HotelAvailRS xmlns="http://www.opentravel.org/OTA/2003/05"><Errors><Error Code="322" ShortText="No availability"/></Errors></OTA_HotelAvailRS>'], profile);

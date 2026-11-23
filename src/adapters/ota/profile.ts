@@ -52,7 +52,12 @@ export interface OtaVendorProfile {
   noAvailabilityErrorCodes: string[];
   /** OTA error codes that mean "booking not found" on read. */
   notFoundErrorCodes: string[];
-  /** Extra mapping of vendor error codes to our error kinds. */
+  /**
+   * Vendor error codes -> our error kinds. On book and cancel this is also
+   * the list of definite rejections: only an answer whose codes are all
+   * mapped here to VALIDATION, SOLD_OUT, RATE_CHANGED, AUTH or NOT_FOUND is
+   * a definite "no". Every other error answer is OUTCOME_UNKNOWN.
+   */
   errorMap: Record<string, SupplierErrorCode>;
 }
 

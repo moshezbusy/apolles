@@ -219,6 +219,19 @@ describe('Hotelbeds adapter', () => {
     expect(await adapter.getBooking({ clientReference: 'APL-BK-7788' }, { requestId: 'r' })).toBeNull();
   });
 
+  it('a missing or unknown booking status is never read as CONFIRMED', async () => {
+    const detail = async (booking: Record<string, unknown>) =>
+      (await make([{ body: { booking: { reference: '102-2', ...booking } } }]).adapter.getBooking({ clientReference: 'x', supplierBookingRef: '102-2' }, { requestId: 'r' }))!.status;
+    expect(await detail({ status: 'CONFIRMED' })).toBe('CONFIRMED');
+    expect(await detail({})).toBe('PENDING');
+    expect(await detail({ status: 'SOMETHING_NEW' })).toBe('PENDING');
+    expect(await detail({ status: 'PRECONFIRMED' })).toBe('ON_REQUEST');
+    expect(await detail({ status: 'CONFIRMED', hotel: { rooms: [{ status: 'ON_REQUEST' }] } })).toBe('ON_REQUEST');
+    // same on the answer to book: a reference without a status is not a confirmation
+    const booked = await make([{ body: { booking: { reference: '102-9' } } }]).adapter.book(bookReq, { requestId: 'r' });
+    expect(booked).toMatchObject({ status: 'PENDING', supplierBookingRef: '102-9' });
+  });
+
   it('booking detail by Hotelbeds reference; 404 = not found', async () => {
     const found = await make([{ body: { booking: { reference: '102-2', status: 'CANCELLED' } } }]).adapter.getBooking({ clientReference: 'x', supplierBookingRef: '102-2' }, { requestId: 'r' });
     expect(found).toMatchObject({ status: 'CANCELLED' });

@@ -162,6 +162,24 @@ describe('TBO adapter', () => {
     expect(r).toMatchObject({ status: 'CONFIRMED', supplierBookingRef: 'YOSUR8', hotelConfirmationNumber: 'H-991', total: { minor: 8582, currency: 'USD' } });
   });
 
+  it('BookingDetail: only a status that means confirmed becomes CONFIRMED', async () => {
+    const detail = async (BookingStatus: unknown) => {
+      const { adapter } = make([{ Status: { Code: 200, Description: 'Successful' }, BookingDetail: { BookingStatus, ConfirmationNumber: 'YOSUR8' } }]);
+      return (await adapter.getBooking({ clientReference: 'APL-BK-7788' }, { requestId: 'r' }))!.status;
+    };
+    expect(await detail('Confirmed')).toBe('CONFIRMED');
+    expect(await detail('Vouchered')).toBe('CONFIRMED');
+    expect(await detail('Cancelled')).toBe('CANCELLED');
+    expect(await detail('CancelledAndRefundAwaited')).toBe('CANCELLED');
+    expect(await detail('Failed')).toBe('FAILED');
+    expect(await detail('Rejected')).toBe('FAILED');
+    // not settled: the service keeps asking, then hands it to a person. Never CONFIRMED.
+    expect(await detail('Pending')).toBe('PENDING');
+    expect(await detail('SomethingNew')).toBe('PENDING');
+    expect(await detail('')).toBe('PENDING');
+    expect(await detail(undefined)).toBe('PENDING');
+  });
+
   it('Cancel', async () => {
     const { adapter } = make([{ Status: { Code: 200, Description: 'Cancelled' }, ConfirmationNumber: 'FL1IMA' }]);
     expect(await adapter.cancel({ clientReference: 'x', supplierBookingRef: 'FL1IMA' }, { requestId: 'r' })).toMatchObject({ cancelled: true, cancellationRef: 'FL1IMA' });

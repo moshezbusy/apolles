@@ -67,6 +67,23 @@ const MEAL: Record<string, BoardCode> = {
   all_inclusive_all_meal: 'AI',
 };
 
+/**
+ * BookingDetail.BookingStatus -> our status. Explicit on purpose: a status
+ * that is not listed here (new, failed, misspelt, empty) is PENDING, which
+ * the service treats as "not settled yet" and ends with a person checking.
+ * It must never fall through to CONFIRMED.
+ */
+const BOOKING_STATUS: Record<string, SupplierBookingResult['status']> = {
+  confirmed: 'CONFIRMED',
+  vouchered: 'CONFIRMED',
+  cancelled: 'CANCELLED',
+  canceled: 'CANCELLED',
+  cancelledandrefundawaited: 'CANCELLED',
+  failed: 'FAILED',
+  rejected: 'FAILED',
+  pending: 'PENDING',
+};
+
 interface TboStatus { Code?: number; Description?: string }
 interface TboSupplement { Index?: number; Type?: string; Description?: string; Price?: number; Currency?: string }
 interface TboCancelPolicy { Index?: string; FromDate?: string; ChargeType?: string; CancellationCharge?: number }
@@ -198,9 +215,8 @@ export class TboAdapter implements SupplierAdapter {
     }
     const d = res.BookingDetail;
     if (code !== STATUS.OK || !d) return null; // not found (service never treats this as "failed")
-    const statusRaw = String(d['BookingStatus'] ?? '').toLowerCase();
-    const status: SupplierBookingResult['status'] =
-      statusRaw === 'cancelled' || statusRaw === 'cancelledandrefundawaited' ? 'CANCELLED' : statusRaw === 'confirmed' || statusRaw === '' ? 'CONFIRMED' : 'CONFIRMED';
+    const statusRaw = String(d['BookingStatus'] ?? '').toLowerCase().replace(/[\s_-]/g, '');
+    const status: SupplierBookingResult['status'] = BOOKING_STATUS[statusRaw] ?? 'PENDING';
     const rooms = (d['Rooms'] as { TotalFare?: number; Currency?: string }[] | undefined) ?? [];
     const currency = rooms[0]?.Currency;
     const total = currency ? sumAmounts(rooms.map((r) => r.TotalFare ?? 0), currency) : undefined;

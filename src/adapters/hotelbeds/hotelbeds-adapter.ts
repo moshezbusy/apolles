@@ -207,7 +207,9 @@ export class HotelbedsAdapter implements SupplierAdapter {
     }
     const b = res.json.booking;
     if (!b?.reference) throw new SupplierError(this.id, 'OUTCOME_UNKNOWN', 'book: success without booking reference');
-    return this.toResult(b) ?? { status: 'CONFIRMED', supplierBookingRef: b.reference, total: req.offer.total };
+    const result = this.toResult(b);
+    if (!result) throw new SupplierError(this.id, 'OUTCOME_UNKNOWN', 'book: success without booking reference');
+    return result;
   }
 
   // --------------------------------------------------------- getBooking
@@ -349,11 +351,13 @@ export class HotelbedsAdapter implements SupplierAdapter {
     if (!b.reference) return null;
     const status = (b.status ?? '').toUpperCase();
     const roomStatuses = (b.hotel?.rooms ?? []).map((r) => (r.status ?? '').toUpperCase());
+    // A missing or unknown status is PENDING ("not settled, ask again"),
+    // never CONFIRMED: we only say confirmed when Hotelbeds says so.
     const mapped: SupplierBookingResult['status'] =
       status === 'CANCELLED' ? 'CANCELLED'
         : status === 'CONFIRMED' && !roomStatuses.some((s) => s && s !== 'CONFIRMED') ? 'CONFIRMED'
           : status === 'CONFIRMED' || status === 'PRECONFIRMED' || status === 'ON_REQUEST' || status === 'PENDING' ? 'ON_REQUEST'
-            : 'CONFIRMED';
+            : 'PENDING';
     const currency = b.currency ?? b.hotel?.currency;
     const totalRaw = b.totalNet ?? b.hotel?.totalNet;
     return {
