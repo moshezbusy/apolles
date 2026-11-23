@@ -1,16 +1,33 @@
-import type { Job, Prisma } from "@/generated/prisma/client";
+import { Prisma, type Job } from "@/generated/prisma/client";
 import { db } from "@/server/db";
-import type { JobKind } from "./kinds";
+import { DEFAULT_MAX_ATTEMPTS, EMAIL_KINDS, EMAIL_MAX_ATTEMPTS, LONG_KINDS, retryPolicy, type JobKind } from "./kinds";
 
 // A small job queue in Postgres (spec section 7). A job is claimed in one statement with
 // FOR UPDATE SKIP LOCKED, so two worker processes never run the same job. A failed job is
-// retried after 1, then 5 minutes; the third failure is final. A job still RUNNING 30 minutes
-// after it was claimed is treated as abandoned (the worker died) and claimed again.
+// retried after 1, then 5 minutes, and the third failure is final; an email job is tried 8 times
+// over a day (kinds.ts). A short job still RUNNING 10 minutes after it was claimed is treated as
+// abandoned (the worker died) and claimed again; a long job (a content sync) after 30 minutes.
+// A running job refreshes its lock every 2 minutes (runner.ts), so a live one is never taken.
+// Jobs that are due are claimed in order of time, booking, money and email jobs before long ones.
 
-const BACKOFF_MINUTES = [1, 5, 30];
-const MAX_ATTEMPTS = 3;
-const STALE_LOCK_MS = 30 * 60_000;
+const SHORT_STALE_LOCK_MS = 10 * 60_000;
+const LONG_STALE_LOCK_MS = 30 * 60_000;
 const MAX_ERROR_LENGTH = 500;
+
+// "long": only the long jobs (LONG_KINDS); "short": everything else; "all": both, short first.
+export type Lane = "all" | "long" | "short";
+
+const IS_LONG = Prisma.sql`"kind" = ANY(${[...LONG_KINDS]}::text[])`;
+const IS_EMAIL = Prisma.sql`"kind" = ANY(${[...EMAIL_KINDS]}::text[])`;
+// Every attempt of the job's kind is used.
+const SPENT = Prisma.sql`((${IS_EMAIL} AND "attempts" >= ${EMAIL_MAX_ATTEMPTS}) OR (NOT ${IS_EMAIL} AND "attempts" >= ${DEFAULT_MAX_ATTEMPTS}))`;
+
+// RUNNING, and its lock is older than its kind allows: the worker that had it is gone.
+function abandoned(now: Date): Prisma.Sql {
+  const short = new Date(now.getTime() - SHORT_STALE_LOCK_MS);
+  const long = new Date(now.getTime() - LONG_STALE_LOCK_MS);
+  return Prisma.sql`("status" = 'RUNNING' AND ((${IS_LONG} AND "lockedAt" < ${long}) OR (NOT ${IS_LONG} AND "lockedAt" < ${short})))`;
+}
 
 export async function enqueue(
   kind: JobKind,
@@ -37,20 +54,26 @@ export async function enqueue(
   return { id: job.id, created: true };
 }
 
-export async function claimNext(now: Date): Promise<Job | null> {
-  const staleBefore = new Date(now.getTime() - STALE_LOCK_MS);
-  // An abandoned job that already used every attempt is final: FAILED, never run again.
-  await db.$executeRaw`
+// An abandoned job that already used every attempt is final: FAILED, never run again. Returns
+// the jobs given up on by this call (each one once), so the caller can log them and tell someone.
+export async function failAbandoned(now: Date): Promise<Job[]> {
+  return db.$queryRaw<Job[]>`
     UPDATE "Job" SET "status" = 'FAILED', "lockedAt" = NULL, "finishedAt" = ${now},
       "lastError" = COALESCE("lastError", 'Abandoned: the worker stopped during the last attempt')
-    WHERE "status" = 'RUNNING' AND "lockedAt" < ${staleBefore} AND "attempts" >= ${MAX_ATTEMPTS}`;
+    WHERE ${abandoned(now)} AND ${SPENT}
+    RETURNING *`;
+}
+
+export async function claimNext(now: Date, lane: Lane = "all"): Promise<Job | null> {
+  await failAbandoned(now);
+  const inLane = lane === "long" ? Prisma.sql`AND ${IS_LONG}` : lane === "short" ? Prisma.sql`AND NOT ${IS_LONG}` : Prisma.empty;
   const rows = await db.$queryRaw<Job[]>`
     UPDATE "Job" SET "status" = 'RUNNING', "lockedAt" = ${now}, "attempts" = "attempts" + 1
     WHERE "id" = (
       SELECT "id" FROM "Job"
-      WHERE ("status" = 'QUEUED' AND "runAt" <= ${now})
-         OR ("status" = 'RUNNING' AND "lockedAt" < ${staleBefore})
-      ORDER BY "runAt", "createdAt"
+      WHERE (("status" = 'QUEUED' AND "runAt" <= ${now}) OR (${abandoned(now)} AND NOT ${SPENT}))
+        ${inLane}
+      ORDER BY (CASE WHEN ${IS_LONG} THEN 1 ELSE 0 END), "runAt", "createdAt"
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
@@ -73,16 +96,20 @@ function describeError(error: unknown): string {
   return `${name}: ${message}`.slice(0, MAX_ERROR_LENGTH);
 }
 
-export async function failJob(id: string, error: unknown, now: Date): Promise<void> {
-  const job = await db.job.findUniqueOrThrow({ where: { id }, select: { attempts: true } });
+// Puts a failed job back with its kind's backoff, or marks it FAILED when that was its last
+// attempt. `final` tells the caller which, so the last failure is never silent.
+export async function failJob(id: string, error: unknown, now: Date): Promise<{ final: boolean; attempts: number }> {
+  const job = await db.job.findUniqueOrThrow({ where: { id }, select: { attempts: true, kind: true } });
   const lastError = describeError(error);
-  if (job.attempts >= MAX_ATTEMPTS) {
+  const { maxAttempts, backoffMinutes } = retryPolicy(job.kind);
+  if (job.attempts >= maxAttempts) {
     await db.job.update({ where: { id }, data: { status: "FAILED", lockedAt: null, lastError, finishedAt: now } });
-    return;
+    return { final: true, attempts: job.attempts };
   }
-  const delay = BACKOFF_MINUTES[job.attempts - 1] ?? BACKOFF_MINUTES[BACKOFF_MINUTES.length - 1] ?? 30;
+  const delay = backoffMinutes[job.attempts - 1] ?? backoffMinutes[backoffMinutes.length - 1] ?? 30;
   await db.job.update({
     where: { id },
     data: { status: "QUEUED", lockedAt: null, lastError, runAt: new Date(now.getTime() + delay * 60_000) },
   });
+  return { final: false, attempts: job.attempts };
 }
