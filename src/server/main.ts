@@ -1,9 +1,13 @@
 import { resolve } from 'node:path';
 import { createSupplierService } from '../bootstrap.js';
 import { createHttpServer } from './http-server.js';
+import { openBookingStore } from './startup.js';
 
 const root = process.env['APOLLES_ROOT'] ?? process.cwd();
+// Bookings must survive a restart: loaded from (and written to) BOOKINGS_FILE.
+const bookings = await openBookingStore(process.env, root);
 const service = await createSupplierService({
+  bookings: bookings.store,
   configPath: resolve(root, process.env['SUPPLIERS_CONFIG'] ?? 'config/suppliers.json'),
   mappingDir: resolve(root, process.env['MAPPINGS_DIR'] ?? 'config/mappings'),
   auditDir: resolve(root, process.env['AUDIT_DIR'] ?? 'audit-logs'),

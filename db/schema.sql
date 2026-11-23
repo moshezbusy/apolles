@@ -1,4 +1,7 @@
--- Production storage for the supplier layer (PostgreSQL).
+-- Storage for the supplier layer on PostgreSQL. NOT in use yet.
+-- Today one server instance keeps bookings in a durable JSON file
+-- (BOOKINGS_FILE, src/store/file-booking-store.ts). Move to this schema
+-- before running more than one instance: a file cannot be shared safely.
 -- The in-memory stores in src/store are for development and tests only.
 
 CREATE TABLE bookings (

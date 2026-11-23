@@ -2,8 +2,10 @@ import type { BookingRecord, BookingStatus } from '../core/types.js';
 
 /**
  * Persists bookings. `create` is the idempotency guard: the same
- * clientReference can never create two bookings. Production implementation
- * goes on Postgres with a UNIQUE constraint (see db/schema.sql).
+ * clientReference can never create two bookings, and it must return only
+ * after the record is stored durably (the supplier is called right after).
+ * One instance: FileBookingStore. More than one instance: Postgres with a
+ * UNIQUE constraint (see db/schema.sql).
  */
 export interface BookingStore {
   /** Returns false if a booking with this clientReference already exists. */
@@ -13,6 +15,7 @@ export interface BookingStore {
   listByStatus(statuses: BookingStatus[]): Promise<BookingRecord[]>;
 }
 
+/** Development and tests only: everything is lost on restart. */
 export class InMemoryBookingStore implements BookingStore {
   private readonly items = new Map<string, BookingRecord>();
 

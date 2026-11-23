@@ -10,6 +10,8 @@ services:
     environment:
       - SUPPLIERS_CONFIG=/app/config/suppliers.server.json
       - AUDIT_DIR=/data/audit-logs
+      # Bookings survive restarts and rebuilds here. Back this file up.
+      - BOOKINGS_FILE=/data/bookings/bookings.json
     volumes:
       - ./suppliers.server.json:/app/config/suppliers.server.json:ro
       - ./data:/data

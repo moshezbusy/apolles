@@ -47,7 +47,10 @@ Types: `src/core/types.ts`. Money is always `{ minor, currency }` (integer cents
 ## Safety rules built in
 
 - **No double booking.** `clientReference` is the idempotency key; the same
-  reference never reaches the supplier twice.
+  reference never reaches the supplier twice. The key is written to disk
+  (`BOOKINGS_FILE`) before the supplier is called, so this also holds across
+  a restart or a crash. A booking that was being sent when the process died
+  comes back as `UNKNOWN` and is looked up at the supplier, never sent again.
 - **Bookings are never retried.** A timeout / 5xx / unreadable answer on book
   becomes `UNKNOWN`. The service then asks the supplier (read by reference)
   and moves it to `CONFIRMED`, or to `NEEDS_REVIEW` for a person to check.
@@ -88,9 +91,23 @@ Behind an HTTPS proxy add `NODE_USE_ENV_PROXY=1`.
 
 See [docs/adding-a-supplier.md](docs/adding-a-supplier.md).
 
-## Production checklist (not done yet)
+## Where bookings are kept
 
-- [ ] Postgres implementations of `BookingStore` and audit sink (`db/schema.sql`)
+Set `BOOKINGS_FILE` (the server deployment uses `/data/bookings/bookings.json`).
+Bookings, idempotency keys and the bookings still waiting to be checked with
+the supplier live in that one JSON file: written atomically after every
+change, file mode 0600, its own directory 0700. With `NODE_ENV=production`
+the service refuses to start without it. A corrupt or unreadable file stops
+startup with a clear error; the service never starts empty over existing
+data. **Back this file up.** Without `BOOKINGS_FILE` (development, tests)
+bookings are in memory and are lost on restart.
+
+The file works for ONE server instance. Two instances need Postgres.
+
+## Production checklist
+
+- [x] Bookings survive a restart (`BOOKINGS_FILE`, one instance)
+- [ ] Postgres implementations of `BookingStore` and audit sink (`db/schema.sql`), needed before a second instance
 - [ ] Redis `OfferCache` if more than one server instance runs
 - [ ] Real `CardVault` (virtual-card issuer or tokenization vault)
 - [ ] Real `SecretProvider` (vault) instead of plain env vars
