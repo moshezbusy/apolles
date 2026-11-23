@@ -12,7 +12,7 @@ import type {
   SearchResult,
   SupplierSearchStatus,
 } from '../core/types.js';
-import { validateBook, validateSearch } from '../core/validate.js';
+import { normalizeClientReference, parseBookRequest, parseSearchRequest } from '../core/validate.js';
 import { sleep } from '../http/transport.js';
 import type { MappingStore } from '../mapping/mapping.js';
 import type { BookingStore } from '../store/booking-store.js';
@@ -63,8 +63,8 @@ export class SupplierService {
 
   // ---------------------------------------------------------------- search
 
-  async search(req: SearchRequest, requestId: string = randomUUID()): Promise<SearchResult> {
-    validateSearch(req, this.opts.now());
+  async search(input: SearchRequest, requestId: string = randomUUID()): Promise<SearchResult> {
+    const req = parseSearchRequest(input, this.opts.now());
     const wanted = this.registry.all().filter((s) => !req.suppliers || req.suppliers.includes(s.adapter.id));
     const results = await Promise.all(wanted.map((s) => this.searchOne(s, req, requestId)));
     const offers = results.flatMap((r) => r.offers);
@@ -183,8 +183,9 @@ export class SupplierService {
 
   // ------------------------------------------------------------------ book
 
-  async book(req: BookRequest, requestId: string = randomUUID()): Promise<BookingRecord> {
-    validateBook(req);
+  async book(input: BookRequest, requestId: string = randomUUID()): Promise<BookingRecord> {
+    // Checks every field and upper-cases the reference, before any record exists.
+    const req = parseBookRequest(input);
 
     // Idempotency: same clientReference never books twice.
     const existing = await this.bookings.get(req.clientReference);
@@ -324,7 +325,7 @@ export class SupplierService {
   // ------------------------------------------------------- get / cancel
 
   async getBooking(clientReference: string): Promise<BookingRecord> {
-    const r = await this.bookings.get(clientReference);
+    const r = await this.bookings.get(normalizeClientReference(clientReference));
     if (!r) throw new RequestError('NOT_FOUND', 'Booking not found', 404);
     return r;
   }

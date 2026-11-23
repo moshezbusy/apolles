@@ -234,7 +234,7 @@ export class HotelbedsAdapter implements SupplierAdapter {
       'getBooking', 'GET', `/bookings?${qs.toString()}`, undefined, TIMEOUTS.detail, ctx, true,
     );
     if (res.status >= 400) throw this.error(res, 'getBooking');
-    const match = (res.json.bookings?.bookings ?? []).find((b) => b.clientReference?.toUpperCase() === ref.clientReference.toUpperCase());
+    const match = (res.json.bookings?.bookings ?? []).find((b) => b.clientReference === ref.clientReference);
     return match ? this.toResult(match) : null;
   }
 

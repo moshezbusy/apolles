@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { RequestError, SupplierError } from '../core/errors.js';
 import type { BookRequest, SearchRequest } from '../core/types.js';
+import { parseQuoteRequest } from '../core/validate.js';
 import type { SupplierService } from '../service/supplier-service.js';
 
 const MAX_BODY = 256 * 1024;
@@ -26,7 +27,7 @@ export function createHttpServer(service: SupplierService, apiKey: string): Serv
     const requestId = randomUUID();
     res.setHeader('x-request-id', requestId);
     try {
-      const url = new URL(req.url ?? '/', 'http://local');
+      const url = parseUrl(req.url);
       if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true });
       if (!authorized(req, keyBuf)) return send(res, 401, { error: 'UNAUTHORIZED' });
 
@@ -35,15 +36,14 @@ export function createHttpServer(service: SupplierService, apiKey: string): Serv
         return send(res, 200, await service.search((await readJson(req)) as SearchRequest, requestId));
       }
       if (req.method === 'POST' && url.pathname === '/v1/quotes') {
-        const body = (await readJson(req)) as { offerId?: unknown };
-        if (typeof body.offerId !== 'string') throw new RequestError('INVALID_REQUEST', 'offerId required');
-        return send(res, 200, await service.quote(body.offerId, requestId));
+        const { offerId } = parseQuoteRequest(await readJson(req));
+        return send(res, 200, await service.quote(offerId, requestId));
       }
       if (req.method === 'POST' && url.pathname === '/v1/bookings') {
         return send(res, 201, await service.book((await readJson(req)) as BookRequest, requestId));
       }
       if (parts[0] === 'v1' && parts[1] === 'bookings' && parts[2]) {
-        const ref = decodeURIComponent(parts[2]);
+        const ref = decodePathPart(parts[2]);
         if (req.method === 'GET' && parts.length === 3) return send(res, 200, await service.getBooking(ref));
         if (req.method === 'POST' && parts[3] === 'cancel' && parts.length === 4) return send(res, 200, await service.cancel(ref, requestId));
       }
@@ -60,6 +60,23 @@ export function createHttpServer(service: SupplierService, apiKey: string): Serv
       return send(res, 500, { error: 'INTERNAL', requestId });
     }
   });
+}
+
+function parseUrl(raw: string | undefined): URL {
+  try {
+    return new URL(raw ?? '/', 'http://local');
+  } catch {
+    throw new RequestError('INVALID_REQUEST', 'Invalid URL');
+  }
+}
+
+/** "%zz" or a cut-off %-sequence is the caller's mistake: 400, not a crash. */
+function decodePathPart(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    throw new RequestError('INVALID_REQUEST', 'Invalid %-encoding in the URL');
+  }
 }
 
 function authorized(req: IncomingMessage, key: Buffer): boolean {

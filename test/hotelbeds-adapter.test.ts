@@ -211,6 +211,14 @@ describe('Hotelbeds adapter', () => {
     expect(r).toMatchObject({ status: 'CONFIRMED', supplierBookingRef: '102-2' });
   });
 
+  it('lookup by our reference is an exact match (references are upper-cased at the API door)', async () => {
+    const { adapter } = make([{ body: { bookings: { bookings: [
+      { reference: '102-1', clientReference: 'apl-bk-7788', status: 'CONFIRMED' },
+      { reference: '102-2', clientReference: 'APL-BK-77880', status: 'CONFIRMED' },
+    ] } } }]);
+    expect(await adapter.getBooking({ clientReference: 'APL-BK-7788' }, { requestId: 'r' })).toBeNull();
+  });
+
   it('booking detail by Hotelbeds reference; 404 = not found', async () => {
     const found = await make([{ body: { booking: { reference: '102-2', status: 'CANCELLED' } } }]).adapter.getBooking({ clientReference: 'x', supplierBookingRef: '102-2' }, { requestId: 'r' });
     expect(found).toMatchObject({ status: 'CANCELLED' });
