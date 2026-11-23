@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { generate } from "otplib";
-import { latestSetPasswordLink } from "./support/mail";
+import { latestSetPasswordLink, latestSignInCode } from "./support/mail";
 import { ADMIN_FILE, type E2eAdmin } from "./support/paths";
 import { solidPng } from "./support/png";
 
@@ -14,7 +14,7 @@ import { solidPng } from "./support/png";
 // The admin signs in once only: a TOTP code is accepted once per 30-second step.
 
 const AGENT_EMAIL = "agent@test.local";
-const AGENT_PASSWORD = "Passw0rd1";
+const AGENT_PASSWORD = "Tr4vel-ab"; // not one of the common passwords the rule refuses
 
 function readAdmin(): E2eAdmin {
   return JSON.parse(readFileSync(ADMIN_FILE, "utf8")) as E2eAdmin;
@@ -60,7 +60,7 @@ test("foundation: admin creates an agency, tops it up, the agent sees the balanc
     await expect(adminPage.getByRole("row", { name: /Test Travel/ })).toBeVisible();
   });
 
-  await test.step("3. the agent sets Passw0rd1, signs in and sees USD 0.00", async () => {
+  await test.step("3. the agent sets a password, signs in with the email code and sees USD 0.00", async () => {
     await expect.poll(() => latestSetPasswordLink(AGENT_EMAIL), { timeout: 15_000 }).not.toBeNull();
     const link = latestSetPasswordLink(AGENT_EMAIL) ?? "";
     await agentPage.goto(link);
@@ -71,6 +71,11 @@ test("foundation: admin creates an agency, tops it up, the agent sees the balanc
     await expect(agentPage).toHaveURL(/\/login\?reset=1$/);
 
     await signIn(agentPage, AGENT_EMAIL, AGENT_PASSWORD);
+    // A device Apolles does not know yet: the 6-digit code from the email comes first.
+    await expect(agentPage).toHaveURL(/\/login\/verify$/);
+    await expect.poll(() => latestSignInCode(AGENT_EMAIL), { timeout: 15_000 }).not.toBeNull();
+    await agentPage.getByLabel("6-digit code").fill(latestSignInCode(AGENT_EMAIL) ?? "");
+    await agentPage.getByRole("button", { name: "Verify and sign in" }).click();
     await expect(agentPage).toHaveURL(/\/search$/);
     await agentPage.goto("/balance");
     await expect(agentPage.getByRole("region", { name: "Available balance" })).toContainText("USD 0.00");

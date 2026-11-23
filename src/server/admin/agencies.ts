@@ -61,8 +61,8 @@ export function isDuplicateUserEmail(error: unknown): boolean {
 
 // The rows of a new agency, inside the caller's transaction: the agency (with a temporary
 // reference), its final bank reference built from the sequence number, the AGENT user (no
-// password yet) and the audit row. A duplicate email fails the transaction (see
-// isDuplicateUserEmailError).
+// password yet) and the audit row. A duplicate email fails the transaction (the caller tells
+// it apart with isDuplicateUserEmail).
 export async function createAgencyRows(
   tx: Prisma.TransactionClient,
   actor: string,

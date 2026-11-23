@@ -122,16 +122,17 @@ export async function verifySignInCode(sessionId: string, code: string, now: Dat
       return "wrong" as const;
     }
     await tx.session.update({ where: { id: sessionId }, data: { emailVerifiedAt: now, codeHash: null, codeExpiresAt: null } });
-    // The agent's sign-in is complete (password, then this code). Never the code itself.
-    await audit(user.id, "user.sign-in", "User", user.id, undefined, { secondStep: "email-code" }, tx);
-    return "ok" as const;
+    return "verified" as const;
   });
-  if (result === "ok") {
+  if (result === "ok" || result === "verified") {
     // The sign-in is complete: the run of failures is over. A lock set meanwhile wins.
     if (!(await completeSignIn(user.id))) {
       await db.session.deleteMany({ where: { id: sessionId } });
       return "locked";
     }
+    // Audited once, when this code completed the sign-in (password, then the code), and only
+    // after the lock check above. Never the code itself.
+    if (result === "verified") await audit(user.id, "user.sign-in", "User", user.id, undefined, { secondStep: "email-code" });
     return "ok";
   }
   if (result === "expired") {
