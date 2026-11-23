@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { moneyFromDecimal, moneyToDecimal, percentChange } from '../src/core/money.js';
+import { exceedsTolerance, moneyFromDecimal, moneyToDecimal, percentChange } from '../src/core/money.js';
 import { otaAmount } from '../src/adapters/ota/messages.js';
 
 describe('money', () => {
@@ -22,6 +22,19 @@ describe('money', () => {
     expect(otaAmount('50000', '2', 'USD')).toEqual({ minor: 50000, currency: 'USD' });
     expect(otaAmount('500.00', '2', 'USD')).toEqual({ minor: 50000, currency: 'USD' });
     expect(otaAmount('5', '2', 'USD')).toEqual({ minor: 5, currency: 'USD' });
+  });
+  it('price tolerance is exact whole-number math', () => {
+    const usd = (minor: number) => ({ minor, currency: 'USD' });
+    expect(exceedsTolerance(usd(10000), usd(10700), 7)).toBe(false); // exactly 7 %: float math said 7.000000000000001
+    expect(exceedsTolerance(usd(10000), usd(10701), 7)).toBe(true);
+    expect(exceedsTolerance(usd(10000), usd(10000), 0)).toBe(false);
+    expect(exceedsTolerance(usd(10000), usd(10001), 0)).toBe(true);
+    expect(exceedsTolerance(usd(10000), usd(9000), 0)).toBe(false);
+    expect(exceedsTolerance(usd(10000), usd(10250), 2.5)).toBe(false);
+    expect(exceedsTolerance(usd(10000), usd(10251), 2.5)).toBe(true);
+    expect(exceedsTolerance(usd(0), usd(1), 50)).toBe(true);
+    expect(() => exceedsTolerance(usd(100), usd(101), Number.NaN)).toThrow();
+    expect(() => exceedsTolerance(usd(100), { minor: 101, currency: 'EUR' }, 1)).toThrow();
   });
   it('percent change', () => {
     expect(percentChange({ minor: 10000, currency: 'USD' }, { minor: 10250, currency: 'USD' })).toBeCloseTo(2.5);

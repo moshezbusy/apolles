@@ -105,11 +105,17 @@ export interface SupplierSearchStatus {
   durationMs: number;
   error?: string;
   skipped?: 'CIRCUIT_OPEN' | 'NO_MAPPED_HOTELS' | 'DISABLED' | 'MULTI_ROOM_UNSUPPORTED';
+  /** How many of the requested hotels this supplier has no mapping for. */
+  unmappedHotels?: number;
+  /** A large search is sent in parts; this many parts failed (their hotels are missing from the offers). */
+  failedParts?: number;
 }
 
 export interface SearchResult {
   offers: RateOffer[];
   suppliers: SupplierSearchStatus[];
+  /** Requested hotel ids that no searched supplier has a mapping for: they were not searched at all. */
+  unmappedHotelIds: HotelId[];
 }
 
 export interface Quote {
@@ -196,7 +202,21 @@ export interface BookingRecord {
   supplierBookingRef?: string;
   hotelConfirmationNumber?: string;
   failureReason?: string;
+  /**
+   * Set when a person should look at this booking even though it has a
+   * status: final price above the approved one, another currency, a cancel
+   * with an unknown outcome, a booking that could not be confirmed.
+   */
+  reviewReason?: string;
+  /**
+   * A cancel was sent and we do not know whether the supplier processed it.
+   * Reconcile keeps asking the supplier; cancel may be sent again.
+   */
+  cancelOutcomeUnknown?: boolean;
+  /** Supplier lookups that got a real answer without settling the booking. */
   reconcileAttempts: number;
+  /** Last time the supplier was asked about this booking. */
+  lastCheckedAt?: IsoDateTime;
   cancellationRef?: string;
   cancellationFee?: Money;
   createdAt: IsoDateTime;
@@ -210,3 +230,12 @@ export interface BookingRecord {
  * NEEDS_REVIEW, ON_REQUEST, PENDING and CANCELLED are all `booked: false`.
  */
 export type BookingAnswer = BookingRecord & { booked: boolean };
+
+/** A person settles a NEEDS_REVIEW booking after checking with the supplier. */
+export interface ResolveRequest {
+  status: 'CONFIRMED' | 'CANCELLED' | 'FAILED';
+  /** What was checked and with whom; written to the booking history. */
+  note: string;
+  /** The supplier's booking number, when the person found it out. */
+  supplierBookingRef?: string;
+}

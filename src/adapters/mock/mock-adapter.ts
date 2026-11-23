@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { SupplierError } from '../../core/errors.js';
-import { moneyFromDecimal } from '../../core/money.js';
+import { SupplierError, type SupplierErrorCode } from '../../core/errors.js';
+import { moneyFromDecimal, type Money } from '../../core/money.js';
 import type {
   BookingLookup,
   CallContext,
@@ -37,8 +37,26 @@ export interface MockScenario {
   localErrorBeforeSend?: boolean;
   /** book is sent and stored at the "supplier", then our code crashes on the answer. */
   crashAfterSend?: boolean;
+  /** book answers "on request": the hotel still has to confirm. */
+  bookOnRequest?: boolean;
+  /** The supplier's final total is this many % above the quoted one. */
+  bookTotalIncreasePercent?: number;
+  /** The supplier's final total comes back in another currency. */
+  bookCurrency?: string;
+  /** cancel throws OUTCOME_UNKNOWN but the booking IS cancelled at the "supplier". */
+  cancelUnknownButCancelled?: boolean;
+  /** cancel throws OUTCOME_UNKNOWN and the booking is NOT cancelled. */
+  cancelUnknownNotCancelled?: boolean;
+  /** getBooking fails: a supplier error code, or 'LOCAL' for an error on our own side. */
+  lookupError?: SupplierErrorCode | 'LOCAL';
+  /** A free-cancellation deadline (penalty start) on every offer. */
+  penaltyFrom?: string;
   searchDelayMs?: number;
   searchFails?: boolean;
+  /** search refuses our request (caller-side mistake, not an outage). */
+  searchValidationError?: boolean;
+  /** search fails only when one of these hotel codes is asked for. */
+  searchFailsForCodes?: string[];
 }
 
 /**
@@ -56,7 +74,7 @@ export class MockSupplierAdapter implements SupplierAdapter {
     cancel: true,
   };
 
-  readonly bookings = new Map<string, { ref: string; status: 'CONFIRMED' | 'CANCELLED'; offer: RateOffer }>();
+  readonly bookings = new Map<string, { ref: string; status: 'CONFIRMED' | 'CANCELLED' | 'ON_REQUEST' | 'FAILED'; offer: RateOffer; total?: Money }>();
   readonly calls: string[] = [];
   scenario: MockScenario;
 
@@ -68,6 +86,10 @@ export class MockSupplierAdapter implements SupplierAdapter {
     this.calls.push('search');
     if (this.scenario.searchDelayMs) await delay(this.scenario.searchDelayMs, ctx.signal);
     if (this.scenario.searchFails) throw new SupplierError(this.id, 'UNAVAILABLE', 'mock search down');
+    if (this.scenario.searchValidationError) throw new SupplierError(this.id, 'VALIDATION', 'mock: request refused');
+    if (this.scenario.searchFailsForCodes?.some((c) => req.supplierHotelCodes.includes(c))) {
+      throw new SupplierError(this.id, 'UNAVAILABLE', 'mock: this part of the search is down');
+    }
     const nights = (Date.parse(req.checkOut) - Date.parse(req.checkIn)) / 86_400_000;
     return this.hotels
       .filter((h) => req.supplierHotelCodes.includes(h.code))
@@ -95,24 +117,35 @@ export class MockSupplierAdapter implements SupplierAdapter {
     if (this.scenario.rejectBooking) throw new SupplierError(this.id, 'SOLD_OUT', 'mock: no rooms');
     if (this.scenario.timeoutNotBooked) throw new SupplierError(this.id, 'OUTCOME_UNKNOWN', 'mock timeout');
     const ref = `MOCK-${randomUUID().slice(0, 8).toUpperCase()}`;
-    this.bookings.set(req.clientReference, { ref, status: 'CONFIRMED', offer: req.offer });
+    const status = this.scenario.bookOnRequest ? 'ON_REQUEST' : 'CONFIRMED';
+    const total: Money = {
+      minor: Math.round(req.offer.total.minor * (1 + (this.scenario.bookTotalIncreasePercent ?? 0) / 100)),
+      currency: this.scenario.bookCurrency ?? req.offer.total.currency,
+    };
+    this.bookings.set(req.clientReference, { ref, status, offer: req.offer, total });
     if (this.scenario.crashAfterSend) throw new Error('mock: crashed while reading the answer');
     if (this.scenario.timeoutButBooked) throw new SupplierError(this.id, 'OUTCOME_UNKNOWN', 'mock timeout');
-    return { status: 'CONFIRMED', supplierBookingRef: ref, hotelConfirmationNumber: `H-${ref}`, total: req.offer.total };
+    return { status, supplierBookingRef: ref, hotelConfirmationNumber: `H-${ref}`, total };
   }
 
   async getBooking(ref: BookingLookup): Promise<SupplierBookingResult | null> {
     this.calls.push('getBooking');
+    const fail = this.scenario.lookupError;
+    if (fail === 'LOCAL') throw new Error('Missing secret: MOCK_API_KEY');
+    if (fail) throw new SupplierError(this.id, fail, `mock lookup: ${fail}`);
     const b = this.bookings.get(ref.clientReference);
     if (!b) return null;
-    return { status: b.status, supplierBookingRef: b.ref, hotelConfirmationNumber: `H-${b.ref}`, total: b.offer.total };
+    return { status: b.status, supplierBookingRef: b.ref, hotelConfirmationNumber: `H-${b.ref}`, total: b.total ?? b.offer.total };
   }
 
-  async cancel(ref: BookingLookup): Promise<SupplierCancelResult> {
+  async cancel(ref: BookingLookup, ctx?: CallContext): Promise<SupplierCancelResult> {
     this.calls.push('cancel');
+    ctx?.onSend?.();
     const b = this.bookings.get(ref.clientReference);
     if (!b) throw new SupplierError(this.id, 'NOT_FOUND', 'mock: booking not found');
+    if (this.scenario.cancelUnknownNotCancelled) throw new SupplierError(this.id, 'OUTCOME_UNKNOWN', 'mock cancel timeout');
     b.status = 'CANCELLED';
+    if (this.scenario.cancelUnknownButCancelled) throw new SupplierError(this.id, 'OUTCOME_UNKNOWN', 'mock cancel timeout');
     return { cancelled: true, cancellationRef: `CXL-${b.ref}` };
   }
 
@@ -129,7 +162,10 @@ export class MockSupplierAdapter implements SupplierAdapter {
       total: { minor, currency: h.currency },
       taxesIncluded: true,
       paymentModel: 'PREPAID',
-      cancellation: { refundable: true, penalties: [] },
+      cancellation: {
+        refundable: true,
+        penalties: this.scenario.penaltyFrom ? [{ from: this.scenario.penaltyFrom, amount: { minor, currency: h.currency } }] : [],
+      },
       supplierData: { plan },
     };
   }

@@ -1,6 +1,6 @@
 import { RequestError } from './errors.js';
 import { luhnValid } from '../security/redact.js';
-import type { BookRequest, Guest, Holder, Occupancy, PaymentInstruction, SearchRequest } from './types.js';
+import type { BookRequest, Guest, Holder, Occupancy, PaymentInstruction, ResolveRequest, SearchRequest } from './types.js';
 
 /**
  * Strict checks of everything that comes in over the API. Every parse
@@ -186,6 +186,26 @@ function token(v: unknown, field: string): string {
   if (typeof v !== 'string' || v.length < 1 || v.length > 200 || CONTROL_RE.test(v)) throw bad(`${field} required (a card token, max 200 chars)`);
   if (containsCardNumber(v)) throw cardNumber();
   return v;
+}
+
+// --------------------------------------------------------------- resolve
+
+/** Body of POST /v1/bookings/:ref/resolve: a person settles a NEEDS_REVIEW booking. */
+export function parseResolveRequest(body: unknown): ResolveRequest {
+  const o = object(body, 'resolve body', ['status', 'note', 'supplierBookingRef']);
+  const status = o['status'];
+  if (status !== 'CONFIRMED' && status !== 'CANCELLED' && status !== 'FAILED') throw bad('status must be CONFIRMED, CANCELLED or FAILED');
+  const note = o['note'];
+  if (typeof note !== 'string' || note.trim().length < 1 || note.length > 500 || CONTROL_EXCEPT_NEWLINE_RE.test(note)) {
+    throw bad('note is required: what was checked with the supplier, max 500 chars');
+  }
+  if (containsCardNumber(note)) throw cardNumber();
+  const out: ResolveRequest = { status, note };
+  if (o['supplierBookingRef'] !== undefined) {
+    out.supplierBookingRef = text(o['supplierBookingRef'], 'supplierBookingRef', 100);
+    if (containsCardNumber(out.supplierBookingRef)) throw cardNumber();
+  }
+  return out;
 }
 
 // ------------------------------------------------------- card-number guard

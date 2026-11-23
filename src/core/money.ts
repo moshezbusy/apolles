@@ -71,6 +71,24 @@ export function percentChange(from: Money, to: Money): number {
   return ((to.minor - from.minor) / Math.abs(from.minor)) * 100;
 }
 
+/**
+ * True when `current` is above `approved` by more than `maxIncreasePercent`.
+ * Whole-number math only: with floats 10000 -> 10700 comes out as
+ * 7.000000000000001 % and a 7 % tolerance would wrongly refuse it.
+ */
+export function exceedsTolerance(approved: Money, current: Money, maxIncreasePercent: number): boolean {
+  assertSameCurrency(approved, current);
+  if (!Number.isFinite(maxIncreasePercent) || maxIncreasePercent < 0) throw new Error(`Invalid price tolerance: ${maxIncreasePercent}`);
+  if (!Number.isSafeInteger(approved.minor) || !Number.isSafeInteger(current.minor)) throw new Error('Money amounts must be whole minor units');
+  if (current.minor <= approved.minor) return false;
+  // Percent with up to 4 decimals as a whole number (7 % -> 70000), then compare cross-multiplied.
+  const SCALE = 10_000n;
+  const pct = BigInt(Math.round(maxIncreasePercent * Number(SCALE)));
+  const increase = BigInt(current.minor) - BigInt(approved.minor);
+  const base = BigInt(Math.abs(approved.minor));
+  return increase * 100n * SCALE > pct * base;
+}
+
 function assertSameCurrency(a: Money, b: Money): void {
   if (a.currency !== b.currency) {
     throw new Error(`Currency mismatch: ${a.currency} vs ${b.currency}`);

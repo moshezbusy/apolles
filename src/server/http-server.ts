@@ -16,7 +16,8 @@ const MAX_BODY = 256 * 1024;
  *   POST /v1/bookings                   BookRequest -> BookingRecord
  *   GET  /v1/bookings/:ref              -> BookingRecord
  *   POST /v1/bookings/:ref/cancel       -> BookingRecord
- *   POST /v1/reconcile                  settle UNKNOWN bookings (cron)
+ *   POST /v1/bookings/:ref/resolve      {status, note, supplierBookingRef?} a person settles a NEEDS_REVIEW booking
+ *   POST /v1/reconcile                  settle bookings waiting for a supplier answer (cron)
  *   GET  /health
  */
 export function createHttpServer(service: SupplierService, apiKey: string): Server {
@@ -46,6 +47,7 @@ export function createHttpServer(service: SupplierService, apiKey: string): Serv
         const ref = decodePathPart(parts[2]);
         if (req.method === 'GET' && parts.length === 3) return send(res, 200, await service.getBooking(ref));
         if (req.method === 'POST' && parts[3] === 'cancel' && parts.length === 4) return send(res, 200, await service.cancel(ref, requestId));
+        if (req.method === 'POST' && parts[3] === 'resolve' && parts.length === 4) return send(res, 200, await service.resolve(ref, await readJson(req)));
       }
       if (req.method === 'POST' && url.pathname === '/v1/reconcile') {
         return send(res, 200, { bookings: await service.reconcilePending() });

@@ -146,3 +146,43 @@ describe('quote and book', () => {
     await expect(s.service.book(bookReq(q.quoteId, q.offer.total))).rejects.toMatchObject({ code: 'QUOTE_EXPIRED' });
   });
 });
+
+describe('search details', () => {
+  it('reports hotel ids no supplier knows, instead of dropping them silently', async () => {
+    const { service } = setup();
+    const r = await service.search({ ...search, hotelIds: ['APL-1', 'APL-NOPE'] });
+    expect(r.unmappedHotelIds).toEqual(['APL-NOPE']);
+    expect(r.suppliers.find((s) => s.supplierId === 'alpha')!.unmappedHotels).toBe(1);
+    expect((await service.search(search)).unmappedHotelIds).toEqual([]);
+  });
+
+  it('a request the supplier refuses as invalid does not open the circuit', async () => {
+    const { service } = setup({ searchValidationError: true });
+    for (let i = 0; i < 6; i++) await service.search(search);
+    const r = await service.search(search);
+    const alpha = r.suppliers.find((s) => s.supplierId === 'alpha')!;
+    expect(alpha.skipped).toBeUndefined();
+    expect(alpha.ok).toBe(false);
+  });
+
+  it('one failed part of a split search keeps the offers of the other parts', async () => {
+    const s = setup({ searchFailsForCodes: ['A2'] });
+    (s.a.capabilities as { maxHotelsPerSearch: number }).maxHotelsPerSearch = 1;
+    (s.a as unknown as { hotels: unknown[] }).hotels.push({ code: 'A2', name: 'Alpha Two', nightly: '100.00', currency: 'USD' });
+    s.mapping.load({ supplierId: 'alpha', hotels: { 'APL-1': 'A1', 'APL-2': 'A2' } });
+    const r = await s.service.search({ ...search, hotelIds: ['APL-1', 'APL-2'], suppliers: ['alpha'] });
+    expect(r.offers.length).toBeGreaterThan(0);
+    expect(new Set(r.offers.map((o) => o.hotelId))).toEqual(new Set(['APL-1']));
+    const alpha = r.suppliers[0]!;
+    expect(alpha.ok).toBe(true);
+    expect(alpha.failedParts).toBe(1);
+    expect(alpha.error).toMatch(/1 of 2/);
+  });
+
+  it('never shows refundable when the first penalty date is already past', async () => {
+    const past = setup({ penaltyFrom: '2026-11-01T00:00:00.000Z' }); // "now" in tests is 2026-11-14
+    expect((await past.service.search(search)).offers.find((o) => o.supplierId === 'alpha')!.cancellation.refundable).toBe(false);
+    const future = setup({ penaltyFrom: '2027-02-01T00:00:00.000Z' });
+    expect((await future.service.search(search)).offers.find((o) => o.supplierId === 'alpha')!.cancellation.refundable).toBe(true);
+  });
+});
