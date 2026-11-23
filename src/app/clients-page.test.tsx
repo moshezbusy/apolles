@@ -11,6 +11,7 @@ vi.mock("next/navigation", () => ({
   redirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
+  usePathname: vi.fn(() => "/clients"),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/server/auth/guards", () => ({ requireAgent: vi.fn() }));
@@ -186,4 +187,8 @@ describe("client actions", () => {
 it("the header links to Clients", () => {
   const html = renderToStaticMarkup(<Header agencyName="Sunrise Travel" balanceCents={0} />);
   expect(html).toMatch(/<a[^>]*href="\/clients"[^>]*>Clients<\/a>/);
+  // On /clients the Quotes section is marked, and Clients in the phone menu is the open page.
+  expect(html).toMatch(/<span class="font-bold text-brand[^"]*">Quotes<\/span>/);
+  expect(html).toMatch(/<a aria-current="page"[^>]*href="\/clients"/);
+  expect(html).not.toMatch(/<a[^>]*aria-current="page"[^>]*href="\/search"/);
 });
