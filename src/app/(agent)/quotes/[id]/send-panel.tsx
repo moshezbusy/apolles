@@ -6,6 +6,8 @@ import { alertError, alertInfo, alertSuccess, btnPrimary, btnSecondary, inputUns
 import type { SendState } from "../actions";
 import { useQuoteDirty } from "./dirty";
 
+const WHATSAPP_START = "https://wa.me/";
+
 type Action = (quoteId: string, confirmNetPrice?: boolean) => Promise<SendState>;
 type Kind = "whatsapp" | "email" | "copy";
 
@@ -61,7 +63,9 @@ export function SendPanel({
     const tab = window.open("", "_blank");
     start(async () => {
       const result = await actions.whatsapp(quoteId, confirm);
-      if (refused("whatsapp", result) || !result.url) {
+      // Only ever a WhatsApp address: the part after the fixed start is all that comes from the server.
+      const rest = result.ok && result.url?.startsWith(WHATSAPP_START) ? result.url.slice(WHATSAPP_START.length) : null;
+      if (refused("whatsapp", result) || !rest) {
         tab?.close();
         if (result.ok) setState({ kind: "error", text: "WhatsApp could not be opened. Try again, or copy the client link." });
         return;
@@ -69,8 +73,8 @@ export function SendPanel({
       setAtCost(null);
       if (tab) {
         tab.opener = null;
-        tab.location.href = result.url;
-      } else window.location.href = result.url;
+        tab.location.href = "https://wa.me/" + rest;
+      } else window.location.href = "https://wa.me/" + rest;
       setState({ kind: "ok", text: "WhatsApp opened with the message. The quote is marked as sent." });
     });
   }
