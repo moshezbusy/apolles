@@ -6,7 +6,10 @@ import { alertError, alertInfo, alertSuccess, card, link, pageTitle, sectionTitl
 import { formatUsd } from "@/lib/money";
 import { supportContact } from "@/server/app-info";
 import { requireAgent } from "@/server/auth/guards";
-import { STATUS_LABEL } from "@/server/booking/list";
+import { bookingQuote } from "@/server/booking/list";
+import { freeCancelText } from "@/server/booking/free-cancel";
+import { clientOfBooking } from "@/server/clients";
+import { quoteCode } from "@/server/quotes/quotes";
 import { CANCEL_MESSAGES, cancelQuote, getBooking, getBookingRooms } from "@/server/booking/service";
 import { getContent } from "@/server/content/content-cache";
 import { recentSearches } from "@/server/search/recent";
@@ -15,11 +18,15 @@ import { type StoredGuest, guestLines, oneRoomConfirmation, roomGuestLines, room
 import { CancellationPolicy, Policies, PriceDetails } from "../../_components/hotel-info";
 import { shortDate, stayText } from "../../search/parts";
 import { SellingPrice } from "../../_components/selling-price";
-import { cancelAction, emailClientAction, sellingPriceAction } from "./actions";
+import { cancelAction, changeRequestAction, emailClientAction, sellingPriceAction } from "./actions";
+import { ChangeRequestForm } from "./change-request";
+import { CHANGE_REQUEST_MAX_LENGTH, listChangeRequestsForBooking } from "@/server/change-requests";
 import { CancelButton } from "./cancel-button";
 import { PendingRefresh } from "./pending-refresh";
 import { EmailToClient } from "./email-client";
-import { clientEmailDefault } from "@/server/booking/client-email";
+import { clientEmailDefault, lastClientEmail } from "@/server/booking/client-email";
+import { BookingStatusPill } from "../status-pill";
+import { CopyDetails } from "./copy-details";
 
 export const metadata: Metadata = { title: "Booking | Apolles", robots: { index: false, follow: false } };
 
@@ -41,14 +48,26 @@ const RESTORED_SHOWN_MS = 7 * 86_400_000;
 
 const PAID_DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
-const STATUS_TONE: Record<string, string> = {
-  CONFIRMED: "bg-brand-soft text-brand",
-  PENDING_CONFIRMATION: "bg-[#fff2c7] text-[#6f5a20]",
-  CANCEL_PENDING: "bg-[#fff2c7] text-[#6f5a20]",
-  FAILED: "bg-[#fbecea] text-[#9b3b2e]",
-  CANCELLED: "bg-[#f1efe9] text-[#5f6863]",
-  CANCELLED_BY_SUPPLIER: "bg-[#fbecea] text-[#9b3b2e]",
-};
+// "Nov 23, 2026 at 14:15 UTC".
+function whenUtc(at: Date): string {
+  return `${PAID_DAY.format(at)} at ${at.toISOString().slice(11, 16)} UTC`;
+}
+
+// "Copy details" (mockup 12): what the client needs, as plain text, without any price.
+function copyText(b: { reference: string; hotelName: string; hotelCity: string; roomName: string; checkin: string; checkout: string; specialRequest: string }, lines: { stay: string; guests: string[]; confirmation: string | null; cancellation: string }): string {
+  return [
+    `Booking ${b.reference}`,
+    `${b.hotelName}, ${b.hotelCity}`,
+    `Check-in: ${shortDate(b.checkin)}`,
+    `Check-out: ${shortDate(b.checkout)}`,
+    `Stay: ${lines.stay}`,
+    `Room: ${b.roomName}`,
+    `Guests: ${lines.guests.join(", ")}`,
+    ...(lines.confirmation ? [`Hotel confirmation: ${lines.confirmation}`] : []),
+    ...(b.specialRequest ? [`Special requests: ${b.specialRequest} (not guaranteed)`] : []),
+    lines.cancellation,
+  ].join("\n");
+}
 
 // Screen 12: one booking of the agency, with its status, references, stay, price and policy,
 // and cancellation (today's charge first). Voucher and invoice PDFs come in plan 4. A booking of
@@ -75,6 +94,22 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
   const waitingText = b.status === "CONFIRMED" ? "Shown here once the hotel sends it" : "—";
   const quote = cancelQuote(b, rooms, now);
   const support = supportContact();
+  // Where the booking came from and who it is for (links), and when it was last emailed to the client.
+  const [fromQuote, client, lastSent, changes] = await Promise.all([
+    bookingQuote(agencyId, b.quoteId),
+    clientOfBooking(agencyId, b),
+    lastClientEmail(agencyId, b.id),
+    listChangeRequestsForBooking(agencyId, b.id),
+  ]);
+  const changeOpen = b.status === "CONFIRMED" || b.status === "PENDING_CONFIRMATION";
+  const freeText = b.status === "CONFIRMED" ? freeCancelText(b, now) : null;
+  const guestNames = severalRooms ? rooms.flatMap((room) => roomGuestLines(room)) : guestLines(b.guests as StoredGuest[], b.adults, b.childAges);
+  const details = copyText(b, {
+    stay,
+    guests: guestNames,
+    confirmation: severalRooms ? rooms.map((room) => room.hotelConfirmationId).filter(Boolean).join(", ") || null : oneRoomConfirmation(b, rooms),
+    cancellation: freeText ?? (b.refundable ? "Cancellation charges may apply: see the cancellation policy." : "Non-refundable."),
+  });
   // Hotel policies after booking too (EXP), best effort: the booking page works without them.
   let content: PropertyContent | null = null;
   try {
@@ -90,8 +125,28 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
       </Link>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <h1 className={pageTitle}>Booking {b.reference}</h1>
-        <span className={`rounded-full px-3 py-1 text-xs font-bold ${STATUS_TONE[b.status] ?? ""}`}>{STATUS_LABEL[b.status]}</span>
+        <BookingStatusPill status={b.status} />
       </div>
+      <p className="mt-1 text-[13px] text-muted">
+        Booked on {whenUtc(b.createdAt)}
+        {client ? (
+          <>
+            {" · Client "}
+            <Link href={`/clients?id=${encodeURIComponent(client.id)}`} className={link}>
+              {client.firstName} {client.lastName}
+            </Link>
+          </>
+        ) : null}
+        {fromQuote ? (
+          <>
+            {" · From quote "}
+            <Link href={`/quotes/${fromQuote.id}`} className={link}>
+              {quoteCode(fromQuote.number)}
+            </Link>
+          </>
+        ) : null}
+      </p>
+      {freeText ? <p className="mt-2 text-sm font-semibold text-[#2f7d4a]">{freeText}. Cancelling before then costs nothing.</p> : null}
       {notice ? (
         <p role="status" className={`${notice.tone === "ok" ? alertSuccess : notice.tone === "info" ? alertInfo : alertError} mt-4`}>
           {notice.text}
@@ -198,13 +253,26 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
                       <a href={`/bookings/${b.id}/voucher`} className={link}>
                         Download voucher (PDF)
                       </a>
-                      <EmailToClient action={emailClientAction} bookingId={b.id} defaultEmail={await clientEmailDefault(agencyId, b.id)} />
+                      <EmailToClient
+                        action={emailClientAction}
+                        bookingId={b.id}
+                        defaultEmail={await clientEmailDefault(agencyId, b.id)}
+                        lastSent={lastSent ? `Last sent on ${whenUtc(lastSent.at)}${lastSent.to ? ` to ${lastSent.to}` : ""}` : null}
+                      />
                     </>
                   ) : (
                     <span className="text-muted">Available once the booking is confirmed</span>
                   )}
                 </dd>
               </div>
+              {b.status === "CONFIRMED" ? (
+                <div>
+                  <dt className="font-semibold text-ink">Details for the client</dt>
+                  <dd>
+                    <CopyDetails text={details} />
+                  </dd>
+                </div>
+              ) : null}
               {b.chargedMinor !== null && ["CONFIRMED", "CANCEL_PENDING", "CANCELLED", "CANCELLED_BY_SUPPLIER"].includes(b.status) ? (
                 <div>
                   <dt className="font-semibold text-ink">Statement</dt>
@@ -297,6 +365,29 @@ export default async function BookingPage({ params, searchParams }: { params: Pa
               </div>
             ) : null}
           </section>
+
+          {changeOpen || changes.length > 0 ? (
+            <section aria-labelledby="change-title" className={`${card} bg-white p-5`}>
+              <h2 id="change-title" className={sectionTitle}>
+                Request a change
+              </h2>
+              {changes.length > 0 ? (
+                <ul className="mt-2 flex flex-col gap-2 text-[13px]">
+                  {changes.map((c) => (
+                    <li key={c.id} className="rounded-[10px] border border-line p-3">
+                      <p className="flex flex-wrap justify-between gap-2 text-xs text-muted">
+                        <span>Sent on {whenUtc(c.createdAt)}</span>
+                        <strong className={c.status === "DONE" ? "text-brand" : "text-[#6f5a20]"}>{c.status === "DONE" ? "Handled" : "Open"}</strong>
+                      </p>
+                      <p className="mt-1 whitespace-pre-line text-ink">{c.text}</p>
+                      {c.status === "DONE" && c.adminNote ? <p className="mt-1 whitespace-pre-line text-[#37413d]">Apolles: {c.adminNote}</p> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {changeOpen ? <ChangeRequestForm action={changeRequestAction} bookingId={b.id} maxLength={CHANGE_REQUEST_MAX_LENGTH} /> : null}
+            </section>
+          ) : null}
 
           {b.status === "CONFIRMED" ? (
             <section aria-labelledby="cancel-title" className={`${card} bg-white p-5`}>

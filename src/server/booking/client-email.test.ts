@@ -3,7 +3,7 @@ import { db } from "@/server/db";
 import { sendEmail, type EmailMessage } from "@/server/email/port";
 import { seedRateLimit } from "@/test/rate-limit";
 import { resetTestDb } from "@/test/db";
-import { clientEmailDefault, emailBookingToClient } from "./client-email";
+import { clientEmailDefault, emailBookingToClient, lastClientEmail } from "./client-email";
 
 vi.mock("@/server/email/port", () => ({ sendEmail: vi.fn(async () => {}) }));
 
@@ -44,6 +44,9 @@ describe("email the booking to the client (plan 8g)", () => {
     expect(msg!.attachments![0]!.content.subarray(0, 5).toString()).toBe("%PDF-");
     const row = await db.auditLog.findFirstOrThrow({ where: { action: "booking.email-client" } });
     expect(JSON.stringify(row)).not.toContain("client@example.com");
+    // The booking page says when and to whom (masked) it was last sent; another agency sees nothing.
+    expect(await lastClientEmail("A", "bk1")).toEqual({ at: row.createdAt, to: "cl•••@example.com" });
+    expect(await lastClientEmail("B", "bk1")).toBeNull();
   });
 
   it("one room: as before plan 10, with the room's own hotel confirmation when the booking has none", async () => {

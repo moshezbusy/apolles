@@ -1,6 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Booking, BookingRoom, BookingStatus, Prisma } from "@/generated/prisma/client";
+import { GUEST_NAME_PATTERN } from "@/lib/guest-name";
 import { formatUsd } from "@/lib/money";
 import { db } from "@/server/db";
 import { enqueue } from "@/server/jobs/queue";
@@ -42,7 +43,15 @@ export type BookingContext = { agencyId: string; userId: string; supplierContext
 type Supplier = SupplierAdapter & BookingSupplier;
 type Deps = { supplier?: Supplier; now?: Date };
 
-export class BookingInputInvalid extends Error {}
+// `fields`: where the input was wrong ("rooms.0.guests.1.givenName", "leadEmail", ...), so the
+// form can mark those fields; empty when the message is about the whole form.
+export class BookingInputInvalid extends Error {
+  readonly fields: string[];
+  constructor(message?: string, fields: string[] = []) {
+    super(message);
+    this.fields = fields;
+  }
+}
 export class BookingNotFound extends Error {}
 export class BookingRateExpired extends Error {}
 export class BookingUnavailable extends Error {}
@@ -96,7 +105,7 @@ const name = z
   .trim()
   .min(1)
   .max(60)
-  .regex(/^[\p{L}][\p{L}\p{M} '.-]*$/u); // letters, spaces, apostrophes, dots and hyphens
+  .regex(GUEST_NAME_PATTERN); // Latin letters as on travel documents, spaces, apostrophes, dots and hyphens
 // Title (Mr/Mrs/Ms) is for the agency's documents (voucher); Rapid takes no title.
 const guestSchema = z.object({ givenName: name, familyName: name, title: z.enum(["MR", "MRS", "MS"]).optional() }).strict();
 
@@ -234,7 +243,7 @@ export async function getBooking(agencyId: string, bookingId: string): Promise<B
 export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: Deps = {}): Promise<{ bookingId: string }> {
   const now = deps.now ?? new Date();
   const parsed = draftInputSchema.safeParse(rawInput);
-  if (!parsed.success) throw new BookingInputInvalid("Check the guest names, email and phone.");
+  if (!parsed.success) throw new BookingInputInvalid("Check the guest names, email and phone.", parsed.error.issues.map((issue) => issue.path.join(".")));
   const input = parsed.data;
   const specialRequest = specialRequestText(input.specialRequests);
   if (requestHasPersonalDetails(specialRequest)) {
@@ -412,7 +421,7 @@ export async function prepareReview(ctx: BookingContext, bookingId: string, deps
 export type BookOutcome =
   | { kind: "confirmed" | "pending" | "failed" | "already"; bookingId: string }
   | { kind: "insufficient"; shortfallMinor: number }
-  | { kind: "review_again"; message: string };
+  | { kind: "review_again"; message: string; stale?: boolean };
 
 function holdKey(id: string, what: "hold" | "capture" | "release" | "refund"): string {
   return `booking:${id}:${what}`;
@@ -459,7 +468,7 @@ export async function book(
   if (booking.status !== "DRAFT") return { kind: "already", bookingId: booking.id };
   if (!confirm.acceptedTerms) return { kind: "review_again", message: "Accept the terms and conditions to book." };
   if (!booking.bookToken || !booking.priceCheckedAt || now.getTime() - booking.priceCheckedAt.getTime() > PRICE_CHECK_VALID_MS) {
-    return { kind: "review_again", message: "The price check is too old. Review the price again before booking." };
+    return { kind: "review_again", message: "The price check is too old. Review the price again before booking.", stale: true };
   }
   // The total the agent saw must still be the checked total (the browser's number is only compared).
   if (confirm.expectedTotalMinor !== booking.totalMinor) {

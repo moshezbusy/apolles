@@ -7,8 +7,10 @@ import { SESSION_COOKIE, createSession } from "@/server/auth/session";
 import { requireAgentPendingCode, requireAdmin, requireAdminPendingTotp, requireAgent } from "@/server/auth/guards";
 
 const cookieJar = new Map<string, string>();
+const requestHeaders = new Map<string, string>();
 
 vi.mock("next/headers", () => ({
+  headers: async () => new Headers(Object.fromEntries(requestHeaders)),
   cookies: async () => ({
     get: (name: string) => {
       const value = cookieJar.get(name);
@@ -57,6 +59,21 @@ describe("auth guards", () => {
   beforeEach(async () => {
     await resetTestDb();
     cookieJar.clear();
+    requestHeaders.clear();
+  });
+
+  it("a session that ended on an agent page goes to sign-in with that page as `next`", async () => {
+    await agentSession();
+    await db.session.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
+    requestHeaders.set("x-apolles-path", "/bookings?status=CONFIRMED");
+    await expect(requireAgent()).rejects.toThrow(/^NEXT_REDIRECT:\/login\?expired=1&next=%2Fbookings%3Fstatus%3DCONFIRMED$/);
+    cookieJar.clear();
+    await expect(requireAgent()).rejects.toThrow(/^NEXT_REDIRECT:\/login\?next=%2Fbookings%3Fstatus%3DCONFIRMED$/);
+  });
+
+  it("a path that could lead to another site is not passed on", async () => {
+    requestHeaders.set("x-apolles-path", "//evil.example/x");
+    await expect(requireAgent()).rejects.toThrow(/^NEXT_REDIRECT:\/login$/);
   });
 
   it("an agent session still waiting for its email code → /login/verify; the verify page's guard lets it in", async () => {

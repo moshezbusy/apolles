@@ -211,10 +211,11 @@ describe("booking emails (to the agent)", () => {
     await booking("CONFIRMED");
     await db.booking.update({
       where: { id: "bk1" },
-      data: { guests: [{ givenName: "Dana", familyName: "Levi", title: "MRS" }, { givenName: "Avi", familyName: "Levi" }], specialRequest: "High floor.", freeCancelEndsAt: new Date("2099-04-07T12:00:00Z") },
+      data: { guests: [{ givenName: "Dana", familyName: "Levi", title: "MRS" }, { givenName: "Avi", familyName: "Levi" }], specialRequest: "High floor.", freeCancelEndsAt: new Date("2099-04-07T11:50:00Z"), cancelPenalties: [{ start: "2099-04-07T14:00:00.000+02:00", end: "2099-04-08T00:00:00.000+02:00", amount: null, nights: 1, percent: null }] },
     });
     await sendBookingEmail("bk1", "confirmed");
-    for (const t of ["Mrs Dana Levi", "Avi Levi", "High floor.", "Free cancellation until Apr 7, 2099, 12:00 UTC"]) expect(sent[0]!.text).toContain(t);
+    // The one wording, in the hotel's own time (as on the booking page and the voucher).
+    for (const t of ["Mrs Dana Levi", "Avi Levi", "High floor.", "Free cancellation until Tue, Apr 7, 2099, 14:00 hotel time."]) expect(sent[0]!.text).toContain(t);
   });
 
   it("low balance: once per drop under USD 500; any credit back over 500 re-arms it; a failed send is retried", async () => {
@@ -248,12 +249,12 @@ describe("booking emails (to the agent)", () => {
   it("free cancellation ends in 72 hours: once per booking, only for confirmed ones in the window", async () => {
     await booking("CONFIRMED");
     const now = new Date("2099-04-05T12:00:00Z");
-    await db.booking.update({ where: { id: "bk1" }, data: { freeCancelEndsAt: new Date("2099-04-07T12:00:00Z") } });
+    await db.booking.update({ where: { id: "bk1" }, data: { freeCancelEndsAt: new Date("2099-04-07T12:00:00Z"), cancelPenalties: [{ start: "2099-04-07T14:10:00.000+02:00", end: "2099-04-08T00:00:00.000+02:00", amount: null, nights: 1, percent: null }] } });
     expect(await sendFreeCancelReminders(new Date("2099-04-01T12:00:00Z"))).toBe(0); // too early
     expect(await sendFreeCancelReminders(now)).toBe(1);
     expect(await sendFreeCancelReminders(now)).toBe(0);
     const m = sent.find((x) => x.subject === "Free cancellation ends in 72 hours: APL-MAIL0001")!;
-    expect(m.text).toContain("Apr 7, 2099, 12:00 UTC");
+    expect(m.text).toContain("Booking APL-MAIL0001: Free cancellation until Tue, Apr 7, 2099, 14:10 hotel time.");
   });
 
   it("a reminder that could not be sent is tried again next hour; none for a booking made inside the 72 hours", async () => {

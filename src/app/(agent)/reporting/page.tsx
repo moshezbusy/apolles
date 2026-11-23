@@ -76,9 +76,9 @@ export default async function ReportingPage({
         <div>
           <h1 className={pageTitle}>Reporting</h1>
           <p className="mt-1 text-[13px] text-muted">
-            Track bookings, sales, profit and balance activity.{" "}
+            Track bookings, sales, profit and balance activity. By booking date: bookings made from{" "}
             {day(period.from)} to{" "}
-            {fullDay.format(new Date(`${period.to}T00:00:00Z`))}.
+            {fullDay.format(new Date(`${period.to}T00:00:00Z`))} (UTC), whatever their stay dates.
           </p>
         </div>
         <a href={`/reporting/export?${query(period)}`} className={btnSecondary}>
@@ -140,7 +140,7 @@ export default async function ReportingPage({
           note={`${percent(t.marginBp)} average margin`}
           extra={
             t.withoutPriceCount > 0 ? (
-              <Link href="/bookings" className={`${link} text-xs`}>
+              <Link href={`/bookings?tab=all&unpriced=1&bookedFrom=${period.from}&bookedTo=${period.to}`} className={`${link} text-xs`}>
                 {t.withoutPriceCount}{" "}
                 {t.withoutPriceCount === 1 ? "booking" : "bookings"} without a
                 selling price →

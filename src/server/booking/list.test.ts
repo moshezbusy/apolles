@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { BookingStatus } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
-import { bookingsCsv, listBookings } from "./list";
+import { bookingIdsByReference, bookingsCsv, listBookings } from "./list";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 
@@ -78,6 +78,37 @@ describe("listBookings", () => {
     expect((await listBookings("A", { tab: "all", q: "a0000002" }, NOW)).rows.map((r) => r.reference)).toEqual(["APL-A0000002"]);
     expect((await listBookings("A", { tab: "all", q: "%" }, NOW)).rows).toEqual([]);
     expect((await listBookings("A", { tab: "all", q: "APL-B0000006" }, NOW)).rows).toEqual([]);
+  });
+
+  it("not confirmed and not finished tabs; drafts only in Not finished, never another agency's", async () => {
+    await make("A", 9, "FAILED", "2027-04-10");
+    expect((await listBookings("A", { tab: "failed" }, NOW)).rows.map((r) => r.reference)).toEqual(["APL-A0000009"]);
+    expect((await listBookings("A", { tab: "not_finished" }, NOW)).rows.map((r) => r.reference)).toEqual(["APL-A0000005"]);
+    expect((await listBookings("B", { tab: "not_finished" }, NOW)).rows).toEqual([]);
+  });
+
+  it("filters by booked date and check-in date, with the total count of the filtered list", async () => {
+    // Booking n was made n minutes before NOW (2027-03-01 10:00 UTC); move two to other days.
+    await db.booking.update({ where: { reference: "APL-A0000002" }, data: { createdAt: new Date("2027-02-10T23:30:00Z") } });
+    await db.booking.update({ where: { reference: "APL-A0000003" }, data: { createdAt: new Date("2027-01-05T08:00:00Z") } });
+    const booked = await listBookings("A", { tab: "all", bookedFrom: "2027-02-10", bookedTo: "2027-02-10" }, NOW);
+    expect(booked.rows.map((r) => r.reference)).toEqual(["APL-A0000002"]);
+    expect(booked.total).toBe(1);
+    const checkin = await listBookings("A", { tab: "all", checkinFrom: "2027-04-01", checkinTo: "2027-05-31" }, NOW);
+    expect(checkin.rows.map((r) => r.reference)).toEqual(["APL-A0000001", "APL-A0000003"]);
+    expect((await listBookings("A", { tab: "all" }, NOW)).total).toBe(4);
+    // A date that is not a day is ignored, never an error.
+    expect((await listBookings("A", { tab: "all", bookedFrom: "2027-02-31x" }, NOW)).total).toBe(4);
+  });
+
+  it("without a selling price: live bookings with no selling price, as the reports count them", async () => {
+    await db.booking.update({ where: { reference: "APL-A0000002" }, data: { sellMarkupType: "PERCENT", sellMarkupValue: 1_000 } });
+    expect((await listBookings("A", { tab: "all", unpriced: true }, NOW)).rows.map((r) => r.reference)).toEqual(["APL-A0000001", "APL-A0000003"]);
+  });
+
+  it("booking ids by reference: the agency's own only", async () => {
+    const ids = await bookingIdsByReference("A", ["APL-A0000001", "APL-B0000006", "nope"]);
+    expect([...ids.keys()]).toEqual(["APL-A0000001"]);
   });
 
   it("pages with a cursor", async () => {

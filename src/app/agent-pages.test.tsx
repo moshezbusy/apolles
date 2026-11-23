@@ -10,6 +10,7 @@ vi.mock("next/navigation", () => ({
   redirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
+  usePathname: vi.fn(() => null), // the header marks the open section (NavSection.tsx)
 }));
 vi.mock("@/server/auth/guards", () => ({ requireAgent: vi.fn() }));
 
@@ -21,7 +22,7 @@ const BANK_ENV = {
   BANK_DETAILS_SWIFT: "TESTILIT",
 } as const;
 
-const NOTE = "Top-ups are credited after Apolles confirms the transfer. USD only.";
+const NOTE = "The amount is added to your balance once Apolles confirms the transfer, usually within 1 to 3 business days.";
 
 async function createAgency(name: string, bankReference: string): Promise<string> {
   return (await db.agency.create({ data: { name, country: "IL", bankReference } })).id;
@@ -31,10 +32,10 @@ function signInAs(agencyId: string): void {
   vi.mocked(requireAgent).mockResolvedValue({ userId: "user-1", agencyId });
 }
 
-async function renderBalance(cursor?: string): Promise<string> {
+async function renderBalance(shown?: string): Promise<string> {
   const { default: BalancePage } = await import("./(agent)/balance/page");
   return renderToStaticMarkup(
-    await BalancePage({ searchParams: Promise.resolve(cursor === undefined ? {} : { cursor }) }),
+    await BalancePage({ searchParams: Promise.resolve(shown === undefined ? {} : { shown }) }),
   );
 }
 
@@ -188,8 +189,9 @@ describe("agent pages", () => {
 
       const rows = rowsOf(html);
       expect(rows).toHaveLength(2);
-      expect(rows[0]).toMatch(/\|Hold\|-USD 300.00\|USD 700.00\|/);
-      expect(rows[1]).toMatch(/\|2026-11-01 10:00 UTC\|Top-up · bank transfer\|\+USD 1,000.00\|USD 1,000.00\|/);
+      // Each row: its booking (no booking of this agency has BK-1: no link) and its reason.
+      expect(rows[0]).toMatch(/\|Hold\|Booking \|BK-1\|.*\|-USD 300.00\|USD 700.00\|/);
+      expect(rows[1]).toMatch(/\|2026-11-01 10:00 UTC\|Top-up · bank transfer\|t\|\+USD 1,000.00\|USD 1,000.00\|/);
     });
 
     it("labels every entry type", async () => {
@@ -226,7 +228,7 @@ describe("agent pages", () => {
       ]) {
         expect(section).toContain(`${label} ${value}`);
       }
-      expect(section).toContain("Reference: APL-1042");
+      expect(section).toContain("Your reference: APL-1042");
       expect(html).toContain(NOTE);
       expect(html).not.toMatch(/card/i);
     });
@@ -238,10 +240,31 @@ describe("agent pages", () => {
       expect(section).toContain("Beneficiary Apolles Test Ltd");
       expect(section).not.toContain("IBAN");
       expect(section).not.toContain("SWIFT");
-      expect(section).toContain("Reference: APL-1042");
+      expect(section).toContain("Your reference: APL-1042");
     });
 
-    it("pages the history with Load more, and an invalid cursor goes back to /balance", async () => {
+    it("no bank details set up at all: says so and whom to ask, never an empty box", async () => {
+      for (const name of Object.keys(BANK_ENV)) delete process.env[name];
+      const section = textOf(await renderBalance(), "bank-transfer");
+      expect(section).toContain("The bank details for top-ups are not set up yet. Contact Apolles support");
+      expect(section).toContain("Your reference: APL-1042");
+    });
+
+    it("a row of one of the agency's bookings links to it", async () => {
+      await db.user.create({ data: { id: "user-1", email: "agent@test.local", name: "Agent", role: "AGENT", agencyId } });
+      const booking = await db.booking.create({
+        data: {
+          reference: "APL-LINK0001", agencyId, userId: "user-1", status: "CONFIRMED", propertyId: "1", hotelName: "Hotel", hotelCity: "Paris", roomId: "r", roomName: "Room", rateId: "x",
+          bedGroupId: "b", bedDescription: "Bed", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [], leadGivenName: "Dana", leadFamilyName: "Levi", leadEmail: "d@example.com",
+          leadPhone: "+972 501234567", guests: [], refundable: true, totalMinor: 30000, currency: "USD", price: {}, cancelPenalties: [], nonrefundableDateRanges: [], priceCheckToken: "t",
+        },
+      });
+      await credit({ agencyId, type: "TOPUP_BANK", amountCents: 100000, reason: "t", idempotencyKey: "t-1" });
+      await placeHold({ agencyId, amountCents: 30000, bookingRef: "APL-LINK0001", idempotencyKey: "h-1" });
+      expect(await renderBalance()).toContain(`href="/bookings/${booking.id}"`);
+    });
+
+    it("Load more shows the next rows below the ones already shown", async () => {
       await db.ledgerEntry.createMany({
         data: Array.from({ length: 51 }, (_, i) => ({
           agencyId,
@@ -253,16 +276,18 @@ describe("agent pages", () => {
         })),
       });
       const html = await renderBalance();
-      const next = /href="\/balance\?cursor=([^"]+)"[^>]*>Load more/.exec(html)?.[1];
-      expect(next).toBeDefined();
-      const second = await renderBalance(decodeURIComponent(next ?? ""));
-      expect(second).not.toContain("Load more");
+      const next = /href="\/balance\?shown=(\d+)#history"[^>]*>Load more/.exec(html)?.[1];
+      expect(next).toBe("100");
+      const both = await renderBalance(next);
+      expect(both).not.toContain("Load more");
       expect(rowsOf(html)).toHaveLength(50);
       expect(rowsOf(html)[0]).toMatch(/\|\+USD 1.00\|USD 51.00\|$/);
-      // Page 2 holds only the oldest row: its balance after is its own amount.
-      expect(rowsOf(second)).toEqual([expect.stringMatching(/^\|2026-01-01 00:00 UTC\|Top-up · bank transfer\|\+USD 1.00\|USD 1.00\|$/)]);
-
-      await expect(renderBalance("not-a-cursor")).rejects.toThrow("NEXT_REDIRECT:/balance");
+      // The first 50 again, and the oldest row below them: its balance after is its own amount.
+      expect(rowsOf(both)).toHaveLength(51);
+      expect(rowsOf(both)[0]).toBe(rowsOf(html)[0]);
+      expect(rowsOf(both)[50]).toMatch(/^\|2026-01-01 00:00 UTC\|Top-up · bank transfer\|seed\|\+USD 1.00\|USD 1.00\|$/);
+      // A number that is not one shows the first page.
+      expect(rowsOf(await renderBalance("x"))).toHaveLength(50);
     });
   });
 });

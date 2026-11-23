@@ -7,6 +7,7 @@ import { requireAgent } from "@/server/auth/guards";
 import { BookingNotFound, cancel } from "@/server/booking/service";
 import { setSellingPrice } from "@/server/booking/selling";
 import { emailBookingToClient } from "@/server/booking/client-email";
+import { CHANGE_REQUEST_MAX_LENGTH, ChangeRequestNotAllowed, type ChangeRequestRefusal, createChangeRequest } from "@/server/change-requests";
 import { supplierContextFrom } from "@/server/supplier-context";
 
 // "Confirm cancellation" (screen 12). The charge sent is only compared with the charge the
@@ -62,5 +63,35 @@ export async function emailClientAction(_previous: EmailClientState, formData: F
   const email = formData.get("email");
   if (typeof bookingId !== "string" || typeof email !== "string") return { status: "error", message: "Enter one valid email address." };
   const result = await emailBookingToClient(userId, agencyId, { bookingId: bookingId.slice(0, 64), email: email.slice(0, 300) });
-  return result.ok ? { status: "success", message: "The voucher was emailed to the client." } : { status: "error", message: result.error };
+  if (!result.ok) return { status: "error", message: result.error };
+  revalidatePath(`/bookings/${bookingId.slice(0, 64)}`); // the page says when it was last sent
+  return { status: "success", message: "The voucher was emailed to the client." };
+}
+
+export type ChangeRequestState = { status: "success" | "error"; message: string; text?: string } | null;
+
+const CHANGE_REFUSED: Record<ChangeRequestRefusal, string> = {
+  not_found: "This booking was not found. Open it again from Bookings.",
+  not_open: "A change can be asked for only while the booking is confirmed or waiting for the hotel. Contact Apolles support.",
+  too_many: "You sent many change requests in the last hour. Try again later, or contact Apolles support.",
+  invalid: `Write what should change, in up to ${CHANGE_REQUEST_MAX_LENGTH.toLocaleString("en-US")} characters.`,
+};
+
+// "Request a change" (screen 12, spec 7a): the request goes to Apolles, who handles it with the
+// hotel; nothing about the booking changes by itself. The service checks the booking, its status,
+// the author and the limits.
+export async function changeRequestAction(_previous: ChangeRequestState, formData: FormData): Promise<ChangeRequestState> {
+  const { userId, agencyId } = await requireAgent();
+  const rawId = formData.get("bookingId");
+  const rawText = formData.get("text");
+  const bookingId = typeof rawId === "string" ? rawId.slice(0, 64) : "";
+  const text = typeof rawText === "string" ? rawText.slice(0, CHANGE_REQUEST_MAX_LENGTH * 2) : "";
+  try {
+    await createChangeRequest(agencyId, userId, bookingId, text);
+  } catch (error) {
+    if (error instanceof ChangeRequestNotAllowed) return { status: "error", message: CHANGE_REFUSED[error.code], text: text.slice(0, CHANGE_REQUEST_MAX_LENGTH) };
+    throw error;
+  }
+  revalidatePath(`/bookings/${bookingId}`); // the page lists the request
+  return { status: "success", message: "Your change request was sent to Apolles. Its answer shows on this page once it is handled." };
 }

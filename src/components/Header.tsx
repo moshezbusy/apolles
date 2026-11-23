@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createQuoteAction } from "@/app/(agent)/quotes/actions";
+import { MenuLink, SectionLabel, SectionLink, type NavSectionId } from "@/components/NavSection";
 import { PhoneMenu, PhoneMenuSection, phoneMenuItem } from "@/components/PhoneMenu";
 import { SignOutButton } from "@/components/SignOutButton";
 import { formatUsd } from "@/lib/money";
@@ -8,6 +9,7 @@ import { formatUsd } from "@/lib/money";
 // stays, Completed, Cancelled) and Reporting (Overview, Balance history) are menus: plain <details> elements, so they need no client JavaScript.
 // Below lg the menus do not fit: a "Menu" button opens one panel with all of them, the agency's
 // settings and Sign out (plan 9). data-menu: MenuCloser closes an open menu on a tap outside.
+// The section of the open page is marked (NavSection.tsx), in the bar and in the phone menu.
 
 const BOOKINGS = [
   { href: "/bookings", label: "All bookings" },
@@ -33,18 +35,29 @@ export function initials(name: string): string {
   return letters.toUpperCase();
 }
 
-function DesktopMenu({ label, children }: { label: string; children: React.ReactNode }) {
+// "2 new": quotes with a client selection or message the agent has not opened yet.
+function NewBadge({ count }: { count: number }) {
+  return count > 0 ? (
+    <span className="ml-1 rounded-full bg-brand px-1.5 py-0.5 text-[10.5px] font-bold leading-none text-paper">
+      {count} new<span className="sr-only"> {count === 1 ? "quote with a client selection" : "quotes with client selections"}</span>
+    </span>
+  ) : null;
+}
+
+function DesktopMenu({ label, section, badge = 0, children }: { label: string; section: NavSectionId; badge?: number; children: React.ReactNode }) {
   return (
     <details data-menu="nav" className="relative">
       <summary className={menuSummary}>
-        {label} <span aria-hidden="true" className="text-[11px] text-[#8a938e]">▾</span>
+        <SectionLabel section={section}>{label}</SectionLabel>
+        <NewBadge count={badge} /> <span aria-hidden="true" className="text-[11px] text-[#8a938e]">▾</span>
       </summary>
       <div className={dropdown}>{children}</div>
     </details>
   );
 }
 
-export function Header({ agencyName, balanceCents }: { agencyName: string; balanceCents: number }) {
+// `newSelections`: the agency's quotes with a client selection not opened yet (a badge on Quotes).
+export function Header({ agencyName, balanceCents, newSelections = 0 }: { agencyName: string; balanceCents: number; newSelections?: number }) {
   return (
     <header className="sticky top-0 z-30 h-[68px] border-b border-line bg-white">
       <div className="mx-auto flex h-full w-[min(1260px,calc(100%-40px))] items-center gap-4 sm:gap-7">
@@ -53,10 +66,13 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
         </Link>
 
         <nav aria-label="Main" className="hidden h-full items-center gap-6 text-[13px] lg:flex">
-          <Link href="/search" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">Search</Link>
-          <DesktopMenu label="Quotes">
+          <SectionLink section="search" href="/search" className="flex h-full items-center font-semibold text-[#4d5a54] hover:text-brand">
+            Search
+          </SectionLink>
+          <DesktopMenu label="Quotes" section="quotes" badge={newSelections}>
             <Link href="/quotes" className={dropdownItem}>
               All quotes
+              <NewBadge count={newSelections} />
             </Link>
             <form action={createQuoteAction}>
               <button type="submit" className={`w-full ${dropdownItem}`}>
@@ -67,14 +83,14 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
               Clients
             </Link>
           </DesktopMenu>
-          <DesktopMenu label="Bookings">
+          <DesktopMenu label="Bookings" section="bookings">
             {BOOKINGS.map((item) => (
               <Link key={item.href} href={item.href} className={dropdownItem}>
                 {item.label}
               </Link>
             ))}
           </DesktopMenu>
-          <DesktopMenu label="Reporting">
+          <DesktopMenu label="Reporting" section="reporting">
             {REPORTING.map((item) => (
               <Link key={item.href} href={item.href} className={dropdownItem}>
                 {item.label}
@@ -119,44 +135,45 @@ export function Header({ agencyName, balanceCents }: { agencyName: string; balan
 
           <PhoneMenu className="lg:hidden">
             <PhoneMenuSection>
-              <Link href="/search" className={phoneMenuItem}>
+              <MenuLink href="/search" className={phoneMenuItem}>
                 Search hotels
-              </Link>
+              </MenuLink>
             </PhoneMenuSection>
             <PhoneMenuSection title="Quotes">
-              <Link href="/quotes" className={phoneMenuItem}>
+              <MenuLink href="/quotes" className={phoneMenuItem}>
                 All quotes
-              </Link>
+                <NewBadge count={newSelections} />
+              </MenuLink>
               <form action={createQuoteAction}>
                 <button type="submit" className={phoneMenuItem}>
                   New quote
                 </button>
               </form>
-              <Link href="/clients" className={phoneMenuItem}>
+              <MenuLink href="/clients" className={phoneMenuItem}>
                 Clients
-              </Link>
+              </MenuLink>
             </PhoneMenuSection>
             <PhoneMenuSection title="Bookings">
               {BOOKINGS.map((item) => (
-                <Link key={item.href} href={item.href} className={phoneMenuItem}>
+                <MenuLink key={item.href} href={item.href} className={phoneMenuItem}>
                   {item.label}
-                </Link>
+                </MenuLink>
               ))}
             </PhoneMenuSection>
             <PhoneMenuSection title="Reporting">
               {REPORTING.map((item) => (
-                <Link key={item.href} href={item.href} className={phoneMenuItem}>
+                <MenuLink key={item.href} href={item.href} className={phoneMenuItem}>
                   {item.label}
-                </Link>
+                </MenuLink>
               ))}
             </PhoneMenuSection>
             <PhoneMenuSection title={agencyName}>
-              <Link href="/settings" className={phoneMenuItem}>
+              <MenuLink href="/settings" className={phoneMenuItem}>
                 Agency settings
-              </Link>
-              <Link href="/balance" className={phoneMenuItem}>
+              </MenuLink>
+              <MenuLink href="/balance" className={phoneMenuItem}>
                 Balance &amp; top-ups
-              </Link>
+              </MenuLink>
               <SignOutButton className={phoneMenuItem} />
             </PhoneMenuSection>
           </PhoneMenu>

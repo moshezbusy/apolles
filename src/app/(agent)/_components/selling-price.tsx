@@ -19,23 +19,28 @@ function preview(netMinor: number, type: string, raw: string): { sale: number; p
 }
 
 // "Add your selling price (optional)" / "Your selling price" (screens 11, 12). For the agency's
-// reports only: it does not change the amount deducted and is not on the voucher.
+// reports only: it does not change the amount deducted and is not on the voucher. `suggested`:
+// the agency's default markup (Agency settings), filled in when nothing is saved yet; it is
+// saved only when the agent chooses "Save selling price".
 export function SellingPrice({
   action,
   bookingId,
   netMinor,
   saved,
+  suggested,
   title,
 }: {
   action: Action;
   bookingId: string;
   netMinor: number;
   saved: { markupType: "PERCENT" | "FIXED"; markupValue: number } | null;
+  suggested?: { markupType: "PERCENT" | "FIXED"; markupValue: number } | null;
   title: string;
 }) {
   const [state, formAction, pending] = useActionState<State, FormData>(action, null);
-  const [type, setType] = useState<string>(saved?.markupType ?? "PERCENT");
-  const [value, setValue] = useState(saved ? String(saved.markupValue / 100) : "");
+  const start = saved ?? (suggested && suggested.markupValue > 0 ? suggested : null);
+  const [type, setType] = useState<string>(start?.markupType ?? "PERCENT");
+  const [value, setValue] = useState(start ? String(start.markupValue / 100) : "");
   const shown = preview(netMinor, type, value);
   return (
     <form action={formAction} className="flex flex-col gap-2" noValidate>
@@ -52,6 +57,7 @@ export function SellingPrice({
         <span>Selling price · your profit</span>
         <strong className="tabular-nums text-ink">{shown ? `${formatUsd(shown.sale)} · ${formatUsd(shown.profit)}` : "Check the markup"}</strong>
       </p>
+      {!saved && start ? <p className="text-xs text-muted">Your default markup from Agency settings. Save it to use it for this booking.</p> : null}
       <p className="text-xs text-muted">For your reports only. It is not shown on the voucher and does not change the amount deducted.</p>
       <div className="flex flex-wrap gap-2">
         <button type="submit" disabled={pending} className={btnSecondary}>

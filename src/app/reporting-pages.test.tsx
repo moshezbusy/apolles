@@ -61,6 +61,20 @@ describe("reporting (19)", () => {
     expect(csv).not.toContain("APL-BBBB0001");
   });
 
+  it("says the period is by booking date, and 'without a selling price' opens exactly those bookings", async () => {
+    await booking("A", "APL-AAAA0002"); // no selling price
+    const { default: Page } = await import("./(agent)/reporting/page");
+    const today = new Date().toISOString().slice(0, 10);
+    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ range: "custom", from: today, to: today }) }));
+    expect(html).toContain("By booking date: bookings made from");
+    expect(html).toContain(`href="/bookings?tab=all&amp;unpriced=1&amp;bookedFrom=${today}&amp;bookedTo=${today}"`);
+    const { default: List } = await import("./(agent)/bookings/page");
+    const list = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ tab: "all", unpriced: "1", bookedFrom: today, bookedTo: today }) }));
+    expect(list).toContain("APL-AAAA0002");
+    expect(list).not.toContain("APL-AAAA0001"); // has a selling price
+    expect(list).toContain("Showing bookings without a selling price.");
+  });
+
   it("the bookings list shows the profit of a priced booking", async () => {
     const { default: List } = await import("./(agent)/bookings/page");
     const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));

@@ -5,6 +5,7 @@ import { supportContact } from "@/server/app-info";
 import { db } from "@/server/db";
 import { sendEmail } from "@/server/email/port";
 import { getBalance } from "@/server/wallet/ledger";
+import { freeCancelText } from "./free-cancel";
 
 // Booking emails (spec section 3 row 15). Phase 1: to the agent who booked, never to the
 // guest; "needs attention" and the other alerts to the admin. Sent by the job queue
@@ -48,7 +49,8 @@ function appUrl(): string {
   return parsed.data.replace(/\/+$/, "");
 }
 
-// "Apr 7, 2027, 14:00 UTC": the moment free cancellation ends (the first charge starts).
+// "Apr 7, 2027, 14:00 UTC": the stored end of free cancellation, only for a booking whose charges
+// cannot be read (the wording otherwise is freeCancelText's, in the hotel's own time).
 const DEADLINE_DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 function deadline(at: Date): string {
   return `${DEADLINE_DAY.format(at)}, ${at.toISOString().slice(11, 16)} UTC`;
@@ -175,7 +177,8 @@ export async function sendBookingEmail(bookingId: string, event: BookingEmailEve
   }
   if (event === "confirmed") {
     const { balanceCents } = await getBalance(b.agencyId);
-    const free = b.freeCancelEndsAt && b.freeCancelEndsAt > new Date() ? `Free cancellation until ${deadline(b.freeCancelEndsAt)}.` : b.refundable ? "See the booking for the cancellation charges." : "This rate is non-refundable.";
+    const freeText = freeCancelText(b, new Date());
+    const free = freeText ? `${freeText}.` : b.refundable ? "See the booking for the cancellation charges." : "This rate is non-refundable.";
     await sendEmail({
       to: b.user.email,
       subject: `Booking confirmed: ${b.hotelName}, ${longDate(b.checkin)} to ${longDate(b.checkout)}, ${b.reference}`,
@@ -226,7 +229,7 @@ export async function sendFreeCancelReminders(now: Date = new Date()): Promise<n
         to: b.user.email,
         subject: `Free cancellation ends in 72 hours: ${b.reference}`,
         text:
-          `Hello ${b.user.name},\n\nFree cancellation for booking ${b.reference} ends on ${deadline(b.freeCancelEndsAt!)}. After that, cancelling costs a charge (see the booking).\n\n` +
+          `Hello ${b.user.name},\n\nBooking ${b.reference}: ${freeCancelText(b, now) ?? `Free cancellation until ${deadline(b.freeCancelEndsAt!)}`}. After that, cancelling costs a charge (see the booking).\n\n` +
           `${b.hotelName}, ${b.hotelCity}\n${longDate(b.checkin)} to ${longDate(b.checkout)}\n${b.rooms.length > 1 ? roomsText(b.rooms) : `Lead guest: ${b.leadGivenName} ${b.leadFamilyName}`}\n\nView the booking:\n${appUrl()}/bookings/${b.id}\n`,
       });
       sent += 1;

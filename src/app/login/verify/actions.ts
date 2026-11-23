@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { renewSessionCookie, requireAgentPendingCode } from "@/server/auth/guards";
 import { DEVICE_COOKIE, DEVICE_TTL_MS, sendSignInCode, trustDevice, verifySignInCode } from "@/server/auth/signin-code";
+import { afterSignInPath } from "@/lib/return-path";
 import { CODE_NOT_SENT_COPY, CODE_SENT_NOTICE, type VerifyState } from "./copy";
 
 // The 6-digit code from the email (plan 8e). Right: this browser is remembered for 90 days.
@@ -19,7 +20,8 @@ export async function verifyCodeAction(_previous: VerifyState, formData: FormDat
   // working), and this browser is remembered.
   await renewSessionCookie(sessionId);
   (await cookies()).set(DEVICE_COOKIE, await trustDevice(userId), { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: DEVICE_TTL_MS / 1000 });
-  redirect("/search");
+  // Back to the page the agent was on when the session ended (a safe path only), or search.
+  redirect(afterSignInPath(formData.get("next")));
 }
 
 export async function resendCodeAction(): Promise<VerifyState> {

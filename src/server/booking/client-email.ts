@@ -46,6 +46,23 @@ const NOT_AVAILABLE = "The booking can be emailed once the hotel has confirmed i
 
 type Result = { ok: true } | { ok: false; error: string };
 
+// "dana@example.com" → "da•••@example.com".
+export function maskEmail(email: string): string {
+  const [name = "", domain = ""] = email.split("@");
+  return `${name.slice(0, 2)}${"•".repeat(3)}@${domain}`;
+}
+
+// The last time this booking was emailed to a client, and to whom (masked), for the booking page.
+// Only for the agency's own booking.
+export async function lastClientEmail(agencyId: string, bookingId: string): Promise<{ at: Date; to: string | null } | null> {
+  if (typeof bookingId !== "string" || bookingId.length > 64) return null;
+  if (!(await db.booking.findFirst({ where: { id: bookingId, agencyId }, select: { id: true } }))) return null;
+  const row = await db.auditLog.findFirst({ where: { targetType: "Booking", targetId: bookingId, action: "booking.email-client" }, orderBy: { createdAt: "desc" }, select: { createdAt: true, after: true } });
+  if (!row) return null;
+  const to = (row.after as { to?: unknown } | null)?.to;
+  return { at: row.createdAt, to: typeof to === "string" ? to : null };
+}
+
 // The address box starts with the quote's client email, when the booking came from a quote.
 export async function clientEmailDefault(agencyId: string, bookingId: string): Promise<string> {
   if (typeof bookingId !== "string" || bookingId.length > 64) return "";
@@ -149,7 +166,9 @@ export async function emailBookingToClient(actorUserId: string, agencyId: string
   }
   // The email went out: a failed audit write is logged, never reported as a failed send (the agent
   // would send it again).
-  await audit(actorUserId, "booking.email-client", "Booking", b.id, undefined, { language: he ? "HE" : "EN" }).catch((error: unknown) =>
+  // The address is kept masked ("da•••@example.com"): enough for the booking page to say to whom
+  // it was last sent, without a full client address in the audit log.
+  await audit(actorUserId, "booking.email-client", "Booking", b.id, undefined, { language: he ? "HE" : "EN", to: maskEmail(email) }).catch((error: unknown) =>
     console.error("client booking email audit failed", { error: error instanceof Error ? error.name : "Error", bookingId: b.id }),
   );
   return { ok: true };
