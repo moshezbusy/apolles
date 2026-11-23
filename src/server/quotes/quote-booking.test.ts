@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { book, cancel, cancelQuote, createDraft, prepareReview, reconcile } from "@/server/booking/service";
+import { bookingSale } from "@/server/booking/selling";
 import { createClient, addCompanion } from "@/server/clients";
 import { db } from "@/server/db";
-import { addFromSearch, removeRoom, removeStay, updateQuoteSettings } from "@/server/quotes/quotes";
-import { shareLink, submitSelection } from "@/server/quotes/sharing";
-import { bookingPrefill, prepareQuoteBooking, stayBookings } from "@/server/quotes/quote-booking";
+import { addFromSearch, closeQuote, removeRoom, removeStay, setClientCancelDate, setRoomPrice, updateQuoteSettings } from "@/server/quotes/quotes";
+import { clientQuote, shareLink, submitSelection } from "@/server/quotes/sharing";
+import { bookingPrefill, matchRate, otherRooms, prepareQuoteBooking, quoteReview, stayBookings } from "@/server/quotes/quote-booking";
 import { startSearch } from "@/server/search/search";
 import { SupplierOutcomeUnknown } from "@/server/supplier/expedia/client";
 import { FakeSupplierAdapter } from "@/server/supplier/fake";
@@ -111,14 +112,45 @@ describe("book the client's selection from a quote", () => {
     expect(snapshot).toMatchObject({ agencyId: "A", candidateIds: ["11"], query: expect.objectContaining({ checkin: "2027-04-10", checkout: "2027-04-12", rooms: [{ adults: 2, childAges: [] }] }) });
   });
 
-  it("the room is gone at the hotel: says so", async () => {
+  it("the hotel has no rooms left for the dates: says so, and the quote stays as it is", async () => {
     const [stay] = await quoteStays();
     await pick(stay!.id, stay!.rooms[0]!.id);
     const empty = supplier({ searchAvailability: async () => [] });
     expect(await prepareQuoteBooking(ctx(), stay!.id, { adapter: empty, now: NOW })).toEqual({
       ok: false,
-      error: "This room is no longer available at this hotel for these dates. Search the hotel again for other rooms.",
+      error: "This room is no longer available at this hotel for these dates. This hotel has no rooms left for them. Ask the client to choose another hotel, or close the quote.",
     });
+    expect(await db.quoteStay.findUniqueOrThrow({ where: { id: stay!.id } })).toMatchObject({ selectedRoomId: stay!.rooms[0]!.id });
+  });
+
+  it("the picked rate is gone but the hotel has other rooms: the agent is sent to them, the destination is kept, and one of them can be booked", async () => {
+    const [stay] = await quoteStays();
+    const roomId = stay!.rooms[0]!.id;
+    // The quoted room is one the supplier no longer has in any form.
+    await db.quoteRoom.update({ where: { id: roomId }, data: { roomId: "gone-room", rateId: "gone-rate", bedGroupId: "gone-bed" } });
+    await pick(stay!.id, roomId);
+    const prepared = await prepareQuoteBooking(ctx(), stay!.id, { adapter: supplier(), now: NOW });
+    expect(prepared).toMatchObject({ ok: false, error: expect.stringContaining("Choose another room of this hotel"), rooms: { quoteId, snapshotId: expect.any(String) } });
+    const snapshotId = !prepared.ok && prepared.rooms ? prepared.rooms.snapshotId : "";
+    // The stay and the client's pick are still there (before: the quote was stuck with no way on).
+    expect(await db.quoteStay.findUniqueOrThrow({ where: { id: stay!.id } })).toMatchObject({ selectedRoomId: roomId });
+    const rooms = await otherRooms("A", quoteId, stay!.id, snapshotId, NOW);
+    expect(rooms).toMatchObject({ quoteId, stayId: stay!.id, propertyId: "11", hotelName: "Hotel 11" });
+    expect(rooms?.offers.length).toBeGreaterThan(0);
+    // Another agency, or another agency's search, sees nothing.
+    expect(await otherRooms("B", quoteId, stay!.id, snapshotId, NOW)).toBeNull();
+    expect(await otherRooms("A", quoteId, stay!.id, "not-a-search", NOW)).toBeNull();
+    // Any rate of the picked hotel books for this destination, linked to the quote.
+    const offer = rooms!.offers[0]!;
+    const { bookingId } = await createDraft(
+      ctx(),
+      { snapshotId, propertyId: "11", rateId: offer.rateId, bedGroupId: offer.bedGroups[0]!.id, quoteStayId: stay!.id, rooms: [{ guests }], leadEmail: "daniel@example.com", leadPhone: { countryCode: "972", number: "501234567" } },
+      { now: later(1) },
+    );
+    const booking = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
+    expect(booking).toMatchObject({ quoteId, quoteStayId: stay!.id });
+    // The review page tells the agent this is not the rate that was quoted, and asks for the tick.
+    expect(await quoteReview("A", booking, later(2))).toMatchObject({ rateChanged: true, needsCheck: true });
   });
 
   it("booking the only destination marks the quote booked; the stay shows the booking", async () => {
@@ -126,8 +158,10 @@ describe("book the client's selection from a quote", () => {
     await pick(stay!.id, stay!.rooms[0]!.id);
     const { bookingId, outcome } = await bookStay(stay!.id);
     expect(outcome.kind).toBe("confirmed");
-    // The quote's 10% markup goes with the booking, as its selling price (reports only).
-    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ quoteId, quoteStayId: stay!.id, status: "CONFIRMED", sellMarkupType: "PERCENT", sellMarkupValue: 1000 });
+    // The price quoted to the client (net + 10%) goes with the booking as an amount (reports only).
+    const booked = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
+    const quoted = booked.totalMinor + Math.floor((booked.totalMinor * 1000 + 5_000) / 10_000);
+    expect(booked).toMatchObject({ quoteId, quoteStayId: stay!.id, status: "CONFIRMED", sellMinor: quoted, sellMarkupType: "FIXED", sellMarkupValue: quoted - booked.totalMinor });
     expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "BOOKED" });
     expect((await stayBookings("A", quoteId)).get(stay!.id)).toMatchObject({ id: bookingId, status: "CONFIRMED" });
     expect((await stayBookings("B", quoteId)).size).toBe(0);
@@ -140,7 +174,21 @@ describe("book the client's selection from a quote", () => {
     const [stay] = await quoteStays();
     await pick(stay!.id, stay!.rooms[0]!.id);
     const { bookingId } = await bookStay(stay!.id);
-    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ sellMarkupType: null, sellMarkupValue: null });
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ sellMinor: null, sellMarkupType: null, sellMarkupValue: null });
+  });
+
+  it("the net rose since the quote: the booking keeps the client's price, and the report shows the real profit", async () => {
+    const [stay] = await quoteStays();
+    const room = await db.quoteRoom.findUniqueOrThrow({ where: { id: stay!.rooms[0]!.id } });
+    // When it was quoted the net was 60.00 lower, and the agent typed a price 100.00 above it.
+    const oldNet = room.netMinor - 6_000;
+    await db.quoteRoom.update({ where: { id: room.id }, data: { netMinor: oldNet, sellMinor: oldNet + 10_000 } });
+    await pick(stay!.id, room.id);
+    const { bookingId } = await bookStay(stay!.id);
+    const booked = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
+    expect(booked).toMatchObject({ chargedMinor: room.netMinor, sellMinor: oldNet + 10_000, sellMarkupType: "FIXED", sellMarkupValue: 4_000 });
+    // Before: sale = charge + 100.00 and profit 100.00. Now: the client's price, and 40.00.
+    expect(bookingSale(booked)).toEqual({ netMinor: room.netMinor, saleMinor: oldNet + 10_000, profitMinor: 4_000, priced: true });
   });
 
   it("two destinations: the quote is booked only when both are", async () => {
@@ -164,9 +212,49 @@ describe("book the client's selection from a quote", () => {
     expect((await prepareQuoteBooking(ctx(), second!.id, { adapter: supplier(), now: NOW })).ok).toBe(true);
   });
 
-  it("the client skipped a destination: booking the other one books the quote", async () => {
+  it("three destinations, the client picks one and it is booked: the quote stays open, the client can still choose the others, the agent can still edit", async () => {
     await addStay("2027-04-12", "2027-04-15");
-    const [first] = await quoteStays();
+    await addStay("2027-04-15", "2027-04-18");
+    const [first, second, third] = await quoteStays();
+    await pick(first!.id, first!.rooms[0]!.id);
+    await bookStay(first!.id);
+    // Before: the whole quote turned Booked and locked here.
+    expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "SELECTED" });
+    const shared = await shareLink("u-A", "A", quoteId, "link", { now: NOW });
+    const token = shared.ok ? (shared.url.split("/q/")[1] ?? "") : "";
+    const view = (await clientQuote(token, NOW))?.view;
+    expect(view).toMatchObject({ state: "open", stays: [{ booked: true, confirmed: true }, { booked: false, confirmed: false }, { booked: false }] });
+    // The client picks the second destination (the booked one keeps its pick).
+    const price = view?.stays[1]?.hotels[0]?.rooms[0]?.sellMinor ?? 0;
+    const picks = { [first!.id]: first!.rooms[0]!.id, [second!.id]: second!.rooms[0]!.id };
+    expect(await submitSelection(token, { picks, seen: { [second!.rooms[0]!.id]: price }, note: "" }, "203.0.113.9", NOW)).toEqual({ ok: true });
+    expect(await db.quoteStay.findUniqueOrThrow({ where: { id: second!.id } })).toMatchObject({ selectedRoomId: second!.rooms[0]!.id });
+    // The agent edits a destination that is not booked.
+    expect((await setRoomPrice("u-A", "A", third!.rooms[0]!.id, "5000")).ok).toBe(true);
+    expect((await removeStay("u-A", "A", third!.id)).ok).toBe(true);
+    // Booked only once every destination that still has rooms is booked.
+    await bookStay(second!.id);
+    expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "BOOKED" });
+  });
+
+  it("a partly booked quote is finished on purpose with 'Close quote': read-only for the client, the booking untouched", async () => {
+    await addStay("2027-04-12", "2027-04-15");
+    const [first, second] = await quoteStays();
+    await pick(first!.id, first!.rooms[0]!.id);
+    const { bookingId } = await bookStay(first!.id);
+    const shared = await shareLink("u-A", "A", quoteId, "link", { now: NOW });
+    const token = shared.ok ? (shared.url.split("/q/")[1] ?? "") : "";
+    expect(await closeQuote("u-A", "A", quoteId)).toEqual({ ok: true, id: quoteId });
+    expect((await clientQuote(token, NOW))?.view.state).toBe("closed");
+    expect(await submitSelection(token, { picks: { [first!.id]: first!.rooms[0]!.id }, note: "" }, "203.0.113.9", NOW)).toEqual({ ok: false, error: "closed" });
+    expect(await prepareQuoteBooking(ctx(), second!.id, { adapter: supplier(), now: NOW })).toMatchObject({ ok: false, error: expect.stringContaining("closed") });
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CONFIRMED" });
+  });
+
+  it("a destination whose rooms were all removed does not keep the quote open", async () => {
+    await addStay("2027-04-12", "2027-04-15");
+    const [first, second] = await quoteStays();
+    await removeRoom("u-A", "A", second!.rooms[0]!.id);
     await pick(first!.id, first!.rooms[0]!.id);
     await bookStay(first!.id);
     expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "BOOKED" });
@@ -253,9 +341,19 @@ describe("a booked destination (review fixes)", () => {
     expect(await submitSelection(token, { picks: { [second!.id]: second!.rooms[0]!.id }, note: "" }, "203.0.113.9")).toEqual({ ok: false, error: "locked" });
     expect(await removeRoom("u-A", "A", first!.rooms[0]!.id)).toEqual({ ok: false, error: "This destination has a booking. Cancel the booking first to change it." });
     expect((await removeStay("u-A", "A", first!.id)).ok).toBe(false);
-    // The other destination still changes; un-picking it leaves only booked picks: the quote is booked.
+    // A booked destination is frozen for the agent too: no new price, no new client date, no new rooms.
+    expect(await setRoomPrice("u-A", "A", first!.rooms[0]!.id, "9000")).toEqual({ ok: false, error: "This destination has a booking. Cancel the booking first to change it." });
+    expect(await setClientCancelDate("u-A", "A", first!.rooms[0]!.id, "2027-03-20", NOW)).toEqual({ ok: false, error: "This destination has a booking. Cancel the booking first to change it." });
+    const again = await startSearch(ctx(), { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", rooms: [{ adults: 2, childAges: [] }] }, { adapter: supplier(), now: NOW });
+    const offers = (await db.searchHotel.findFirstOrThrow({ where: { snapshotId: again.snapshotId } })).offers as unknown as Offer[];
+    const extra = offers.find((o) => o.rateId !== first!.rooms[0]!.rateId) ?? offers[0]!;
+    expect(await addFromSearch("u-A", "A", { quoteId, snapshotId: again.snapshotId, propertyId: "11", rateId: extra.rateId, bedGroupId: extra.bedGroups[0]!.id }, NOW)).toEqual({
+      ok: false,
+      error: "This destination has a booking. Cancel the booking first to change it.",
+    });
+    // The other destination still changes; un-picking it keeps the quote open (it still has rooms to choose).
     expect(await submitSelection(token, { picks: { [first!.id]: first!.rooms[0]!.id }, note: "" }, "203.0.113.9")).toEqual({ ok: true });
-    expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "BOOKED" });
+    expect(await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ status: "SELECTED" });
   });
 
   it("the client changes the pick after the draft: 'Book' is refused and nothing is charged", async () => {
@@ -343,5 +441,136 @@ describe("guest details from the quote", () => {
     expect(await bookingPrefill("B", { stayId: stay!.id })).toBeNull();
     expect(await bookingPrefill("A", { clientId })).toMatchObject({ clientId, guests: [{ givenName: "Daniel" }, { givenName: "Maya" }] });
     expect(await bookingPrefill("B", { clientId })).toBeNull();
+  });
+});
+
+describe("the review page of a booking from a quote: what the client was quoted against the rate now", () => {
+  async function draftFor(stayId: string, deps: { supplier?: Supplier } = {}) {
+    const prepared = await prepareQuoteBooking(ctx(), stayId, { adapter: supplier(), now: NOW });
+    if (!prepared.ok) throw new Error(prepared.error);
+    const { s, p, r, b } = prepared.rate;
+    const { bookingId } = await createDraft(
+      ctx(),
+      { snapshotId: s, propertyId: p, rateId: r, bedGroupId: b, quoteStayId: stayId, rooms: [{ guests }], leadEmail: "daniel@example.com", leadPhone: { countryCode: "972", number: "501234567" } },
+      { now: later(1) },
+    );
+    const review = await prepareReview(ctx(), bookingId, { supplier: deps.supplier ?? supplier(), now: later(2) });
+    if (review.kind !== "ready") throw new Error("not ready");
+    return review.booking;
+  }
+
+  it("nothing changed since the quote: the box shows the numbers and no tick is needed", async () => {
+    const [stay] = await quoteStays();
+    await pick(stay!.id, stay!.rooms[0]!.id);
+    const booking = await draftFor(stay!.id);
+    const quoted = booking.totalMinor + Math.floor((booking.totalMinor * 1000 + 5_000) / 10_000);
+    expect(await quoteReview("A", booking, later(2))).toMatchObject({
+      quoteId,
+      number: 1,
+      quotedMinor: quoted,
+      priced: true,
+      chosenAtMinor: null,
+      netThenMinor: booking.totalMinor,
+      netNowMinor: booking.totalMinor,
+      profitNowMinor: quoted - booking.totalMinor,
+      rateChanged: false,
+      profitLower: false,
+      termsWorse: false,
+      needsCheck: false,
+    });
+    // Another agency, or a booking that is not from a quote, has no box.
+    expect(await quoteReview("B", booking, later(2))).toBeNull();
+    expect(await quoteReview("A", { ...booking, quoteStayId: null }, later(2))).toBeNull();
+  });
+
+  it("the client chose at 1,000 on a net of 900; the net is 960 now: the profit is 40, not 100, and booking needs the tick", async () => {
+    const [stay] = await quoteStays();
+    const room = await db.quoteRoom.findUniqueOrThrow({ where: { id: stay!.rooms[0]!.id } });
+    // The quote was made when the net was 60.00 lower; the agent typed 100.00 above that net.
+    const oldNet = room.netMinor - 6_000;
+    await db.quoteRoom.update({ where: { id: room.id }, data: { netMinor: oldNet, sellMinor: oldNet + 10_000 } });
+    await pick(stay!.id, room.id);
+    await db.quoteStay.update({ where: { id: stay!.id }, data: { selectedSellMinor: oldNet + 10_000, selectedCurrency: "USD" } });
+    const booking = await draftFor(stay!.id);
+    expect(await quoteReview("A", booking, later(2))).toMatchObject({
+      quotedMinor: oldNet + 10_000,
+      netThenMinor: oldNet,
+      netNowMinor: room.netMinor,
+      profitThenMinor: 10_000,
+      profitNowMinor: 4_000,
+      profitLower: true,
+      needsCheck: true,
+    });
+    // The net rose above the client's price: a loss, shown as a negative profit.
+    await db.quoteRoom.update({ where: { id: room.id }, data: { sellMinor: room.netMinor - 2_000 } });
+    expect(await quoteReview("A", booking, later(2))).toMatchObject({ profitNowMinor: -2_000, profitLower: true, needsCheck: true });
+  });
+
+  it("free cancellation the client saw is gone or earlier now: booking needs the tick", async () => {
+    const [stay] = await quoteStays();
+    const room = await db.quoteRoom.findUniqueOrThrow({ where: { id: stay!.rooms[0]!.id } });
+    await pick(stay!.id, room.id);
+    const draft = await draftFor(stay!.id);
+    const now = later(2);
+    // The rate being booked: free cancellation until Apr 4 (the first charge starts Apr 5, hotel time).
+    const booking = { ...draft, refundable: true, cancelPenalties: [{ start: "2027-04-05T00:00:00.000+02:00", end: "2027-04-10T00:00:00.000+02:00", amount: null, nights: 1, percent: null }] };
+    // Quoted with the same day: nothing is worse.
+    await db.quoteRoom.update({ where: { id: room.id }, data: { refundable: true, freeCancelUntil: "2027-04-04", clientCancelUntil: "2027-04-03" } });
+    expect(await quoteReview("A", booking, now)).toMatchObject({ freeThenDay: "2027-04-04", clientFreeDay: "2027-04-03", freeNowDay: "2027-04-04", termsWorse: false, needsCheck: false });
+    // Quoted with a later day than the rate has now: earlier is worse.
+    await db.quoteRoom.update({ where: { id: room.id }, data: { freeCancelUntil: "2027-04-07", clientCancelUntil: "2027-04-06" } });
+    expect(await quoteReview("A", booking, now)).toMatchObject({ freeThenDay: "2027-04-07", clientFreeDay: "2027-04-06", freeNowDay: "2027-04-04", termsWorse: true, needsCheck: true });
+    // The rate lost free cancellation altogether.
+    expect(await quoteReview("A", { ...booking, refundable: false }, now)).toMatchObject({ freeNowDay: null, termsWorse: true, needsCheck: true });
+    // Ten days later the day the client was shown has passed: free cancellation is gone, even on the same rate.
+    await db.quoteRoom.update({ where: { id: room.id }, data: { freeCancelUntil: "2027-04-04", clientCancelUntil: "2027-04-03" } });
+    expect(await quoteReview("A", booking, new Date("2027-04-04T08:00:00.000Z"))).toMatchObject({ freeNowDay: null, termsWorse: true, needsCheck: true });
+    // A quote that showed no cancellation terms: the client saw none, the comparison still runs.
+    await db.quoteRoom.update({ where: { id: room.id }, data: { freeCancelUntil: "2027-04-07" } });
+    await db.quote.update({ where: { id: quoteId }, data: { showCancellation: false } });
+    expect(await quoteReview("A", booking, now)).toMatchObject({ clientFreeDay: null, termsWorse: true });
+    // A room quoted as non-refundable cannot get worse.
+    await db.quoteRoom.update({ where: { id: room.id }, data: { refundable: false, freeCancelUntil: null, clientCancelUntil: null } });
+    expect(await quoteReview("A", { ...booking, refundable: false }, now)).toMatchObject({ termsWorse: false });
+  });
+});
+
+describe("finding the quoted rate again (the supplier gave it a new id)", () => {
+  const quoted = { roomId: "room-1", rateId: "old-rate", bedGroupId: "old-bed", refundable: true, bedDescription: "1 King Bed", amenities: ["Breakfast"], netMinor: 100_000 };
+  const offer = (over: Partial<Offer> & { total: number }): Offer => ({
+    propertyId: "11",
+    roomId: "room-1",
+    roomName: "Room",
+    rateId: `rate-${over.total}-${(over.amenities ?? ["Breakfast"]).join("")}-${over.refundable ?? true}`,
+    refundable: true,
+    bedGroups: [{ id: "bed-new", description: "1 King Bed", priceCheckToken: "t" }],
+    cancelPenalties: [],
+    nonrefundableDateRanges: [],
+    amenities: ["Breakfast"],
+    price: { total: { minor: over.total, currency: "USD" }, lines: [], dueAtProperty: [], dueAtPropertyTotal: null, nights: 2 },
+    roomPrices: [],
+    ...over,
+  });
+
+  it("the same rate and bed type win when the supplier still has them", () => {
+    const same = offer({ total: 150_000, rateId: "old-rate", bedGroups: [{ id: "old-bed", description: "1 King Bed", priceCheckToken: "t" }] });
+    expect(matchRate([offer({ total: 100_000 }), same], quoted)).toEqual({ offer: same, bedGroupId: "old-bed" });
+  });
+
+  it("never another board: room only does not stand in for breakfast, nor half board", () => {
+    expect(matchRate([offer({ total: 90_000, amenities: [] }), offer({ total: 120_000, amenities: ["Breakfast", "Dinner"] })], quoted)).toBeNull();
+  });
+
+  it("never other refund terms, another room or another bed type", () => {
+    expect(matchRate([offer({ total: 95_000, refundable: false })], quoted)).toBeNull();
+    expect(matchRate([offer({ total: 100_000, roomId: "room-2" })], quoted)).toBeNull();
+    expect(matchRate([offer({ total: 100_000, bedGroups: [{ id: "b", description: "2 Twin Beds", priceCheckToken: "t" }] })], quoted)).toBeNull();
+  });
+
+  it("of several rates that fit, the one closest in price to what was quoted (not the first in the list)", () => {
+    const far = offer({ total: 140_000 });
+    const near = offer({ total: 103_000 });
+    expect(matchRate([far, near], quoted)?.offer).toBe(near);
+    expect(matchRate([near, far], quoted)?.offer).toBe(near);
   });
 });

@@ -3,7 +3,7 @@ import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import { SupplierTimeout } from "@/server/supplier/expedia/client";
 import type { ContentSource, PropertyContent } from "@/server/supplier/types";
-import { getContent } from "./content-cache";
+import { getCachedContent, getContent } from "./content-cache";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000);
@@ -91,5 +91,22 @@ describe("getContent", () => {
     const map = await getContent(["1"], NOW, { source: s });
     expect(map.get("1")?.name).toBe("Hotel 1");
     expect(s.propertyContent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("getCachedContent (cache only, for the public client page)", () => {
+  beforeEach(async () => {
+    await resetTestDb();
+  });
+
+  it("reads what is cached, however old, and leaves out a missing or damaged row; it has no way to call the supplier", async () => {
+    await db.propertyContentCache.create({ data: { propertyId: "1", data: content("1"), fetchedAt: hoursAgo(2) } });
+    await db.propertyContentCache.create({ data: { propertyId: "2", data: content("2"), fetchedAt: hoursAgo(24 * 40) } });
+    await db.propertyContentCache.create({ data: { propertyId: "3", data: { broken: true }, fetchedAt: hoursAgo(1) } });
+    const result = await getCachedContent(["1", "2", "3", "4", "1"]);
+    expect([...result.keys()].sort()).toEqual(["1", "2"]);
+    expect((await getCachedContent([])).size).toBe(0);
+    // Nothing was written: the cache is as it was.
+    expect(await db.propertyContentCache.count()).toBe(3);
   });
 });

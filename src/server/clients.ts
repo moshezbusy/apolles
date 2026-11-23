@@ -170,7 +170,7 @@ export type ClientDetail = {
 };
 
 export async function getClient(agencyId: string, clientId: string): Promise<ClientDetail | null> {
-  return db.client.findFirst({
+  const client = await db.client.findFirst({
     where: { id: clientId, agencyId },
     select: {
       id: true,
@@ -188,12 +188,14 @@ export async function getClient(agencyId: string, clientId: string): Promise<Cli
       // The client's latest quotes (plan 5b); the quote list has them all.
       quotes: {
         where: { agencyId },
-        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        orderBy: [{ editedAt: "desc" }, { id: "desc" }],
         take: 10,
-        select: { id: true, number: true, title: true, status: true },
+        select: { id: true, number: true, agencyNumber: true, title: true, status: true },
       },
     },
   });
+  // "Q-n" is the agency's own running number (the internal one only on a row that has none yet).
+  return client && { ...client, quotes: client.quotes.map(({ agencyNumber, ...q }) => ({ ...q, number: agencyNumber ?? q.number })) };
 }
 
 function toRow(input: z.output<typeof clientInput>) {

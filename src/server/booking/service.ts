@@ -15,6 +15,7 @@ import { captureHold, credit, getBalance, placeHoldInTx, releaseHold, withLedger
 import { InsufficientFunds } from "@/server/wallet/errors";
 import { cancelChargeForRooms } from "./cancel-charge";
 import type { BookingEmailEvent } from "./emails";
+import { quotedMarkup } from "./selling";
 import { BookingStateConflict, transition } from "./states";
 
 // Booking (plan 3). The money rules, in order:
@@ -215,7 +216,7 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
   }
   const guests = input.rooms.flatMap((room) => room.guests);
   const lead = guests[0]!;
-  let fromQuote: { quoteId: string; quoteStayId: string; sellMarkup: { markupType: "PERCENT" | "FIXED"; markupValue: number } | null } | null = null;
+  let fromQuote: { quoteId: string; quoteStayId: string; sellMinor: number | null } | null = null;
   if (input.quoteStayId) {
     // Quotes are for one room (plan 10).
     if (rooms.length > 1) throw new BookingInputInvalid("This rate is not the dates or hotel of this quote. Open the quote and choose Book again.");
@@ -228,8 +229,9 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
     agencyId: ctx.agencyId,
     quoteId: fromQuote?.quoteId ?? null,
     quoteStayId: fromQuote?.quoteStayId ?? null,
-    sellMarkupType: fromQuote?.sellMarkup?.markupType ?? null,
-    sellMarkupValue: fromQuote?.sellMarkup?.markupValue ?? null,
+    // From a quote: the price the client was quoted, with the markup that shows it on this net.
+    sellMinor: fromQuote?.sellMinor ?? null,
+    ...(fromQuote && fromQuote.sellMinor !== null ? quotedMarkup(fromQuote.sellMinor, offer.price.total.minor) : { sellMarkupType: null, sellMarkupValue: null }),
     userId: ctx.userId,
     snapshotId: input.snapshotId,
     propertyId: offer.propertyId,
@@ -341,6 +343,8 @@ export async function prepareReview(ctx: BookingContext, bookingId: string, deps
         bookToken: result.bookToken,
         priceCheckedAt: now,
         previousTotalMinor: changed ? booking.totalMinor : booking.previousTotalMinor,
+        // A quoted client price stays as it is: its markup follows the checked net.
+        ...(booking.sellMinor !== null ? quotedMarkup(booking.sellMinor, result.price.total.minor) : {}),
       },
     });
     if (draft.count === 0) return 0;

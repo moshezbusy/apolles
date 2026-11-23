@@ -99,3 +99,21 @@ export async function getContent(
   }
   return result;
 }
+
+const CACHE_ONLY_MAX = 250;
+
+// Content from the cache ONLY: never a request to the supplier. For the public client page of a
+// quote, where anyone holding a link could otherwise make Apolles call the supplier on every
+// page load. Whatever its age (a photo's address stays good for a long time); a damaged row is
+// left out, and so is a hotel that is not in the cache (the page shows it without a photo).
+export async function getCachedContent(ids: string[]): Promise<Map<string, PropertyContent>> {
+  const unique = [...new Set(ids)].slice(0, CACHE_ONLY_MAX);
+  const result = new Map<string, PropertyContent>();
+  if (unique.length === 0) return result;
+  const rows = await db.propertyContentCache.findMany({ where: { propertyId: { in: unique } } });
+  for (const row of rows) {
+    const parsed = contentShape.safeParse(row.data);
+    if (parsed.success) result.set(row.propertyId, parsed.data);
+  }
+  return result;
+}

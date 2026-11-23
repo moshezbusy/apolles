@@ -35,6 +35,7 @@ describe("quote branding and defaults (screen 20)", () => {
       defaultMarkupType: "PERCENT",
       defaultMarkupValue: 0,
       defaultShowCancellation: true,
+      validDays: 7,
     });
   });
 
@@ -74,17 +75,38 @@ describe("quote branding and defaults (screen 20)", () => {
   });
 
   it("defaults: a percent or a fixed USD markup, and the cancellation terms", async () => {
-    expect(await updateQuoteDefaults("u-A", "A", { markupType: "PERCENT", markupValue: "12.5", showCancellation: false })).toEqual({ ok: true });
+    expect(await updateQuoteDefaults("u-A", "A", { markupType: "PERCENT", markupValue: "12.5", showCancellation: false, validDays: "7" })).toEqual({ ok: true });
     expect(await getQuoteSettings("A")).toMatchObject({ defaultMarkupType: "PERCENT", defaultMarkupValue: 1250, defaultShowCancellation: false });
-    expect(await updateQuoteDefaults("u-A", "A", { markupType: "FIXED", markupValue: "40", showCancellation: true })).toEqual({ ok: true });
+    expect(await updateQuoteDefaults("u-A", "A", { markupType: "FIXED", markupValue: "40", showCancellation: true, validDays: "7" })).toEqual({ ok: true });
     expect(await getQuoteSettings("A")).toMatchObject({ defaultMarkupType: "FIXED", defaultMarkupValue: 4000 });
-    expect((await updateQuoteDefaults("u-A", "A", { markupType: "PERCENT", markupValue: "101", showCancellation: true })).ok).toBe(false);
-    expect((await updateQuoteDefaults("u-A", "A", { markupType: "OTHER", markupValue: "1", showCancellation: true })).ok).toBe(false);
+    expect((await updateQuoteDefaults("u-A", "A", { markupType: "PERCENT", markupValue: "101", showCancellation: true, validDays: "7" })).ok).toBe(false);
+    expect((await updateQuoteDefaults("u-A", "A", { markupType: "OTHER", markupValue: "1", showCancellation: true, validDays: "7" })).ok).toBe(false);
+  });
+
+  it("'Offer valid for (days)': 1 to 30 whole days, 7 by default", async () => {
+    expect(await updateQuoteDefaults("u-A", "A", { markupType: "PERCENT", markupValue: "10", showCancellation: true, validDays: "14" })).toEqual({ ok: true });
+    expect(await getQuoteSettings("A")).toMatchObject({ validDays: 14 });
+    expect(await getQuoteSettings("B")).toMatchObject({ validDays: 7 });
+    for (const bad of ["0", "31", "", "7.5", "-3", "abc", "100"]) {
+      expect(await updateQuoteDefaults("u-A", "A", { markupType: "PERCENT", markupValue: "10", showCancellation: true, validDays: bad })).toMatchObject({ ok: false, error: expect.stringContaining("1 to 30 days") });
+    }
+    expect(await getQuoteSettings("A")).toMatchObject({ validDays: 14 });
+    for (const edge of ["1", "30"]) expect((await updateQuoteDefaults("u-A", "A", { markupType: "PERCENT", markupValue: "10", showCancellation: true, validDays: edge })).ok).toBe(true);
+  });
+
+  it("the display name is the agency's own: not Apolles, not a system-looking sender", async () => {
+    const { senderNameAllowed } = await import("@/server/quote-settings");
+    for (const ok of ["Sunrise Trips", "Supportive Travel", "Adminton Tours", "Dana & Co.", "טיולי זריחה"]) expect(senderNameAllowed(ok)).toBe(true);
+    for (const bad of ["Apolles", "apolles travel", "A-p-o-l-l-e-s", "ＡＰＯＬＬＥＳ", "Billing", "Sunrise support", "ADMIN", "security", "no reply", "No-Reply", "noreply", "do not reply", "System"]) {
+      expect(senderNameAllowed(bad)).toBe(false);
+    }
+    expect(await updateQuoteBranding("u-A", "A", { ...BRANDING, displayName: "Apolles Support" })).toMatchObject({ ok: false, error: expect.stringContaining("cannot contain Apolles") });
+    expect(await getQuoteSettings("A")).toMatchObject({ displayName: "" });
   });
 
   it("a new quote starts with the agency's defaults", async () => {
     await updateQuoteBranding("u-A", "A", { ...BRANDING });
-    await updateQuoteDefaults("u-A", "A", { markupType: "FIXED", markupValue: "25", showCancellation: false });
+    await updateQuoteDefaults("u-A", "A", { markupType: "FIXED", markupValue: "25", showCancellation: false, validDays: "7" });
     const created = await createQuote("u-A", "A");
     if (!created.ok) throw new Error(created.error);
     expect(await db.quote.findUniqueOrThrow({ where: { id: created.id } })).toMatchObject({
