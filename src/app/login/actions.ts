@@ -6,7 +6,7 @@ import { z } from "zod";
 import { LOGIN_ERROR_COPY, login } from "@/server/auth/login";
 import { PASSWORD_MAX_LENGTH } from "@/server/auth/password";
 import { getClientIp } from "@/server/client-ip";
-import { SIGN_IN_RATE_LIMIT_COPY, hitIpRateLimit } from "@/server/rate-limit";
+import { SIGN_IN_RATE_LIMIT_COPY, hitIpRateLimit, refundIpRateLimit } from "@/server/rate-limit";
 import {
   SESSION_COOKIE,
   SESSION_TTL_MS,
@@ -33,8 +33,11 @@ export async function loginAction(
   formData: FormData,
 ): Promise<LoginFormState> {
   // Per-IP limit first: a refused request never reaches the account (no attempt slot, no
-  // change to failedLogins, no password check).
-  const { allowed } = await hitIpRateLimit("signin", getClientIp(await headers()));
+  // change to failedLogins, no password check). Every request is counted here, before the
+  // check; a right password hands its count back below, so only failed attempts add up and an
+  // office that shares one address is not shut out by its own normal sign-ins.
+  const ip = getClientIp(await headers());
+  const { allowed } = await hitIpRateLimit("signin", ip);
   if (!allowed) return { error: SIGN_IN_RATE_LIMIT_COPY };
 
   const parsed = loginInput.safeParse({
@@ -45,6 +48,7 @@ export async function loginAction(
 
   const result = await login(parsed.data.email, parsed.data.password);
   if (!result.ok) return { error: LOGIN_ERROR_COPY[result.reason] };
+  await refundIpRateLimit("signin", ip);
 
   const cookieStore = await cookies();
   // A new sign-in always gets a fresh token; the old session from this browser is ended.

@@ -4,6 +4,7 @@ import type { ApplicationStatus, Prisma } from "@/generated/prisma/client";
 import { isCountryCode } from "@/lib/countries";
 import { DUPLICATE_EMAIL_MESSAGE, createAgency } from "@/server/admin/agencies";
 import { audit } from "@/server/audit";
+import { ipBucket } from "@/server/client-ip";
 import { db } from "@/server/db";
 import { sendEmail } from "@/server/email/port";
 import { hitRateLimit } from "@/server/rate-limit";
@@ -63,22 +64,6 @@ function appUrl(): string {
   return parsed.success ? parsed.data.replace(/\/$/, "") : "";
 }
 
-// IPv6 counts per /64 (one home or office network), IPv4 per address.
-function ipBucket(ip: string): string {
-  if (!ip.includes(":")) return ip;
-  const full = expandIpv6(ip);
-  return full ? `${full.slice(0, 4).join(":")}::/64` : ip;
-}
-
-function expandIpv6(ip: string): string[] | null {
-  const [head = "", tail = ""] = ip.split("::");
-  const a = head ? head.split(":") : [];
-  const b = ip.includes("::") ? (tail ? tail.split(":") : []) : [];
-  const missing = 8 - a.length - b.length;
-  if (missing < 0 || (!ip.includes("::") && a.length !== 8)) return null;
-  return [...a, ...Array(ip.includes("::") ? missing : 0).fill("0"), ...b];
-}
-
 // Overall caps, whatever the network: applications an hour, and admin alerts (one per 10 minutes
 // is enough to know there is something to review).
 const ALL_LIMIT = { limit: 30, windowMs: 60 * 60_000 };
@@ -92,6 +77,7 @@ export async function submitApplication(raw: ApplicationInput | Record<string, s
   if (!parsed.success) return { ok: false, error: "invalid" };
   const v = parsed.data;
   if (v.company !== "") return { ok: true };
+  // IPv6 counts per /64 (one home or office network), IPv4 per address (ipBucket).
   if (!(await hitRateLimit(`join:ip:${ipBucket(ip)}`, IP_LIMIT.limit, IP_LIMIT.windowMs)).allowed) return { ok: false, error: "limited" };
   const email = normalizeEmail(v.email);
   if (!(await hitRateLimit(emailKey(email), EMAIL_LIMIT.limit, EMAIL_LIMIT.windowMs)).allowed) return { ok: false, error: "limited" };
