@@ -148,7 +148,52 @@ describe("search action and destinations (screen 07)", () => {
     const response = await GET(new Request("http://localhost/search/destinations?q=par"));
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toMatch(/no-store/);
-    expect(await response.json()).toEqual({ destinations: [{ id: "paris", label: "Paris, Ile-de-France, France", type: "city" }] });
+    expect(await response.json()).toEqual({ destinations: [{ id: "paris", label: "Paris, Ile-de-France, France", type: "city" }], hotels: [] });
+  });
+
+  it("the same suggestions also find hotels by name, with their city and country, under the same per-user limit", async () => {
+    const { GET } = await import("./(agent)/search/destinations/route");
+    signInAs("A");
+    const response = await GET(new Request("http://localhost/search/destinations?q=hotel%2012"));
+    expect(await response.json()).toEqual({ destinations: [], hotels: [{ id: "12", name: "Hotel 12", place: "Paris, France" }] });
+    await db.rateLimitBucket.deleteMany({ where: { key: "destinations:user:user-1" } });
+    await seedRateLimit("destinations:user:user-1", 120, 60_000);
+    const refused = await GET(new Request("http://localhost/search/destinations?q=hotel"));
+    expect(refused.status).toBe(429);
+    expect(await refused.json()).toEqual({ destinations: [], hotels: [] });
+  });
+
+  it("a hotel chosen by name searches that one hotel and opens its page; the recent search names the hotel and fills the box again", async () => {
+    await db.user.create({ data: { id: "user-1", email: "a@t.local", name: "A", role: "AGENT", agencyId: "A" } });
+    signInAs("A");
+    const { startSearchAction } = await import("./(agent)/search/actions");
+    const quote = "q".repeat(25);
+    // The label and any agencyId in the form are never read.
+    const fields = { propertyId: "12", destinationId: "", destinationLabel: "Typed by the browser", agencyId: "B", quote, checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), room_adults: "2", room_children: "" };
+    const thrown = await startSearchAction(null, form(fields)).catch((e: Error) => e);
+    const target = String((thrown as Error).message).match(/^NEXT_REDIRECT:\/search\/([a-z0-9]+)\/hotels\/12\?quote=q{25}$/);
+    expect(target).not.toBeNull();
+    const snapshot = await db.searchSnapshot.findUniqueOrThrow({ where: { id: target![1]! } });
+    expect(snapshot).toMatchObject({ agencyId: "A", userId: "user-1", candidateIds: ["12"] });
+    expect(snapshot.query).toMatchObject({ destinationId: "paris", propertyId: "12", rooms: [{ adults: 2, childAges: [] }] });
+    const recent = await db.recentSearch.findFirstOrThrow();
+    expect(recent).toMatchObject({ propertyId: "12", destinationName: "Hotel 12", destinationId: "paris" });
+    const { default: SearchPage } = await import("./(agent)/search/page");
+    const again = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({ again: recent.id }) }));
+    expect(again).toContain('name="propertyId" value="12"');
+    expect(again).toContain('name="destinationId" value=""');
+    expect(again).toContain('value="Hotel 12"');
+  });
+
+  it("a hotel that cannot be searched any more, or bad dates, gives a message and keeps the hotel in the box", async () => {
+    signInAs("A");
+    const { startSearchAction } = await import("./(agent)/search/actions");
+    await db.property.update({ where: { id: "12" }, data: { active: false } });
+    const gone = await startSearchAction(null, form({ propertyId: "12", destinationLabel: "Hotel 12", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), room_adults: "2" }));
+    expect(gone).toMatchObject({ status: "error", message: "This hotel can no longer be booked. Choose another hotel.", values: { propertyId: "12", destinationLabel: "Hotel 12" } });
+    const dates = await startSearchAction(null, form({ propertyId: "11", checkin: isoDaysFromNow(12), checkout: isoDaysFromNow(10), room_adults: "2" }));
+    expect(dates?.status).toBe("error");
+    expect(await db.searchSnapshot.count()).toBe(0);
   });
 
   it("destination suggestions are limited per user: one agent at the limit gets 429, a colleague still gets the list", async () => {
@@ -165,11 +210,12 @@ describe("search action and destinations (screen 07)", () => {
     expect(agencyHits.reduce((n, b) => n + b.count, 0)).toBe(1);
   });
 
-  it("the destination box says plainly that it finds cities and areas", async () => {
+  it("the destination box says it finds cities, hotels and areas (screen 07)", async () => {
     signInAs("A");
     const { default: SearchPage } = await import("./(agent)/search/page");
     const html = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({}) }));
-    expect(html).toContain('placeholder="City or area, for example Paris"');
+    expect(html).toContain('placeholder="City, hotel or location"');
+    expect(html).toContain("Destination or hotel");
   });
 
   it("the search page shows the form with sensible defaults and no nationality field", async () => {
@@ -349,6 +395,27 @@ describe("results page (screen 08)", () => {
     expect(fresh.query).toMatchObject({ destinationId: "paris", rooms: [{ adults: 2, childAges: [5] }] });
     expect(fresh.expiresAt.getTime()).toBeGreaterThan(Date.now());
     expect(await db.recentSearch.count({ where: { userId: "user-1" } })).toBe(1);
+  });
+
+  it("a search of one hotel: Search again searches that hotel again and opens its page; with no rooms the results say so", async () => {
+    await db.user.create({ data: { id: "user-1", email: "a@t.local", name: "A", role: "AGENT", agencyId: "A" } });
+    signInAs("A");
+    const { startHotelSearch } = await import("@/server/search/search");
+    const stay = { checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), rooms: [{ adults: 2, childAges: [] }] };
+    const { snapshotId: id } = await startHotelSearch({ agencyId: "A", userId: "user-1", supplierContext: {} }, { propertyId: "11", ...stay });
+    // The box on the results keeps the hotel, so new dates search the same hotel.
+    const html = await renderResults(id);
+    expect(html).toContain('name="propertyId" value="11"');
+    expect(html).toContain("1 property found");
+    await db.searchSnapshot.update({ where: { id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    const { searchAgainAction } = await import("./(agent)/search/actions");
+    const thrown = await searchAgainAction(form({ snapshotId: id })).catch((e: Error) => e);
+    const target = String((thrown as Error).message).match(/^NEXT_REDIRECT:\/search\/([a-z0-9]+)\/hotels\/11$/);
+    expect(target).not.toBeNull();
+    expect((await db.searchSnapshot.findUniqueOrThrow({ where: { id: target![1]! } })).candidateIds).toEqual(["11"]);
+    // No rooms for the dates: the one-hotel results say so, and what to do.
+    await db.searchHotel.deleteMany({ where: { snapshotId: target![1]! } });
+    expect(await renderResults(target![1]!)).toContain("This hotel has no rooms for these dates. Try other dates, or search its city to see other hotels.");
   });
 
   it("Search again: another agency's search does nothing; a search that cannot run comes back with the reason", async () => {

@@ -23,3 +23,9 @@ export function resultsHref(snapshotId: string, kept: URLSearchParams, extra: Re
   const query = params.toString();
   return `/search/${snapshotId}${query ? `?${query}` : ""}`;
 }
+
+// "/search/<id>/hotels/<propertyId>" (a hotel's page in a search) with the kept params.
+export function hotelHref(snapshotId: string, propertyId: string, kept: URLSearchParams): string {
+  const query = kept.toString();
+  return `/search/${snapshotId}/hotels/${encodeURIComponent(propertyId)}${query ? `?${query}` : ""}`;
+}

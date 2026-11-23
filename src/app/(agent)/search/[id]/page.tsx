@@ -302,7 +302,11 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                   </div>
                 ) : (
                   <p className={emptyState}>
-                    {result.total === 0 && !filtered ? "No hotels are available for these dates. Try other dates." : "No hotels match these filters. Change or clear the filters."}
+                    {result.total === 0 && !filtered
+                      ? summary.propertyId
+                        ? "This hotel has no rooms for these dates. Try other dates, or search its city to see other hotels."
+                        : "No hotels are available for these dates. Try other dates."
+                      : "No hotels match these filters. Change or clear the filters."}
                   </p>
                 )
               ) : (

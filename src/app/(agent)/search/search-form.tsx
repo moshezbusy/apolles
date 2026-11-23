@@ -7,7 +7,7 @@ import { localToday } from "./dates";
 import { DestinationPicker } from "./destination-picker";
 import type { SearchFormState, SearchFormValues } from "./form-state";
 
-// Search box (screens 07, 08, 09): destination, dates, and per room the adults and each child's
+// Search box (screens 07, 08, 09): destination or hotel, dates, and per room the adults and each child's
 // age (SP1). The dates are our own calendar (plan 9: DD/MM/YYYY, the system's look); they are
 // sent as ISO dates. Rooms (plan 10): one block per room, sent in room order as room_adults and
 // room_children ("9,4"); "+ Add a room" only when several rooms are allowed (multiRoomAllowed, from
@@ -119,8 +119,8 @@ function Fields({
   return (
     <div className={`grid items-end gap-3 ${compact ? "lg:grid-cols-[1.6fr_1fr_1fr_1fr_auto]" : "md:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr_auto]"}`}>
       <div className={label}>
-        <span>Destination</span>
-        <DestinationPicker defaultId={shown.destinationId} defaultLabel={shown.destinationLabel} />
+        <span>Destination or hotel</span>
+        <DestinationPicker defaultId={shown.destinationId} defaultLabel={shown.destinationLabel} defaultPropertyId={shown.propertyId} />
       </div>
       <DateRangeField checkin={shown.checkin} checkout={shown.checkout} min={minDate} max={maxDate} />
       <details ref={panel} data-menu="plain" className="relative">
