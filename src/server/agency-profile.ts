@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { isCountryCode } from "@/lib/countries";
-import { readImageInfo } from "@/lib/image-info";
+import { IMAGE_MAX_PIXELS, IMAGE_MAX_SIDE, readImageInfo, validateImage } from "@/lib/image-info";
 import { audit } from "@/server/audit";
 import { db } from "@/server/db";
 import { normalizeEmail } from "@/server/users";
@@ -13,7 +13,6 @@ import { normalizeEmail } from "@/server/users";
 
 export const LOGO_MAX_BYTES = 512_000;
 const LOGO_MIN_WIDTH = 300;
-const LOGO_MAX_SIDE = 4_000;
 
 export const LOGO_RULE_COPY = "PNG or JPEG, at least 300px wide, up to 500 KB.";
 
@@ -99,7 +98,10 @@ export async function updateAgencyProfile(
 export type SetLogoResult = { ok: true } | { ok: false; error: string };
 
 // The type and size are read from the file's own bytes (never its name or the browser's
-// claim), so SVG, HTML and anything else that is not a real PNG or JPEG is refused.
+// claim), so SVG, HTML and anything else that is not a real PNG or JPEG is refused. Then the
+// whole file is checked (validateImage): the logo is later drawn into voucher PDFs, where a
+// crafted or damaged image would exhaust the server's memory or hang the request. Only a file
+// that passes is stored.
 export async function setAgencyLogo(
   actorUserId: string,
   agencyId: string,
@@ -109,8 +111,15 @@ export async function setAgencyLogo(
   if (bytes.length > LOGO_MAX_BYTES) return { ok: false, error: `The file is too large. ${LOGO_RULE_COPY}` };
   const info = readImageInfo(bytes);
   if (!info) return { ok: false, error: `This file is not a PNG or JPEG image. ${LOGO_RULE_COPY}` };
-  if (info.width < LOGO_MIN_WIDTH || info.width > LOGO_MAX_SIDE || info.height > LOGO_MAX_SIDE) {
-    return { ok: false, error: `The image is ${info.width}×${info.height}px. ${LOGO_RULE_COPY} At most 4000px per side.` };
+  if (info.width < LOGO_MIN_WIDTH) return { ok: false, error: `The image is ${info.width}×${info.height}px. ${LOGO_RULE_COPY}` };
+  if (info.width > IMAGE_MAX_SIDE || info.height > IMAGE_MAX_SIDE || info.width * info.height > IMAGE_MAX_PIXELS) {
+    return {
+      ok: false,
+      error: `The image is ${info.width}×${info.height}px, which is too large. Use an image of at most ${IMAGE_MAX_SIDE}px per side and 2 million pixels in total (for example 2000×1000px).`,
+    };
+  }
+  if (!validateImage(bytes)) {
+    return { ok: false, error: "This image file is damaged or in a format we cannot print. Save it again as a standard PNG or JPEG and upload it." };
   }
 
   const sha256 = createHash("sha256").update(bytes).digest("hex");

@@ -2,6 +2,7 @@ import PDFDocument from "pdfkit";
 import { oneRoomConfirmation, roomHeading } from "@/lib/guests";
 import { formatUsd } from "@/lib/money";
 import { formatMinor } from "@/lib/supplier-money";
+import { withPdfTimeout } from "@/server/booking/pdf-safety";
 import { db } from "@/server/db";
 import type { PriceBreakdown } from "@/server/supplier/types";
 
@@ -108,5 +109,5 @@ export async function renderStatement(agencyId: string, bookingId: string): Prom
   doc.moveDown(1.2);
   line("Amounts in USD. Bookings are paid from the agency's prepaid Apolles balance. The tax invoice is issued separately.", { muted: true });
   doc.end();
-  return done;
+  return withPdfTimeout(done);
 }

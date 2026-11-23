@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
+import { bombPng, corruptIdatPng, makeJpeg, makePng, pngChunk } from "@/test/png";
 import {
   LOGO_MAX_BYTES,
   getAgencyLogo,
@@ -12,12 +13,15 @@ import {
   updateAgencyProfile,
 } from "@/server/agency-profile";
 
+// A complete, valid PNG (1-bit grey, so even large sizes stay small). `extra` bytes of text
+// chunk make the file bigger without changing the picture.
 function png(width: number, height: number, extra = 0): Uint8Array {
-  const b = new Uint8Array(33 + extra);
-  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52], 0);
-  new DataView(b.buffer).setUint32(16, width);
-  new DataView(b.buffer).setUint32(20, height);
-  return b;
+  return makePng(width, height, { colorType: 0, bitDepth: 1, ...(extra > 0 ? { before: [pngChunk("tEXt", Buffer.alloc(extra, 0x61))] } : {}) });
+}
+
+// Only the first 33 bytes of a PNG: what the upload check accepted before it read whole files.
+function headerOnlyPng(width: number, height: number): Uint8Array {
+  return Uint8Array.from(png(width, height).subarray(0, 33));
 }
 
 const valid = { name: "Sunrise Travel Ltd", email: "Office@Sunrise.example", phone: "+972 50-123-4567", country: "IL" };
@@ -103,7 +107,13 @@ describe("agency profile", () => {
     it.each([
       ["SVG", new TextEncoder().encode("<svg xmlns='http://www.w3.org/2000/svg'><script>x</script></svg>")],
       ["too narrow (under 300px)", png(200, 200)],
-      ["too large in pixels", png(5000, 300)],
+      ["too wide (over 2000px)", png(2001, 300)],
+      ["too many pixels (over 2 million)", png(2000, 1001)],
+      ["a header with no picture behind it", headerOnlyPng(600, 200)],
+      ["a zlib bomb (300 MB of pixels in a 300 KB file)", bombPng(600, 200, 300_000_000)],
+      ["a corrupt pixel stream", corruptIdatPng(600, 200)],
+      ["an interlaced PNG", makePng(600, 200, { interlace: 1 })],
+      ["a JPEG cut short", makeJpeg(600, 200).subarray(0, 60)],
       ["too many bytes", png(600, 200, LOGO_MAX_BYTES)],
       ["empty", new Uint8Array()],
     ])("rejects %s and stores nothing", async (_label, bytes) => {
@@ -111,6 +121,19 @@ describe("agency profile", () => {
       expect(result.ok).toBe(false);
       expect(await db.agencyLogo.count()).toBe(0);
       expect(await db.auditLog.count()).toBe(0);
+    });
+
+    it("stores a complete JPEG, and a PNG at the edge of the pixel budget", async () => {
+      expect(await setAgencyLogo(agentA, agencyA, makeJpeg(600, 200))).toEqual({ ok: true });
+      expect(await getAgencyLogo(agencyA)).toMatchObject({ mimeType: "image/jpeg", width: 600, height: 200 });
+      expect(await setAgencyLogo(agentA, agencyA, png(2000, 1000))).toEqual({ ok: true });
+    });
+
+    it("says what to do when the file is damaged or too large in pixels", async () => {
+      const damaged = await setAgencyLogo(agentA, agencyA, corruptIdatPng(600, 200));
+      expect(damaged).toEqual({ ok: false, error: "This image file is damaged or in a format we cannot print. Save it again as a standard PNG or JPEG and upload it." });
+      const large = await setAgencyLogo(agentA, agencyA, png(2000, 1001));
+      expect(large).toEqual({ ok: false, error: "The image is 2000×1001px, which is too large. Use an image of at most 2000px per side and 2 million pixels in total (for example 2000×1000px)." });
     });
 
     it("a logo is read only for its own agency", async () => {

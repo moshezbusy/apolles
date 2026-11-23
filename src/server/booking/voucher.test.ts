@@ -2,6 +2,7 @@ import { inflateSync } from "node:zlib";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
+import { bombPng, corruptIdatPng, makePng, pngRowBytes } from "@/test/png";
 import { VoucherNotAvailable, renderVoucher } from "./voucher";
 
 // The text a PDF draws, from its (Flate-compressed) content streams. Enough to check what
@@ -130,6 +131,51 @@ describe("voucher PDF", () => {
     // Each page's text is its own content stream: a room's heading and its last guest are on the same page.
     const pages = text.split("\n");
     for (let i = 1; i <= 8; i++) expect(pages.some((p) => p.includes(`Room ${i} · 4 adults`) && p.includes(`Guest${i}x6 Levi`)), `room ${i} on one page`).toBe(true);
+  });
+
+  // A logo row as an older version stored it: straight into the table, with no upload check.
+  async function storeLogo(data: Buffer) {
+    await db.agencyLogo.create({ data: { agencyId: "A", mimeType: "image/png", data: Uint8Array.from(data), sizeBytes: data.length, width: 600, height: 200, sha256: "x" } });
+  }
+  const hasImage = (pdf: Buffer) => pdf.toString("latin1").includes("/Subtype /Image");
+
+  it("draws a sound logo, with or without transparency", async () => {
+    await seed();
+    await storeLogo(makePng(600, 200, { colorType: 6 }));
+    const pdf = await renderVoucher("A", "bk1");
+    expect(hasImage(pdf)).toBe(true);
+    expect(pdfText(pdf)).toContain("Sunrise Travel");
+  });
+
+  it.each([
+    ["a zlib bomb (300 MB of pixels in a 300 KB file)", () => bombPng(600, 200, 300_000_000)],
+    ["a corrupt pixel stream", () => corruptIdatPng(600, 200)],
+    ["a row filter type that does not exist", () => {
+      const raw = Buffer.alloc(200 * pngRowBytes(600, 6, 8));
+      raw[0] = 9;
+      return makePng(600, 200, { colorType: 6, raw });
+    }],
+    ["an interlaced PNG", () => makePng(600, 200, { colorType: 6, interlace: 1 })],
+  ])("a stored logo that is %s is left out: the voucher still prints, quickly, with the agency name", async (_label, build) => {
+    await seed();
+    await storeLogo(build());
+    const uncaught: unknown[] = [];
+    const onUncaught = (error: unknown) => uncaught.push(error);
+    process.on("uncaughtException", onUncaught);
+    try {
+      const before = process.memoryUsage().arrayBuffers;
+      const started = Date.now();
+      const pdf = await renderVoucher("A", "bk1");
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(process.memoryUsage().arrayBuffers - before).toBeLessThan(50_000_000);
+      expect(hasImage(pdf)).toBe(false);
+      expect(pdfText(pdf)).toContain("Sunrise Travel");
+      // Nothing was thrown later from inside the PDF library either.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(uncaught).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+    }
   });
 
   it("only for the agency's own confirmed booking", async () => {

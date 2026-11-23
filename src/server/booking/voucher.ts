@@ -1,7 +1,9 @@
 import { type StoredGuest, guestLines, oneRoomConfirmation, roomGuestLines, roomHeading } from "@/lib/guests";
 import PDFDocument from "pdfkit";
+import { validateImage } from "@/lib/image-info";
 import { formatMinor } from "@/lib/supplier-money";
 import { toBlocks } from "@/lib/supplier-text";
+import { withPdfTimeout } from "@/server/booking/pdf-safety";
 import { db } from "@/server/db";
 import { contentShape } from "@/server/content/content-cache";
 import type { CancelPenalty, PriceBreakdown, PropertyContent } from "@/server/supplier/types";
@@ -91,10 +93,15 @@ export async function renderVoucher(agencyId: string, bookingId: string): Promis
     for (const block of toBlocks(html)) line(block.kind === "li" ? `- ${block.text}` : block.text);
   };
 
-  // Agency header (ER2: the traveller's contact is the agency).
+  // Agency header (ER2: the traveller's contact is the agency). The stored logo is checked in
+  // full again right here (validateImage): pdfkit decodes a PNG with transparency in memory and
+  // inside a callback, where a crafted file exhausts the server and a damaged one leaves the PDF
+  // unfinished for good. Uploads are checked too, but a row stored before that check must not be
+  // trusted. A logo that fails is left out; the agency name still shows.
   if (logo) {
+    const image = Buffer.from(logo.data);
     try {
-      doc.image(Buffer.from(logo.data), 48, 40, { fit: [150, 50] });
+      if (validateImage(image)) doc.image(image, 48, 40, { fit: [150, 50] });
     } catch {
       // a logo pdfkit cannot read is left out; the agency name still shows
     }
@@ -184,5 +191,5 @@ export async function renderVoucher(agencyId: string, bookingId: string): Promis
   line("Times are the hotel's local time. To cancel or change, contact the travel agency above.", { muted: true });
 
   doc.end();
-  return done;
+  return withPdfTimeout(done);
 }

@@ -6,6 +6,7 @@ import { getAgencyProfile, setAgencyLogo } from "@/server/agency-profile";
 import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
+import { makePng } from "@/test/png";
 
 vi.mock("next/navigation", () => ({
   redirect: vi.fn((url: string) => {
@@ -17,13 +18,7 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/server/auth/guards", () => ({ requireAgent: vi.fn() }));
 vi.mock("@/server/auth/password-tokens", () => ({ requestResetWithinLimits: vi.fn(async () => {}) }));
 
-function png(width: number, height: number): Uint8Array {
-  const b = new Uint8Array(33);
-  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52], 0);
-  new DataView(b.buffer).setUint32(16, width);
-  new DataView(b.buffer).setUint32(20, height);
-  return b;
-}
+const png = (width: number, height: number): Uint8Array => makePng(width, height);
 
 function form(fields: Record<string, string | Blob>): FormData {
   const data = new FormData();
