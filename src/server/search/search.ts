@@ -2,9 +2,11 @@ import { z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
 import { getContent } from "@/server/content/content-cache";
 import { db } from "@/server/db";
+import { freeCancellation } from "@/lib/cancellation";
 import { hitRateLimit } from "@/server/rate-limit";
-import { SupplierError } from "@/server/supplier/expedia/client";
+import { SupplierError, SupplierRequestRejected } from "@/server/supplier/expedia/client";
 import { multiRoomAllowed, supplierAdapter } from "@/server/supplier";
+import { feesAtProperty } from "@/server/supplier/price";
 import type { Image, Occupancy, Offer, PropertyContent, SupplierAdapter, SupplierContext } from "@/server/supplier/types";
 import type { Money } from "@/lib/supplier-money";
 import { SEVERAL_ROOMS_UNAVAILABLE, SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
@@ -18,16 +20,28 @@ import { MAX_ROOMS, type SearchInput, searchInputSchema } from "./input";
 // - The point-of-sale country is the agency's, read from the database (TR2).
 // - Every read and write is scoped by the session's agencyId: another agency's id gives null.
 // - Supplier failures become SearchUnavailable (screen 24); no retry inside the request (TR7).
+//   A search the supplier refuses as asked (HTTP 400: dates or guests it does not take) is not an
+//   outage: it becomes SearchInputInvalid, "Check the dates and guests and search again."
+// - Limits are per user, so one agent's searching never locks out a colleague; a higher ceiling
+//   per agency stays as a backstop. Stored searches are counted and removed per user too.
 
 const BATCH = 250;
 const MAX_CANDIDATES = 5_000;
 const SNAPSHOT_TTL_MS = 30 * 60_000;
 const CLEANUP_AFTER_MS = 60 * 60_000;
-const SEARCH_RATE_LIMIT = { limit: 30, windowMs: 60_000 }; // per agency
-const HOTEL_RATE_LIMIT = { limit: 120, windowMs: 60_000 }; // hotel pages, per agency
+const SEARCH_RATE_LIMIT = { limit: 30, windowMs: 60_000 }; // searches and load-more, per user
+const SEARCH_AGENCY_CEILING = { limit: 150, windowMs: 60_000 }; // all the agency's users together
+const HOTEL_RATE_LIMIT = { limit: 120, windowMs: 60_000 }; // hotel pages, per user
+const HOTEL_AGENCY_CEILING = { limit: 600, windowMs: 60_000 };
 const DEFAULT_TAKE = 20;
 const MAX_TAKE = 50;
-const MAX_SNAPSHOTS_PER_AGENCY = 50; // older searches are removed, so one agency cannot fill the database
+// Older searches are removed, so nobody can fill the database: 50 per user, and 300 per agency
+// as a backstop. Expired searches go first, then the oldest; one younger than 5 minutes is never
+// removed (it is a search somebody is looking at right now).
+const MAX_SNAPSHOTS_PER_USER = 50;
+const MAX_SNAPSHOTS_PER_AGENCY = 300;
+const KEEP_YOUNGER_THAN_MS = 5 * 60_000;
+const REJECTED = "Check the dates and guests and search again.";
 
 export type SearchContext = { agencyId: string; userId: string; supplierContext: SupplierContext };
 type Deps = { adapter?: SupplierAdapter; now?: Date; content?: typeof getContent };
@@ -170,42 +184,67 @@ function readOffers(raw: unknown, rooms: Occupancy[]): Offer[] | null {
   return offers.data.every((offer) => pricedForRooms(offer, rooms)) ? offers.data : null;
 }
 
-async function rateLimit(agencyId: string): Promise<void> {
-  const { allowed } = await hitRateLimit(`search:agency:${agencyId}`, SEARCH_RATE_LIMIT.limit, SEARCH_RATE_LIMIT.windowMs);
-  if (!allowed) throw new SearchRateLimited("Too many searches. Wait a minute and try again.");
+// The user's own limit first: an agent over it is refused without using up the agency's ceiling,
+// so one busy agent cannot lock out the others.
+async function limitPerUser(
+  action: "search" | "hotel",
+  who: { agencyId: string; userId: string },
+  perUser: { limit: number; windowMs: number },
+  perAgency: { limit: number; windowMs: number },
+  message: string,
+): Promise<void> {
+  const user = await hitRateLimit(`${action}:user:${who.userId}`, perUser.limit, perUser.windowMs);
+  if (!user.allowed) throw new SearchRateLimited(message);
+  const agency = await hitRateLimit(`${action}:agency:${who.agencyId}`, perAgency.limit, perAgency.windowMs);
+  if (!agency.allowed) throw new SearchRateLimited(message);
 }
 
+async function rateLimit(who: { agencyId: string; userId: string }): Promise<void> {
+  await limitPerUser("search", who, SEARCH_RATE_LIMIT, SEARCH_AGENCY_CEILING, "Too many searches. Wait a minute and try again.");
+}
+
+type BatchSnapshot = { id: string; candidateIds: string[]; nextIndex: number; query: { checkin: string; checkout: string; countryCode: string }; rooms: Occupancy[] };
+
 // Asks Expedia for the next batch of a snapshot's candidates and stores the priced hotels.
-async function fetchBatch(
-  snapshot: { id: string; candidateIds: string[]; nextIndex: number; query: { checkin: string; checkout: string; countryCode: string }; rooms: Occupancy[] },
-  supplierContext: SupplierContext,
-  adapter: SupplierAdapter,
-): Promise<number> {
+async function fetchBatch(snapshot: BatchSnapshot, supplierContext: SupplierContext, adapter: SupplierAdapter, now: Date): Promise<number> {
   checkRooms(snapshot.rooms);
   const batch = snapshot.candidateIds.slice(snapshot.nextIndex, snapshot.nextIndex + BATCH);
   if (batch.length === 0) return 0;
   const end = snapshot.nextIndex + batch.length;
   // Claim the batch first: of two load-more clicks at the same moment only one moves nextIndex
-  // and asks Expedia; the other gets 0. A supplier failure gives the claim back.
+  // and asks Expedia; the other gets 0. Any failure after the claim (the supplier, or the
+  // database while the answer is stored) gives the claim back, so these hotels are asked for
+  // again on the next try instead of being skipped for good.
   const claimed = await db.searchSnapshot.updateMany({ where: { id: snapshot.id, nextIndex: snapshot.nextIndex }, data: { nextIndex: end } });
   if (claimed.count === 0) return 0;
-  let results;
   try {
-    results = await adapter.searchAvailability(
-      {
-        propertyIds: batch,
-        checkin: snapshot.query.checkin,
-        checkout: snapshot.query.checkout,
-        occupancies: snapshot.rooms,
-        countryCode: snapshot.query.countryCode,
-      },
-      supplierContext,
-    );
+    await storeBatch(snapshot, batch, supplierContext, adapter, now);
   } catch (error) {
-    await db.searchSnapshot.updateMany({ where: { id: snapshot.id, nextIndex: end }, data: { nextIndex: snapshot.nextIndex } });
+    try {
+      await db.searchSnapshot.updateMany({ where: { id: snapshot.id, nextIndex: end }, data: { nextIndex: snapshot.nextIndex } });
+    } catch {
+      console.error("search batch claim could not be given back"); // the first error is the one to report
+    }
+    // The supplier refused the search as asked (HTTP 400): not an outage, and trying again
+    // later would not help. Anything else from the supplier is "unavailable right now".
+    if (error instanceof SupplierRequestRejected) throw new SearchInputInvalid(REJECTED);
     if (error instanceof SupplierError) throw new SearchUnavailable("Hotel search is unavailable right now. Try again in a few minutes.");
     throw error;
   }
+  return batch.length;
+}
+
+async function storeBatch(snapshot: BatchSnapshot, batch: string[], supplierContext: SupplierContext, adapter: SupplierAdapter, now: Date): Promise<void> {
+  const results = await adapter.searchAvailability(
+    {
+      propertyIds: batch,
+      checkin: snapshot.query.checkin,
+      checkout: snapshot.query.checkout,
+      occupancies: snapshot.rooms,
+      countryCode: snapshot.query.countryCode,
+    },
+    supplierContext,
+  );
 
   const asked = new Set(batch);
   const byId = new Map<string, Offer[]>();
@@ -235,30 +274,35 @@ async function fetchBatch(
         starRating: property.starRating,
         minTotalMinor: cheapest.price.total.minor,
         currency: cheapest.price.total.currency,
-        refundableAvailable: offers.some((offer) => offer.refundable),
+        refundableAvailable: offers.some((offer) => freeCancellation(offer, now) !== null),
         offers: offers as unknown as Prisma.InputJsonValue,
       },
     ];
   });
 
   // One row per rate as well, so the results filters can match a single rate (see listResults).
+  // Free cancellation follows the one rule (src/lib/cancellation.ts), the same as the label and
+  // the booking's deadline: the supplier's "refundable" alone is never enough.
   const rates = rows.flatMap((row) =>
-    (byId.get(row.propertyId) ?? []).map((offer, rateIndex) => ({
-      snapshotId: snapshot.id,
-      propertyId: row.propertyId,
-      rateIndex,
-      roomName: offer.roomName.toLowerCase().slice(0, 300),
-      refundable: offer.refundable,
-      totalMinor: offer.price.total.minor,
-      currency: offer.price.total.currency,
-      feesAtProperty: offer.price.dueAtProperty.length > 0,
-    })),
+    (byId.get(row.propertyId) ?? []).map((offer, rateIndex) => {
+      const free = freeCancellation(offer, now);
+      return {
+        snapshotId: snapshot.id,
+        propertyId: row.propertyId,
+        rateIndex,
+        roomName: offer.roomName.toLowerCase().slice(0, 300),
+        refundable: free !== null,
+        freeCancelUntil: free?.at ?? null,
+        totalMinor: offer.price.total.minor,
+        currency: offer.price.total.currency,
+        feesAtProperty: feesAtProperty(offer.price).due,
+      };
+    }),
   );
   await db.$transaction([
     db.searchHotel.createMany({ data: rows, skipDuplicates: true }),
     db.searchRate.createMany({ data: rates, skipDuplicates: true }),
   ]);
-  return batch.length;
 }
 
 // Best effort: cache the content (images) of the priced hotels so the results page can show
@@ -278,7 +322,7 @@ export async function startSearch(ctx: SearchContext, rawInput: unknown, deps: D
   if (!parsed.success) throw new SearchInputInvalid("Check the destination, dates and guests.");
   const input: SearchInput = parsed.data;
   checkRooms(input.rooms);
-  await rateLimit(ctx.agencyId);
+  await rateLimit(ctx);
 
   const [agency, destination] = await Promise.all([
     db.agency.findUnique({ where: { id: ctx.agencyId }, select: { country: true } }),
@@ -312,7 +356,7 @@ export async function searchOneHotel(
     throw new SearchInputInvalid("Check the destination, dates and guests.");
   }
   checkRooms(parsed.data.rooms);
-  await rateLimit(ctx.agencyId);
+  await rateLimit(ctx);
   const [agency, property] = await Promise.all([
     db.agency.findUnique({ where: { id: ctx.agencyId }, select: { country: true } }),
     db.property.findFirst({ where: { id: propertyId, active: true, expediaCollect: true }, select: { id: true } }),
@@ -340,18 +384,40 @@ async function createSnapshot(
       expiresAt: new Date(now.getTime() + SNAPSHOT_TTL_MS),
     },
   });
-  const older = await db.searchSnapshot.findMany({
-    where: { agencyId: ctx.agencyId },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    skip: MAX_SNAPSHOTS_PER_AGENCY,
-    select: { id: true },
-  });
-  if (older.length > 0) await db.searchSnapshot.deleteMany({ where: { agencyId: ctx.agencyId, id: { in: older.map((o) => o.id) } } });
+  await removeOldSnapshots(ctx, now);
   if (candidates.length > 0) {
-    await fetchBatch({ ...snapshot, query, rooms: query.rooms }, ctx.supplierContext, deps.adapter ?? supplierAdapter());
+    await fetchBatch({ ...snapshot, query, rooms: query.rooms }, ctx.supplierContext, deps.adapter ?? supplierAdapter(), now);
     await prefetchContent(snapshot.id, deps.content ?? getContent, now);
   }
   return { snapshotId: snapshot.id };
+}
+
+type StoredSearch = { id: string; createdAt: Date; expiresAt: Date };
+
+// Which stored searches to remove so that at most `max` stay: expired ones first, then the
+// oldest. One younger than 5 minutes is never chosen, even if that leaves more than `max`.
+export function snapshotsToRemove(rows: StoredSearch[], max: number, now: Date): string[] {
+  const excess = rows.length - max;
+  if (excess <= 0) return [];
+  const expired = (row: StoredSearch) => row.expiresAt.getTime() <= now.getTime();
+  return rows
+    .filter((row) => now.getTime() - row.createdAt.getTime() >= KEEP_YOUNGER_THAN_MS)
+    .sort((a, b) => Number(expired(b)) - Number(expired(a)) || a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))
+    .slice(0, excess)
+    .map((row) => row.id);
+}
+
+// Keeps the stored searches within the limits: the user's own first (a colleague's searches are
+// never removed to make room for this user's), then the agency's backstop.
+async function removeOldSnapshots(ctx: { agencyId: string; userId: string }, now: Date): Promise<void> {
+  const select = { id: true, createdAt: true, expiresAt: true } as const;
+  const own = await db.searchSnapshot.findMany({ where: { agencyId: ctx.agencyId, userId: ctx.userId }, select });
+  const ownOld = snapshotsToRemove(own, MAX_SNAPSHOTS_PER_USER, now);
+  if (ownOld.length > 0) await db.searchSnapshot.deleteMany({ where: { agencyId: ctx.agencyId, userId: ctx.userId, id: { in: ownOld } } });
+  if ((await db.searchSnapshot.count({ where: { agencyId: ctx.agencyId } })) <= MAX_SNAPSHOTS_PER_AGENCY) return;
+  const all = await db.searchSnapshot.findMany({ where: { agencyId: ctx.agencyId }, select, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: 5_000 });
+  const old = snapshotsToRemove(all, MAX_SNAPSHOTS_PER_AGENCY, now);
+  if (old.length > 0) await db.searchSnapshot.deleteMany({ where: { agencyId: ctx.agencyId, id: { in: old } } });
 }
 
 async function ownSnapshot(agencyId: string, snapshotId: string) {
@@ -367,8 +433,8 @@ export async function loadMore(ctx: SearchContext, snapshotId: string, deps: Dep
   if (!read) throw new Error("loadMore: stored search query does not read");
   if (snapshot.nextIndex >= snapshot.candidateIds.length) return { added: 0, hasMore: false };
   checkRooms(read.rooms); // before the rate limit, as the other entry points
-  await rateLimit(ctx.agencyId);
-  const added = await fetchBatch({ ...snapshot, ...read }, ctx.supplierContext, deps.adapter ?? supplierAdapter());
+  await rateLimit(ctx);
+  const added = await fetchBatch({ ...snapshot, ...read }, ctx.supplierContext, deps.adapter ?? supplierAdapter(), now);
   await prefetchContent(snapshot.id, deps.content ?? getContent, now);
   return { added, hasMore: snapshot.nextIndex + added < snapshot.candidateIds.length };
 }
@@ -408,10 +474,22 @@ export async function listResults(
   snapshotId: string,
   opts: ListOptions,
   now: Date = new Date(),
-): Promise<{ hotels: HotelCard[]; total: number; nextCursor: string | null; hasMoreFromSupplier: boolean; expired: boolean } | null> {
+): Promise<{
+  hotels: HotelCard[];
+  total: number;
+  nextCursor: string | null;
+  hasMoreFromSupplier: boolean;
+  // How far the search got: `loaded` of the destination's `candidates` hotels were asked for so
+  // far (250 at a time), so the page can say "the first N of M hotels" while more remain.
+  loaded: number;
+  candidates: number;
+  expired: boolean;
+} | null> {
   const snapshot = await ownSnapshot(agencyId, snapshotId);
   if (!snapshot) return null;
-  if (snapshot.expiresAt <= now) return { hotels: [], total: 0, nextCursor: null, hasMoreFromSupplier: false, expired: true };
+  const candidates = snapshot.candidateIds.length;
+  const loaded = Math.min(snapshot.nextIndex, candidates);
+  if (snapshot.expiresAt <= now) return { hotels: [], total: 0, nextCursor: null, hasMoreFromSupplier: false, loaded, candidates, expired: true };
 
   const take = Math.min(Math.max(1, Math.trunc(opts.take ?? DEFAULT_TAKE)), MAX_TAKE);
   const skip = opts.cursor && /^\d{1,6}$/.test(opts.cursor) ? Number(opts.cursor) : 0;
@@ -420,7 +498,11 @@ export async function listResults(
   const rateWhere: Prisma.Sql[] = [Prisma.sql`r."snapshotId" = ${snapshot.id}`];
   const roomName = opts.roomName?.trim().slice(0, 100).toLowerCase();
   if (roomName) rateWhere.push(Prisma.sql`r."roomName" LIKE ${containsPattern(roomName)} ESCAPE '\\'`);
-  if (opts.freeCancellation) rateWhere.push(Prisma.sql`r."refundable"`);
+  // Free cancellation still ahead at this moment (the stored deadline against the clock): a
+  // deadline that passed since the search ran no longer counts. Both are UTC wall-clock times.
+  const clock = now.toISOString().slice(0, 23);
+  const freeNow = Prisma.sql`(r."freeCancelUntil" IS NOT NULL AND r."freeCancelUntil" > ${clock}::timestamp)`;
+  if (opts.freeCancellation) rateWhere.push(freeNow);
   if (opts.minPriceMinor !== undefined) rateWhere.push(Prisma.sql`r."totalMinor" >= ${Math.trunc(opts.minPriceMinor)}`);
   if (opts.maxPriceMinor !== undefined) rateWhere.push(Prisma.sql`r."totalMinor" <= ${Math.trunc(opts.maxPriceMinor)}`);
   const hotelWhere: Prisma.Sql[] = [Prisma.sql`m."rn" = 1`];
@@ -435,7 +517,7 @@ export async function listResults(
     WITH m AS (
       SELECT r."propertyId", r."totalMinor", r."currency", r."feesAtProperty",
              r."rateIndex",
-             bool_or(r."refundable") OVER (PARTITION BY r."propertyId") AS "anyRefundable",
+             bool_or(${freeNow}) OVER (PARTITION BY r."propertyId") AS "anyRefundable",
              row_number() OVER (PARTITION BY r."propertyId" ORDER BY r."totalMinor" ASC, r."rateIndex" ASC) AS "rn"
       FROM "SearchRate" r
       WHERE ${Prisma.join(rateWhere, " AND ")}
@@ -495,6 +577,8 @@ export async function listResults(
     total,
     nextCursor: rows.length > take ? String(skip + take) : null,
     hasMoreFromSupplier: snapshot.nextIndex < snapshot.candidateIds.length,
+    loaded,
+    candidates,
     expired: false,
   };
 }
@@ -533,15 +617,14 @@ export async function searchSummary(agencyId: string, snapshotId: string, now: D
 }
 
 export async function getHotelOffers(
-  agencyId: string,
+  who: { agencyId: string; userId: string },
   snapshotId: string,
   propertyId: string,
   now: Date = new Date(),
   deps: { content?: typeof getContent } = {},
 ): Promise<{ offers: Offer[]; content: PropertyContent | null; hotel: { name: string; city: string; starRating: string | null } } | null> {
-  const { allowed } = await hitRateLimit(`hotel:agency:${agencyId}`, HOTEL_RATE_LIMIT.limit, HOTEL_RATE_LIMIT.windowMs);
-  if (!allowed) throw new SearchRateLimited("Too many hotel pages opened. Wait a minute and try again.");
-  const snapshot = await ownSnapshot(agencyId, snapshotId);
+  await limitPerUser("hotel", who, HOTEL_RATE_LIMIT, HOTEL_AGENCY_CEILING, "Too many hotel pages opened. Wait a minute and try again.");
+  const snapshot = await ownSnapshot(who.agencyId, snapshotId);
   if (!snapshot || snapshot.expiresAt <= now) return null;
   if (typeof propertyId !== "string" || propertyId.length > 64) return null;
   const read = readQuery(snapshot.query);
@@ -564,8 +647,30 @@ export async function getHotelOffers(
   };
 }
 
+// The name of one rate in links and forms ("r"): the room id and the rate id together, because a
+// rate id alone can repeat across a hotel's rooms. findOffer reads it back; a plain rate id (a
+// link made before this, or a caller that only knows the rate) still works as before.
+const REF_SEPARATOR = "~";
+const MAX_REF_LENGTH = 128; // what the booking and quote forms accept for "r"
+
+export function offerRef(offer: Pick<Offer, "roomId" | "rateId">): string {
+  const ref = `${offer.roomId}${REF_SEPARATOR}${offer.rateId}`;
+  return ref.length <= MAX_REF_LENGTH ? ref : offer.rateId;
+}
+
+function offerByRef(offers: Offer[], ref: string): Offer | undefined {
+  const at = ref.indexOf(REF_SEPARATOR);
+  if (at > 0) {
+    const [roomId, rateId] = [ref.slice(0, at), ref.slice(at + 1)];
+    const exact = offers.find((o) => o.roomId === roomId && o.rateId === rateId);
+    if (exact) return exact;
+  }
+  return offers.find((o) => o.rateId === ref);
+}
+
 // One rate of one hotel of the agency's own, unexpired search, for the booking pages. Everything
-// a booking needs is read here on the server; the browser only names the rate.
+// a booking needs is read here on the server; the browser only names the rate (rateId: an
+// offerRef, or a plain rate id).
 export async function findOffer(
   agencyId: string,
   ref: { snapshotId: string; propertyId: string; rateId: string; bedGroupId: string },
@@ -580,7 +685,7 @@ export async function findOffer(
   if (!hotel) return null;
   const offers = readOffers(hotel.offers, read.rooms);
   if (!offers) return null;
-  const offer = offers.find((o) => o.rateId === ref.rateId);
+  const offer = offerByRef(offers, ref.rateId);
   const bedGroup = offer?.bedGroups.find((b) => b.id === ref.bedGroupId);
   if (!offer || !bedGroup) return null;
   return { offer, bedGroup, hotel: { name: hotel.name, city: hotel.city }, query: read.query, rooms: read.rooms };

@@ -1,5 +1,8 @@
 import { card, sectionTitle } from "@/components/ui";
+import { hasNoCancelDeadline, isNonRefundable } from "@/lib/cancellation";
+import type { Money } from "@/lib/supplier-money";
 import { toBlocks } from "@/lib/supplier-text";
+import { feesAtProperty } from "@/server/supplier/price";
 import type { CancelPenalty, PriceBreakdown, PropertyContent } from "@/server/supplier/types";
 import { DUE_LABEL, LINE_LABEL, money, penaltyText } from "./rate-text";
 
@@ -82,8 +85,11 @@ export function Policies({ content }: { content: PropertyContent }) {
 }
 
 
-// The supplier's total and its lines (BP5), then anything paid at the property (BP4).
+// The supplier's total and its lines (BP5), then anything paid at the property (BP4): the fees
+// one by one when the supplier lists them, and its total when no fee is listed or the list does
+// not add up to it.
 export function PriceDetails({ price, stay }: { price: PriceBreakdown; stay: string }) {
+  const atProperty = feesAtProperty(price);
   return (
     <div>
       <p className="text-[20px] font-extrabold tabular-nums text-ink">{money(price.total)}</p>
@@ -96,7 +102,7 @@ export function PriceDetails({ price, stay }: { price: PriceBreakdown; stay: str
           </div>
         ))}
       </dl>
-      {price.dueAtProperty.length > 0 ? (
+      {atProperty.due ? (
         <div className="mt-2.5 rounded-[9px] border border-[#eadfbe] bg-[#fff9e9] p-2 text-xs text-[#6f5a20]">
           <p className="font-bold">Paid at the property, not included in the total</p>
           <ul className="mt-1 flex flex-col gap-0.5">
@@ -105,6 +111,11 @@ export function PriceDetails({ price, stay }: { price: PriceBreakdown; stay: str
                 {DUE_LABEL[fee.kind]}: {fee.localAmount ? `${money(fee.localAmount)} (about ${money(fee.amount)})` : money(fee.amount)}
               </li>
             ))}
+            {atProperty.total ? (
+              <li>
+                {price.dueAtProperty.length > 0 ? "All fees at the property" : "Fees at the property"}: {money(atProperty.total)}
+              </li>
+            ) : null}
           </ul>
         </div>
       ) : null}
@@ -112,8 +123,25 @@ export function PriceDetails({ price, stay }: { price: PriceBreakdown; stay: str
   );
 }
 
-// The full cancellation policy (BP3), including non-refundable stay dates.
-export function CancellationPolicy({ refundable, penalties, nonrefundableDateRanges }: { refundable: boolean; penalties: CancelPenalty[]; nonrefundableDateRanges: { start: string; end: string }[] }) {
+// The full cancellation policy (BP3), including non-refundable stay dates. The closing line
+// follows the one free-cancellation rule (src/lib/cancellation.ts): free cancellation is never
+// promised when the supplier named no deadline, and a rate with a charge of part of the price
+// is not called non-refundable. `total` and `nights` (the stay's price), when given, tell a
+// full charge from a partial one.
+export function CancellationPolicy({
+  refundable,
+  penalties,
+  nonrefundableDateRanges,
+  total,
+  nights,
+}: {
+  refundable: boolean;
+  penalties: CancelPenalty[];
+  nonrefundableDateRanges: { start: string; end: string }[];
+  total?: Money;
+  nights?: number;
+}) {
+  const terms = { refundable, cancelPenalties: penalties, nonrefundableDateRanges, ...(total && nights ? { price: { total, nights } } : {}) };
   return (
     <ul className="flex flex-col gap-1 text-xs text-[#37413d]">
       {penalties.map((p, i) => (
@@ -124,9 +152,12 @@ export function CancellationPolicy({ refundable, penalties, nonrefundableDateRan
           Non-refundable for stay dates {r.start} to {r.end}.
         </li>
       ))}
-      {!refundable ? <li>This rate cannot be cancelled or changed without paying the full amount.</li> : null}
-      {refundable && penalties.length === 0 ? <li>Free cancellation before check-in.</li> : null}
+      {isNonRefundable(terms) ? (
+        <li>This rate cannot be cancelled or changed without paying the full amount.</li>
+      ) : !refundable ? (
+        <li>This rate is not fully refundable: the charges above apply.</li>
+      ) : null}
+      {hasNoCancelDeadline(terms) ? <li>No free cancellation deadline was given for this rate. Cancellation charges may apply.</li> : null}
     </ul>
   );
 }
-

@@ -2,6 +2,7 @@ import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
+import { SupplierTimeout } from "@/server/supplier/expedia/client";
 import type { ContentSource } from "@/server/supplier/types";
 import { syncCatalog } from "./catalog-sync";
 import { openCatalogStream } from "./download";
@@ -82,6 +83,58 @@ describe("syncCatalog", () => {
     const broken = Array.from({ length: 200 }, () => "{\"property_id\":\"x\"}");
     await expect(syncCatalog({ source, open: async () => lines([line("1", "FR"), ...broken]) })).rejects.toThrow(/refusing/);
     expect((await db.property.findUniqueOrThrow({ where: { id: "1" } })).active).toBe(true);
+  });
+
+  it("a line that names its hotel but cannot be read otherwise keeps the hotel active as it is, and the count is logged", async () => {
+    await syncCatalog({ source, open: async () => lines([line("1", "FR"), line("2", "FR"), line("3", "FR")]) });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      // Hotel 2's line has a field in a shape we do not read; hotel 3 is really gone from the file.
+      const result = await syncCatalog({ source, open: async () => lines([line("1", "FR"), line("2", "FR", { name: 42 }), "{not json"]) });
+      expect(result).toMatchObject({ upserted: 1, invalid: 2, invalidKept: 1, deactivated: 1 });
+      expect(await db.property.findUniqueOrThrow({ where: { id: "2" } })).toMatchObject({ active: true, name: "Hotel 2" });
+      expect((await db.property.findUniqueOrThrow({ where: { id: "3" } })).active).toBe(false);
+      expect(warn.mock.calls[0]?.[0]).toBe("catalog sync: 2 of 3 lines could not be read; 1 of their hotels were kept as they are");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("an unreadable line does not switch an inactive hotel back on", async () => {
+    await syncCatalog({ source, open: async () => lines([line("1", "FR"), line("2", "FR")]) });
+    await db.property.update({ where: { id: "2" }, data: { active: false } });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await syncCatalog({ source, open: async () => lines([line("1", "FR"), line("2", "FR", { name: 42 })]) });
+    } finally {
+      warn.mockRestore();
+    }
+    expect((await db.property.findUniqueOrThrow({ where: { id: "2" } })).active).toBe(false);
+  });
+
+  it("the catalog link is asked for again after a timeout; with the demo supplier the sync does nothing", async () => {
+    let calls = 0;
+    const flaky = {
+      catalogLink: async () => {
+        if (++calls === 1) throw new SupplierTimeout("timed out");
+        return { href: "https://files.example/catalog.jsonl.gz" };
+      },
+    } as unknown as ContentSource;
+    const sleep = vi.fn(async () => undefined);
+    expect(await syncCatalog({ source: flaky, open: async () => lines([line("1", "FR")]), sleep })).toMatchObject({ upserted: 1 });
+    expect(sleep).toHaveBeenCalledTimes(1);
+
+    vi.stubEnv("SUPPLIER_MODE", "fake");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const runs = await db.contentSyncRun.count();
+      expect(await syncCatalog()).toMatchObject({ upserted: 0, deactivated: 0 });
+      expect(await db.contentSyncRun.count()).toBe(runs);
+      expect((await db.property.findUniqueOrThrow({ where: { id: "1" } })).active).toBe(true);
+    } finally {
+      info.mockRestore();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("strips NUL characters and refuses an impossible rank instead of failing the batch", async () => {

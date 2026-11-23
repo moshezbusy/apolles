@@ -117,3 +117,11 @@ export async function getCachedContent(ids: string[]): Promise<Map<string, Prope
   }
   return result;
 }
+
+// Removes cached hotel content fetched before `olderThan` (the daily cleanup job calls it), so
+// the cache does not keep content of hotels nobody has looked at for a long time. Content that
+// is needed again is simply fetched again. Returns how many rows were removed.
+export async function pruneContentCache(olderThan: Date): Promise<number> {
+  const result = await db.propertyContentCache.deleteMany({ where: { fetchedAt: { lt: olderThan } } });
+  return result.count;
+}

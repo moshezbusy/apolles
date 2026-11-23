@@ -67,3 +67,16 @@ export function sumBreakdowns(parts: PriceBreakdown[]): PriceBreakdown {
     nights: first.nights,
   };
 }
+
+// What the guest pays at the property on top of the total (BP4). The supplier may give the fees
+// one by one, only their total (totals.property_fees), or both: fees are due when either says
+// so. `total` is the amount to show when no single fee is listed, or when the listed fees do not
+// add up to it; null when the listed fees are the whole story.
+export function feesAtProperty(price: Pick<PriceBreakdown, "dueAtProperty" | "dueAtPropertyTotal">): { due: boolean; total: Money | null } {
+  const total = price.dueAtPropertyTotal && price.dueAtPropertyTotal.minor > 0 ? price.dueAtPropertyTotal : null;
+  const due = price.dueAtProperty.length > 0 || total !== null;
+  if (!total) return { due, total: null };
+  const sameCurrency = price.dueAtProperty.every((fee) => fee.amount.currency === total.currency);
+  const listed = price.dueAtProperty.reduce((sum, fee) => sum + fee.amount.minor, 0);
+  return { due, total: price.dueAtProperty.length > 0 && sameCurrency && listed === total.minor ? null : total };
+}

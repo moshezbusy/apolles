@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sumBreakdowns } from "./price";
+import { feesAtProperty, sumBreakdowns } from "./price";
 import type { PriceBreakdown } from "./types";
 
 const usd = (minor: number) => ({ minor, currency: "USD" });
@@ -77,5 +77,27 @@ describe("sumBreakdowns", () => {
     expect(() => sumBreakdowns([part(10000, 1500, null), eur])).toThrow(/currency/);
     const huge = part(Number.MAX_SAFE_INTEGER - 10, 0, null);
     expect(() => sumBreakdowns([huge, huge])).toThrow(/overflow/);
+  });
+});
+
+describe("feesAtProperty", () => {
+  const fee = (minor: number) => ({ kind: "resort_fee" as const, amount: usd(minor), localAmount: null });
+
+  it("nothing listed and no total: nothing is due", () => {
+    expect(feesAtProperty({ dueAtProperty: [], dueAtPropertyTotal: null })).toEqual({ due: false, total: null });
+    expect(feesAtProperty({ dueAtProperty: [], dueAtPropertyTotal: usd(0) })).toEqual({ due: false, total: null });
+  });
+
+  it("only the supplier's total, with no single fee listed: fees are due, with that amount", () => {
+    expect(feesAtProperty({ dueAtProperty: [], dueAtPropertyTotal: usd(2_500) })).toEqual({ due: true, total: usd(2_500) });
+  });
+
+  it("listed fees that add up to the total: the list is enough", () => {
+    expect(feesAtProperty({ dueAtProperty: [fee(1_000), fee(1_500)], dueAtPropertyTotal: usd(2_500) })).toEqual({ due: true, total: null });
+    expect(feesAtProperty({ dueAtProperty: [fee(1_000)], dueAtPropertyTotal: null })).toEqual({ due: true, total: null });
+  });
+
+  it("listed fees that do not add up to the total: the total is shown too", () => {
+    expect(feesAtProperty({ dueAtProperty: [fee(1_000)], dueAtPropertyTotal: usd(2_500) })).toEqual({ due: true, total: usd(2_500) });
   });
 });
