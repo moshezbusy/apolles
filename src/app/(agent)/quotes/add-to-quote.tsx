@@ -39,7 +39,8 @@ export function AddToQuote({
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   }, [added, params, pathname, router]);
   const list = added && !quotes.some((q) => q.id === added) ? [{ id: added, label: "The quote you just started" }, ...quotes] : quotes;
-  const chosen = added ?? (defaultQuoteId && quotes.some((q) => q.id === defaultQuoteId) ? defaultQuoteId : "new");
+  // The quote the agent came from, else the quote used last (the list's first: the newest edit).
+  const chosen = added ?? (defaultQuoteId && quotes.some((q) => q.id === defaultQuoteId) ? defaultQuoteId : (quotes[0]?.id ?? "new"));
   return (
     <div className="mt-2 flex flex-col gap-1.5">
       <select key={chosen} form={formId} name="quoteId" defaultValue={chosen} aria-label="Quote" className={`${inputUnsized} text-base sm:text-xs`}>

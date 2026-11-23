@@ -25,7 +25,7 @@ const QUOTE_POINTS = ["Several destinations in one proposal", "Your selling pric
 const FAQ = [
   { q: "Who can join Apolles?", a: "Verified travel professionals and travel businesses. Applications are reviewed before platform access is activated. Joining is free." },
   { q: "Can public visitors search hotel prices?", a: "No. Hotel search, availability and professional pricing are available only after agent login." },
-  { q: "Which destinations and hotels are available?", a: "Hotels worldwide, with live availability and current rates. You search by city, area or hotel name, the same way you would on any booking site." },
+  { q: "Which destinations and hotels are available?", a: "Hotels in the countries we cover, with live availability and current rates. Type a city, an area or a hotel's name, then choose your dates and guests." },
   { q: "Can I send branded hotel quotes to clients?", a: "Yes. Select hotel options, set your selling price and send your client a link to a clean proposal they can choose from." },
   { q: "What does my client see?", a: "Your client sees the hotel and room options with your selling price, the meal plan and the cancellation terms. Net rates, your profit and supplier details are never shown to the client." },
 ];

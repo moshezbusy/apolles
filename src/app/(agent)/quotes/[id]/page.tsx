@@ -4,13 +4,13 @@ import { DateRangeField } from "@/components/date-picker/DateRangeField";
 import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { alertInfo, btnPrimary, btnSecondary, card, input, inputUnsized, label, link } from "@/components/ui";
+import { alertInfo, alertSuccess, btnPrimary, btnSecondary, card, input, inputUnsized, label, link } from "@/components/ui";
 import { PHONE_NEEDS_COUNTRY_CODE, toE164Digits } from "@/lib/phone";
 import { formatMinor } from "@/lib/supplier-money";
 import { requireAgent } from "@/server/auth/guards";
 import { clientOptions } from "@/server/clients";
-import { addDays, clientCancelView, defaultClientDate, offerLastDay, sellingMinor, supplierCancelView, todayIso } from "@/server/quotes/pricing";
-import { getQuote, quoteCode, quoteExpired, quoteNumbers, type QuoteDetail } from "@/server/quotes/quotes";
+import { addDays, clientCancelView, dayAhead, defaultClientDate, offerLastDay, sellingMinor, supplierCancelView, todayIso } from "@/server/quotes/pricing";
+import { getQuote, markSelectionSeen, newsOf, preSendChecks, quoteCode, quoteExpired, quoteNumbers, type QuoteDetail } from "@/server/quotes/quotes";
 import type { PriceBreakdown } from "@/server/supplier/types";
 import { dateRange } from "../../search/dates";
 import { DestinationPicker } from "../../search/destination-picker";
@@ -19,11 +19,14 @@ import { ActionForm } from "../action-form";
 import {
   addStayAction,
   bookFromQuoteAction,
+  clearSelectionAction,
   closeQuoteAction,
   copyLinkAction,
   emailAction,
+  emailPreviewAction,
   extendOfferAction,
   hotelAction,
+  refreshPricesAction,
   removeRoomAction,
   removeStayAction,
   renewLinkAction,
@@ -31,17 +34,24 @@ import {
   roomDateAction,
   roomPriceAction,
   saveSettingsAction,
+  selectForClientAction,
   whatsappAction,
 } from "../actions";
 import { type StayBooking, stayBookings } from "@/server/quotes/quote-booking";
 import { shareUrl } from "@/server/quotes/sharing";
 import { QuoteDirtyProvider } from "./dirty";
 import { SendPanel } from "./send-panel";
-import { QuotePill, guestsText } from "../parts";
+import { NewsBadge, QuotePill, guestsText } from "../parts";
+import { PendingButton } from "../pending-button";
 
 export const metadata: Metadata = { title: "Quote | Apolles", robots: { index: false, follow: false } };
 
 type Params = Promise<{ id: string }>;
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+function one(v: string | string[] | undefined): string {
+  return (Array.isArray(v) ? v[0] : v) ?? "";
+}
 
 const sectionHead = "text-base font-bold text-ink";
 const sectionSub = "text-xs text-muted";
@@ -61,14 +71,22 @@ function money(minor: number | null, currency = "USD"): string {
 // Screen 15: one quote of the agency. The client, settings and markup are one form ("Save
 // changes"); each destination, hotel and room option has its own small forms. Preview and
 // sending to the client come with plan 5c; booking a room from the quote with plan 5d.
-export default async function QuoteEditorPage({ params }: { params: Params }) {
+export default async function QuoteEditorPage({ params, searchParams }: { params: Params; searchParams?: SearchParams }) {
   const { agencyId } = await requireAgent();
   const { id } = await params;
+  const query = (await searchParams) ?? {};
   const [quote, bookings] = await Promise.all([getQuote(agencyId, id), stayBookings(agencyId, id)]);
   if (!quote) notFound();
+  // The agent opened the quote: the list's "New selection" badge goes (it still shows here once).
+  const news = newsOf(quote);
+  if (quote.selectionUnseen) await markSelectionSeen(agencyId, quote.id);
   const options = await clientOptions(agencyId);
   // The quote's own client is always in the list, so "Save changes" never drops it silently.
   const clients = quote.client && !options.some((c) => c.id === quote.client?.id) ? [quote.client, ...options] : options;
+  // Back from "+ Add a new client": the new client is chosen in the form, to be saved.
+  const newClient = one(query.client).slice(0, 64);
+  const preselect = newClient && newClient !== quote.client?.id && clients.some((c) => c.id === newClient) ? newClient : null;
+  const duplicated = one(query.notice) === "duplicated";
   const totals = quoteNumbers(quote);
   const roomCount = totals.options;
   const now = new Date();
@@ -81,11 +99,21 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
 
   return (
     // The provider lets "Send quote" know while the settings form holds unsaved changes.
-    <QuoteDirtyProvider>
+    <QuoteDirtyProvider initialDirty={!!preselect}>
     <main className="mx-auto flex w-[min(1100px,calc(100%-40px))] flex-col gap-5 pb-16 pt-6">
       <Link href="/quotes" className={link}>
         ← Back to quotes
       </Link>
+      {duplicated ? (
+        <p role="status" className={alertSuccess}>
+          Quote duplicated as {quoteCode(quote.number)}. Choose the client, and refresh the prices of each destination before you send it.
+        </p>
+      ) : null}
+      {preselect ? (
+        <p role="status" className={alertInfo}>
+          New client added and chosen below. Choose Save changes to keep it on this quote.
+        </p>
+      ) : null}
 
       <ActionForm action={saveSettingsAction} className="flex flex-col gap-5" keepValues trackDirty>
         <input type="hidden" name="quoteId" value={quote.id} />
@@ -112,10 +140,11 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <NewsBadge news={news} />
             <QuotePill status={quote.status} closed={closed} expired={expired} partlyBooked={partlyBooked} />
-            <button type="submit" className={btnPrimary}>
+            <PendingButton className={btnPrimary} pendingText="Saving…">
               Save changes
-            </button>
+            </PendingButton>
           </div>
         </section>
 
@@ -127,7 +156,7 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
             </div>
             <label className={label}>
               Client
-              <select name="clientId" defaultValue={quote.client?.id ?? ""} className={input}>
+              <select name="clientId" defaultValue={preselect ?? quote.client?.id ?? ""} className={input}>
                 <option value="">No client yet</option>
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -156,7 +185,7 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
                 </Link>
               </p>
             ) : null}
-            <Link href="/clients?new=1" className={link}>
+            <Link href={`/quotes/${quote.id}/new-client`} className={link}>
               + Add a new client
             </Link>
           </section>
@@ -269,7 +298,8 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
           hasEmail={!!quote.client?.email}
           phoneHint={phoneHint}
           closed={closed}
-          actions={{ copy: copyLinkAction, whatsapp: whatsappAction, email: emailAction, renew: renewLinkAction }}
+          checks={preSendChecks(quote, now)}
+          actions={{ copy: copyLinkAction, whatsapp: whatsappAction, email: emailAction, renew: renewLinkAction, preview: emailPreviewAction }}
         />
       </section>
 
@@ -286,7 +316,7 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
         </div>
 
         {quote.stays.map((stay) => (
-          <StaySection key={stay.id} quote={quote} stay={stay} booking={bookings.get(stay.id)} />
+          <StaySection key={stay.id} quote={quote} stay={stay} booking={bookings.get(stay.id)} locked={closed || quote.status === "BOOKED"} />
         ))}
 
         <section className={`${card} bg-white p-5`}>
@@ -298,9 +328,9 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
               <DestinationPicker defaultId="" defaultLabel="" />
             </div>
             <DateRangeField checkin="" checkout="" min={minDate} max={maxDate} />
-            <button type="submit" className={btnSecondary}>
+            <PendingButton className={btnSecondary} pendingText="Adding…">
               Add destination
-            </button>
+            </PendingButton>
           </ActionForm>
         </section>
 
@@ -333,24 +363,24 @@ function OfferStatus({ quote, closed, expired, partlyBooked }: { quote: QuoteDet
         {expired && !closed ? (
           <ActionForm action={extendOfferAction}>
             <input type="hidden" name="quoteId" value={quote.id} />
-            <button type="submit" className={btnPrimary}>
+            <PendingButton className={btnPrimary} pendingText="Extending…">
               Extend offer
-            </button>
+            </PendingButton>
           </ActionForm>
         ) : null}
         {closed ? (
           <ActionForm action={reopenQuoteAction}>
             <input type="hidden" name="quoteId" value={quote.id} />
-            <button type="submit" className={btnPrimary}>
+            <PendingButton className={btnPrimary} pendingText="Reopening…">
               Reopen quote
-            </button>
+            </PendingButton>
           </ActionForm>
         ) : (
           <ActionForm action={closeQuoteAction} confirmText="Close this quote? The client link will show that the proposal is closed. You can reopen it later.">
             <input type="hidden" name="quoteId" value={quote.id} />
-            <button type="submit" className={btnSecondary}>
+            <PendingButton className={btnSecondary} pendingText="Closing…">
               Close quote
-            </button>
+            </PendingButton>
           </ActionForm>
         )}
       </div>
@@ -362,11 +392,23 @@ type Stay = QuoteDetail["stays"][number];
 type Hotel = Stay["hotels"][number];
 type Room = Hotel["rooms"][number];
 
+// Whose choice a picked room is: the client's (on the client page) or the agent's for the client.
+function PickBadge({ byAgent }: { byAgent: boolean }) {
+  return <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-bold text-brand">{byAgent ? "Your pick for the client" : "Client pick"}</span>;
+}
+
+const dayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+
 // `booking`: the destination's active booking. A booked destination is frozen (the server refuses
 // every change to its hotels, rooms, prices and dates), so its edit controls are not drawn.
-function StaySection({ quote, stay, booking }: { quote: QuoteDetail; stay: Stay; booking: StayBooking | undefined }) {
+// `locked`: the quote is closed or booked (nothing changes until it is reopened).
+function StaySection({ quote, stay, booking, locked }: { quote: QuoteDetail; stay: Stay; booking: StayBooking | undefined; locked: boolean }) {
   const n = nights(stay.checkin, stay.checkout);
   const frozen = !!booking;
+  const today = todayIso(new Date());
+  const open = !frozen && !locked && dayAhead(stay.checkin, today);
+  const picked = stay.hotels.find((h) => h.rooms.some((r) => r.id === stay.selectedRoomId));
+  const place = stay.destinationName.split(",")[0];
   return (
     <section className={`${card} overflow-hidden bg-white`}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
@@ -385,15 +427,31 @@ function StaySection({ quote, stay, booking }: { quote: QuoteDetail; stay: Stay;
             . To change this destination, cancel the booking first.
           </p>
         ) : (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-start gap-2">
+            {open && stay.hotels.length > 0 ? (
+              // One hotel search per hotel: the rooms get today's net and terms in place.
+              <ActionForm action={refreshPricesAction} className="flex max-w-[420px] flex-wrap items-start gap-2">
+                <input type="hidden" name="stayId" value={stay.id} />
+                <PendingButton className={btnSecondary} pendingText="Refreshing…">
+                  Refresh prices
+                </PendingButton>
+              </ActionForm>
+            ) : null}
             <Link href={`/search?quote=${quote.id}&stay=${stay.id}`} className={btnSecondary}>
               + Add hotel
             </Link>
-            <ActionForm action={removeStayAction}>
+            <ActionForm
+              action={removeStayAction}
+              confirmText={
+                picked
+                  ? `Remove ${place}? The client chose ${picked.name} here: removing it also removes that selection, with every hotel and room of ${place}. This cannot be undone.`
+                  : `Remove ${place} with its ${stay.hotels.length} ${stay.hotels.length === 1 ? "hotel" : "hotels"} and rooms? This cannot be undone.`
+              }
+            >
               <input type="hidden" name="stayId" value={stay.id} />
-              <button type="submit" className={`${btnSecondary} text-[#9b3b2e]`}>
+              <PendingButton className={`${btnSecondary} text-[#9b3b2e]`} pendingText="Removing…">
                 Remove destination
-              </button>
+              </PendingButton>
             </ActionForm>
           </div>
         )}
@@ -402,32 +460,56 @@ function StaySection({ quote, stay, booking }: { quote: QuoteDetail; stay: Stay;
         {stay.hotels.length === 0 ? (
           <p className="text-sm text-muted">No hotels yet. &quot;+ Add hotel&quot; opens Search with these dates and guests.</p>
         ) : (
-          stay.hotels.map((hotel, i) => <HotelBlock key={hotel.id} quote={quote} hotel={hotel} nightsCount={n} first={i === 0} last={i === stay.hotels.length - 1} frozen={frozen} />)
+          stay.hotels.map((hotel, i) => (
+            <HotelBlock key={hotel.id} quote={quote} stay={stay} hotel={hotel} nightsCount={n} first={i === 0} last={i === stay.hotels.length - 1} frozen={frozen} canPick={open} canBook={!locked} />
+          ))
         )}
       </div>
     </section>
   );
 }
 
-function HotelBlock({ quote, hotel, nightsCount, first, last, frozen }: { quote: QuoteDetail; hotel: Hotel; nightsCount: number; first: boolean; last: boolean; frozen: boolean }) {
+function HotelBlock({
+  quote,
+  stay,
+  hotel,
+  nightsCount,
+  first,
+  last,
+  frozen,
+  canPick,
+  canBook,
+}: {
+  quote: QuoteDetail;
+  stay: Stay;
+  hotel: Hotel;
+  nightsCount: number;
+  first: boolean;
+  last: boolean;
+  frozen: boolean;
+  canPick: boolean;
+  canBook: boolean;
+}) {
   const sells = hotel.rooms.map((r) => sellingMinor(r, quote));
   const lowest = sells.length ? Math.min(...sells) : null;
-  const tool = (what: string, text: string, title: string, disabled = false) => (
-    <ActionForm action={hotelAction}>
+  const holdsPick = hotel.rooms.some((r) => r.id === stay.selectedRoomId);
+  const tool = (what: string, text: string, title: string, disabled = false, confirmText?: string) => (
+    <ActionForm action={hotelAction} confirmText={confirmText}>
       <input type="hidden" name="hotelId" value={hotel.id} />
       <input type="hidden" name="do" value={what} />
-      <button type="submit" className={`${iconBtn} ${what === "pick" && hotel.agencyPick ? "border-[#e6d3a3] bg-[#fff6dc] text-[#8a6a10]" : ""}`} title={title} aria-label={title} disabled={disabled}>
+      <PendingButton className={`${iconBtn} ${what === "pick" && hotel.agencyPick ? "border-[#e6d3a3] bg-[#fff6dc] text-[#8a6a10]" : ""}`} title={title} disabled={disabled} pendingText="…">
         {text}
-      </button>
+      </PendingButton>
     </ActionForm>
   );
   return (
-    <article className={`rounded-[12px] border ${hotel.agencyPick ? "border-[#e6d3a3]" : "border-line"}`}>
+    <article className={`rounded-[12px] border ${holdsPick ? "border-brand" : hotel.agencyPick ? "border-[#e6d3a3]" : "border-line"}`}>
       <div className="flex flex-wrap items-center gap-3 p-3">
         <div className="min-w-[200px] flex-1">
           <p className="flex flex-wrap items-center gap-2 text-[14px] font-bold text-ink">
             {hotel.name}
             {hotel.agencyPick ? <span className="rounded-full bg-[#fff6dc] px-2 py-0.5 text-[11px] font-bold text-[#8a6a10]">Agency pick</span> : null}
+            {holdsPick ? <PickBadge byAgent={stay.selectedByAgent} /> : null}
           </p>
           <p className="flex items-center gap-2 text-xs text-muted">
             <Stars rating={hotel.starRating?.toString() ?? null} /> {hotel.city} · {hotel.rooms.length} {hotel.rooms.length === 1 ? "room option" : "room options"}
@@ -446,17 +528,27 @@ function HotelBlock({ quote, hotel, nightsCount, first, last, frozen }: { quote:
           {tool("up", "↑", "Move up", first)}
           {tool("down", "↓", "Move down", last)}
           {tool("pick", "★", hotel.agencyPick ? "Remove agency pick" : "Mark as agency pick")}
-          {frozen ? null : tool("remove", "×", "Remove hotel")}
+          {frozen
+            ? null
+            : tool(
+                "remove",
+                "×",
+                "Remove hotel",
+                false,
+                holdsPick
+                  ? `Remove ${hotel.name}? It holds the room chosen for the client: removing it also clears that selection. This cannot be undone.`
+                  : `Remove ${hotel.name} and its ${hotel.rooms.length} ${hotel.rooms.length === 1 ? "room" : "rooms"}? This cannot be undone.`,
+              )}
         </div>
       </div>
       {hotel.rooms.map((room) => (
-        <RoomBlock key={room.id} quote={quote} room={room} frozen={frozen} />
+        <RoomBlock key={room.id} quote={quote} stay={stay} room={room} frozen={frozen} canPick={canPick} canBook={canBook} />
       ))}
     </article>
   );
 }
 
-function RoomBlock({ quote, room, frozen }: { quote: QuoteDetail; room: Room; frozen: boolean }) {
+function RoomBlock({ quote, stay, room, frozen, canPick, canBook }: { quote: QuoteDetail; stay: Stay; room: Room; frozen: boolean; canPick: boolean; canBook: boolean }) {
   const sell = sellingMinor(room, quote);
   const profit = sell - room.netMinor;
   const price = room.price as unknown as PriceBreakdown;
@@ -469,11 +561,15 @@ function RoomBlock({ quote, room, frozen }: { quote: QuoteDetail; room: Room; fr
   const latestClientDay = room.freeCancelUntil ? defaultClientDate(room.freeCancelUntil) : null;
   const tomorrow = addDays(today, 1);
   const canSetDate = !frozen && supplier.kind === "free" && latestClientDay !== null && latestClientDay >= tomorrow;
+  const picked = stay.selectedRoomId === room.id;
   return (
-    <div className="border-t border-line bg-[#fbfaf7] p-3">
+    <div className={`border-t border-line p-3 ${picked ? "bg-brand-soft/60" : "bg-[#fbfaf7]"}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[13.5px] font-bold text-ink">{room.roomName}</p>
+          <p className="flex flex-wrap items-center gap-2 text-[13.5px] font-bold text-ink">
+            {room.roomName}
+            {picked ? <PickBadge byAgent={stay.selectedByAgent} /> : null}
+          </p>
           <RateIncludes amenities={room.amenities} className="text-xs text-[#37413d]" />
           <p className="text-xs text-muted">
             {room.bedDescription}
@@ -494,6 +590,7 @@ function RoomBlock({ quote, room, frozen }: { quote: QuoteDetail; room: Room; fr
               <span className="text-[#9b3b2e]">Non-refundable</span>
             )}
           </p>
+          <PriceAge room={room} />
         </div>
         <p className="text-right text-[14px] font-bold text-ink">
           {money(sell, room.currency)}
@@ -524,9 +621,9 @@ function RoomBlock({ quote, room, frozen }: { quote: QuoteDetail; room: Room; fr
                 className={input}
               />
             </label>
-            <button type="submit" className={btnSecondary}>
+            <PendingButton className={btnSecondary} pendingText="Setting…">
               Set
-            </button>
+            </PendingButton>
             <p className="basis-full text-[11px] text-muted">{room.sellMinor === null ? "From the markup" : "Your price · empty it to use the markup"}</p>
           </ActionForm>
         )}
@@ -540,9 +637,9 @@ function RoomBlock({ quote, room, frozen }: { quote: QuoteDetail; room: Room; fr
             <div className="flex-1">
               <DateField name="date" label="Client sees free cancellation until" min={tomorrow} max={latestClientDay} today={today} defaultValue={client.kind === "free" ? client.until : ""} />
             </div>
-            <button type="submit" className={btnSecondary}>
+            <PendingButton className={btnSecondary} pendingText="Setting…">
               Set
-            </button>
+            </PendingButton>
             <p className="basis-full text-[11px] text-muted">Supplier deadline: {shortDate(room.freeCancelUntil ?? "")}. At least one day before it, so there is time to cancel for the client.</p>
           </ActionForm>
         ) : (
@@ -551,21 +648,74 @@ function RoomBlock({ quote, room, frozen }: { quote: QuoteDetail; room: Room; fr
         {frozen ? (
           <div />
         ) : (
-          <ActionForm action={removeRoomAction}>
+          <ActionForm
+            action={removeRoomAction}
+            confirmText={picked ? "Remove the room chosen for the client? Removing it clears that selection. This cannot be undone." : `Remove ${room.roomName}? This cannot be undone.`}
+          >
             <input type="hidden" name="roomId" value={room.id} />
-            <button type="submit" className={`${btnSecondary} text-[#9b3b2e]`}>
+            <PendingButton className={`${btnSecondary} text-[#9b3b2e]`} pendingText="Removing…">
               Remove
-            </button>
+            </PendingButton>
           </ActionForm>
         )}
       </div>
+      {!frozen && (canPick || (picked && canBook)) ? (
+        <div className="mt-3 flex flex-wrap items-start gap-2">
+          {picked ? (
+            <>
+              {canBook ? <BookButton stayId={stay.id} /> : null}
+              {canPick ? (
+                <ActionForm action={clearSelectionAction} confirmText="Clear this selection? The client sees no room chosen here until someone chooses again.">
+                  <input type="hidden" name="stayId" value={stay.id} />
+                  <PendingButton className={`${btnSecondary} min-h-9 px-3 text-xs`} pendingText="Clearing…">
+                    Clear selection
+                  </PendingButton>
+                </ActionForm>
+              ) : null}
+            </>
+          ) : canPick && !room.unavailable ? (
+            // The client answered by phone or WhatsApp: the agent records the choice (marked as the
+            // agent's) and can book it.
+            <ActionForm action={selectForClientAction} confirmText={stay.selectedRoomId ? "Select this room for the client? It replaces the room chosen now for this destination." : undefined}>
+              <input type="hidden" name="roomId" value={room.id} />
+              <PendingButton className={`${btnSecondary} min-h-9 px-3 text-xs`} pendingText="Selecting…">
+                Select for client
+              </PendingButton>
+            </ActionForm>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-// "Client selections" (mockup 15): what the client sent from the client page, per destination.
+// "Price from <date>", and what the last "Refresh prices" found.
+function PriceAge({ room }: { room: Room }) {
+  const from = dayFmt.format(room.pricedAt);
+  const flags: { text: string; bad: boolean }[] = [];
+  if (room.unavailable) flags.push({ text: "No longer available at the last check. Remove it, or choose another room for the client.", bad: true });
+  else if (room.needsRefresh) flags.push({ text: "Copied from another quote: refresh the prices before sending.", bad: true });
+  if (!room.unavailable && room.previousNetMinor !== null) {
+    const up = room.netMinor > room.previousNetMinor;
+    flags.push({ text: `Net price ${up ? "up" : "down"} from ${money(room.previousNetMinor, room.currency)}`, bad: up });
+  }
+  if (!room.unavailable && room.cancelWorse) flags.push({ text: "Cancellation terms are worse than before", bad: true });
+  return (
+    <p className="mt-0.5 flex flex-wrap gap-x-2 text-[11.5px]">
+      <span className="text-muted">Price from {from}</span>
+      {flags.map((f) => (
+        <span key={f.text} className={`font-semibold ${f.bad ? "text-[#9b3b2e]" : "text-[#2f7d4a]"}`}>
+          · {f.text}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+// "Client selections" (mockup 15): what the client sent from the client page, or the agent chose
+// for the client ("Select for client"), per destination.
 function ClientSelections({ quote, bookings }: { quote: QuoteDetail; bookings: Map<string, StayBooking> }) {
-  if (!quote.selectedAt) return null;
+  if (!quote.selectedAt && !quote.stays.some((s) => s.selectedRoomId)) return null;
   const rows = quote.stays.map((stay) => {
     const hotel = stay.hotels.find((h) => h.rooms.some((r) => r.id === stay.selectedRoomId));
     const room = hotel?.rooms.find((r) => r.id === stay.selectedRoomId);
@@ -580,7 +730,9 @@ function ClientSelections({ quote, bookings }: { quote: QuoteDetail; bookings: M
           <h2 id="selections-title" className="text-base font-bold">
             Client selections
           </h2>
-          <p className="text-xs text-[#cfe2d8]">Sent {dayMonth.format(quote.selectedAt)}. The client can change a destination until you book it.</p>
+          <p className="text-xs text-[#cfe2d8]">
+            {quote.selectedAt ? `Client sent ${dayMonth.format(quote.selectedAt)}. ` : ""}The client can change a destination until you book it.
+          </p>
         </div>
         <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
           {picked.length} of {quote.stays.length} destinations selected
@@ -592,7 +744,10 @@ function ClientSelections({ quote, bookings }: { quote: QuoteDetail; bookings: M
             <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#5f6863]">{stay.destinationName.split(",")[0]}</p>
             {room && hotel ? (
               <>
-                <p className="mt-1 text-[14px] font-bold text-ink">{hotel.name}</p>
+                <p className="mt-1 flex flex-wrap items-center gap-2 text-[14px] font-bold text-ink">
+                  {hotel.name}
+                  <PickBadge byAgent={stay.selectedByAgent} />
+                </p>
                 <p className="text-[13px] text-[#37413d]">{room.roomName}</p>
                 <p className="text-xs text-muted">
                   {shortDate(stay.checkin)} to {shortDate(stay.checkout)}
@@ -634,11 +789,21 @@ function StayBookingLine({ booking, stayId, canBook }: { booking: StayBooking | 
   }
   if (!canBook) return null;
   return (
-    <ActionForm action={bookFromQuoteAction} className="mt-2 flex flex-wrap gap-2">
+    <div className="mt-2">
+      <BookButton stayId={stayId} />
+    </div>
+  );
+}
+
+// "Book this room" for the room chosen on a destination (by the client or by the agent for the
+// client): the hotel is searched again, then the normal guest details and review pages.
+function BookButton({ stayId }: { stayId: string }) {
+  return (
+    <ActionForm action={bookFromQuoteAction} className="flex flex-wrap gap-2">
       <input type="hidden" name="stayId" value={stayId} />
-      <button type="submit" className={`${btnPrimary} min-h-9 px-3 text-xs`}>
+      <PendingButton className={`${btnPrimary} min-h-9 px-3 text-xs`} pendingText="Checking the room…">
         Book this room
-      </button>
+      </PendingButton>
     </ActionForm>
   );
 }

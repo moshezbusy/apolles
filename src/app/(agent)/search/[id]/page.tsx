@@ -19,7 +19,7 @@ import { cancellationLabel } from "../../_components/rate-text";
 import { SubmitButton } from "../../_components/submit-button";
 import { addToQuoteAction } from "../../quotes/actions";
 import { AddToQuote } from "../../quotes/add-to-quote";
-import { QUOTES_ONE_ROOM, openQuotes, quoteCode } from "@/server/quotes/quotes";
+import { QUOTES_ONE_ROOM, openQuotes } from "@/server/quotes/quotes";
 import { multiRoomAllowed } from "@/server/supplier";
 import type { HotelCard } from "@/server/search/search";
 
@@ -183,7 +183,7 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
   const againNotice = noticeText(SEARCH_AGAIN_NOTICE, query.again);
   // Plan 5b: "Add to quote" lists the agency's open quotes; one opened from a quote is preselected.
   const severalRooms = summary.rooms.length > 1;
-  const quotes = summary.expired || severalRooms ? [] : (await openQuotes(agencyId, quoteId)).map((q) => ({ id: q.id, label: `${quoteCode(q.number)} · ${q.title || "Untitled quote"}` }));
+  const quotes = summary.expired || severalRooms ? [] : (await openQuotes(agencyId, quoteId)).map((q) => ({ id: q.id, label: q.label }));
 
   return (
     <main className="mx-auto w-[min(1260px,calc(100%-40px))] py-6">
@@ -302,7 +302,11 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                   </div>
                 ) : (
                   <p className={emptyState}>
-                    {result.total === 0 && !filtered ? "No hotels are available for these dates. Try other dates." : "No hotels match these filters. Change or clear the filters."}
+                    {result.total === 0 && !filtered
+                      ? summary.propertyId
+                        ? "This hotel has no rooms for these dates. Try other dates, or search its city to see other hotels."
+                        : "No hotels are available for these dates. Try other dates."
+                      : "No hotels match these filters. Change or clear the filters."}
                   </p>
                 )
               ) : (

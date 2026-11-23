@@ -1,23 +1,57 @@
-# Docker build context (repository root). Keep secrets, local state, docs and tooling out.
-**/node_modules
+# Docker build context (repository root). The Dockerfile copies the whole context (COPY . .) into
+# the build stage, so anything not listed here goes into the build, and src/ and prisma/ go on
+# into the image. Keep secrets, local state, docs and tooling out. The build needs only
+# package.json, pnpm-lock.yaml, .npmrc, the sources and their config (src, prisma, public,
+# *.config.ts, tsconfig.json) and deploy/staging/entrypoint.sh and collect-node-modules.mjs.
+
+# Settings and secrets: never in the image (every setting comes from the environment at run
+# time). This also leaves out the committed template .env.example, which the image does not need.
 **/.env*
+deploy/staging/.env
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.crt
+**/id_rsa*
+**/id_ed25519*
+**/.netrc
+**/*credentials*.json
+**/*.secret
+.gitleaksignore
+
+# Local state, build output and dependencies (the build installs its own)
+**/node_modules
+.pnpm-store
 .git
-.next
+**/.next
+out
 src/generated
 *.tsbuildinfo
 next-env.d.ts
+.vercel
+**/*.log
+**/.DS_Store
+**/*.swp
+**/*.swo
+
+# Tests' results, and the end-to-end tests: they are not part of the image. playwright.config.ts
+# imports them, so it goes too (otherwise the type check in `next build` fails).
 coverage
-test-results
-playwright-report
-# End-to-end tests are not part of the image; playwright.config.ts imports them, so it goes too
-# (otherwise the type check in `next build` fails).
+**/test-results
+**/playwright-report
+**/blob-report
 e2e
 playwright.config.ts
+
+# Docs and agent tooling
 docs
 _bmad
 _bmad-output
 api-docs
 apolles
+AGENTS.md
+CLAUDE.md
 .superpowers
 .claude
 .agents

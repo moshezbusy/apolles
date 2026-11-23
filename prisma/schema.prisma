@@ -318,6 +318,8 @@ model Property {
   catalogSeenRunId String
   updatedAt        DateTime @updatedAt
 
+  // Hotel-name search in the search box uses a GIN index on the words of the name of searchable
+  // hotels ("property_name_words"), added in the migration's raw SQL.
   @@index([active, expediaCollect, rank])
   @@index([countryCode, catalogSeenRunId])
 }
@@ -663,6 +665,12 @@ model Quote {
   // "Close quote": the agent finished with it (a partly booked trip, a client who went quiet).
   // The client page is read-only while it is set; "Reopen quote" clears it.
   closedAt         DateTime?
+  // "Archive": the quote leaves the agent's list and the "Add to quote" picker ("Archived" tab
+  // shows it). Archiving an open quote also closes it, so no client choice lands unseen.
+  archivedAt       DateTime?
+  // The client sent a selection or a message the agent has not opened yet (the quote's "New
+  // selection" badge). Cleared when the agent opens the quote.
+  selectionUnseen  Boolean       @default(false)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   // The agent's last edit: the list's order and "Last updated". A client's view or selection
@@ -681,6 +689,7 @@ model Quote {
   @@index([agencyId, status, editedAt(sort: Desc), id(sort: Desc)])
   @@index([agencyId, agencyNumber])
   @@index([clientId])
+  @@index([agencyId, selectionUnseen])
 }
 
 // One destination of a quote, with its own dates.
@@ -698,6 +707,9 @@ model QuoteStay {
   selectedRoomId    String? @unique
   selectedSellMinor Int?
   selectedCurrency  String?
+  // The agent chose this room for the client ("Select for client", a client who answered by
+  // phone); false when the client chose it on the client page.
+  selectedByAgent   Boolean @default(false)
 
   quote        Quote        @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   hotels       QuoteHotel[]
@@ -744,6 +756,13 @@ model QuoteRoom {
   sellMinor         Int? // a price the agent typed; null = from the quote's markup
   position          Int
   createdAt         DateTime @default(now())
+  // "Price from <date>": when the net and terms were last read from a search (added or
+  // refreshed). A refresh flags what changed since the price before it.
+  pricedAt          DateTime @default(now())
+  previousNetMinor  Int? // the net before the last refresh, when it changed
+  cancelWorse       Boolean  @default(false) // the last refresh found worse free-cancellation terms
+  unavailable       Boolean  @default(false) // the last refresh did not find this room any more
+  needsRefresh      Boolean  @default(false) // copied by "Duplicate": refresh the prices before sending
 
   hotel      QuoteHotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   selectedIn QuoteStay? @relation("StaySelection")
@@ -790,7 +809,8 @@ model RecentSearch {
   agencyId        String
   userId          String
   destinationId   String
-  destinationName String
+  destinationName String // a hotel chosen by name: the hotel's name
+  propertyId      String? // a hotel chosen by name in the search box; null for a destination search
   checkin         String // YYYY-MM-DD
   checkout        String
   adults          Int // over all rooms

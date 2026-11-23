@@ -365,3 +365,87 @@ export async function clientOfBooking(agencyId: string, booking: { quoteId: stri
   return db.client.findFirst({ where: { agencyId, email: booking.leadEmail.toLowerCase() }, orderBy: [{ updatedAt: "desc" }, { id: "desc" }], select });
 }
 
+// ---------- duplicates, delete and merge ----------
+
+export type DuplicateClient = { id: string; firstName: string; lastName: string; matchedOn: "email" | "phone" };
+
+// Before a client is saved: another client of the agency with the same email (any case) or the
+// same WhatsApp number (any spelling: "050-123 4567" and "+972 50 123 4567" are different
+// digits, so only the same digits after a leading 00 or 0 count). `exceptId`: the client being
+// edited. null when there is none, or nothing to compare.
+export async function findDuplicateClient(
+  agencyId: string,
+  input: { email?: string | null | undefined; phone?: string | null | undefined },
+  exceptId?: string,
+): Promise<DuplicateClient | null> {
+  const email = typeof input.email === "string" && input.email.trim() ? normalizeEmail(input.email.slice(0, 254)) : null;
+  const digits = typeof input.phone === "string" ? phoneDigits(input.phone.slice(0, 30)) : "";
+  const or: Prisma.ClientWhereInput[] = [];
+  if (email) or.push({ email });
+  if (digits.length >= 7) or.push({ phoneDigits: digits });
+  if (or.length === 0) return null;
+  const found = await db.client.findMany({
+    where: { agencyId, OR: or, ...(exceptId ? { id: { not: exceptId.slice(0, 64) } } : {}) },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: 5,
+    select: { id: true, firstName: true, lastName: true, email: true, phoneDigits: true },
+  });
+  const byEmail = email ? found.find((c) => c.email === email) : undefined;
+  const hit = byEmail ?? found[0];
+  if (!hit) return null;
+  return { id: hit.id, firstName: hit.firstName, lastName: hit.lastName, matchedOn: byEmail ? "email" : "phone" };
+}
+
+// Locks the agency's clients (in id order, so two merges never wait on each other) and returns
+// the ids that were found.
+async function lockClients(tx: Prisma.TransactionClient, agencyId: string, ids: string[]): Promise<Set<string>> {
+  const rows = await tx.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Client" WHERE id = ANY(${ids}) AND "agencyId" = ${agencyId} ORDER BY id FOR UPDATE`;
+  return new Set(rows.map((r) => r.id));
+}
+
+// "Delete client": the card and its companions go. Quotes made for the client stay and keep
+// working with no client (the database sets it to none); the agent can choose another client on
+// them. Bookings keep their own guest names.
+export async function deleteClient(actorUserId: string, agencyId: string, clientId: string): Promise<Result> {
+  if (typeof clientId !== "string" || clientId.length > 64) return { ok: false };
+  return db.$transaction(async (tx) => {
+    if (!(await lockClients(tx, agencyId, [clientId])).has(clientId)) return { ok: false } as const;
+    const quotes = await tx.quote.count({ where: { agencyId, clientId } });
+    await tx.client.delete({ where: { id: clientId } });
+    await audit(actorUserId, "client.delete", "Client", clientId, undefined, { quotes }, tx);
+    return { ok: true, id: clientId } as const;
+  });
+}
+
+export type MergeResult = { ok: true; id: string } | { ok: false; error: string };
+
+// "Merge clients": the same person saved twice. `keepId` stays; the other card's quotes and
+// companions move to it (companions after the kept ones), an email the kept card lacks is taken
+// over, and the other card is deleted. Quotes keep their client link (the same person).
+export async function mergeClients(actorUserId: string, agencyId: string, keepId: string, mergeId: string): Promise<MergeResult> {
+  if (typeof keepId !== "string" || typeof mergeId !== "string" || keepId.length > 64 || mergeId.length > 64) return { ok: false, error: "This client was not found." };
+  if (keepId === mergeId) return { ok: false, error: "Choose two different clients to merge." };
+  return db.$transaction(async (tx) => {
+    const found = await lockClients(tx, agencyId, [keepId, mergeId]);
+    if (!found.has(keepId) || !found.has(mergeId)) return { ok: false, error: "This client was not found." } as const;
+    const [keep, other] = await Promise.all([
+      tx.client.findUniqueOrThrow({ where: { id: keepId }, select: { email: true, _count: { select: { companions: true } } } }),
+      tx.client.findUniqueOrThrow({ where: { id: mergeId }, select: { email: true, companions: { orderBy: { position: "asc" }, select: { id: true } } } }),
+    ]);
+    if (keep._count.companions + other.companions.length > MAX_COMPANIONS) {
+      return { ok: false, error: `Together these clients have more than ${MAX_COMPANIONS} companions. Remove some companions first, then merge.` } as const;
+    }
+    const last = await tx.clientCompanion.findFirst({ where: { clientId: keepId }, orderBy: { position: "desc" }, select: { position: true } });
+    let position = (last?.position ?? -1) + 1;
+    for (const companion of other.companions) {
+      await tx.clientCompanion.update({ where: { id: companion.id }, data: { clientId: keepId, position } });
+      position += 1;
+    }
+    const moved = await tx.quote.updateMany({ where: { agencyId, clientId: mergeId }, data: { clientId: keepId } });
+    await tx.client.update({ where: { id: keepId }, data: { updatedAt: new Date(), ...(!keep.email && other.email ? { email: other.email } : {}) } });
+    await tx.client.delete({ where: { id: mergeId } });
+    await audit(actorUserId, "client.merge", "Client", keepId, { mergedId: mergeId }, { quotes: moved.count, companions: other.companions.length }, tx);
+    return { ok: true, id: keepId } as const;
+  });
+}

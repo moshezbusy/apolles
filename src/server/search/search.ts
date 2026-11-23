@@ -10,6 +10,7 @@ import { feesAtProperty } from "@/server/supplier/price";
 import type { Image, Occupancy, Offer, PropertyContent, SupplierAdapter, SupplierContext } from "@/server/supplier/types";
 import type { Money } from "@/lib/supplier-money";
 import { SEVERAL_ROOMS_UNAVAILABLE, SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
+import { hotelDestination } from "./destinations";
 import { MAX_ROOMS, type SearchInput, searchInputSchema } from "./input";
 
 // Hotel search (plan 2b, task 6; spec section 3 rows 4-6).
@@ -75,7 +76,8 @@ export type ListOptions = {
 };
 
 // The search as stored with its snapshot: the rooms in order (plan 10). A search stored before
-// plan 10 has one room's guests at the top (adults, childAges); roomsOfQuery reads both.
+// plan 10 has one room's guests at the top (adults, childAges); roomsOfQuery reads both. A search
+// of one hotel (chosen by name, or booking from a quote) also names the hotel (propertyId).
 const storedRoom = z.object({ adults: z.number().int(), childAges: z.array(z.number().int()) });
 const storedQuery = z
   .object({
@@ -86,10 +88,11 @@ const storedQuery = z
     adults: z.number().int().optional(),
     childAges: z.array(z.number().int()).optional(),
     countryCode: z.string(),
+    propertyId: z.string().optional(),
   })
   .refine((q) => q.rooms !== undefined || (q.adults !== undefined && q.childAges !== undefined));
 export type StoredQuery = z.infer<typeof storedQuery>;
-type NewQuery = SearchInput & { countryCode: string };
+type NewQuery = SearchInput & { countryCode: string; propertyId?: string };
 
 export function roomsOfQuery(query: StoredQuery): Occupancy[] {
   return query.rooms ?? [{ adults: query.adults ?? 0, childAges: query.childAges ?? [] }];
@@ -343,12 +346,13 @@ export async function startSearch(ctx: SearchContext, rawInput: unknown, deps: D
 
 // Plan 5d, "Book this room" on a quote: a search of the one hotel the quote names, for the quote's
 // destination, dates and guests, so the room's rate can be found and its price checked again. Same
-// checks and the same rate limit as a destination search.
+// checks and the same rate limit as a destination search. Also "Search again" of a stored search
+// of one hotel (the same hotel under the same destination). `priced`: the hotel has rooms.
 export async function searchOneHotel(
   ctx: SearchContext,
   rawInput: { destinationId: string; propertyId: string; checkin: string; checkout: string; rooms: Occupancy[] },
   deps: Deps = {},
-): Promise<{ snapshotId: string }> {
+): Promise<{ snapshotId: string; priced: boolean }> {
   const now = deps.now ?? new Date();
   const { propertyId, ...rest } = rawInput;
   const parsed = searchInputSchema(now).safeParse(rest);
@@ -362,8 +366,37 @@ export async function searchOneHotel(
     db.property.findFirst({ where: { id: propertyId, active: true, expediaCollect: true }, select: { id: true } }),
   ]);
   if (!agency) throw new Error("searchOneHotel: agency not found");
-  if (!property) throw new SearchInputInvalid("This hotel can no longer be booked. Choose another hotel.");
-  return createSnapshot(ctx, { ...parsed.data, countryCode: agency.country }, [property.id], now, deps);
+  if (!property) throw new SearchInputInvalid(HOTEL_GONE);
+  const { snapshotId } = await createSnapshot(ctx, { ...parsed.data, countryCode: agency.country, propertyId: property.id }, [property.id], now, deps);
+  return { snapshotId, priced: (await db.searchHotel.count({ where: { snapshotId, propertyId: property.id } })) > 0 };
+}
+
+const HOTEL_GONE = "This hotel can no longer be booked. Choose another hotel.";
+const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+// A hotel chosen by name in the search box (or "Search again" of such a search): a search of that
+// one hotel, with the same date and guest rules, the same rate limit and the same ownership as a
+// destination search. The browser sends only the hotel, the dates and the rooms; the destination
+// the search is stored under is the hotel's own, read here. `priced`: the hotel has rooms for the
+// dates (its page can open straight away).
+export async function startHotelSearch(
+  ctx: SearchContext,
+  rawInput: unknown,
+  deps: Deps = {},
+): Promise<{ snapshotId: string; propertyId: string; priced: boolean }> {
+  if (typeof rawInput !== "object" || rawInput === null || Object.hasOwn(rawInput, "destinationId")) {
+    throw new SearchInputInvalid("Check the hotel, dates and guests.");
+  }
+  const { propertyId, ...rest } = rawInput as Record<string, unknown>;
+  if (typeof propertyId !== "string" || !SAFE_ID.test(propertyId)) throw new SearchInputInvalid("Check the hotel, dates and guests.");
+  // The dates and guests first, so a bad request costs no lookup (searchOneHotel checks them again).
+  if (!searchInputSchema(deps.now ?? new Date()).safeParse({ ...rest, destinationId: "x" }).success) {
+    throw new SearchInputInvalid("Check the hotel, dates and guests.");
+  }
+  const destinationId = await hotelDestination(propertyId);
+  if (!destinationId) throw new SearchInputInvalid(HOTEL_GONE);
+  const input = rest as { checkin: string; checkout: string; rooms: Occupancy[] };
+  return { ...(await searchOneHotel(ctx, { ...input, destinationId, propertyId }, deps)), propertyId };
 }
 
 async function createSnapshot(
@@ -593,6 +626,8 @@ export type SearchSummary = {
   rooms: Occupancy[]; // in room order (plan 10)
   adults: number; // over all rooms
   childAges: number[]; // over all rooms, in room order
+  // A search of one hotel: the hotel, and its name as destinationLabel (null: a destination search).
+  propertyId: string | null;
   expired: boolean;
 };
 
@@ -602,16 +637,20 @@ export async function searchSummary(agencyId: string, snapshotId: string, now: D
   const read = readQuery(snapshot.query);
   if (!read) return null;
   const q = read.query;
-  const destination = await db.destination.findUnique({ where: { id: q.destinationId }, select: { nameFull: true } });
+  const propertyId = storedQuery.safeParse(snapshot.query).data?.propertyId ?? null;
+  const label = propertyId
+    ? (await db.property.findUnique({ where: { id: propertyId }, select: { name: true } }))?.name
+    : (await db.destination.findUnique({ where: { id: q.destinationId }, select: { nameFull: true } }))?.nameFull;
   return {
     destinationId: q.destinationId,
-    destinationLabel: destination?.nameFull ?? "",
+    destinationLabel: label ?? "",
     checkin: q.checkin,
     checkout: q.checkout,
     nights: Math.round((Date.parse(`${q.checkout}T00:00:00Z`) - Date.parse(`${q.checkin}T00:00:00Z`)) / 86_400_000),
     rooms: read.rooms,
     adults: q.adults,
     childAges: q.childAges,
+    propertyId,
     expired: snapshot.expiresAt <= now,
   };
 }

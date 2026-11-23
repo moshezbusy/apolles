@@ -3,11 +3,15 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { formatMinor } from "@/lib/supplier-money";
+import type { TextBlock } from "@/lib/supplier-text";
 import type { ClientQuote, ClientRoom } from "@/server/quotes/sharing";
 import { recordViewAction, submitSelectionAction } from "./actions";
 import { day, nightsBetween, texts, type Lang } from "./texts";
 
 type Photos = Record<string, string>;
+// "Hotel details" (from our own content cache only): photos, the description as plain text
+// blocks, and the address.
+export type HotelDetails = { photos: string[]; description: TextBlock[]; address: string };
 
 // The client's choice (screens 16, 17): one hotel and room per destination, or none. Tapping the
 // chosen room again unselects it. "Send my selections" sends the choice and the note; it books
@@ -16,7 +20,10 @@ type Photos = Record<string, string>;
 // Read-only (nothing can be chosen or sent) when the offer expired, the agent closed the quote, or
 // every destination is booked. A destination that is booked (shown as "Confirmed") or whose dates
 // passed is read-only by itself; the others can still be chosen.
-export function Selection({ token, quote, photos, lang }: { token: string | null; quote: ClientQuote; photos: Photos; lang: Lang }) {
+// A destination with one hotel shows its rooms at once. The client may also send only a note,
+// without choosing a room ("Send my message"). A booked destination shows "Confirmed" with the
+// advisor's contact.
+export function Selection({ token, quote, photos, details, lang }: { token: string | null; quote: ClientQuote; photos: Photos; details: Record<string, HotelDetails>; lang: Lang }) {
   // token null: the agent's preview. Nothing is counted or sent.
   const t = texts(lang);
   const router = useRouter();
@@ -34,6 +41,7 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
   );
   const [note, setNote] = useState(quote.clientNote);
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [sheet, setSheet] = useState<string | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(quote.status === "SELECTED" ? { kind: "ok", text: t.lastSent } : null);
   const [pending, start] = useTransition();
   // After a send in this visit, the client may also clear every pick and send again.
@@ -71,7 +79,7 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
     start(async () => {
       const result = await submitSelectionAction(token, picks, note, seen);
       if (result.ok) {
-        setMessage({ kind: "ok", text: t.sent });
+        setMessage({ kind: "ok", text: chosen.length === 0 ? t.messageSent : t.sent });
         setSentOnce(true);
         return;
       }
@@ -130,10 +138,12 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
                 {stay.confirmed ? t.bookedStay : stay.booked ? t.bookingStay : stay.past ? t.pastStay : pick ? t.selected : t.noSelection}
               </span>
             </header>
+            {stay.confirmed ? <Confirmed quote={quote} hotel={stay.confirmedHotel} lang={lang} /> : null}
             <div className="flex flex-col gap-3 p-3">
-              {stay.hotels.map((hotel) => {
+              {/* Once confirmed, only the booked hotel is shown. */}
+              {(stay.confirmed ? stay.hotels.filter((h) => h.rooms.some((r) => r.id === stay.selectedRoomId)) : stay.hotels).map((hotel) => {
                 const lowest = Math.min(...hotel.rooms.map((r) => r.sellMinor));
-                const isOpen = open[hotel.id] ?? hotel.rooms.some((r) => r.id === pick);
+                const isOpen = open[hotel.id] ?? (hotel.rooms.some((r) => r.id === pick) || stay.hotels.length === 1);
                 const photo = photos[hotel.id];
                 return (
                   <article key={hotel.id} className={`rounded-[14px] border ${hotel.rooms.some((r) => r.id === pick) ? "border-brand" : "border-line"}`}>
@@ -166,6 +176,11 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
                         <span className="mt-1 block text-xs font-semibold text-brand">{isOpen ? t.hideRooms : t.showRooms}</span>
                       </span>
                     </button>
+                    <div className="px-3 pb-3">
+                      <button type="button" onClick={() => setSheet(hotel.id)} className="text-[13px] font-semibold text-brand hover:underline">
+                        {t.hotelDetails}
+                      </button>
+                    </div>
                     {isOpen ? (
                       <ul className="flex flex-col gap-2 border-t border-line bg-[#fbfaf7] p-3">
                         {hotel.rooms.map((room) => {
@@ -254,15 +269,111 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
             <button
               type="button"
               onClick={send}
-              disabled={!token || pending || (chosen.length === 0 && !sentOnce)}
+              disabled={!token || pending || (chosen.length === 0 && !sentOnce && note.trim() === "")}
               className="min-h-[44px] rounded-[12px] bg-brand px-5 text-[14px] font-bold text-paper hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {pending ? t.sending : sentOnce ? t.update : t.send}
+              {pending ? t.sending : chosen.length === 0 && note.trim() !== "" ? t.sendMessage : sentOnce ? t.update : t.send}
             </button>
           </div>
         </div>
       ) : null}
+      {sheet ? (
+        <DetailsSheet
+          name={quote.stays.flatMap((s) => s.hotels).find((h) => h.id === sheet)?.name ?? ""}
+          details={details[sheet] ?? null}
+          lang={lang}
+          onClose={() => setSheet(null)}
+        />
+      ) : null}
     </>
+  );
+}
+
+// A booked and confirmed destination: a clear "Confirmed" box with the advisor's contact.
+function Confirmed({ quote, hotel, lang }: { quote: ClientQuote; hotel: string | null; lang: Lang }) {
+  const t = texts(lang);
+  const phone = quote.agency.phoneE164;
+  return (
+    <div role="status" className="m-3 mb-0 rounded-[14px] border border-[#d3e3da] bg-brand-soft p-4 text-brand">
+      <strong className="block text-[15px]">{t.confirmedTitle(hotel)}</strong>
+      <span className="block text-[14px]">{t.confirmedText}</span>
+      <span className="mt-2 flex flex-wrap items-center gap-2 text-[13px] font-semibold">
+        <span className="text-ink">{quote.agentName}</span>
+        {phone ? (
+          <>
+            <a href={`https://wa.me/${phone}`} target="_blank" rel="noopener noreferrer" className="rounded-full bg-brand px-3 py-1 text-paper hover:bg-brand-dark">
+              {t.whatsapp}
+            </a>
+            <a href={`tel:+${phone}`} className="rounded-full border border-[#bcd0c6] bg-white px-3 py-1 text-ink">
+              {t.call}
+            </a>
+          </>
+        ) : null}
+        {quote.agency.contactEmail ? (
+          <a href={`mailto:${quote.agency.contactEmail}`} className="rounded-full border border-[#bcd0c6] bg-white px-3 py-1 text-ink">
+            {t.emailLabel}
+          </a>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+// "Hotel details": photos, description and address from our own content cache (the public page
+// never asks the supplier). Plain text only.
+function DetailsSheet({ name, details, lang, onClose }: { name: string; details: HotelDetails | null; lang: Lang; onClose: () => void }) {
+  const t = texts(lang);
+  useEffect(() => {
+    const close = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [onClose]);
+  const paragraphs = details?.description.filter((b) => b.kind === "p") ?? [];
+  const items = details?.description.filter((b) => b.kind === "li") ?? [];
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#13201b]/40 sm:items-center sm:p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="hotel-sheet-title" className="flex max-h-[88vh] w-full flex-col overflow-hidden rounded-t-[20px] bg-white sm:w-[min(720px,100%)] sm:rounded-[20px]">
+        <div className="flex items-center justify-between gap-3 border-b border-line p-4">
+          <h3 id="hotel-sheet-title" className="text-[17px] font-bold text-ink">
+            {name}
+          </h3>
+          <button type="button" onClick={onClose} className="rounded-full border border-line px-3 py-1 text-[13px] font-bold text-ink" autoFocus>
+            {t.close}
+          </button>
+        </div>
+        <div className="flex flex-col gap-4 overflow-y-auto p-4">
+          {!details || (details.photos.length === 0 && details.description.length === 0) ? <p className="text-[14px] text-muted">{t.noDetails}</p> : null}
+          {details && details.photos.length > 0 ? (
+            <section aria-label={t.photos} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {details.photos.map((url) => (
+                // eslint-disable-next-line @next/next/no-img-element -- supplier image host only (i.travelapi.com), checked on the server
+                <img key={url} src={url} alt="" loading="lazy" referrerPolicy="no-referrer" className="aspect-[4/3] w-full rounded-[10px] object-cover" />
+              ))}
+            </section>
+          ) : null}
+          {details?.address ? (
+            <p className="text-[14px] text-ink">
+              <strong>{t.address}:</strong> {details.address}
+            </p>
+          ) : null}
+          {paragraphs.length > 0 || items.length > 0 ? (
+            <section className="flex flex-col gap-1.5 text-[14px] leading-relaxed text-[#37413d]">
+              <h4 className="font-bold text-ink">{t.about}</h4>
+              {paragraphs.map((b, i) => (
+                <p key={`p${i}`}>{b.text}</p>
+              ))}
+              {items.length > 0 ? (
+                <ul className="list-disc ps-5">
+                  {items.map((b, i) => (
+                    <li key={`li${i}`}>{b.text}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 
