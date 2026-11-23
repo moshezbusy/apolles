@@ -13,8 +13,9 @@ import { findOffer } from "@/server/search/search";
 import { bookingSupplier, multiRoomAllowed } from "@/server/supplier";
 import { SupplierAuthError, SupplierError, SupplierNotSent, SupplierRateLimited, SupplierRequestRejected } from "@/server/supplier/expedia/client";
 import type { BookingSupplier, CancelPenalty, PriceBreakdown, RetrievedItinerary, SupplierAdapter, SupplierContext, SupplierLinks } from "@/server/supplier/types";
-import { captureHold, credit, getBalance, placeHoldInTx, releaseHold, withLedgerTransaction } from "@/server/wallet/ledger";
-import { InsufficientFunds } from "@/server/wallet/errors";
+import { audit } from "@/server/audit";
+import { captureHold, credit, creditInTx, getBalance, placeHoldInTx, releaseHold, withLedgerTransaction } from "@/server/wallet/ledger";
+import { HoldNotOpen, InsufficientFunds } from "@/server/wallet/errors";
 import { CANCEL_MARGIN_MS, cancelChargeAt, cancelChargeForRooms } from "./cancel-charge";
 import type { BookingEmailEvent } from "./emails";
 import { quotedMarkup } from "./selling";
@@ -1056,8 +1057,19 @@ async function finishCancel(booking: Booking, actorUserId: string | null, reason
     await transition(tx, { bookingId: booking.id, from: "CANCEL_PENDING", to: "CANCELLED", actorUserId, reason, data: { refundMinor: refund, cancelledAt: new Date() } });
     // Plan 5d: a cancelled booking from a quote reopens the quote, so it can be booked again.
     await syncQuoteOfBooking(tx, booking.id);
-    await queueEmail(tx, booking.id, "cancelled");
+    // An admin asked for this cancellation (spec 7a): the agent is told Apolles support cancelled it.
+    await queueEmail(tx, booking.id, (await cancelAskedByAdmin(tx, booking.id)) ? "cancelled_by_support" : "cancelled");
   });
+}
+
+// Was the latest cancellation of this booking asked for by an admin (cancelled for the agent)?
+async function cancelAskedByAdmin(tx: Prisma.TransactionClient, bookingId: string): Promise<boolean> {
+  const asked = await tx.bookingEvent.findFirst({
+    where: { bookingId, toStatus: "CANCEL_PENDING", fromStatus: "CONFIRMED" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { actor: { select: { role: true } } },
+  });
+  return asked?.actor?.role === "ADMIN";
 }
 
 // Flags a booking for an admin, and says why: a row in the booking's audit trail under its own
@@ -1185,7 +1197,9 @@ const notDone = (kind: "refused" | "part_refused" | "not_allowed", code: CancelM
 // Screen 12: the agent cancels the whole booking: every room, one supplier call per room (Rapid
 // cancels room by room). Today's charge is fixed when the agent asks, and the refund (charged −
 // charge) is written once, only after the supplier confirms every room.
-export async function cancel(ctx: BookingContext, bookingId: string, confirm: { expectedChargeMinor: number }, deps: Deps = {}): Promise<CancelOutcome> {
+// `reason`: the first line of the booking's trail for this cancellation (an admin cancelling for the
+// agent says so, adminCancelForAgent).
+export async function cancel(ctx: BookingContext, bookingId: string, confirm: { expectedChargeMinor: number }, deps: Deps = {}, reason = "Agent asked to cancel"): Promise<CancelOutcome> {
   const now = deps.now ?? new Date();
   const booking = await ownBooking(ctx.agencyId, bookingId);
   let rooms = await roomsOf(booking);
@@ -1234,7 +1248,7 @@ export async function cancel(ctx: BookingContext, bookingId: string, confirm: { 
         from: "CONFIRMED",
         to: "CANCEL_PENDING",
         actorUserId: ctx.userId,
-        reason: "Agent asked to cancel",
+        reason,
         data: {
           cancelChargeMinor: quote.chargeMinor,
           cancelRequestedAt: now,
@@ -1276,4 +1290,158 @@ export async function cancel(ctx: BookingContext, bookingId: string, confirm: { 
     return { kind: "pending" };
   }
   return { kind: "cancelled" };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Admin actions on one booking (the admin booking page). The callers are server actions that ran
+// requireAdmin() (TOTP included) and pass the admin's user id. Each one writes an audit row and a
+// row in the booking's trail, in the same transaction as its change, and is safe to repeat: a
+// second click finds the work done and changes nothing.
+
+export const ADMIN_NOTE_MAX = 500;
+
+function adminNote(note: string): string {
+  const text = note.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").trim();
+  if (text.length < 3 || text.length > ADMIN_NOTE_MAX) throw new BookingInputInvalid("note");
+  return text;
+}
+
+async function lockBooking(tx: Prisma.TransactionClient, bookingId: string): Promise<Booking> {
+  const [row] = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
+  if (!row) throw new BookingNotFound();
+  return tx.booking.findUniqueOrThrow({ where: { id: bookingId } });
+}
+
+// Bookings whose supplier side the background check looks at (reconcile above).
+const CHECKABLE: readonly BookingStatus[] = ["PENDING_CONFIRMATION", "CANCEL_PENDING", "CONFIRMED", "FAILED"];
+const CHECK_NOW_WINDOW_MS = 60_000;
+
+// "Check with the supplier now": the booking's background check is queued to run at once. A check
+// already queued to run within the next minute is enough (a double click queues one).
+export async function adminCheckWithSupplier(adminId: string, bookingId: string, now: Date = new Date()): Promise<"queued" | "already_queued" | "not_checkable"> {
+  return db.$transaction(async (tx) => {
+    const booking = await lockBooking(tx, bookingId);
+    if (!CHECKABLE.includes(booking.status)) return "not_checkable";
+    const soon = new Date(now.getTime() + CHECK_NOW_WINDOW_MS);
+    const queued = await tx.job.findFirst({
+      where: { kind: "booking.reconcile", status: "QUEUED", runAt: { lte: soon }, payload: { path: ["bookingId"], equals: booking.id } },
+      select: { id: true },
+    });
+    if (queued) return "already_queued";
+    await scheduleReconcile(booking.id, now, tx);
+    await audit(adminId, "booking.supplier-check", "Booking", booking.id, undefined, { status: booking.status }, tx);
+    return "queued";
+  });
+}
+
+// "Mark resolved": clears needsAttention; the admin's note goes in the booking's trail.
+export async function adminMarkResolved(adminId: string, bookingId: string, note: string): Promise<"resolved" | "not_flagged"> {
+  const text = adminNote(note);
+  return db.$transaction(async (tx) => {
+    const booking = await lockBooking(tx, bookingId);
+    const cleared = await tx.booking.updateMany({ where: { id: booking.id, needsAttention: true }, data: { needsAttention: false } });
+    if (cleared.count === 0) return "not_flagged";
+    await tx.bookingEvent.create({ data: { bookingId: booking.id, fromStatus: booking.status, toStatus: booking.status, actorUserId: adminId, reason: `Resolved by an admin: ${text}`.slice(0, 300) } });
+    await audit(adminId, "booking.resolve", "Booking", booking.id, { needsAttention: true }, { needsAttention: false }, tx);
+    return "resolved";
+  });
+}
+
+// What cancelling for the agent would cost now (the confirmation step shows it).
+export async function adminCancelQuote(bookingId: string, now: Date = new Date()): Promise<CancelQuote | null> {
+  const booking = await db.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) return null;
+  return cancelQuote(booking, await roomsOf(booking), now);
+}
+
+// "Cancel for the agent": the agent's own cancellation, with the same charge rules, asked by the
+// admin (spec 7a). The supplier is called with the agent's IP and browser kept on the booking.
+// The trail names the admin; the agent gets the "cancelled by Apolles support" email. The audit
+// row is written after the supplier answered (no transaction can wait for the supplier); the
+// booking's own changes are each in their transaction, as for the agent.
+export async function adminCancelForAgent(adminId: string, bookingId: string, confirm: { expectedChargeMinor: number }, deps: Deps = {}): Promise<CancelOutcome> {
+  const booking = await db.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) throw new BookingNotFound();
+  const ctx: BookingContext = { agencyId: booking.agencyId, userId: adminId, supplierContext: supplierContextOf(booking) };
+  const outcome = await cancel(ctx, booking.id, confirm, deps, "An admin cancelled the booking for the agent");
+  if (outcome.kind !== "not_allowed") {
+    await audit(adminId, "booking.cancel-for-agent", "Booking", booking.id, { status: booking.status }, { outcome: outcome.kind, chargeMinor: confirm.expectedChargeMinor });
+  }
+  return outcome;
+}
+
+export type AdminRefundOutcome = { kind: "recorded"; refundMinor: number } | { kind: "already"; refundMinor: number } | { kind: "not_allowed"; message: string };
+
+// "Record refund" for a booking cancelled by the hotel or the supplier: the amount the supplier
+// gives back, at most what the agency was charged, credited once through the ledger (the same
+// refund key as any cancellation of this booking, so it can never be refunded twice). The
+// booking keeps the refund and the charge kept, the trail and the audit say who and how much,
+// and the agent is emailed. All in one transaction (booking row, then the agency's wallet).
+export async function adminRecordSupplierRefund(adminId: string, bookingId: string, amountMinor: number): Promise<AdminRefundOutcome> {
+  return withLedgerTransaction(async (tx) => {
+    const booking = await lockBooking(tx, bookingId);
+    if (booking.status !== "CANCELLED_BY_SUPPLIER") return { kind: "not_allowed", message: "Only a booking cancelled by the hotel can get a refund here." } as const;
+    if (booking.refundMinor !== null) return { kind: "already", refundMinor: booking.refundMinor } as const;
+    const paid = paidMinor(booking);
+    if (!Number.isSafeInteger(amountMinor) || amountMinor < 1 || amountMinor > paid) {
+      return { kind: "not_allowed", message: `Enter an amount from USD 0.01 to ${formatUsd(paid)}, the amount charged.` } as const;
+    }
+    const written = await creditInTx(tx, {
+      agencyId: booking.agencyId,
+      type: "REFUND",
+      amountCents: amountMinor,
+      reason: `Refund for booking ${booking.reference}, cancelled by the hotel`,
+      actorUserId: adminId,
+      idempotencyKey: holdKey(booking.id, "refund"),
+      bookingRef: booking.reference,
+    });
+    if (!written.created) return { kind: "already", refundMinor: Math.abs(written.entry.amountCents) } as const;
+    await tx.booking.update({ where: { id: booking.id }, data: { refundMinor: amountMinor, cancelChargeMinor: paid - amountMinor } });
+    await tx.bookingEvent.create({
+      data: { bookingId: booking.id, fromStatus: booking.status, toStatus: booking.status, actorUserId: adminId, reason: `Refund recorded by an admin: ${formatUsd(amountMinor)} of ${formatUsd(paid)} charged` },
+    });
+    await audit(adminId, "booking.refund", "Booking", booking.id, { refundMinor: null }, { refundMinor: amountMinor, chargedMinor: paid }, tx);
+    await queueEmail(tx, booking.id, "refund_recorded");
+    return { kind: "recorded", refundMinor: amountMinor } as const;
+  });
+}
+
+export type AdminReleaseOutcome = "released" | "already" | "not_allowed";
+
+// "Release the hold and mark failed": a booking still waiting for the supplier, with money held,
+// that the admin checked is not booked there. The hold is released (its own idempotent key, as
+// when the supplier says no), then the booking moves to FAILED with the admin's note, the flag
+// cleared and the audit row, in one transaction; the agent gets the "not confirmed" email. A
+// hold the supplier's confirmation captured meanwhile cannot be released: nothing changes.
+export async function adminReleaseHold(adminId: string, bookingId: string, note: string): Promise<AdminReleaseOutcome> {
+  const text = adminNote(note);
+  const booking = await db.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) throw new BookingNotFound();
+  if (booking.status === "FAILED") return "already";
+  if (booking.status !== "PENDING_CONFIRMATION" || !booking.holdId) return "not_allowed";
+  try {
+    await releaseHold(booking.holdId, holdKey(booking.id, "release"));
+  } catch (error) {
+    if (error instanceof HoldNotOpen) return "not_allowed";
+    throw error;
+  }
+  try {
+    await db.$transaction(async (tx) => {
+      const reason = "Released by an admin after checking the supplier";
+      await transition(tx, {
+        bookingId: booking.id,
+        from: "PENDING_CONFIRMATION",
+        to: "FAILED",
+        actorUserId: adminId,
+        reason: `An admin released the hold: ${text}`,
+        data: { failureReason: reason, bookToken: null, needsAttention: false },
+      });
+      await audit(adminId, "booking.release-hold", "Booking", booking.id, { status: "PENDING_CONFIRMATION" }, { status: "FAILED", releasedMinor: booking.chargedMinor ?? booking.totalMinor }, tx);
+      await queueEmail(tx, booking.id, "failed");
+    });
+  } catch (error) {
+    if (error instanceof BookingStateConflict) return (await db.booking.findUnique({ where: { id: booking.id }, select: { status: true } }))?.status === "FAILED" ? "already" : "not_allowed";
+    throw error;
+  }
+  return "released";
 }

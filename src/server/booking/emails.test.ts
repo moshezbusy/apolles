@@ -76,6 +76,25 @@ describe("booking emails (to the agent)", () => {
     expect(sent[1]!.text).toContain("Your balance now:");
   });
 
+  it("admin actions: cancelled by Apolles support, refund recorded (agent) and a change request (admin, without the agent's text)", async () => {
+    await booking("CANCELLED");
+    await sendBookingEmail("bk1", "cancelled_by_support");
+    expect(sent[0]).toMatchObject({ to: "agent@sunrise.example", subject: "Booking cancelled by Apolles support: APL-MAIL0001" });
+    expect(sent[0]!.text).toContain("Apolles support cancelled booking APL-MAIL0001 for you");
+    expect(sent[0]!.text).toContain("Refunded to your balance: USD 483.75");
+    // No longer true once the booking moved on: not sent.
+    await sendBookingEmail("bk1", "refund_recorded");
+    expect(sent).toHaveLength(1);
+    await db.booking.update({ where: { id: "bk1" }, data: { status: "CANCELLED_BY_SUPPLIER", refundMinor: 40_000, cancelChargeMinor: 8_375 } });
+    await sendBookingEmail("bk1", "refund_recorded");
+    expect(sent[1]).toMatchObject({ to: "agent@sunrise.example", subject: "Refund recorded: APL-MAIL0001" });
+    expect(sent[1]!.text).toContain("Refunded to your balance: USD 400.00");
+    await sendBookingEmail("bk1", "change_request");
+    expect(sent[2]).toMatchObject({ to: "alerts@apolles.example", subject: "Apolles: change requested for booking APL-MAIL0001" });
+    expect(sent[2]!.text).toContain("https://staging.apolles.example/admin/change-requests");
+    expect(sent[2]!.text).not.toContain("Dana");
+  });
+
   it("needs attention goes to the admin, not the agent, true for every reason and without personal data", async () => {
     await booking("PENDING_CONFIRMATION");
     await sendBookingEmail("bk1", "needs_attention");

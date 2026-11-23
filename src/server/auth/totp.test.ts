@@ -290,7 +290,7 @@ describe("admin TOTP", () => {
       expect(await checkTotpForSession(sessionId, bad)).toBe("WRONG");
       expect(await checkTotpForSession(sessionId, bad)).toBe("WRONG");
       // Correct password again: a new, unverified session, and the run of failures goes on.
-      expect(await login(admin.email, GOOD)).toMatchObject({ ok: true, needsTotp: true });
+      expect(await login(admin.email, GOOD, { ip: "203.0.113.7" })).toMatchObject({ ok: true, needsTotp: true });
       expect((await db.user.findUniqueOrThrow({ where: { id: admin.id } })).failedLogins).toBe(2);
       const next = await sessionIdFor(admin.id);
       expect(await checkTotpForSession(next, bad)).toBe("LOCKED");

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
-import { cleanupSupplierLog, getBookingForAdmin, listAllBookings, listSupplierLog } from "./bookings";
+import { adminHeaderCounts, cleanupSupplierLog, getBookingForAdmin, listAllBookings, listSupplierLog } from "./bookings";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 
@@ -59,5 +59,54 @@ describe("admin bookings and supplier log", () => {
     expect((await listSupplierLog({ reference: "APL-AAAAAAA1" })).rows).toHaveLength(1);
     expect(await cleanupSupplierLog(NOW)).toBe(1);
     expect(await db.supplierCallLog.count()).toBe(1);
+  });
+
+  it("filters: status, agency and booking date range; needs attention comes first in its own list", async () => {
+    const a = await db.booking.findUniqueOrThrow({ where: { reference: "APL-AAAAAAA1" } });
+    await db.booking.update({ where: { reference: "APL-BBBBBBB1" }, data: { status: "PENDING_CONFIRMATION", createdAt: new Date("2027-02-01T12:00:00Z") } });
+    await db.booking.update({ where: { id: a.id }, data: { needsAttention: true, createdAt: new Date("2027-02-20T12:00:00Z") } });
+
+    const all = await listAllBookings({});
+    expect(all.attention.map((r) => r.reference)).toEqual(["APL-AAAAAAA1"]);
+    expect(all.rows.map((r) => r.reference)).toEqual(["APL-BBBBBBB1"]);
+    expect((await listAllBookings({ needsAttention: true })).rows.map((r) => r.reference)).toEqual(["APL-AAAAAAA1"]);
+    expect((await listAllBookings({ status: "PENDING_CONFIRMATION" })).rows.map((r) => r.reference)).toEqual(["APL-BBBBBBB1"]);
+    expect((await listAllBookings({ agencyId: "B" })).rows.map((r) => r.reference)).toEqual(["APL-BBBBBBB1"]);
+    expect((await listAllBookings({ agencyId: "B" })).attention).toEqual([]);
+    const feb = await listAllBookings({ from: "2027-02-01", to: "2027-02-01" });
+    expect([...feb.attention, ...feb.rows].map((r) => r.reference)).toEqual(["APL-BBBBBBB1"]);
+    const later = await listAllBookings({ from: "2027-02-02" });
+    expect([...later.attention, ...later.rows].map((r) => r.reference)).toEqual(["APL-AAAAAAA1"]);
+    // A date that is not a real day is ignored, never an error.
+    expect((await listAllBookings({ from: "2027-02-31" })).rows).toHaveLength(1);
+  });
+
+  it("header counters: applications waiting, bookings needing attention, open change requests", async () => {
+    expect(await adminHeaderCounts()).toEqual({ applications: 0, attention: 0, changeRequests: 0 });
+    await db.booking.update({ where: { reference: "APL-AAAAAAA1" }, data: { needsAttention: true } });
+    await db.agencyApplication.create({ data: { agencyName: "New", contactName: "N", email: "n@t.local", phone: "1", country: "IL", website: "https://n.example" } });
+    await db.agencyApplication.create({ data: { agencyName: "Old", contactName: "O", email: "o@t.local", phone: "1", country: "IL", website: "https://o.example", status: "REJECTED" } });
+    expect(await adminHeaderCounts()).toEqual({ applications: 1, attention: 1, changeRequests: 0 });
+  });
+
+  it("supplier log filters: errors only, call type and day range", async () => {
+    const at = (day: string) => new Date(`${day}T10:00:00Z`);
+    await db.supplierCallLog.createMany({
+      data: [
+        { supplier: "expedia", method: "POST", path: "/itineraries", status: 201, durationMs: 900, createdAt: at("2027-02-10") },
+        { supplier: "expedia", method: "GET", path: "/itineraries/1?token=x", status: 500, durationMs: 100, createdAt: at("2027-02-11") },
+        { supplier: "expedia", method: "GET", path: "/properties/availability?x=1", status: null, error: "timeout", durationMs: 100, createdAt: at("2027-02-12") },
+        { supplier: "expedia", method: "DELETE", path: "/itineraries/1/rooms/2", status: 204, durationMs: 100, createdAt: at("2027-02-13") },
+        { supplier: "expedia", method: "GET", path: "/properties/11/rooms/r/rates/x?token=y", status: 200, durationMs: 100, createdAt: at("2027-02-14") },
+      ],
+    });
+    const paths = async (opts: Parameters<typeof listSupplierLog>[0]) => (await listSupplierLog(opts)).rows.map((r) => r.path);
+    expect(await paths({ errorsOnly: true })).toEqual(["/properties/availability?x=1", "/itineraries/1?token=x"]);
+    expect(await paths({ type: "book" })).toEqual(["/itineraries"]);
+    expect(await paths({ type: "retrieve" })).toEqual(["/itineraries/1?token=x"]);
+    expect(await paths({ type: "cancel" })).toEqual(["/itineraries/1/rooms/2"]);
+    expect(await paths({ type: "price-check" })).toEqual(["/properties/11/rooms/r/rates/x?token=y"]);
+    expect(await paths({ type: "search" })).toEqual(["/properties/availability?x=1"]);
+    expect(await paths({ from: "2027-02-11", to: "2027-02-12" })).toEqual(["/properties/availability?x=1", "/itineraries/1?token=x"]);
   });
 });

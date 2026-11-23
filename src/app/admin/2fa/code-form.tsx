@@ -1,10 +1,38 @@
 "use client";
 
 import { useActionState } from "react";
-import { alertError, btnPrimary, codeInput, label } from "@/components/ui";
+import { alertError, btnPrimary, btnSecondary, codeInput, input, label } from "@/components/ui";
 import type { TotpFormState } from "./form-state";
 
 type TotpAction = (previous: TotpFormState, formData: FormData) => Promise<TotpFormState>;
+
+// Sign in with a recovery code (lost phone): one of the codes the admin made and saved.
+export function RecoveryCodeForm({ action }: { action: TotpAction }) {
+  const [state, formAction, pending] = useActionState<TotpFormState, FormData>(action, null);
+  if (state?.locked) {
+    return (
+      <p role="alert" className={alertError}>
+        {state.error}
+      </p>
+    );
+  }
+  return (
+    <form action={formAction} className="flex flex-col gap-3.5" noValidate>
+      {state?.error ? (
+        <p role="alert" className={alertError}>
+          {state.error}
+        </p>
+      ) : null}
+      <label className={label}>
+        Recovery code
+        <input type="text" name="recoveryCode" autoComplete="off" autoCapitalize="characters" spellCheck={false} maxLength={40} required placeholder="ABCD-EFGH-JKMN-PQRS" className={input} />
+      </label>
+      <button type="submit" disabled={pending} className={`w-full ${btnSecondary}`}>
+        {pending ? "Checking…" : "Sign in with a recovery code"}
+      </button>
+    </form>
+  );
+}
 
 export function TotpCodeForm({ action }: { action: TotpAction }) {
   const [state, formAction, pending] = useActionState<TotpFormState, FormData>(action, null);

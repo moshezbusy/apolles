@@ -172,7 +172,25 @@ describe("password tokens", () => {
     expect(token.usedAt).not.toBeNull();
   });
 
-  it("admin: consume OK sets the password and ends sessions, but keeps the lockout (R36)", async () => {
+  it("a new password clears the paused password attempts of the email on every network, admins included", async () => {
+    const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN", passwordHash: await hashPassword(OLD) });
+    const { login } = await import("@/server/auth/login");
+    for (const ip of ["203.0.113.7", "198.51.100.9"]) {
+      for (let i = 0; i < 3; i++) await login(admin.email, "wrong-pass1", { ip });
+    }
+    expect(await login(admin.email, OLD, { ip: "203.0.113.7" })).toMatchObject({ ok: false, reason: "LOCKED" });
+    const other = await createUser({ email: "other@example.com", name: "Other", role: "ADMIN", passwordHash: await hashPassword(OLD) });
+    for (let i = 0; i < 3; i++) await login(other.email, "wrong-pass1", { ip: "203.0.113.7" });
+
+    expect(await consumePasswordToken(await issuePasswordToken(admin.id, "RESET"), ADMIN_NEW)).toBe("OK");
+
+    expect(await login(admin.email, ADMIN_NEW, { ip: "203.0.113.7" })).toMatchObject({ ok: true });
+    expect(await login(admin.email, ADMIN_NEW, { ip: "198.51.100.9" })).toMatchObject({ ok: true });
+    // Another account's pause is untouched.
+    expect(await login(other.email, OLD, { ip: "203.0.113.7" })).toMatchObject({ ok: false, reason: "LOCKED" });
+  });
+
+  it("admin: consume OK sets the password and ends sessions, but keeps the authenticator-code lockout (R36)", async () => {
     const admin = await createUser({
       email: "admin@example.com",
       name: "Admin",

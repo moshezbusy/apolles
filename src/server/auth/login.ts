@@ -1,106 +1,96 @@
 import { db } from "@/server/db";
 import { normalizeEmail } from "@/server/users";
 import { DUMMY_PASSWORD_HASH, verifyPassword } from "@/server/auth/password";
-import { LOCK_DURATION_MS, MAX_FAILED_LOGINS } from "@/server/auth/lockout-policy";
 import {
-  isLocked,
-  recordFailedAttempt,
-  releaseAttempt,
-  reserveAttempt,
+  givePasswordSlotsBack,
+  passwordPools,
+  recordWrongPassword,
+  takePasswordSlots,
 } from "@/server/auth/lockout";
-
-export { LOCK_DURATION_MS, MAX_FAILED_LOGINS };
+import { isTrustedDevice } from "@/server/auth/signin-code";
 
 export type LoginFailureReason = "INVALID" | "LOCKED" | "SUSPENDED";
 
-export type LoginResult =
-  | { ok: true; userId: string; needsTotp: boolean }
-  | { ok: false; reason: LoginFailureReason };
+// ip: the client address (getClientIp). deviceToken: the browser's device cookie, if any (a
+// browser where this user finished a sign-in before gets its own attempt pool, lockout.ts).
+export type LoginContext = { ip: string; deviceToken?: string | undefined };
 
-// Exact copy shown on the sign-in page for each failure.
+export type LoginResult =
+  | { ok: true; userId: string; needsTotp: boolean; trustedDevice: boolean }
+  | { ok: false; reason: "INVALID" | "SUSPENDED" }
+  | { ok: false; reason: "LOCKED"; retryAfterMs: number };
+
+// Exact copy shown on the sign-in page for each failure. LOCKED names the wait (lockedCopy).
+// Every account can get out of a paused sign-in with a password reset (it clears the paused
+// pools, lockout.ts clearPasswordFailures), admins included.
 export const LOGIN_ERROR_COPY: Readonly<Record<LoginFailureReason, string>> = {
   INVALID: "Wrong email or password.",
-  LOCKED: "Too many attempts. Try again in 15 minutes, or reset your password.",
+  LOCKED: "Too many attempts. Try again in 15 minutes, or reset your password with Forgot password.",
   SUSPENDED: "This account is suspended. Contact support.",
 };
 
-const INVALID = { ok: false, reason: "INVALID" } as const;
-const LOCKED = { ok: false, reason: "LOCKED" } as const;
-const SUSPENDED = { ok: false, reason: "SUSPENDED" } as const;
+// "Too many attempts. Try again in 7 minutes, ..." (rounded up; hours from 90 minutes on).
+export function lockedCopy(retryAfterMs: number): string {
+  const minutes = Math.max(1, Math.ceil(retryAfterMs / 60_000));
+  const wait =
+    minutes >= 90 ? `${Math.ceil(minutes / 60)} hours` : minutes === 1 ? "1 minute" : `${minutes} minutes`;
+  return `Too many attempts. Try again in ${wait}, or reset your password with Forgot password.`;
+}
 
-export async function login(email: string, password: string): Promise<LoginResult> {
+export function loginErrorCopy(result: Extract<LoginResult, { ok: false }>): string {
+  return result.reason === "LOCKED" ? lockedCopy(result.retryAfterMs) : LOGIN_ERROR_COPY[result.reason];
+}
+
+const INVALID = { ok: false, reason: "INVALID" } as const;
+const SUSPENDED = { ok: false, reason: "SUSPENDED" } as const;
+const locked = (retryAfterMs: number) => ({ ok: false, reason: "LOCKED", retryAfterMs }) as const;
+
+// The password step. An unknown email, an account without a password yet and a real account
+// go through the same steps (same pools, same password check time, same answers), so the
+// answers do not tell which addresses have an account (lockout-policy.ts).
+export async function login(email: string, password: string, context: LoginContext): Promise<LoginResult> {
+  const address = normalizeEmail(email);
   const user = await db.user.findUnique({
-    where: { email: normalizeEmail(email) },
+    where: { email: address },
     select: {
       id: true,
       email: true,
       role: true,
       status: true,
       passwordHash: true,
-      lockedUntil: true,
       agency: { select: { status: true } },
     },
   });
 
-  // Unknown email, or an account that has not set a password yet: spend the same time as a
-  // real check and give the same answer as a wrong password.
-  if (!user || !user.passwordHash) {
-    await verifyPassword(DUMMY_PASSWORD_HASH, password);
-    return INVALID;
+  // Same lookup for an unknown email (it never matches an empty user id).
+  const deviceToken = context.deviceToken;
+  const trustedDevice = deviceToken !== undefined && (await isTrustedDevice(user?.id ?? "", deviceToken));
+
+  // Take a slot in every pool BEFORE the (slow) password check (H1, lockout.ts). A full pool
+  // refuses unchecked: parallel guesses cannot check more passwords than the pools allow.
+  const slots = await takePasswordSlots(
+    passwordPools(address, trustedDevice && deviceToken !== undefined ? { trustedDeviceToken: deviceToken } : { ip: context.ip }),
+  );
+  if (!slots.ok) return locked(slots.retryAfterMs);
+
+  // Unknown email, or an account that has not set a password yet: spend the same time as a real
+  // check and give the same answer as a wrong password. An error here (argon2, a DB timeout)
+  // reaches the caller and leaves the slots used (fail closed): no sign-in either way.
+  const passwordHash = user?.passwordHash ?? null;
+  const right = (await verifyPassword(passwordHash ?? DUMMY_PASSWORD_HASH, password)) && passwordHash !== null;
+  if (!right || !user) {
+    const paused = await recordWrongPassword(user, slots.held);
+    return paused.paused ? locked(paused.retryAfterMs) : INVALID;
   }
 
-  // While locked, the password is not checked at all and the attempt is not counted.
-  if (isLocked(user.lockedUntil)) return LOCKED;
-
-  // Take an attempt slot BEFORE the (slow) password check (H1, lockout.ts). No slot left
-  // (locked, or the last slots are taken by attempts still in flight) → refused unchecked,
-  // so parallel guesses cannot check more than MAX_FAILED_LOGINS passwords per lock window.
-  const slot = await reserveAttempt(user.id);
-  if (slot === null) return LOCKED;
-
-  let stillUnlocked: boolean;
-  try {
-    if (!(await verifyPassword(user.passwordHash, password))) {
-      return (await recordFailedAttempt(user, slot)) === "LOCKED" ? LOCKED : INVALID;
-    }
-    // The password is right: give the slot back (how and why: below).
-    // Both roles have a second step (admin TOTP, agent email code on a new device), so a right
-    // password only hands its own slot back; the second step resets the counter (R36, plan 8e).
-    stillUnlocked = await releaseAttempt(user.id, "RETURN");
-  } catch (error) {
-    // Fail closed: an error after the slot was taken (argon2, a DB timeout) counts as a failed
-    // attempt, so the slot is never left used for good. At the last slot this is a normal
-    // 15-minute lock with an alert. No sign-in either way: the error reaches the caller.
-    await countFailedAttemptAfterError(user, slot);
-    throw error;
-  }
-
-  // Giving the slot back only works while unlocked. If parallel wrong guesses locked the account
-  // during the password check, this correct guess must not lift the lock or get a session.
-  // Agent: the sign-in is complete, so the run of failures is over (counter reset to 0).
-  // Admin: the sign-in is only complete after the TOTP code, which shares this counter; a
-  // correct password must not reset it, or re-entering the password between wrong codes
-  // would allow unlimited code guessing (R36). It only hands its own slot back (counter − 1),
-  // so it neither costs nor clears a strike. A correct TOTP code resets it (totp.ts).
-  if (!stillUnlocked) return LOCKED;
+  // The password is right: its slots are given back, so only wrong passwords add up. The
+  // second step (admin TOTP, agent email code on a new device) has its own counter.
+  await givePasswordSlotsBack(slots.held);
 
   // Suspension is only revealed to someone who knows the password.
   const agencyBlocked =
     user.role === "AGENT" && (!user.agency || user.agency.status !== "ACTIVE");
   if (user.status !== "ACTIVE" || agencyBlocked) return SUSPENDED;
 
-  return { ok: true, userId: user.id, needsTotp: user.role === "ADMIN" };
-}
-
-// Best effort, after an error: count the attempt; if that fails too, log it (user id and the
-// error message only, never the password) and let the caller rethrow the first error.
-async function countFailedAttemptAfterError(user: { id: string; email: string }, slot: number): Promise<void> {
-  try {
-    await recordFailedAttempt(user, slot);
-  } catch (error) {
-    console.error("sign-in attempt not recorded after an error", {
-      userId: user.id,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
+  return { ok: true, userId: user.id, needsTotp: user.role === "ADMIN", trustedDevice };
 }
