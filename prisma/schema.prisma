@@ -53,6 +53,8 @@ model Agency {
   defaultMarkupType       MarkupType    @default(PERCENT)
   defaultMarkupValue      Int           @default(0)
   defaultShowCancellation Boolean       @default(true)
+  // "Offer valid for (days)": how long a shared quote's prices stay open to the client (1 to 30).
+  quoteValidDays          Int           @default(7)
   // "Your Apolles balance is low" was sent and the balance is still under USD 500 (email #19).
   lowBalanceAlerted       Boolean       @default(false)
   createdAt               DateTime      @default(now())
@@ -502,6 +504,9 @@ model Booking {
   // voucher. A markup on the charged total, as on quotes (percent in basis points, fixed in cents).
   sellMarkupType       MarkupType?
   sellMarkupValue      Int?
+  // A booking made from a quote: the price the client was quoted, in cents. When set it is the
+  // sale in reports (profit = this price minus the charge), whatever the net became since.
+  sellMinor            Int?
   // Requests sent to the hotel with the booking (not guaranteed; plan 8b). No personal details.
   specialRequest       String      @default("")
   // When free cancellation ends (the first charge starts), and when the 72-hour reminder went
@@ -601,7 +606,12 @@ enum MarkupType {
 
 model Quote {
   id               String        @id @default(cuid())
-  number           Int           @unique @default(autoincrement()) // shown as "Q-" + number
+  number           Int           @unique @default(autoincrement()) // internal: one sequence for all agencies
+  // The agency's own running number, shown as "Q-" + number (to agents and clients). Null only
+  // on a row made before it existed and not yet backfilled: the internal number shows then.
+  // Given under a lock on the agency's row (src/server/quotes/quotes.ts), so two quotes made at
+  // the same moment never share one.
+  agencyNumber     Int?
   agencyId         String
   createdById      String
   clientId         String?
@@ -623,8 +633,17 @@ model Quote {
   viewCount        Int           @default(0)
   selectedAt       DateTime? // when the client last sent selections
   clientNote       String        @default("") // the client's note with the selections
+  // The offer's last moment (the start of a UTC day): set each time the quote is shared, sent or
+  // extended. After it the client page is read-only until the agent extends the offer.
+  validUntil       DateTime?
+  // "Close quote": the agent finished with it (a partly booked trip, a client who went quiet).
+  // The client page is read-only while it is set; "Reopen quote" clears it.
+  closedAt         DateTime?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
+  // The agent's last edit: the list's order and "Last updated". A client's view or selection
+  // never moves it.
+  editedAt         DateTime      @default(now())
 
   agency    Agency      @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   createdBy User        @relation(fields: [createdById], references: [id], onDelete: Restrict)
@@ -634,6 +653,9 @@ model Quote {
 
   @@index([agencyId, updatedAt(sort: Desc), id(sort: Desc)])
   @@index([agencyId, status, updatedAt(sort: Desc), id(sort: Desc)])
+  @@index([agencyId, editedAt(sort: Desc), id(sort: Desc)])
+  @@index([agencyId, status, editedAt(sort: Desc), id(sort: Desc)])
+  @@index([agencyId, agencyNumber])
   @@index([clientId])
 }
 
