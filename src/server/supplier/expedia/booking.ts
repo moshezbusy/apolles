@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { BookInput, BookResult, BookingSupplier, RetrievedItinerary, SupplierContext, SupplierLinks, SupplierRoomStatus } from "../types";
-import { SupplierError, SupplierOutcomeUnknown, expediaRequest, recordUnknownFields } from "./client";
+import { SupplierError, SupplierNotSent, SupplierOutcomeUnknown, expediaRequest, readConfigOrNotSent, recordUnknownFields } from "./client";
 import { readExpediaConfig } from "./config";
 import { ParseNotes, check, type ObjectFactory } from "./parse";
 
@@ -13,7 +13,7 @@ import { ParseNotes, check, type ObjectFactory } from "./parse";
 // Every link is Expedia's own href, checked to stay on the API host and under /v3.
 // Outside production every non-GET carries the Test header ("standard").
 
-export class SupplierNotSent extends SupplierError {} // nothing reached the supplier (local check)
+export { SupplierNotSent }; // nothing reached the supplier (a local check failed): see ./client
 
 const BOOK_TIMEOUT_MS = 60_000; // booking can be slow; an unclear answer is reconciled
 const RETRIEVE_TIMEOUT_MS = 20_000;
@@ -106,6 +106,7 @@ const MAX_ROOMS = 8; // Rapid: "Up to 8 rooms may be requested or booked at once
 
 export class ExpediaBooking implements BookingSupplier {
   async book(input: BookInput, context: SupplierContext): Promise<BookResult> {
+    readConfigOrNotSent(); // a missing or wrong setting: nothing is sent, and the caller knows it
     if (!TOKEN_IN_QUERY.test(input.bookToken)) throw new SupplierNotSent("Invalid book token");
     if (!/^[A-Za-z0-9-]{3,28}$/.test(input.affiliateReferenceId)) throw new SupplierNotSent("Invalid affiliate reference");
     if (input.rooms.length < 1 || input.rooms.length > MAX_ROOMS) throw new SupplierNotSent(`A booking has 1 to ${MAX_ROOMS} rooms`);
@@ -174,6 +175,7 @@ export class ExpediaBooking implements BookingSupplier {
   }
 
   async cancelRoom(cancelLink: string, context: SupplierContext): Promise<void> {
+    readConfigOrNotSent();
     const { status } = await expediaRequest({ method: "DELETE", path: linkPath(cancelLink), context: { ...context, ...testHeader() }, timeoutMs: RETRIEVE_TIMEOUT_MS });
     // 204: cancelled. 202: accepted but the result is not known yet: check with a retrieve.
     if (status !== 204) throw new SupplierOutcomeUnknown(`Expedia cancellation not confirmed yet (HTTP ${status})`);

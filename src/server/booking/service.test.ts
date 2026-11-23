@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import { startSearch } from "@/server/search/search";
-import { SupplierOutcomeUnknown, SupplierRequestRejected, SupplierUnavailable } from "@/server/supplier/expedia/client";
+import { SupplierNotSent, SupplierOutcomeUnknown, SupplierRequestRejected, SupplierUnavailable } from "@/server/supplier/expedia/client";
+import { seedRateLimit } from "@/test/rate-limit";
 import { FakeSupplierAdapter } from "@/server/supplier/fake";
-import type { BookingSupplier, Offer, PriceBreakdown, RetrievedItinerary, SupplierAdapter } from "@/server/supplier/types";
+import type { BookingSupplier, Offer, PriceBreakdown, RetrievedItinerary, SupplierAdapter, SupplierContext } from "@/server/supplier/types";
 import { credit, getBalance } from "@/server/wallet/ledger";
-import { book, cancel, cancelQuote, createDraft, fillRoomsFromSupplier, prepareReview, reconcile } from "./service";
+import { book, cancel, cancelQuote, createDraft, fillRoomsFromSupplier, flagReconcileFailed, prepareReview, reconcile } from "./service";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 const later = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
@@ -173,6 +174,58 @@ describe("booking: draft and review", () => {
     });
     const review = await prepareReview(ctx(), bookingId, { supplier: higher, now: later(1) });
     expect(review).toMatchObject({ kind: "ready", priceChanged: true, booking: { totalMinor: offers[0]!.price.total.minor + 1_000, previousTotalMinor: offers[0]!.price.total.minor, bookToken: "fakebk-11-0" } });
+  });
+
+  it("a review within a minute of the last price check does not ask the supplier again", async () => {
+    const { snapshotId, offers } = await setup();
+    const { bookingId } = await draft(snapshotId, offers[0]!);
+    const s = supplier();
+    const first = await prepareReview(ctx(), bookingId, { supplier: s, now: later(1) });
+    expect(first.kind).toBe("ready");
+    const again = await prepareReview(ctx(), bookingId, { supplier: s, now: new Date(later(1).getTime() + 59_000) });
+    expect(again).toMatchObject({ kind: "ready", priceChanged: false, booking: { bookToken: "fakebk-11-0", priceCheckedAt: later(1) } });
+    expect(s.calls.priceCheck).toBe(1);
+    // A minute old: checked again.
+    await prepareReview(ctx(), bookingId, { supplier: s, now: later(2) });
+    expect(s.calls.priceCheck).toBe(2);
+    expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).priceCheckedAt).toEqual(later(2));
+  });
+
+  it("a changed price is still shown as changed when the review is served from the last check", async () => {
+    const { snapshotId, offers } = await setup();
+    const { bookingId } = await draft(snapshotId, offers[0]!);
+    const higher = supplier({
+      priceCheck: async () => {
+        const price = { ...offers[0]!.price, total: { minor: offers[0]!.price.total.minor + 1_000, currency: "USD" } };
+        return { status: "price_changed", bookToken: "fakebk-11-0", price, roomPrices: [price] };
+      },
+    });
+    await prepareReview(ctx(), bookingId, { supplier: higher, now: later(1) });
+    const again = await prepareReview(ctx(), bookingId, { supplier: higher, now: new Date(later(1).getTime() + 10_000) });
+    expect(again).toMatchObject({ kind: "ready", priceChanged: true, booking: { totalMinor: offers[0]!.price.total.minor + 1_000 } });
+    expect(higher.calls.priceCheck).toBe(1);
+  });
+
+  it("too many price checks for one booking: the last check is shown while it is good to book with, then a clear message; the supplier is not asked", async () => {
+    const { snapshotId, offers } = await setup();
+    const { bookingId } = await draft(snapshotId, offers[0]!);
+    const s = supplier();
+    await seedRateLimit(`review:${bookingId}`, 12, 10 * 60_000);
+    // Never checked: nothing to show.
+    await expect(prepareReview(ctx(), bookingId, { supplier: s, now: later(1) })).rejects.toThrow("The price was checked too many times in a short while. Wait a few minutes, then try again.");
+    expect(s.calls.priceCheck).toBe(0);
+    await db.rateLimitBucket.deleteMany({});
+    await prepareReview(ctx(), bookingId, { supplier: s, now: later(1) });
+    await db.rateLimitBucket.deleteMany({});
+    await seedRateLimit(`review:${bookingId}`, 12, 10 * 60_000);
+    // Five minutes old: still good to book with, shown as it is.
+    expect((await prepareReview(ctx(), bookingId, { supplier: s, now: later(6) })).kind).toBe("ready");
+    // Older than a booking may use: refused, never served stale.
+    await expect(prepareReview(ctx(), bookingId, { supplier: s, now: later(12) })).rejects.toThrow(/too many times/);
+    expect(s.calls.priceCheck).toBe(1);
+    // Another booking is not held back by this one.
+    const other = await draft(snapshotId, offers[1]!);
+    expect((await prepareReview(ctx(), other.bookingId, { supplier: s, now: later(12) })).kind).toBe("ready");
   });
 
   it("sold out on review: nothing is held", async () => {
@@ -397,18 +450,264 @@ describe("booking: reconcile", () => {
     const down = supplier({ findByAffiliateReference: async () => { throw new SupplierUnavailable("down", 503); } });
     expect(await reconcile(bookingId, { supplier: down, now: later(5) })).toBe("retry");
     expect((await getBalance("A")).heldCents).toBe(total);
-    // The safety net queued with the booking, the sooner check after the unclear answer, and this retry.
-    expect(await db.job.count({ where: { kind: "booking.reconcile" } })).toBe(3);
+    // The safety net queued with the booking and the sooner check after the unclear answer: a
+    // check is already queued inside the wait, so this retry adds none (one chain of checks).
+    expect(await db.job.count({ where: { kind: "booking.reconcile" } })).toBe(2);
+    // With nothing queued, the retry queues the next check itself.
+    await db.job.deleteMany({});
+    expect(await reconcile(bookingId, { supplier: down, now: later(9) })).toBe("retry");
+    expect((await db.job.findMany({ where: { kind: "booking.reconcile" } })).map((j) => [j.status, j.runAt, j.payload])).toEqual([["QUEUED", later(13), { bookingId }]]);
   });
 
-  it("gives up after many tries: flagged for an admin, money untouched", async () => {
+  it("never gives up: after 48 tries an admin is told once and the check goes on every hour, the money untouched", async () => {
     const { bookingId, total } = await pending();
+    await db.job.deleteMany({});
     await db.booking.update({ where: { id: bookingId }, data: { reconcileAttempts: 47 } });
     const down = supplier({ findByAffiliateReference: async () => { throw new SupplierUnavailable("down", 503); } });
+    const slow = "The supplier gave no clear answer after many tries: the check goes on every hour";
     expect(await reconcile(bookingId, { supplier: down, now: later(5) })).toBe("retry");
-    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ needsAttention: true, status: "PENDING_CONFIRMATION" });
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ needsAttention: true, status: "PENDING_CONFIRMATION", reconcileAttempts: 48 });
     expect((await getBalance("A")).heldCents).toBe(total);
-    expect(await flagEvents(bookingId, "The supplier check gave up after many tries")).toEqual([["PENDING_CONFIRMATION", "PENDING_CONFIRMATION", null]]);
+    expect(await flagEvents(bookingId, slow)).toEqual([["PENDING_CONFIRMATION", "PENDING_CONFIRMATION", null]]);
+    // The next check is queued an hour later (it was dropped for good before).
+    const jobs = () => db.job.findMany({ where: { kind: "booking.reconcile", status: "QUEUED" }, orderBy: { runAt: "asc" } });
+    expect((await jobs()).map((j) => j.runAt)).toEqual([later(65)]);
+    // Hourly from then on, for 7 days; the admin is told only once.
+    await db.job.deleteMany({ where: { kind: "booking.reconcile" } });
+    expect(await reconcile(bookingId, { supplier: down, now: later(65) })).toBe("retry");
+    expect((await jobs()).map((j) => j.runAt)).toEqual([later(125)]);
+    expect(await flagEvents(bookingId, slow)).toHaveLength(1);
+    expect((await db.job.findMany({ where: { kind: "email.booking" } })).map((j) => j.payload)).toEqual([{ bookingId, event: "needs_attention" }]);
+    // After 7 days of hourly checks: every 6 hours, for as long as it takes.
+    await db.job.deleteMany({ where: { kind: "booking.reconcile" } });
+    await db.booking.update({ where: { id: bookingId }, data: { reconcileAttempts: 48 + 7 * 24 } });
+    expect(await reconcile(bookingId, { supplier: down, now: later(200) })).toBe("retry");
+    expect((await jobs()).map((j) => j.runAt)).toEqual([later(200 + 360)]);
+    // The supplier answers at last: confirmed and charged, however late.
+    expect(await reconcile(bookingId, { supplier: supplier(), now: later(600) })).toBe("confirmed");
+    expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: 0 });
+  });
+
+  it("the count of checks starts again when the booking changes status: a cancellation gets its own 48 quick tries", async () => {
+    const { bookingId } = await pending();
+    await db.booking.update({ where: { id: bookingId }, data: { reconcileAttempts: 40 } });
+    expect(await reconcile(bookingId, { supplier: supplier(), now: later(5) })).toBe("confirmed");
+    expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).reconcileAttempts).toBe(0);
+    const unclear = supplier({ cancelRoom: async () => { throw new SupplierOutcomeUnknown("202"); } });
+    await db.booking.update({ where: { id: bookingId }, data: { reconcileAttempts: 40 } });
+    expect((await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: unclear, now: later(10) })).kind).toBe("pending");
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CANCEL_PENDING", reconcileAttempts: 0 });
+    const down = supplier({ retrieve: async () => { throw new SupplierUnavailable("down", 503); }, findByAffiliateReference: async () => { throw new SupplierUnavailable("down", 503); } });
+    expect(await reconcile(bookingId, { supplier: down, now: later(15) })).toBe("retry");
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ reconcileAttempts: 1, needsAttention: false });
+  });
+
+  it("a check whose job failed for good flags the waiting booking for an admin, once; a settled booking is left alone", async () => {
+    const { bookingId } = await pending();
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    await flagReconcileFailed(bookingId);
+    await flagReconcileFailed(bookingId);
+    await flagReconcileFailed("no-such-booking");
+    expect(log).toHaveBeenCalledTimes(1);
+    log.mockRestore();
+    expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).needsAttention).toBe(true);
+    expect(await flagEvents(bookingId, "The background check of this booking failed: an admin looks at it")).toEqual([["PENDING_CONFIRMATION", "PENDING_CONFIRMATION", null]]);
+    await resetTestDb();
+    const done = await reviewed();
+    await book(ctx(), done.bookingId, { acceptedTerms: true, expectedTotalMinor: done.total }, { supplier: supplier(), now: later(2) });
+    await flagReconcileFailed(done.bookingId);
+    expect((await db.booking.findUniqueOrThrow({ where: { id: done.bookingId } })).needsAttention).toBe(false);
+  });
+
+  // One room is confirmed (and charged) only when the supplier shows it booked.
+  describe("one room: only 'booked' confirms", () => {
+    const shows = (rooms: RetrievedItinerary["rooms"]) => supplier({ findByAffiliateReference: async () => ({ itineraryId: "IT-1", rooms }) });
+    const room = (status: RetrievedItinerary["rooms"][number]["status"]) => ({ id: "s-1", status, hotelConfirmationId: "H1", cancelLink: "fake-cancel:1", givenName: "Dana", familyName: "Levi" });
+
+    it("a room still pending at the supplier: not confirmed, not charged, looked at again later", async () => {
+      const { bookingId, total } = await pending();
+      expect(await reconcile(bookingId, { supplier: shows([room("pending")]), now: later(5) })).toBe("retry");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "PENDING_CONFIRMATION", needsAttention: false });
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: total });
+      expect(await db.ledgerEntry.count({ where: { type: "CHARGE" } })).toBe(0);
+      expect(await reconcile(bookingId, { supplier: shows([room("booked")]), now: later(10) })).toBe("confirmed");
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: 0 });
+    });
+
+    it("a status we do not know, or no rooms at all: an admin is told, the money stays held, never charged, the checks go on", async () => {
+      const { bookingId, total } = await pending();
+      for (const rooms of [[room("other")], [], [room("booked"), room("booked")]]) {
+        expect(await reconcile(bookingId, { supplier: shows(rooms), now: later(5) })).toBe("retry");
+        expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "PENDING_CONFIRMATION", needsAttention: true, supplierItineraryId: null });
+        expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: total });
+      }
+      expect(await db.ledgerEntry.count({ where: { type: "CHARGE" } })).toBe(0);
+      expect(await flagEvents(bookingId, "The supplier does not show this booking as booked")).toEqual([["PENDING_CONFIRMATION", "PENDING_CONFIRMATION", null]]);
+      // Booked after all: confirmed and charged once.
+      expect(await reconcile(bookingId, { supplier: shows([room("booked")]), now: later(10) })).toBe("confirmed");
+      expect(await db.ledgerEntry.count({ where: { type: "CHARGE" } })).toBe(1);
+    });
+
+    it("the one room cancelled at the supplier: no booking, FAILED and the money back", async () => {
+      const { bookingId } = await pending();
+      expect(await reconcile(bookingId, { supplier: shows([room("cancelled")]), now: later(5) })).toBe("failed");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "FAILED", failureReason: "Supplier shows the booking as cancelled" });
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000, heldCents: 0 });
+    });
+  });
+
+  // The supplier's "created" answer is not a confirmation: the room's status is read first.
+  describe("book: the supplier took the booking, then its status is read", () => {
+    const room = (status: RetrievedItinerary["rooms"][number]["status"]) => ({ id: "s-1", status, hotelConfirmationId: "H1", cancelLink: "fake-cancel:1", givenName: "Dana", familyName: "Levi" });
+
+    it("the room is pending there: the booking waits with the money held, the itinerary is kept, and a check follows in 30 seconds", async () => {
+      const { bookingId, total } = await reviewed();
+      const s = supplier({ retrieve: async () => ({ itineraryId: "x", rooms: [room("pending")] }) });
+      expect(await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: s, now: later(2) })).toEqual({ kind: "pending", bookingId });
+      const b = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
+      expect(b).toMatchObject({ status: "PENDING_CONFIRMATION", supplierItineraryId: `FAKE-${b.reference}`, supplierLinks: { retrieve: `fake-retrieve:${b.reference}` }, needsAttention: false });
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: total });
+      expect(await db.ledgerEntry.count({ where: { type: "CHARGE" } })).toBe(0);
+      const checks = await db.job.findMany({ where: { kind: "booking.reconcile" }, orderBy: { runAt: "asc" } });
+      expect(checks.map((j) => j.runAt)).toEqual([new Date(later(2).getTime() + 30_000), later(7)]);
+      // The check reads the same itinerary (its retrieve link): booked now.
+      expect(await reconcile(bookingId, { supplier: supplier(), now: later(3) })).toBe("confirmed");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CONFIRMED", supplierLinks: { retrieve: `fake-retrieve:${b.reference}` } });
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: 0 });
+    });
+
+    it("its status cannot be read: the booking waits, and 'not found' is never taken for 'no booking' once the supplier took it", async () => {
+      const { bookingId, total } = await reviewed();
+      const unreadable = supplier({ retrieve: async () => { throw new SupplierRequestRejected("not yet", 404); }, findByAffiliateReference: async () => null });
+      expect((await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: unreadable, now: later(2) })).kind).toBe("pending");
+      // Not found twice, more than 20 minutes apart: a booking the supplier did not take would fail here.
+      expect(await reconcile(bookingId, { supplier: unreadable, now: later(5) })).toBe("retry");
+      expect(await reconcile(bookingId, { supplier: unreadable, now: later(40) })).toBe("retry");
+      expect(await reconcile(bookingId, { supplier: unreadable, now: later(80) })).toBe("retry");
+      expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).status).toBe("PENDING_CONFIRMATION");
+      expect((await getBalance("A")).heldCents).toBe(total);
+      // Readable again: confirmed.
+      expect(await reconcile(bookingId, { supplier: supplier(), now: later(90) })).toBe("confirmed");
+    });
+
+    it("a status we do not know: not confirmed, not charged, an admin is told", async () => {
+      const { bookingId, total } = await reviewed();
+      const s = supplier({ retrieve: async () => ({ itineraryId: "x", rooms: [room("other")] }) });
+      expect((await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: s, now: later(2) })).kind).toBe("pending");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "PENDING_CONFIRMATION", needsAttention: true });
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: total });
+      expect(await flagEvents(bookingId, "The supplier does not show this booking as booked")).toEqual([["PENDING_CONFIRMATION", "PENDING_CONFIRMATION", null]]);
+    });
+
+    it("an unknown supplier setting stops before anything is held or written", async () => {
+      const { bookingId, total } = await reviewed();
+      vi.stubEnv("SUPPLIER_MODE", "bogus");
+      try {
+        await expect(book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { now: later(2) })).rejects.toThrow(/Unknown SUPPLIER_MODE/);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "DRAFT", holdId: null });
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000, heldCents: 0 });
+    });
+
+    it("nothing was sent (a local check failed): FAILED at once and the hold released", async () => {
+      const { bookingId, total } = await reviewed();
+      const s = supplier({ book: async () => { throw new SupplierNotSent("EXPEDIA_API_KEY is not set"); } });
+      expect(await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: s, now: later(2) })).toEqual({ kind: "failed", bookingId });
+      expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).status).toBe("FAILED");
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000, heldCents: 0 });
+    });
+  });
+
+  // FAILED after "not found" twice is looked at again later: a late itinerary is a room booked
+  // at the supplier that nobody paid for.
+  describe("failed as 'not found': the late looks", () => {
+    const none = () => supplier({ findByAffiliateReference: async () => null });
+    async function failedNotFound() {
+      const r = await pending();
+      await db.job.deleteMany({});
+      expect(await reconcile(r.bookingId, { supplier: none(), now: later(5) })).toBe("retry");
+      await db.job.deleteMany({});
+      expect(await reconcile(r.bookingId, { supplier: none(), now: later(26) })).toBe("failed");
+      return r;
+    }
+    const found = (status: "booked" | "cancelled") => supplier({ findByAffiliateReference: async () => ({ itineraryId: "IT-LATE", rooms: [{ id: "s-1", status, hotelConfirmationId: null, cancelLink: null, givenName: null, familyName: null }] }) });
+
+    it("two more looks are queued, 6 and 24 hours after the failure", async () => {
+      const { bookingId } = await failedNotFound();
+      const checks = await db.job.findMany({ where: { kind: "booking.reconcile" }, orderBy: { runAt: "asc" } });
+      expect(checks.map((j) => [j.runAt, j.payload])).toEqual([[later(26 + 360), { bookingId }], [later(26 + 1440), { bookingId }]]);
+      // Still not there: nothing changes.
+      expect(await reconcile(bookingId, { supplier: none(), now: later(26 + 360) })).toBe("nothing");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "FAILED", needsAttention: false });
+    });
+
+    it("the itinerary turns up: an admin is told at once (flag and email), nothing is charged", async () => {
+      const { bookingId } = await failedNotFound();
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await reconcile(bookingId, { supplier: found("booked"), now: later(26 + 360) })).toBe("nothing");
+      expect(log.mock.calls.map((c) => String(c[0])).join("\n")).toMatch(/FAILED here but booked at the supplier/);
+      log.mockRestore();
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "FAILED", needsAttention: true, supplierItineraryId: null });
+      expect(await flagEvents(bookingId, "Marked not confirmed and the money returned, but the supplier has this booking: the room is booked there and the agency was not charged")).toEqual([["FAILED", "FAILED", null]]);
+      const emails = (await db.job.findMany({ where: { kind: "email.booking" } })).map((j) => (j.payload as { event: string }).event).sort();
+      expect(emails).toEqual(["failed", "found_after_failed", "needs_attention"]);
+      // Never charged automatically: the money stays with the agency.
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000, heldCents: 0 });
+      expect(await db.ledgerEntry.count({ where: { type: "CHARGE" } })).toBe(0);
+      // The second look says nothing new.
+      expect(await reconcile(bookingId, { supplier: found("booked"), now: later(26 + 1440) })).toBe("nothing");
+      expect(await db.job.count({ where: { kind: "email.booking" } })).toBe(3);
+    });
+
+    it("an itinerary that is cancelled there needs nobody; a supplier that cannot be asked is asked again in an hour", async () => {
+      const { bookingId } = await failedNotFound();
+      expect(await reconcile(bookingId, { supplier: found("cancelled"), now: later(26 + 360) })).toBe("nothing");
+      expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).needsAttention).toBe(false);
+      await db.job.deleteMany({});
+      const down = supplier({ findByAffiliateReference: async () => { throw new SupplierUnavailable("down", 503); } });
+      expect(await reconcile(bookingId, { supplier: down, now: later(26 + 360) })).toBe("nothing");
+      expect((await db.job.findMany({ where: { kind: "booking.reconcile" } })).map((j) => j.runAt)).toEqual([later(26 + 420)]);
+    });
+
+    it("a booking the supplier refused is not looked at again", async () => {
+      const r = await reviewed();
+      const s = supplier({ book: async () => { throw new SupplierRequestRejected("sold out", 410); } });
+      await book(ctx(), r.bookingId, { acceptedTerms: true, expectedTotalMinor: r.total }, { supplier: s, now: later(2) });
+      const asked = found("booked");
+      expect(await reconcile(r.bookingId, { supplier: asked, now: later(400) })).toBe("nothing");
+      expect(asked.calls.find).toBe(0);
+    });
+  });
+
+  // The supplier asks for the agent's IP and browser on every call, also the ones made later.
+  it("the agent's IP and browser are kept on the booking and sent with the background checks", async () => {
+    const { snapshotId, offers } = await setup();
+    const agent = { agencyId: "A", userId: "u-A", supplierContext: { customerIp: "203.0.113.7", userAgent: "Mozilla/5.0 (Agent)" } };
+    const { bookingId } = await createDraft(agent, { snapshotId, propertyId: "11", rateId: offers[1]!.rateId, bedGroupId: offers[1]!.bedGroups[0]!.id, rooms: [{ guests }], leadEmail: "dana@example.com", leadPhone: { countryCode: "972", number: "501234567" } }, { now: NOW });
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ agentIp: "203.0.113.7", agentUserAgent: "Mozilla/5.0 (Agent)" });
+    const review = await prepareReview(agent, bookingId, { supplier: supplier(), now: later(1) });
+    if (review.kind !== "ready") throw new Error("not ready");
+    // Booked from another network: the booking keeps the latest.
+    const booker = { ...agent, supplierContext: { customerIp: "198.51.100.9", userAgent: "Mozilla/5.0 (Booker)" } };
+    await book(booker, bookingId, { acceptedTerms: true, expectedTotalMinor: review.booking.totalMinor }, { supplier: supplier({ book: async () => { throw new SupplierOutcomeUnknown("timeout"); } }), now: later(2) });
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ agentIp: "198.51.100.9", agentUserAgent: "Mozilla/5.0 (Booker)" });
+    const seen: SupplierContext[] = [];
+    const real = new FakeSupplierAdapter();
+    const spy = supplier({
+      findByAffiliateReference: async (r, c) => { seen.push(c); return real.findByAffiliateReference(r); },
+      retrieve: async (l, c) => { seen.push(c); return real.retrieve(l); },
+      cancelRoom: async (l, c) => { seen.push(c); await real.cancelRoom(l); throw new SupplierOutcomeUnknown("202"); },
+    });
+    expect(await reconcile(bookingId, { supplier: spy, now: later(5) })).toBe("confirmed");
+    expect(seen).toEqual([{ customerIp: "198.51.100.9", userAgent: "Mozilla/5.0 (Booker)" }]);
+    // The cancellation's follow-up check sends them too.
+    seen.length = 0;
+    expect((await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: spy, now: later(10) })).kind).toBe("pending");
+    seen.length = 0;
+    expect(await reconcile(bookingId, { supplier: spy, now: later(15) })).toBe("cancelled");
+    expect(seen).toEqual([{ customerIp: "198.51.100.9", userAgent: "Mozilla/5.0 (Booker)" }]);
   });
 });
 
@@ -525,6 +824,144 @@ describe("booking: cancel", () => {
     expect(await db.ledgerEntry.count({ where: { type: "REFUND" } })).toBe(0);
     expect((await getBalance("A")).balanceCents).toBe(500_000 - total);
     expect(cancelledThere.calls.cancelRoom).toBe(0);
+  });
+
+  // A cancellation that is put back is never silent, and the supplier is watched for a day.
+  describe("a cancellation put back to confirmed", () => {
+    const stillBooked = () => supplier({ retrieve: async () => ({ itineraryId: "x", rooms: [{ id: "room-1", status: "booked", hotelConfirmationId: null, cancelLink: "fake-cancel:x", givenName: null, familyName: null }] }) });
+    const inPenalty = new Date("2027-04-08T10:00:00.000Z"); // after free cancellation ends, before check-in
+    const after = (base: Date, minutes: number) => new Date(base.getTime() + minutes * 60_000);
+
+    // Cancelled inside the penalty window (a charge was quoted), no clear answer, still booked 45 minutes later.
+    async function putBack() {
+      const r = await confirmed(1);
+      const b = await db.booking.findUniqueOrThrow({ where: { id: r.bookingId } });
+      const quote = cancelQuote(b, await db.bookingRoom.findMany({ where: { bookingId: r.bookingId } }), inPenalty);
+      if (!quote.allowed || quote.chargeMinor === 0) throw new Error("expected a charge");
+      const unclear = supplier({ cancelRoom: async () => { throw new SupplierOutcomeUnknown("202"); } });
+      expect((await cancel(ctx(), r.bookingId, { expectedChargeMinor: quote.chargeMinor }, { supplier: unclear, now: inPenalty })).kind).toBe("pending");
+      await db.job.deleteMany({});
+      expect(await reconcile(r.bookingId, { supplier: stillBooked(), now: after(inPenalty, 45) })).toBe("restored");
+      return { ...r, quote, reference: b.reference, restoredAt: after(inPenalty, 45) };
+    }
+
+    it("the quote stays in the trail, the agent gets an email, an admin is told, and five looks at the supplier are queued over 24 hours", async () => {
+      const { bookingId, total, quote, restoredAt } = await putBack();
+      const b = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
+      expect(b).toMatchObject({ status: "CONFIRMED", cancelChargeMinor: null, cancelRequestedAt: null, needsAttention: true, cancelRestoredAt: restoredAt, cancelRestoredChargeMinor: quote.chargeMinor });
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: 0 });
+      const trail = await db.bookingEvent.findMany({ where: { bookingId }, orderBy: { createdAt: "asc" } });
+      const back = trail.find((e) => e.fromStatus === "CANCEL_PENDING" && e.toStatus === "CONFIRMED")!;
+      const usd = (minor: number) => `USD ${Math.floor(minor / 100).toLocaleString("en-US")}.${String(minor % 100).padStart(2, "0")}`;
+      expect(back.reason).toBe(`Reconciled: the cancellation did not go through. Quoted to the agent: charge ${usd(quote.chargeMinor)}, refund ${usd(total - quote.chargeMinor)}; nothing was charged or refunded`);
+      expect(await flagEvents(bookingId, "A cancellation did not go through at the supplier: the booking is confirmed again")).toEqual([["CONFIRMED", "CONFIRMED", null]]);
+      const emails = await db.job.findMany({ where: { kind: "email.booking" } });
+      expect(emails.map((j) => (j.payload as { event: string }).event).sort()).toEqual(["cancel_not_done", "needs_attention"]);
+      const looks = await db.job.findMany({ where: { kind: "booking.reconcile" }, orderBy: { runAt: "asc" } });
+      expect(looks.map((j) => j.runAt)).toEqual([60, 180, 360, 720, 1440].map((m) => after(restoredAt, m)));
+    });
+
+    it("still booked at the supplier during the watch: nothing changes", async () => {
+      const { bookingId, total, restoredAt } = await putBack();
+      expect(await reconcile(bookingId, { supplier: stillBooked(), now: after(restoredAt, 60) })).toBe("nothing");
+      expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).status).toBe("CONFIRMED");
+      expect((await getBalance("A")).balanceCents).toBe(500_000 - total);
+    });
+
+    it("the supplier cancelled after all, within the day: the cancellation is finished with the charge quoted then, one refund, the cancelled email", async () => {
+      const { bookingId, total, quote, reference, restoredAt } = await putBack();
+      await new FakeSupplierAdapter().cancelRoom(`fake-cancel:${reference}`);
+      expect(await reconcile(bookingId, { supplier: supplier(), now: after(restoredAt, 180) })).toBe("cancelled");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CANCELLED", cancelChargeMinor: quote.chargeMinor, refundMinor: total - quote.chargeMinor, cancelRestoredAt: null });
+      expect((await db.bookingRoom.findMany({ where: { bookingId } })).map((r) => r.status)).toEqual(["CANCELLED"]);
+      expect((await db.ledgerEntry.findMany({ where: { type: "REFUND", bookingRef: reference } })).map((e) => e.amountCents)).toEqual([total - quote.chargeMinor]);
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - quote.chargeMinor, heldCents: 0 });
+      expect((await db.job.findMany({ where: { kind: "email.booking" } })).map((j) => (j.payload as { event: string }).event)).toContain("cancelled");
+      // The later looks of the watch change nothing more.
+      expect(await reconcile(bookingId, { supplier: supplier(), now: after(restoredAt, 360) })).toBe("nothing");
+      expect(await db.ledgerEntry.count({ where: { type: "REFUND" } })).toBe(1);
+    });
+
+    it("after the watch is over, the ordinary check of a confirmed booking never refunds", async () => {
+      const { bookingId, total, reference, restoredAt } = await putBack();
+      await new FakeSupplierAdapter().cancelRoom(`fake-cancel:${reference}`);
+      expect(await reconcile(bookingId, { supplier: supplier(), now: after(restoredAt, 26 * 60) })).toBe("nothing");
+      expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).status).toBe("CONFIRMED");
+      expect(await db.ledgerEntry.count({ where: { type: "REFUND" } })).toBe(0);
+      expect((await getBalance("A")).balanceCents).toBe(500_000 - total);
+    });
+
+    it("the agent cancels again: the watch ends, and the new cancellation runs as usual", async () => {
+      const { bookingId, quote, restoredAt } = await putBack();
+      expect(await cancel(ctx(), bookingId, { expectedChargeMinor: quote.chargeMinor }, { supplier: supplier(), now: after(restoredAt, 30) })).toEqual({ kind: "cancelled" });
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CANCELLED", cancelRestoredAt: null, cancelRestoredChargeMinor: null });
+      expect(await db.ledgerEntry.count({ where: { type: "REFUND" } })).toBe(1);
+      // The looks queued for the watch find a cancelled booking and do nothing.
+      expect(await reconcile(bookingId, { supplier: supplier(), now: after(restoredAt, 60) })).toBe("nothing");
+      expect(await db.ledgerEntry.count({ where: { type: "REFUND" } })).toBe(1);
+    });
+
+    it("a refusal in the agent's own request is put back the same way (email, flag, watch)", async () => {
+      const { bookingId } = await confirmed(1);
+      const s = supplier({ cancelRoom: async () => { throw new SupplierRequestRejected("no", 400); } });
+      expect(await cancel(ctx(), bookingId, { expectedChargeMinor: 0 }, { supplier: s, now: later(10) })).toMatchObject({ kind: "refused", code: "refused" });
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CONFIRMED", needsAttention: true, cancelRestoredAt: later(10), cancelRestoredChargeMinor: 0 });
+      expect((await db.job.findMany({ where: { kind: "email.booking" } })).map((j) => (j.payload as { event: string }).event)).toContain("cancel_not_done");
+    });
+  });
+
+  // The supplier charges by the moment it gets the cancel: a room sent later by the check is
+  // charged for that later moment.
+  describe("a cancel sent later by the check", () => {
+    const inPenalty = new Date("2027-04-08T10:00:00.000Z");
+
+    // The agent cancels while it is free, and nothing is sent (a crash right after the move).
+    async function notSent() {
+      const r = await confirmed(1);
+      const spy = vi.spyOn(db.bookingRoom, "updateMany").mockRejectedValueOnce(new Error("process killed"));
+      try {
+        expect((await cancel(ctx(), r.bookingId, { expectedChargeMinor: 0 }, { supplier: supplier(), now: later(10) })).kind).toBe("pending");
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await db.booking.findUniqueOrThrow({ where: { id: r.bookingId } })).toMatchObject({ status: "CANCEL_PENDING", cancelChargeMinor: 0 });
+      return r;
+    }
+
+    it("sent while still free: the charge stays 0 and everything is refunded", async () => {
+      const { bookingId, total } = await notSent();
+      expect(await reconcile(bookingId, { supplier: supplier(), now: later(15) })).toBe("cancelled");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CANCELLED", cancelChargeMinor: 0, refundMinor: total });
+    });
+
+    it("sent after a penalty started: the charge of that moment applies, written in the trail, and only the rest is refunded", async () => {
+      const { bookingId, total } = await notSent();
+      const b = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
+      const [penalty] = b.cancelPenalties as unknown as { amount: { minor: number } }[];
+      const s = supplier();
+      expect(await reconcile(bookingId, { supplier: s, now: inPenalty })).toBe("cancelled");
+      expect(s.calls.cancelRoom).toBe(1);
+      expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CANCELLED", cancelChargeMinor: penalty!.amount.minor, refundMinor: total - penalty!.amount.minor });
+      expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - penalty!.amount.minor, heldCents: 0 });
+      const trail = (await db.bookingEvent.findMany({ where: { bookingId } })).map((e) => e.reason);
+      expect(trail.some((reason) => /^The cancellation charge is now USD [\d,]+\.\d{2} \(was USD 0\.00\)/.test(reason))).toBe(true);
+    });
+
+    it("a charge that cannot be worked out at that later moment: nothing is refunded automatically and an admin is told", async () => {
+      const r = await confirmed(1);
+      // Free until 12:00 UTC today, then one night (which is never guessed).
+      await db.booking.update({ where: { id: r.bookingId }, data: { cancelPenalties: [{ start: "2027-03-01T12:00:00.000Z", end: "2027-04-10T00:00:00.000Z", amount: null, nights: 1, percent: null }] } });
+      const spy = vi.spyOn(db.bookingRoom, "updateMany").mockRejectedValueOnce(new Error("process killed"));
+      try {
+        expect((await cancel(ctx(), r.bookingId, { expectedChargeMinor: 0 }, { supplier: supplier(), now: later(10) })).kind).toBe("pending");
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await reconcile(r.bookingId, { supplier: supplier(), now: later(180) })).toBe("cancelled");
+      expect(await db.booking.findUniqueOrThrow({ where: { id: r.bookingId } })).toMatchObject({ status: "CANCELLED", cancelChargeMinor: r.total, refundMinor: 0, needsAttention: true });
+      expect(await db.ledgerEntry.count({ where: { type: "REFUND" } })).toBe(0);
+      expect((await getBalance("A")).balanceCents).toBe(500_000 - r.total);
+    });
   });
 
   it("a charge different from what the agent saw is refused", async () => {
@@ -720,21 +1157,27 @@ describe("booking: several rooms", () => {
     expect((await roomsOf(bookingId)).map((r) => r.supplierRoomId)).toEqual(["s-1", null]);
   });
 
-  it("a retrieve with another number of rooms flags the booking and stores nothing", async () => {
+  it("the supplier shows another number of rooms: not confirmed, not charged, flagged for an admin, nothing stored", async () => {
     const { bookingId, total } = await reviewedRooms();
     const one = supplier({ retrieve: async () => ({ itineraryId: "x", rooms: [{ id: "s-1", status: "booked", hotelConfirmationId: "H1", cancelLink: "fake-cancel:1", givenName: "Dana", familyName: "Levi" }] }) });
-    await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: one, now: later(2) });
-    expect((await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).needsAttention).toBe(true);
+    expect((await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: one, now: later(2) })).kind).toBe("pending");
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "PENDING_CONFIRMATION", needsAttention: true });
+    expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: total });
     expect((await roomsOf(bookingId)).map((r) => r.supplierRoomId)).toEqual([null, null]);
-    expect(await flagEvents(bookingId, "Rooms at the supplier did not match the booking's rooms")).toHaveLength(1);
+    expect(await flagEvents(bookingId, "Some rooms are missing or cancelled at the supplier")).toHaveLength(1);
   });
 
-  it("a retrieve that fails never fails the booking; the safety-net job fills the rooms later, once", async () => {
+  it("a retrieve that fails never fails the booking: it waits until its rooms can be read, then is confirmed with every room's details", async () => {
     const { bookingId, total } = await reviewedRooms();
     const down = supplier({ retrieve: async () => { throw new SupplierUnavailable("down", 503); } });
-    expect((await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: down, now: later(2) })).kind).toBe("confirmed");
-    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "CONFIRMED", needsAttention: false });
-    expect((await roomsOf(bookingId)).map((r) => r.supplierRoomId)).toEqual([null, null]);
+    expect((await book(ctx(), bookingId, { acceptedTerms: true, expectedTotalMinor: total }, { supplier: down, now: later(2) })).kind).toBe("pending");
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ status: "PENDING_CONFIRMATION", needsAttention: false });
+    expect((await getBalance("A")).heldCents).toBe(total);
+    expect(await reconcile(bookingId, { supplier: supplier(), now: later(3) })).toBe("confirmed");
+    expect(await getBalance("A")).toEqual({ balanceCents: 500_000 - total, heldCents: 0 });
+    expect((await roomsOf(bookingId)).map((r) => r.supplierRoomId)).toEqual(["room-1", "room-2"]);
+    // Rooms whose details were not stored at confirmation (that write failed): the safety-net job fills them.
+    await db.bookingRoom.updateMany({ where: { bookingId }, data: { supplierRoomId: null, hotelConfirmationId: null, cancelLink: null } });
     expect(await reconcile(bookingId, { supplier: supplier(), now: later(8) })).toBe("nothing");
     expect((await roomsOf(bookingId)).map((r) => r.supplierRoomId)).toEqual(["room-1", "room-2"]);
     // Filled rooms are kept as they are: a later retrieve with other details changes nothing, and
@@ -998,7 +1441,9 @@ describe("booking: several rooms", () => {
     it("rooms without their cancel link: one retrieve fills them before anything is sent; still missing: nothing sent, still confirmed", async () => {
       const r = await reviewedRooms();
       const down = supplier({ retrieve: async () => { throw new SupplierUnavailable("down", 503); } });
-      await book(ctx(), r.bookingId, { acceptedTerms: true, expectedTotalMinor: r.total }, { supplier: down, now: later(2) });
+      await book(ctx(), r.bookingId, { acceptedTerms: true, expectedTotalMinor: r.total }, { supplier: supplier(), now: later(2) });
+      // Confirmed, but its rooms' supplier details were never stored.
+      await db.bookingRoom.updateMany({ where: { bookingId: r.bookingId }, data: { supplierRoomId: null, hotelConfirmationId: null, cancelLink: null } });
       expect((await roomsOf(r.bookingId)).map((x) => x.cancelLink)).toEqual([null, null]);
       // The supplier still cannot be reached: nothing is sent, the booking stays as it is.
       expect((await cancel(ctx(), r.bookingId, { expectedChargeMinor: 0 }, { supplier: down, now: later(10) })).kind).toBe("not_allowed");

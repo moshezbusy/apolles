@@ -14,18 +14,19 @@ vi.mock("@/server/email/port", () => ({
   }),
 }));
 
-async function booking(status: "CONFIRMED" | "FAILED" | "CANCELLED" | "PENDING_CONFIRMATION") {
+type Status = "CONFIRMED" | "FAILED" | "CANCELLED" | "PENDING_CONFIRMATION" | "CANCELLED_BY_SUPPLIER";
+const bookingData = (status: Status, n = 1) => ({
+  id: `bk${n}`, reference: `APL-MAIL000${n}`, agencyId: "A", userId: "u-A", status, propertyId: "1", hotelName: "Hotel Lumiere", hotelCity: "Paris", roomId: "r",
+  roomName: "Superior King Room", rateId: "x", bedGroupId: "b", bedDescription: "1 King Bed", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [],
+  leadGivenName: "Dana", leadFamilyName: "Levi", leadEmail: "dana@example.com", leadPhone: "+972 501234567", guests: [], refundable: true, totalMinor: 48_375,
+  chargedMinor: 48_375, currency: "USD", price: {}, cancelPenalties: [], nonrefundableDateRanges: [], priceCheckToken: "tok-a1", hotelConfirmationId: "H-777",
+  refundMinor: status === "CANCELLED" ? 48_375 : null, cancelChargeMinor: status === "CANCELLED" ? 0 : null,
+});
+
+async function booking(status: Status) {
   await db.agency.create({ data: { id: "A", name: "Sunrise Travel", country: "IL", bankReference: "APL-A" } });
   await db.user.create({ data: { id: "u-A", email: "agent@sunrise.example", name: "Ruth", role: "AGENT", agencyId: "A" } });
-  return db.booking.create({
-    data: {
-      id: "bk1", reference: "APL-MAIL0001", agencyId: "A", userId: "u-A", status, propertyId: "1", hotelName: "Hotel Lumiere", hotelCity: "Paris", roomId: "r",
-      roomName: "Superior King Room", rateId: "x", bedGroupId: "b", bedDescription: "1 King Bed", checkin: "2027-04-10", checkout: "2027-04-12", adults: 2, childAges: [],
-      leadGivenName: "Dana", leadFamilyName: "Levi", leadEmail: "dana@example.com", leadPhone: "+972 501234567", guests: [], refundable: true, totalMinor: 48_375,
-      chargedMinor: 48_375, currency: "USD", price: {}, cancelPenalties: [], nonrefundableDateRanges: [], priceCheckToken: "tok-a1", hotelConfirmationId: "H-777",
-      refundMinor: status === "CANCELLED" ? 48_375 : null, cancelChargeMinor: status === "CANCELLED" ? 0 : null,
-    },
-  });
+  return db.booking.create({ data: bookingData(status) });
 }
 
 // Plan 10: the booking as two rooms (the booking keeps every guest, room after room).
@@ -84,6 +85,54 @@ describe("booking emails (to the agent)", () => {
     // only some rooms were cancelled: the text claims none of these.
     expect(sent[0]!.text).toContain("Booking APL-MAIL0001 (status PENDING_CONFIRMATION) needs an admin to check it with the supplier");
     expect(sent[0]!.text).not.toContain("gave up");
+    for (const t of ["Dana", "Levi", "dana@example.com", "501234567"]) expect(sent[0]!.text).not.toContain(t);
+  });
+
+  it("a cancellation that did not go through: the agent is told the booking is still confirmed and what to do", async () => {
+    vi.stubEnv("APOLLES_SUPPORT_EMAIL", "support@apolles.example");
+    await booking("CONFIRMED");
+    // Not put back (an ordinary confirmed booking): nothing is sent.
+    await sendBookingEmail("bk1", "cancel_not_done");
+    expect(sent).toHaveLength(0);
+    await db.booking.update({ where: { id: "bk1" }, data: { cancelRestoredAt: new Date("2027-03-01T10:00:00Z"), cancelRestoredChargeMinor: 0 } });
+    await sendBookingEmail("bk1", "cancel_not_done");
+    const m = sent[0]!;
+    expect(m.to).toBe("agent@sunrise.example");
+    expect(m.subject).toBe("Cancellation not completed: APL-MAIL0001");
+    for (const t of ["did not confirm the cancellation", "still confirmed", "nothing was charged or refunded", "cancel it again", "support@apolles.example", "https://staging.apolles.example/bookings/bk1"]) expect(m.text, t).toContain(t);
+    expect(m.text).not.toMatch(/[—–!]/);
+    // Cancelled since (the agent cancelled again): the message is no longer true and is skipped.
+    await db.booking.update({ where: { id: "bk1" }, data: { status: "CANCELLED" } });
+    await sendBookingEmail("bk1", "cancel_not_done");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("cancelled by the hotel or the supplier: the agent is told no refund was made automatically; the admin is told to record it", async () => {
+    await booking("CANCELLED_BY_SUPPLIER");
+    await sendBookingEmail("bk1", "cancelled_by_supplier");
+    await sendBookingEmail("bk1", "cancelled_by_supplier_admin");
+    expect(sent.map((m) => [m.to, m.subject])).toEqual([
+      ["agent@sunrise.example", "Booking cancelled by the hotel: APL-MAIL0001"],
+      ["alerts@apolles.example", "Apolles: booking APL-MAIL0001 was cancelled by the supplier"],
+    ]);
+    for (const t of ["Hotel Lumiere", "not a cancellation you asked for", "Nothing was refunded automatically", "https://staging.apolles.example/bookings/bk1"]) expect(sent[0]!.text, t).toContain(t);
+    for (const t of ["No refund was made", "https://staging.apolles.example/admin/bookings/bk1"]) expect(sent[1]!.text, t).toContain(t);
+    // The admin alert holds no personal data.
+    for (const t of ["Dana", "Levi", "dana@example.com", "501234567"]) expect(sent[1]!.text).not.toContain(t);
+    for (const m of sent) expect(m.text).not.toMatch(/[—–!]/);
+    // Skipped for a booking that is not in that state.
+    await db.booking.update({ where: { id: "bk1" }, data: { status: "CONFIRMED" } });
+    await sendBookingEmail("bk1", "cancelled_by_supplier");
+    await sendBookingEmail("bk1", "cancelled_by_supplier_admin");
+    expect(sent).toHaveLength(2);
+  });
+
+  it("failed here but found at the supplier later: the admin alert says the room is booked and nobody was charged", async () => {
+    await booking("FAILED");
+    await sendBookingEmail("bk1", "found_after_failed");
+    expect(sent[0]!.to).toBe("alerts@apolles.example");
+    expect(sent[0]!.subject).toBe("Apolles: booking APL-MAIL0001 is booked at the supplier but was not charged");
+    for (const t of ["marked not confirmed", "was not charged", "https://staging.apolles.example/admin/bookings/bk1"]) expect(sent[0]!.text, t).toContain(t);
     for (const t of ["Dana", "Levi", "dana@example.com", "501234567"]) expect(sent[0]!.text).not.toContain(t);
   });
 
@@ -170,7 +219,8 @@ describe("booking emails (to the agent)", () => {
 
   it("the free cancellation deadline is promised only when cancelling really is free until then", () => {
     const start = "2099-04-07T14:00:00.000+02:00";
-    expect(freeCancelEnds({ refundable: true, cancelPenalties: [{ start, end: start, amount: null, nights: 1, percent: null }] })).toEqual(new Date("2099-04-07T12:00:00Z"));
+    // 10 minutes before the supplier's own time: the charge is worked out with the same margin.
+    expect(freeCancelEnds({ refundable: true, cancelPenalties: [{ start, end: start, amount: null, nights: 1, percent: null }] })).toEqual(new Date("2099-04-07T11:50:00Z"));
     expect(freeCancelEnds({ refundable: false, cancelPenalties: [{ start, end: start, amount: null, nights: 1, percent: null }] })).toBeNull();
     expect(freeCancelEnds({ refundable: true, cancelPenalties: [{ start: "soon", end: start, amount: null, nights: 1, percent: null }] })).toBeNull();
     expect(freeCancelEnds({ refundable: true, cancelPenalties: [{ start, end: start, amount: null, nights: 1, percent: null }], nonrefundableDateRanges: [{ start: "2099-04-10", end: "2099-04-11" }] })).toBeNull();
@@ -192,7 +242,10 @@ describe("booking emails (to the agent)", () => {
     const now = new Date("2099-04-05T12:00:00Z");
     await db.booking.update({ where: { id: "bk1" }, data: { freeCancelEndsAt: new Date("2099-04-07T12:00:00Z"), confirmedAt: new Date("2099-03-01T10:00:00Z") } });
     vi.mocked(sendEmail).mockRejectedValueOnce(new Error("provider down"));
-    await expect(sendFreeCancelReminders(now)).rejects.toThrow("provider down");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await sendFreeCancelReminders(now)).toBe(0);
+    expect(log.mock.calls.map((c) => String(c[0]))).toEqual(["free-cancellation reminders: 1 of 1 not sent, tried again next hour: APL-MAIL0001"]);
+    log.mockRestore();
     expect((await db.booking.findUniqueOrThrow({ where: { id: "bk1" } })).freeCancelReminderAt).toBeNull();
     expect(await sendFreeCancelReminders(now)).toBe(1);
     // Booked late (inside the window): no reminder, and not tried again.
@@ -201,5 +254,27 @@ describe("booking emails (to the agent)", () => {
     expect(await sendFreeCancelReminders(now)).toBe(0);
     expect(sent).toHaveLength(0);
     expect((await db.booking.findUniqueOrThrow({ where: { id: "bk1" } })).freeCancelReminderAt).not.toBeNull();
+  });
+
+  it("one recipient that fails does not stop the run: the others get their reminder, and the failure is reported at the end", async () => {
+    await booking("CONFIRMED");
+    const now = new Date("2099-04-05T12:00:00Z");
+    for (const n of [2, 3]) await db.booking.create({ data: { ...bookingData("CONFIRMED", n), confirmedAt: new Date("2099-03-01T10:00:00Z") } });
+    await db.booking.update({ where: { id: "bk1" }, data: { confirmedAt: new Date("2099-03-01T10:00:00Z") } });
+    // In deadline order: bk1 first (fails), then bk2 and bk3.
+    await db.booking.update({ where: { id: "bk1" }, data: { freeCancelEndsAt: new Date("2099-04-07T10:00:00Z") } });
+    await db.booking.update({ where: { id: "bk2" }, data: { freeCancelEndsAt: new Date("2099-04-07T11:00:00Z") } });
+    await db.booking.update({ where: { id: "bk3" }, data: { freeCancelEndsAt: new Date("2099-04-07T12:00:00Z") } });
+    vi.mocked(sendEmail).mockRejectedValueOnce(new Error("mailbox dana@example.com rejected"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await sendFreeCancelReminders(now)).toBe(2);
+    expect(sent.map((m) => m.subject)).toEqual(["Free cancellation ends in 72 hours: APL-MAIL0002", "Free cancellation ends in 72 hours: APL-MAIL0003"]);
+    // One line at the end, with the booking references only (never an address or the error text).
+    expect(log.mock.calls.map((c) => String(c[0]))).toEqual(["free-cancellation reminders: 1 of 3 not sent, tried again next hour: APL-MAIL0001"]);
+    log.mockRestore();
+    const claims = await db.booking.findMany({ orderBy: { id: "asc" }, select: { freeCancelReminderAt: true } });
+    expect(claims.map((c) => c.freeCancelReminderAt !== null)).toEqual([false, true, true]);
+    // The next hourly run sends the one that failed, once.
+    expect(await sendFreeCancelReminders(now)).toBe(1);
   });
 });

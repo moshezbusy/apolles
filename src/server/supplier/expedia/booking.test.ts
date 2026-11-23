@@ -62,6 +62,13 @@ describe("ExpediaBooking", () => {
     ]);
   });
 
+  it("a missing Expedia setting is 'not sent' for a booking and for a cancellation, never 'outcome unknown'", async () => {
+    vi.stubEnv("EXPEDIA_API_KEY", "");
+    await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms }, {})).rejects.toBeInstanceOf(SupplierNotSent);
+    await expect(expedia.cancelRoom("/v3/itineraries/1/rooms/2?token=t", {})).rejects.toBeInstanceOf(SupplierNotSent);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("without the billing contact set, nothing is sent", async () => {
     vi.stubEnv("EXPEDIA_BILLING_CITY", "");
     await expect(expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms }, {})).rejects.toBeInstanceOf(SupplierNotSent);

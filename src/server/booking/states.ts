@@ -3,7 +3,8 @@ import type { BookingStatus, Prisma } from "@/generated/prisma/client";
 // The booking state machine (plan 3; spec section 5). Every change of a booking's status goes
 // through transition(): it updates the row only if it is still in the expected status (so two
 // requests can never both move it), and writes one BookingEvent row, in the caller's
-// transaction. A move the table below does not list is refused.
+// transaction. A move the table below does not list is refused. Every move starts the count of
+// supplier checks again (reconcileAttempts): the booking and its cancellation each get their own.
 
 const ALLOWED: Record<BookingStatus, readonly BookingStatus[]> = {
   DRAFT: ["PENDING_CONFIRMATION", "EXPIRED"],
@@ -43,7 +44,7 @@ export async function transition(
   if (!canTransition(move.from, move.to)) throw new Error(`Booking move ${move.from} → ${move.to} is not allowed`);
   const updated = await tx.booking.updateMany({
     where: { id: move.bookingId, status: move.from },
-    data: { ...move.data, status: move.to },
+    data: { reconcileAttempts: 0, ...move.data, status: move.to },
   });
   if (updated.count === 0) throw new BookingStateConflict();
   await tx.bookingEvent.create({

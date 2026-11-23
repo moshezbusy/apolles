@@ -194,6 +194,8 @@ model PasswordToken {
   @@index([userId])
 }
 
+// The wallet ledger: append-only. A database trigger (migration ledger_append_only) refuses any
+// UPDATE or DELETE of a row; a correction is a new ADJUSTMENT entry.
 model LedgerEntry {
   id             String          @id @default(cuid())
   agencyId       String
@@ -488,7 +490,7 @@ model Booking {
   reconcileAttempts       Int           @default(0)
   lastNotFoundAt          DateTime?
   cancelRequestedAt       DateTime?
-  needsAttention          Boolean       @default(false) // reconciliation gave up: an admin must look
+  needsAttention          Boolean       @default(false) // something needs an admin: the booking's event trail says what
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt
   confirmedAt             DateTime?
@@ -508,6 +510,19 @@ model Booking {
   // out (email #14, plan 8c).
   freeCancelEndsAt     DateTime?
   freeCancelReminderAt DateTime?
+  // A cancellation the supplier did not confirm put the booking back to CONFIRMED at this time,
+  // with this charge quoted to the agent. The supplier is checked for 24 hours after it: if the
+  // cancellation went through late after all, it is finished with that charge.
+  cancelRestoredAt          DateTime?
+  cancelRestoredChargeMinor Int?
+  // When the daily check last read this confirmed booking at the supplier (a cancellation by the
+  // hotel or the supplier is found there).
+  supplierCheckedAt         DateTime?
+  // The agent's IP address and browser when the booking was entered and booked: the supplier asks
+  // for them on every call about the booking, also the ones made later in the background.
+  // Personal data: server-only, blanked when a draft expires.
+  agentIp                   String?
+  agentUserAgent            String?
 
   agency    Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   user      User           @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -522,6 +537,7 @@ model Booking {
   @@index([status, freeCancelEndsAt])
   @@index([agencyId, status, checkin])
   @@index([status, updatedAt])
+  @@index([status, checkin])
   @@index([needsAttention])
 }
 
