@@ -399,6 +399,16 @@ export async function verifyAiToken(
   return { connectionId: c.id, userId: c.userId, agencyId: c.agencyId };
 }
 
+// Whether an access token with this value was ever issued and its row is still kept (expired,
+// refreshed away or bound to another resource included). Only for the AI API's failure path,
+// to count made-up tokens apart from a normal assistant's old ones; never an access check.
+// Rows of a revoked connection are deleted, so those tokens read as unknown.
+export async function aiTokenExists(raw: string): Promise<boolean> {
+  if (typeof raw !== "string" || !isPlausibleToken(raw)) return false;
+  const row = await db.aiToken.findUnique({ where: { accessHash: hashToken(raw) }, select: { id: true } });
+  return row !== null;
+}
+
 // ---------- Revoking ----------
 
 // Revoke in the AI assistants tab. Scoped by the caller's agency: another agency's id (or an

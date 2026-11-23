@@ -266,19 +266,50 @@ describe("caller checks, in order", () => {
     expect(await db.rateLimitBucket.count({ where: { key: `ai-api:ip:${IP}` } })).toBe(0);
   });
 
-  it("30 invalid tokens from one client address in 15 minutes → its next call is 429 before any token lookup", async () => {
-    for (let i = 0; i < 30; i++) {
-      expect(await aiSearch({ ...authOf(a), bearer: `junk-${i}` }, searchBody)).toEqual({ status: 401, json: { error: "invalid_token" } });
-    }
+  // Re-review: only tokens Apolles never issued count. An expired, revoked-but-kept or
+  // wrong-audience token is part of a normal assistant's life (it refreshes after the 401), and
+  // every agent behind Anthropic's or OpenAI's shared addresses would otherwise be locked out.
+  it("300 unknown tokens from one client address in 15 minutes → its 301st call is 429 before any token lookup", async () => {
+    await seedRateLimit(`ai-api:badtoken:ip:${CLIENT_IP}`, 299, 15 * MINUTE);
+    expect(await aiSearch({ ...authOf(a), bearer: "junk-300" }, searchBody)).toEqual({ status: 401, json: { error: "invalid_token" } });
     vi.mocked(verifyAiToken).mockClear();
     expect(await aiSearch(authOf(a), searchBody)).toEqual({ status: 429, json: { error: "rate_limited" } });
     expect(await aiRates({ ...authOf(a), bearer: null }, {})).toEqual({ status: 429, json: { error: "rate_limited" } });
     expect(verifyAiToken).not.toHaveBeenCalled();
-    // Only invalid tokens count; the refused calls did not add to them.
-    const bad = await db.rateLimitBucket.findMany({ where: { key: { startsWith: "ai-api:badtoken:" } } });
-    expect(bad.map((b) => [b.key, b.count])).toEqual([[`ai-api:badtoken:ip:${CLIENT_IP}`, 30]]);
-    // Another client address is not affected.
+    // Only unknown tokens count; the refused calls did not add to them.
+    const bad = await db.rateLimitBucket.findMany({ where: { key: `ai-api:badtoken:ip:${CLIENT_IP}` }, orderBy: { windowStart: "asc" } });
+    expect(bad[0]!.count).toBe(300);
+    // A valid token from another client address still works.
     expect((await aiSearch(authOf(a, "203.0.113.51"), searchBody, { adapter: fakeAdapter().adapter, content: none, now: NOW })).status).toBe(200);
+  });
+
+  it("each unknown token counts once; 300 is the limit, not 30", async () => {
+    for (let i = 0; i < 31; i++) {
+      expect(await aiSearch({ ...authOf(a), bearer: `junk-${i}` }, searchBody)).toEqual({ status: 401, json: { error: "invalid_token" } });
+    }
+    const bad = await db.rateLimitBucket.findMany({ where: { key: { startsWith: "ai-api:badtoken:" } } });
+    expect(bad.map((b) => [b.key, b.count])).toEqual([[`ai-api:badtoken:ip:${CLIENT_IP}`, 31]]);
+    expect((await search(searchBody)).status).toBe(200);
+  });
+
+  it("31 calls with an expired token from one client address: each 401, none counted, nothing blocked", async () => {
+    await db.aiToken.updateMany({ data: { accessExpiresAt: new Date(Date.now() - 1000) } });
+    for (let i = 0; i < 31; i++) {
+      expect(await aiSearch(authOf(a), searchBody)).toEqual({ status: 401, json: { error: "invalid_token" } });
+    }
+    expect(await db.rateLimitBucket.count({ where: { key: { startsWith: "ai-api:badtoken:" } } })).toBe(0);
+    // Another agent's valid token from the same address goes through.
+    const b = await agent("other@example.com");
+    expect((await search(searchBody, fakeAdapter(), b)).status).toBe(200);
+  });
+
+  it("a token for another resource, or of a revoked connection whose row is kept, is not counted", async () => {
+    vi.stubEnv("MCP_PUBLIC_URL", "https://other-mcp.example.test");
+    expect((await search(searchBody)).status).toBe(401);
+    vi.stubEnv("MCP_PUBLIC_URL", "https://mcp.example.test");
+    await db.aiConnection.updateMany({ data: { revokedAt: new Date() } });
+    expect((await search(searchBody)).status).toBe(401);
+    expect(await db.rateLimitBucket.count({ where: { key: { startsWith: "ai-api:badtoken:" } } })).toBe(0);
   });
 
   it("good calls do not count as invalid tokens", async () => {
@@ -799,7 +830,19 @@ describe("routes /api/ai/v1/search and /api/ai/v1/rates", () => {
   it("a request for the app's public host → 404 for every method, before any check", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const auth = { authorization: `Bearer ${a.token}` };
-    for (const extra of [{ host: "app.example.test" }, { host: "APP.example.test:443" }, { "x-forwarded-host": "app.example.test" }, { host: "apolles-staging:3000", "x-forwarded-host": "app.example.test" }]) {
+    const hosts = [
+      { host: "app.example.test" },
+      { host: "APP.example.test:443" },
+      // Re-review: the port never matters, nor a trailing dot (the same name in DNS).
+      { host: "app.example.test:8443" },
+      { host: "app.example.test:80" },
+      { host: "app.example.test." },
+      { host: "App.Example.Test..:3000" },
+      { "x-forwarded-host": "app.example.test" },
+      { "x-forwarded-host": "app.example.test.:8443" },
+      { host: "apolles-staging:3000", "x-forwarded-host": "app.example.test" },
+    ];
+    for (const extra of hosts) {
       for (const route of [searchRoute, ratesRoute]) {
         for (const method of ["POST", "GET", "PUT", "PATCH", "DELETE", "OPTIONS"] as const) {
           const handler = route[method] as (r: Request) => Promise<Response>;
@@ -811,6 +854,13 @@ describe("routes /api/ai/v1/search and /api/ai/v1/rates", () => {
     }
     expect(verifyAiToken).not.toHaveBeenCalled();
     expect(await db.rateLimitBucket.count({ where: { key: { startsWith: "ai-api:" } } })).toBe(0);
+  });
+
+  it("APP_URL with a port or a trailing dot still names the same public host", async () => {
+    vi.stubEnv("APP_URL", "https://APP.example.test.:8443/");
+    const res = await searchRoute.POST(post("/api/ai/v1/search", JSON.stringify(searchBody), { host: "app.example.test", authorization: `Bearer ${a.token}` }));
+    expect(res.status).toBe(404);
+    expect(verifyAiToken).not.toHaveBeenCalled();
   });
 
   it("APP_URL not valid → closed (the public host cannot be told apart)", async () => {

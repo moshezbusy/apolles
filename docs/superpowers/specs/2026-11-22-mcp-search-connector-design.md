@@ -238,8 +238,10 @@ the agent may see a price different from the assistant's; the hotel page is the 
   address, so the MCP server passes the assistant's own address on in `X-Apolles-Client-Ip` (the
   right-most `X-Forwarded-For` entry it received from Caddy, else its socket address; only one IP literal).
   The app reads that header only after the service key matched, and keys on it: a loose ceiling
-  `ai-api:ip:{clientIp}` (600 per minute) and `ai-api:badtoken:ip:{clientIp}` (after 30 invalid tokens in
-  15 minutes, that address gets 429 before any token lookup). Wrong service keys are counted per request
+  `ai-api:ip:{clientIp}` (600 per minute) and `ai-api:badtoken:ip:{clientIp}` (after 300 unknown tokens in
+  15 minutes, that address gets 429 before any token lookup). Only tokens Apolles never issued count:
+  expired, refreshed-away or wrong-resource tokens get 401 but are not counted, because Claude's and
+  ChatGPT's shared addresses serve every agent and old tokens are part of the normal refresh flow. Wrong service keys are counted per request
   address (`ai-api:keyfail:ip:{ip}`) and logged, louder at 10 in 15 minutes, but never lock out a right
   key.
 - OAuth: Claude and ChatGPT call from shared cloud addresses, so per-IP limits would lock out every agent

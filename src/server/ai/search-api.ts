@@ -11,9 +11,9 @@ import { destinationById, suggestDestinations } from "@/server/search/destinatio
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "@/server/search/errors";
 import { getHotelOffers, listResults, searchSummary, startSearch, type HotelCard, type ListOptions } from "@/server/search/search";
 import type { Occupancy, Offer, SupplierAdapter } from "@/server/supplier/types";
-import { aiSearchEnabled, appPublicHost, mcpResource, serviceKeyMatches } from "./config";
+import { aiSearchEnabled, appPublicHost, hostName, mcpResource, serviceKeyMatches } from "./config";
 import { hotelLink } from "./links";
-import { verifyAiToken } from "./tokens";
+import { aiTokenExists, verifyAiToken } from "./tokens";
 
 // The internal AI search API (plan 11, design §5 and §7): the only way the separate MCP server
 // reaches Apolles. Search only: it starts and reads searches of the token's own agency and never
@@ -25,7 +25,9 @@ import { verifyAiToken } from "./tokens";
 //      comes from the MCP server's one address,
 //   2. per-IP limits on the assistant's own address, which the MCP server passes on in
 //      X-Apolles-Client-Ip (read only with the right key, and only as one IP literal): a loose
-//      ceiling, and a refusal once that address has sent 30 invalid tokens in 15 minutes,
+//      ceiling, and a refusal once that address has sent 300 unknown tokens in 15 minutes (never
+//      issued by Apolles; an expired or revoked one is normal for an assistant and not counted,
+//      as Claude's and ChatGPT's shared addresses serve every agent),
 //   3. the agent's search token (read from the database every time: a revoke or a suspension
 //      stops the very next call),
 //   4. the agent's tool-call limits (per minute and per day),
@@ -45,7 +47,7 @@ type Caller = { connectionId: string; userId: string; agencyId: string };
 type Outcome = "ok" | "rate_limited" | "invalid" | "unavailable" | "not_found" | "ambiguous" | "error";
 
 const IP_LIMIT = { limit: 600, windowMs: 60_000 }; // per assistant address, backstop only
-const BAD_TOKENS = { limit: 30, windowMs: 15 * 60_000 }; // invalid tokens per assistant address
+const BAD_TOKENS = { limit: 300, windowMs: 15 * 60_000 }; // unknown tokens per assistant address
 // Wrong service keys per address: counted for the log only (a 48-byte random key cannot be
 // guessed); at the 10th in the window, one louder line.
 const KEY_FAILURES = { alarmAt: 10, windowMs: 15 * 60_000 };
@@ -155,12 +157,13 @@ async function authenticate(auth: AiAuth): Promise<{ deny: ApiResult } | { calle
   const clientIp = bareIp(auth.clientIp) ?? auth.ip;
   const ip = await hitRateLimit(`ai-api:ip:${clientIp}`, IP_LIMIT.limit, IP_LIMIT.windowMs);
   if (!ip.allowed) return { deny: result(429, { error: "rate_limited" }) };
-  // Refused before the lookup, so an address that sent 30 junk tokens cannot keep the database busy.
+  // Refused before the lookup, so an address that sent 300 made-up tokens cannot keep the database busy.
   const badKey = `ai-api:badtoken:ip:${clientIp}`;
   if ((await peekRateLimit(badKey, BAD_TOKENS.windowMs)) >= BAD_TOKENS.limit) return { deny: result(429, { error: "rate_limited" }) };
   const caller = auth.bearer === null ? null : await verifyAiToken(auth.bearer, mcpResource());
   if (!caller) {
-    await hitRateLimit(badKey, BAD_TOKENS.limit, BAD_TOKENS.windowMs);
+    // Only a token Apolles never issued counts (one more indexed read, on failures only).
+    if (auth.bearer === null || !(await aiTokenExists(auth.bearer))) await hitRateLimit(badKey, BAD_TOKENS.limit, BAD_TOKENS.windowMs);
     return { deny: result(401, { error: "invalid_token" }) };
   }
   for (const { suffix, limit, windowMs } of AGENT_LIMITS) {
@@ -480,11 +483,11 @@ export function aiNotFound(): Response {
   return new Response(null, { status: 404, headers: NO_STORE });
 }
 
-// Host header value → "host[:port]" lower case, without the default port, or null.
+// Host header value → its host name (lower case, no trailing dots, port ignored), or null.
 function hostOf(value: string | null): string | null {
   if (value === null) return null;
   try {
-    return new URL(`https://${value.trim()}`).host;
+    return hostName(new URL(`https://${value.trim()}`));
   } catch {
     return null;
   }

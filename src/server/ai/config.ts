@@ -32,11 +32,17 @@ export function appIssuer(): string {
   return readUrl("APP_URL");
 }
 
-// The app's public host (lower case, no default port), or null when APP_URL is not valid. A
-// request naming it came through the public proxy, never from the MCP server (F10).
+// A host name as DNS reads it: lower case, without trailing dots (`example.com.` is the same
+// name). The port is left out on purpose: the same host on another port is the same host.
+export function hostName(url: URL): string {
+  return url.hostname.toLowerCase().replace(/\.+$/, "");
+}
+
+// The app's public host name, or null when APP_URL is not valid. A request naming it came
+// through the public proxy, never from the MCP server (F10).
 export function appPublicHost(): string | null {
   try {
-    return new URL(appIssuer()).host;
+    return hostName(new URL(appIssuer()));
   } catch {
     return null;
   }
