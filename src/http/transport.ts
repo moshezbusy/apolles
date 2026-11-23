@@ -90,6 +90,9 @@ export class HttpTransport {
         return res;
       } catch (err) {
         if (err instanceof SupplierError) {
+          // A redirect or an oversized answer to book/cancel tells us nothing
+          // about whether the supplier processed it.
+          if (!req.idempotent && err.code === 'PROTOCOL') throw this.unknownOutcome(req, err);
           if (err.code === 'OUTCOME_UNKNOWN' || !err.retryable) throw err;
           if (!req.idempotent) throw this.unknownOutcome(req, err);
           lastError = err;
@@ -115,16 +118,20 @@ export class HttpTransport {
     let error: string | undefined;
     try {
       ctx.onSend?.(); // from here on the supplier may have seen the request
-      const res = await this.fetchImpl(req.url, { method: req.method, headers, body: req.body, signal });
+      // Never follow a redirect: it could send credentials, card data or a
+      // booking to a host that is not the supplier we configured.
+      const res = await this.fetchImpl(req.url, { method: req.method, headers, body: req.body, signal, redirect: 'error' });
       status = res.status;
+      if (res.status >= 300 && res.status < 400) {
+        await res.body?.cancel().catch(() => undefined);
+        throw new SupplierError(this.supplierId, 'PROTOCOL', `${req.operation}: redirect refused (HTTP ${res.status})`);
+      }
       const len = Number(res.headers.get('content-length') ?? '0');
       if (len > this.maxResponseBytes) {
+        await res.body?.cancel().catch(() => undefined);
         throw new SupplierError(this.supplierId, 'PROTOCOL', `${req.operation}: response too large`);
       }
-      body = await res.text();
-      if (body.length > this.maxResponseBytes) {
-        throw new SupplierError(this.supplierId, 'PROTOCOL', `${req.operation}: response too large`);
-      }
+      body = await this.readLimited(res, req.operation);
       const resHeaders: Record<string, string> = {};
       res.headers.forEach((v, k) => (resHeaders[k] = v));
       return { status: res.status, headers: resHeaders, body, durationMs: Date.now() - started };
@@ -132,6 +139,9 @@ export class HttpTransport {
       error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
       if (timeout.aborted && !ctx.signal?.aborted) {
         throw new SupplierError(this.supplierId, 'TIMEOUT', `${req.operation}: timed out after ${req.timeoutMs}ms`, { cause: err });
+      }
+      if (isRedirectError(err)) {
+        throw new SupplierError(this.supplierId, 'PROTOCOL', `${req.operation}: redirect refused`, { cause: err });
       }
       throw err;
     } finally {
@@ -158,6 +168,29 @@ export class HttpTransport {
     }
   }
 
+  /**
+   * Read the body chunk by chunk and stop as soon as it is bigger than the
+   * limit. Counts bytes after decompression, so neither a missing
+   * content-length nor a tiny gzip that unpacks to gigabytes fills memory.
+   */
+  private async readLimited(res: Response, operation: string): Promise<string> {
+    if (!res.body) return '';
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > this.maxResponseBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new SupplierError(this.supplierId, 'PROTOCOL', `${operation}: response too large`);
+      }
+      chunks.push(value);
+    }
+    return new TextDecoder().decode(Buffer.concat(chunks));
+  }
+
   private unknownOutcome(req: HttpRequest, cause: SupplierError): SupplierError {
     return new SupplierError(
       this.supplierId,
@@ -176,6 +209,13 @@ export class HttpTransport {
 function classifyNetworkError(supplierId: string, operation: string, err: unknown): SupplierError {
   const msg = err instanceof Error ? err.message : String(err);
   return new SupplierError(supplierId, 'UNAVAILABLE', `${operation}: network error: ${msg}`, { cause: err });
+}
+
+/** What fetch throws for a 3xx when told `redirect: 'error'` ("fetch failed", cause "unexpected redirect"). */
+function isRedirectError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const cause = err.cause instanceof Error ? err.cause.message : '';
+  return /redirect/i.test(`${err.message} ${cause}`);
 }
 
 function maskValues(text: string, values: string[] | undefined): string {
