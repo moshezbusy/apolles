@@ -5,6 +5,7 @@ import type { AccountStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
 import { audit } from "@/server/audit";
 import { sendSetPasswordEmail } from "@/server/auth/password-tokens";
+import { hitRateLimit } from "@/server/rate-limit";
 import { createUser, normalizeEmail } from "@/server/users";
 import { getBalances } from "@/server/wallet/ledger";
 
@@ -61,8 +62,8 @@ function isDuplicateUserEmail(error: unknown): boolean {
 // One transaction: agency (with a temporary reference), its final bank reference built from
 // the sequence number, the AGENT user (no password yet) and the audit row. A duplicate
 // email rolls everything back. The SET-password email goes out after the commit; if it
-// fails the agency stays and `emailSent` is false (a new link can be requested through
-// "Forgot password").
+// fails the agency stays and `emailSent` is false (the admin sends it again from the agency's
+// page, resendSetupEmail below; "Forgot password" also sends a fresh set-up link).
 export async function createAgency(
   actor: string,
   rawInput: CreateAgencyInput,
@@ -168,6 +169,8 @@ export type AgencyListItem = {
   status: AccountStatus;
   createdAt: Date;
   agentEmail: string | null;
+  // The agent was invited and has not set a password yet ("Invited, not signed in yet").
+  agentInvited: boolean;
   balanceCents: number;
   heldCents: number;
 };
@@ -216,10 +219,18 @@ export async function listAgencies(
   });
   const hasMore = rows.length > size;
   const page = hasMore ? rows.slice(0, size) : rows;
-  const balances = await getBalances(page.map((a) => a.id));
+  const ids = page.map((a) => a.id);
+  // One query for the whole page (never the hashes themselves): agencies with an agent who
+  // has no password yet.
+  const [balances, invited] = await Promise.all([
+    getBalances(ids),
+    db.user.findMany({ where: { agencyId: { in: ids }, role: "AGENT", passwordHash: null }, select: { agencyId: true } }),
+  ]);
+  const invitedAgencies = new Set(invited.map((u) => u.agencyId));
   const agencies = page.map(({ users, ...agency }) => ({
     ...agency,
     agentEmail: users[0]?.email ?? null,
+    agentInvited: invitedAgencies.has(agency.id),
     balanceCents: balances.get(agency.id)?.balanceCents ?? 0,
     heldCents: balances.get(agency.id)?.heldCents ?? 0,
   }));
@@ -235,4 +246,51 @@ export async function getAgencySummary(
     where: { id: agencyId },
     select: { id: true, name: true, status: true },
   });
+}
+
+// For the admin's agency page: the agency's agent and whether they still have to set a
+// password (the invitation is pending). Null when the agency has no agent.
+export async function getAgencyInvitation(agencyId: string): Promise<{ agentEmail: string; pending: boolean } | null> {
+  if (typeof agencyId !== "string" || agencyId.length > 100) return null;
+  const pending = await db.user.findFirst({ where: { agencyId, role: "AGENT", passwordHash: null }, orderBy: { createdAt: "asc" }, select: { email: true } });
+  if (pending) return { agentEmail: pending.email, pending: true };
+  const agent = await db.user.findFirst({ where: { agencyId, role: "AGENT" }, orderBy: { createdAt: "asc" }, select: { email: true } });
+  return agent ? { agentEmail: agent.email, pending: false } : null;
+}
+
+export type ResendSetupResult = "SENT" | "ALREADY_SET" | "SUSPENDED" | "NOT_FOUND" | "LIMITED" | "FAILED";
+
+const SETUP_EMAIL_LIMIT = { limit: 5, windowMs: 60 * 60_000 };
+
+// "Send the set-up email again" (admin): a fresh invitation link for the agency's agent who
+// has not set a password yet. The older link stops working (issuePasswordToken). Never for an
+// account that already has a password (that is "Forgot password", asked by the agent), and
+// not while the agency or the agent is suspended (the link would not work). Limited per
+// agency, and audited whether or not the email went out; the row never holds the address or
+// the link.
+export async function resendSetupEmail(actor: string, agencyId: string): Promise<ResendSetupResult> {
+  if (typeof agencyId !== "string" || agencyId.length === 0 || agencyId.length > 100) return "NOT_FOUND";
+  const agency = await db.agency.findUnique({
+    where: { id: agencyId },
+    select: {
+      status: true,
+      users: { where: { role: "AGENT", passwordHash: null }, orderBy: { createdAt: "asc" }, take: 1, select: { id: true, status: true } },
+    },
+  });
+  if (!agency) return "NOT_FOUND";
+  const agent = agency.users[0];
+  if (!agent) return "ALREADY_SET";
+  if (agency.status !== "ACTIVE" || agent.status !== "ACTIVE") return "SUSPENDED";
+  if (!(await hitRateLimit(`setup-email:agency:${agencyId}`, SETUP_EMAIL_LIMIT.limit, SETUP_EMAIL_LIMIT.windowMs)).allowed) return "LIMITED";
+
+  let emailSent = true;
+  try {
+    await sendSetPasswordEmail(agent.id);
+  } catch (error) {
+    emailSent = false;
+    // No email address or link in the log.
+    console.error("set-up email could not be sent again", { agencyId, error: error instanceof Error ? error.message : String(error) });
+  }
+  await audit(actor, "agency.setup-email.resend", "Agency", agencyId, undefined, { agentUserId: agent.id, emailSent });
+  return emailSent ? "SENT" : "FAILED";
 }

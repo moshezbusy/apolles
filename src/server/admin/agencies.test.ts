@@ -7,7 +7,9 @@ import { createSession, getSession } from "@/server/auth/session";
 import { isTrustedDevice, trustDevice } from "@/server/auth/signin-code";
 import { credit, getBalance, getBalances, placeHold, releaseHold } from "@/server/wallet/ledger";
 import { audit } from "@/server/audit";
-import { createAgency, listAgencies, setAgencyStatus } from "@/server/admin/agencies";
+import { createAgency, getAgencyInvitation, listAgencies, resendSetupEmail, setAgencyStatus } from "@/server/admin/agencies";
+import { hashPassword } from "@/server/auth/password";
+import { checkPasswordLink } from "@/server/auth/password-tokens";
 
 vi.mock("@/server/email/port", () => ({ sendEmail: vi.fn() }));
 
@@ -214,6 +216,85 @@ describe("admin agencies", () => {
       await createAgency(adminId, input);
       expect((await listAgencies(undefined, 0)).agencies).toHaveLength(1);
       await expect(listAgencies("nope")).rejects.toThrow("Invalid cursor");
+    });
+  });
+
+  describe("invitation state and resending the set-up email", () => {
+    const linkIn = (text: string) => /\/set-password\/([A-Za-z0-9_-]+)/.exec(text)?.[1] ?? "";
+
+    it("an agency whose agent has no password yet is marked as invited, on the list and by itself", async () => {
+      const invited = await createAgency(adminId, input);
+      const active = await createAgency(adminId, { ...input, name: "Active Travel", agentEmail: "active@example.com" });
+      await db.user.update({ where: { id: active.userId }, data: { passwordHash: await hashPassword("abcdefg1") } });
+
+      const { agencies } = await listAgencies();
+      expect(agencies.find((a) => a.id === invited.agencyId)?.agentInvited).toBe(true);
+      expect(agencies.find((a) => a.id === active.agencyId)?.agentInvited).toBe(false);
+      expect(await getAgencyInvitation(invited.agencyId)).toEqual({ agentEmail: "dana@example.com", pending: true });
+      expect(await getAgencyInvitation(active.agencyId)).toEqual({ agentEmail: "active@example.com", pending: false });
+      expect(await getAgencyInvitation("nope")).toBeNull();
+    });
+
+    it("sends a fresh 72-hour set-up link, makes the old one useless, and audits with the admin as actor", async () => {
+      const { agencyId, userId } = await createAgency(adminId, input);
+      const first = linkIn(vi.mocked(sendEmail).mock.calls[0]![0].text);
+      vi.mocked(sendEmail).mockClear();
+
+      expect(await resendSetupEmail(adminId, agencyId)).toBe("SENT");
+      expect(sendEmail).toHaveBeenCalledTimes(1);
+      const msg = vi.mocked(sendEmail).mock.calls[0]![0];
+      expect(msg).toMatchObject({ to: "dana@example.com", subject: "Set your Apolles password" });
+      expect(msg.text).toContain("72 hours");
+      expect(await checkPasswordLink(linkIn(msg.text))).toEqual({ usable: true, purpose: "SET" });
+      expect(await checkPasswordLink(first)).toEqual({ usable: false, purpose: "SET" });
+
+      const row = await db.auditLog.findFirstOrThrow({ where: { action: "agency.setup-email.resend" } });
+      expect(row).toMatchObject({ actorUserId: adminId, targetType: "Agency", targetId: agencyId });
+      expect(row.after).toEqual({ agentUserId: userId, emailSent: true });
+      // Never the address or the link.
+      expect(JSON.stringify(row)).not.toContain("dana@example.com");
+      expect(JSON.stringify(row)).not.toContain(linkIn(msg.text));
+    });
+
+    it("refuses once the agent has set a password: no email, no new link", async () => {
+      const { agencyId, userId } = await createAgency(adminId, input);
+      await db.user.update({ where: { id: userId }, data: { passwordHash: await hashPassword("abcdefg1") } });
+      vi.mocked(sendEmail).mockClear();
+      const tokens = await db.passwordToken.count();
+      expect(await resendSetupEmail(adminId, agencyId)).toBe("ALREADY_SET");
+      expect(sendEmail).not.toHaveBeenCalled();
+      expect(await db.passwordToken.count()).toBe(tokens);
+      expect(await db.auditLog.count({ where: { action: "agency.setup-email.resend" } })).toBe(0);
+    });
+
+    it("unknown agency → NOT_FOUND; suspended agency → SUSPENDED (the link would not work)", async () => {
+      const { agencyId } = await createAgency(adminId, input);
+      vi.mocked(sendEmail).mockClear();
+      expect(await resendSetupEmail(adminId, "nope")).toBe("NOT_FOUND");
+      await setAgencyStatus(adminId, agencyId, "SUSPENDED");
+      expect(await resendSetupEmail(adminId, agencyId)).toBe("SUSPENDED");
+      expect(sendEmail).not.toHaveBeenCalled();
+    });
+
+    it("a mail failure is reported and audited as not sent, without the address in the log", async () => {
+      const { agencyId } = await createAgency(adminId, input);
+      vi.mocked(sendEmail).mockRejectedValue(new Error("down"));
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await resendSetupEmail(adminId, agencyId)).toBe("FAILED");
+      expect(JSON.stringify(logged.mock.calls)).not.toContain("dana@example.com");
+      const row = await db.auditLog.findFirstOrThrow({ where: { action: "agency.setup-email.resend" } });
+      expect(row.after).toMatchObject({ emailSent: false });
+      logged.mockRestore();
+    });
+
+    it("is limited per agency: the 6th in an hour sends nothing", async () => {
+      const { agencyId } = await createAgency(adminId, input);
+      const other = await createAgency(adminId, { ...input, agentEmail: "other@example.com" });
+      for (let i = 0; i < 5; i++) expect(await resendSetupEmail(adminId, agencyId)).toBe("SENT");
+      vi.mocked(sendEmail).mockClear();
+      expect(await resendSetupEmail(adminId, agencyId)).toBe("LIMITED");
+      expect(sendEmail).not.toHaveBeenCalled();
+      expect(await resendSetupEmail(adminId, other.agencyId)).toBe("SENT");
     });
   });
 
