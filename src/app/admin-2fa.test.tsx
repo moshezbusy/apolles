@@ -6,7 +6,9 @@ import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import { SESSION_COOKIE, createSession, getSession } from "@/server/auth/session";
 import { requireAdmin } from "@/server/auth/guards";
-import { verifyTotpAction } from "@/app/admin/2fa/actions";
+import { verifyRecoveryCodeAction, verifyTotpAction } from "@/app/admin/2fa/actions";
+import { createRecoveryCodes } from "@/server/auth/recovery-codes";
+import { createRecoveryCodesAction } from "@/app/admin/security/actions";
 import { confirmTotpAction, regenerateTotpKeyAction } from "@/app/admin/2fa/setup/actions";
 import { RATE_LIMITS } from "@/server/rate-limit";
 import { startTotpEnrollment } from "@/server/auth/totp";
@@ -185,6 +187,44 @@ describe("admin 2FA", () => {
       await expect(verifyTotpAction(null, form({ code: "123456" }))).rejects.toThrow(
         "NEXT_REDIRECT:/admin/2fa/setup",
       );
+    });
+  });
+
+  describe("verifyRecoveryCodeAction (lost phone)", () => {
+    it("a right recovery code signs in once, renews the session and goes on to the security page", async () => {
+      const admin = await signedInAdmin({ confirmed: true });
+      const [code] = await createRecoveryCodes(admin.id);
+      await expect(verifyRecoveryCodeAction(null, form({ recoveryCode: code! }))).rejects.toThrow(/^NEXT_REDIRECT:\/admin\/security$/);
+      expect(setCalls.map((c) => c.name)).toEqual([SESSION_COOKIE, "apl_device"]);
+      expect(await requireAdmin()).toEqual({ userId: admin.id });
+    });
+
+    it("a wrong or used code says so and the session stays unverified", async () => {
+      const admin = await signedInAdmin({ confirmed: true });
+      await createRecoveryCodes(admin.id);
+      expect(await verifyRecoveryCodeAction(null, form({ recoveryCode: "AAAA-AAAA-AAAA-AAAA" }))).toEqual({
+        error: "That recovery code is not right, or it was already used. Check it and try again.",
+      });
+      expect(await sessionVerified()).toBe(false);
+    });
+  });
+
+  describe("createRecoveryCodesAction (/admin/security)", () => {
+    it("right after the sign-in code: 10 codes without asking again; later the authenticator code is needed", async () => {
+      const admin = await signedInAdmin({ confirmed: true });
+      await expect(verifyTotpAction(null, form({ code: await generate({ secret: SECRET }) }))).rejects.toThrow("NEXT_REDIRECT");
+      const made = await createRecoveryCodesAction(null, new FormData());
+      expect(made?.status).toBe("success");
+      expect(made?.codes).toHaveLength(10);
+
+      await db.session.updateMany({ where: { userId: admin.id }, data: { totpVerifiedAt: new Date(Date.now() - 11 * 60_000) } });
+      expect(await createRecoveryCodesAction(null, new FormData())).toMatchObject({ status: "error" });
+      expect(await createRecoveryCodesAction(null, form({ code: await wrongCode(SECRET) }))).toMatchObject({ status: "error" });
+      const next = await generate({ secret: SECRET, epoch: nowSeconds() + 30 });
+      const again = await createRecoveryCodesAction(null, form({ code: next }));
+      expect(again?.codes).toHaveLength(10);
+      expect(again?.codes).not.toContain(made!.codes![0]);
+      expect(await db.totpRecoveryCode.count({ where: { userId: admin.id } })).toBe(10);
     });
   });
 

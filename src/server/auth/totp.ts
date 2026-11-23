@@ -268,6 +268,14 @@ export async function confirmTotp(userId: string, code: string): Promise<boolean
   return (await checkCode(user, code, { confirm: true })) === "OK";
 }
 
+// A fully signed-in admin proves again that they hold the authenticator (before making new
+// recovery codes, recovery-codes.ts): the same checks and counter as the sign-in step, but no
+// session changes and no sign-in audit row.
+export async function checkTotpCode(userId: string, code: string): Promise<TotpCheckResult> {
+  const user = await db.user.findUnique({ where: { id: userId }, select: totpUserSelect });
+  return checkCode(user, code, { confirm: false });
+}
+
 // Enrollment from the setup page: confirms TOTP and marks this session verified in the
 // same transaction, so the confirming code is not needed (and cannot be used) twice.
 export async function confirmTotpForSession(
