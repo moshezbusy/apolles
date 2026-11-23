@@ -102,6 +102,31 @@ describe("listBookings", () => {
     expect(row.endsWith(",1")).toBe(true);
   });
 
+  it("CSV: starts with the UTF-8 mark, so Excel reads names in any script", async () => {
+    await make("A", 8, "CONFIRMED", "2027-04-10", { hotelName: "מלון הים", leadFamilyName: "Müller" });
+    const csv = await bookingsCsv("A", { tab: "all" }, NOW);
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    expect(csv.slice(1).startsWith("Reference,Status,")).toBe(true);
+    expect(csv.indexOf("\uFEFF", 1)).toBe(-1); // once, at the very start
+    expect(csv).toContain(`"מלון הים"`);
+    expect(csv).toContain(`"Dana Müller"`);
+  });
+
+  it("CSV: an export that was cut says so in a last row, with how many bookings are missing; a whole export has no such row", async () => {
+    const whole = (await bookingsCsv("A", { tab: "all" }, NOW)).trim().split("\r\n");
+    expect(whole).toHaveLength(5); // the header and 4 bookings
+    expect(whole.join("\n")).not.toContain("not in this file");
+    const cut = (await bookingsCsv("A", { tab: "all" }, NOW, { maxRows: 3 })).trim().split("\r\n");
+    expect(cut).toHaveLength(5); // the header, 3 bookings, the notice
+    expect(cut.slice(1, 4).map((l) => l.split(",")[0])).toEqual(["APL-A0000001", "APL-A0000002", "APL-A0000003"]);
+    expect(cut[4]).toBe(`"This export was cut at 3 rows: 1 more booking is not in this file. Narrow the list with the tabs or the search box, then export again."`);
+    const more = (await bookingsCsv("A", { tab: "all" }, NOW, { maxRows: 2 })).trim().split("\r\n");
+    expect(more[3]).toContain("cut at 2 rows: 2 more bookings are not in this file");
+    // The count follows the same tab and search, and the agency: another agency's bookings never count.
+    const confirmed = (await bookingsCsv("A", { tab: "upcoming" }, NOW, { maxRows: 1 })).trim().split("\r\n");
+    expect(confirmed).toHaveLength(2);
+  });
+
   it("several rooms (plan 10): each row has its number of rooms, in the list and the CSV", async () => {
     const two = await db.booking.findUniqueOrThrow({ where: { reference: "APL-A0000001" } });
     await db.bookingRoom.createMany({

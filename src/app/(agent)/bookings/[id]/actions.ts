@@ -10,7 +10,9 @@ import { emailBookingToClient } from "@/server/booking/client-email";
 import { supplierContextFrom } from "@/server/supplier-context";
 
 // "Confirm cancellation" (screen 12). The charge sent is only compared with the charge the
-// server works out now; the refund is written only after the supplier confirms.
+// server works out now; the refund is written only after the supplier confirms. A cancellation
+// that was not done goes back to the page with the code of the server's own message (the page
+// shows the sentence for that code; no text travels in the URL).
 export async function cancelAction(formData: FormData): Promise<void> {
   const { userId, agencyId } = await requireAgent();
   const bookingId = formData.get("bookingId");
@@ -26,7 +28,7 @@ export async function cancelAction(formData: FormData): Promise<void> {
     throw error;
   }
   revalidatePath("/", "layout"); // the header shows the balance (a refund changes it)
-  const notice = { cancelled: "cancelled", pending: "cancel_pending", refused: "cancel_refused", part_refused: "cancel_part_refused", not_allowed: "cancel_not_allowed" }[outcome.kind];
+  const notice = "code" in outcome ? `cancel_${outcome.code}` : outcome.kind === "cancelled" ? "cancelled" : "cancel_pending";
   redirect(`/bookings/${bookingId}?notice=${notice}`);
 }
 

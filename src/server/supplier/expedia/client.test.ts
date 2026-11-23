@@ -3,6 +3,7 @@ import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import {
   SupplierAuthError,
+  SupplierNotSent,
   SupplierOutcomeUnknown,
   SupplierRateLimited,
   SupplierRequestRejected,
@@ -98,6 +99,33 @@ describe("expediaRequest", () => {
       expediaRequest({ method: "POST", path: "/itineraries", body: {}, context, timeoutMs: 60_000 }),
     ).rejects.toThrow(/Test header/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // A check of our own that fails before anything is sent is a definite "nothing happened":
+  // the booking service releases the hold at once instead of waiting for a check that can only
+  // find nothing.
+  it("a call that changes something and fails a local check (no Test header, a missing or wrong setting) is 'not sent'", async () => {
+    const post = () => expediaRequest({ method: "POST", path: "/itineraries", body: {}, context: { ...context, test: "standard" }, timeoutMs: 60_000 });
+    await expect(expediaRequest({ method: "POST", path: "/itineraries", body: {}, context, timeoutMs: 60_000 })).rejects.toBeInstanceOf(SupplierNotSent);
+    await expect(expediaRequest({ method: "DELETE", path: "/itineraries/1/rooms/2", context, timeoutMs: 60_000 })).rejects.toBeInstanceOf(SupplierNotSent);
+    vi.stubEnv("EXPEDIA_API_KEY", "");
+    await expect(post()).rejects.toBeInstanceOf(SupplierNotSent);
+    await expect(post()).rejects.toThrow("EXPEDIA_API_KEY is not set");
+    vi.stubEnv("EXPEDIA_API_KEY", "api-key-1");
+    vi.stubEnv("EXPEDIA_SHARED_SECRET", "");
+    await expect(post()).rejects.toBeInstanceOf(SupplierNotSent);
+    vi.stubEnv("EXPEDIA_SHARED_SECRET", SECRET);
+    vi.stubEnv("EXPEDIA_BASE_URL", "https://api.ean.com/v3"); // the live endpoint outside production
+    await expect(post()).rejects.toBeInstanceOf(SupplierNotSent);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await db.supplierCallLog.count()).toBe(0);
+  });
+
+  it("a GET with a missing setting still fails loudly as a configuration error, not as a supplier answer", async () => {
+    vi.stubEnv("EXPEDIA_API_KEY", "");
+    const get = expediaRequest({ method: "GET", path: "/properties/availability", context, timeoutMs: 15_000 });
+    await expect(get).rejects.toThrow("EXPEDIA_API_KEY is not set");
+    await expect(get).rejects.not.toBeInstanceOf(SupplierNotSent);
   });
 
   it("sends the Test header when given", async () => {

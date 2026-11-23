@@ -2,7 +2,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { removeNul } from "@/lib/strip-nul";
 import { db } from "@/server/db";
 import { forLog, maskQuery } from "@/server/supplier/mask";
-import { TEST_BASE_URL, readExpediaConfig } from "./config";
+import { TEST_BASE_URL, readExpediaConfig, type ExpediaConfig } from "./config";
 import { authHeader } from "./signature";
 
 // The one HTTP client for Expedia Rapid v3. It signs every call, sends the required headers,
@@ -31,6 +31,20 @@ export class SupplierTimeout extends SupplierError {}
 // answer: timeout, network error, 5xx, or a body that never arrived. The booking (or the
 // cancellation) may exist, so callers must reconcile and never retry blindly.
 export class SupplierOutcomeUnknown extends SupplierError {}
+// Nothing reached the supplier: a check of our own failed first (a setting that is missing or
+// wrong, the Test header guard, an invalid value). A definite "nothing happened": the booking
+// service releases the hold at once instead of waiting for a check that can only find nothing.
+export class SupplierNotSent extends SupplierError {}
+
+// The settings for a call that changes something (book, cancel): a missing or wrong one means
+// nothing was sent. The message names the setting, never its value.
+export function readConfigOrNotSent(): ExpediaConfig {
+  try {
+    return readExpediaConfig();
+  } catch (error) {
+    throw new SupplierNotSent(error instanceof Error ? error.message : "The Expedia settings could not be read");
+  }
+}
 // An answer larger than the limit: reading stops there, so one huge body cannot fill the memory
 // of the app server.
 export class SupplierResponseTooLarge extends SupplierError {}
@@ -192,13 +206,13 @@ export async function recordUnknownFields(logId: string | null, names: string[])
 export async function expediaRequest(
   request: ExpediaRequest,
 ): Promise<{ status: number; data: unknown; logId: string | null; next: string | null }> {
-  const config = readExpediaConfig();
   const { method, path, context } = request;
   const changesState = method !== "GET";
+  const config = changesState ? readConfigOrNotSent() : readExpediaConfig();
   // On test.ean.com a booking WITHOUT the Test header is a real booking. A call that changes
   // something must carry it outside production, and always when the endpoint is the test one.
   if (changesState && !context.test && (!config.production || config.baseUrl === TEST_BASE_URL)) {
-    throw new Error("Every non-GET Expedia call to the test endpoint must send the Test header");
+    throw new SupplierNotSent("Every non-GET Expedia call to the test endpoint must send the Test header");
   }
 
   const url = buildUrl(config.baseUrl, path, request.query, request.rawQuery);

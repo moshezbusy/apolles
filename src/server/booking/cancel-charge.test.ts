@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cancelChargeAt, cancelChargeForRooms } from "./cancel-charge";
+import { CANCEL_MARGIN_MS, cancelChargeAt, cancelChargeForRooms } from "./cancel-charge";
 
 const base = { refundable: true, totalMinor: 50_000, currency: "USD", checkin: "2027-04-10" };
 const penalty = (start: string, end: string, extra: object) => ({ start, end, amount: null, nights: null, percent: null, ...extra });
@@ -47,6 +47,87 @@ describe("cancelChargeAt", () => {
   it("a charge never exceeds the total", () => {
     const big = [penalty("2027-04-01T00:00:00Z", "2027-04-11T00:00:00Z", { amount: { minor: 99_999, currency: "USD" } })];
     expect(cancelChargeAt({ ...base, penalties: big }, at("2027-04-05T00:00:00Z"))).toEqual({ kind: "charge", minor: 50_000 });
+  });
+});
+
+// Once the first penalty has started, a moment that no window covers is never a silent free
+// cancellation: the highest charge of the windows already started applies (cancelling later is
+// never cheaper), or support works it out.
+describe("cancelChargeAt: no window covers the moment", () => {
+  const usd = (minor: number) => ({ amount: { minor, currency: "USD" } });
+
+  it("the last window ends at the hotel's midnight of check-in day, east of UTC: still that charge until check-in", () => {
+    // Ends 2027-04-09T22:00Z; check-in 00:00 UTC is two hours later.
+    const penalties = [penalty("2027-04-07T00:00:00+02:00", "2027-04-10T00:00:00+02:00", usd(12_000))];
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-09T23:00:00Z"))).toEqual({ kind: "charge", minor: 12_000 });
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-10T00:00:00Z"))).toEqual({ kind: "stay_started" });
+  });
+
+  it("a window of no length (start = end) charges at any time after it, and is free before it", () => {
+    const penalties = [penalty("2027-04-07T11:59:00.000-08:00", "2027-04-07T11:59:00.000-08:00", usd(1_000))];
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-07T19:00:00Z"))).toEqual({ kind: "charge", minor: 0 });
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-07T20:00:00Z"))).toEqual({ kind: "charge", minor: 1_000 });
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-09T12:00:00Z"))).toEqual({ kind: "charge", minor: 1_000 });
+  });
+
+  it("a gap between a 10% window and a 100% window charges the 10%, never nothing", () => {
+    const penalties = [
+      penalty("2027-04-01T00:00:00Z", "2027-04-05T00:00:00Z", { percent: "10%" }),
+      penalty("2027-04-06T00:00:00Z", "2027-04-10T00:00:00Z", { percent: "100%" }),
+    ];
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-05T12:00:00Z"))).toEqual({ kind: "charge", minor: 5_000 });
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-07T00:00:00Z"))).toEqual({ kind: "charge", minor: 50_000 });
+  });
+
+  it("in a gap after a window whose charge cannot be worked out: unknown (support), never free", () => {
+    const penalties = [
+      penalty("2027-04-01T00:00:00Z", "2027-04-05T00:00:00Z", { nights: 1 }),
+      penalty("2027-04-06T00:00:00Z", "2027-04-10T00:00:00Z", { percent: "100%" }),
+    ];
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-05T12:00:00Z"))).toEqual({ kind: "unknown" });
+    // While the 100% window applies, its own charge is known.
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-07T00:00:00Z"))).toEqual({ kind: "charge", minor: 50_000 });
+  });
+
+  it("back-to-back windows: each applies in its own time, free before the first, the stay started after the last", () => {
+    const penalties = [
+      penalty("2027-04-03T00:00:00Z", "2027-04-07T00:00:00Z", usd(10_000)),
+      penalty("2027-04-07T00:00:00Z", "2027-04-10T23:59:00Z", { percent: "100%" }),
+    ];
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-02T12:00:00Z"))).toEqual({ kind: "charge", minor: 0 });
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-05T00:00:00Z"))).toEqual({ kind: "charge", minor: 10_000 });
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-07T00:00:00Z"))).toEqual({ kind: "charge", minor: 50_000 });
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-10T12:00:00Z"))).toEqual({ kind: "charge", minor: 50_000 });
+    expect(cancelChargeAt({ ...base, penalties }, at("2027-04-11T00:00:00Z"))).toEqual({ kind: "stay_started" });
+  });
+
+  it("a refundable rate with no penalties at all is free until check-in", () => {
+    expect(cancelChargeAt({ ...base, penalties: [] }, at("2027-04-09T12:00:00Z"))).toEqual({ kind: "charge", minor: 0 });
+    expect(cancelChargeAt({ ...base, penalties: [] }, at("2027-04-10T00:00:00Z"))).toEqual({ kind: "stay_started" });
+  });
+});
+
+// Our request reaches the supplier a little after the agent's click, so every penalty counts as
+// starting 10 minutes before the supplier's own time.
+describe("cancelChargeAt: the safety margin", () => {
+  const penalties = [
+    penalty("2027-04-07T00:00:00Z", "2027-04-08T00:00:00Z", { amount: { minor: 12_000, currency: "USD" } }),
+    penalty("2027-04-08T00:00:00Z", "2027-04-10T23:59:00Z", { percent: "100%" }),
+  ];
+  const before = (iso: string, ms: number) => new Date(Date.parse(iso) - ms);
+
+  it("is 10 minutes", () => {
+    expect(CANCEL_MARGIN_MS).toBe(10 * 60_000);
+  });
+
+  it("free only until 10 minutes before the first penalty", () => {
+    expect(cancelChargeAt({ ...base, penalties }, before("2027-04-07T00:00:00Z", CANCEL_MARGIN_MS + 1))).toEqual({ kind: "charge", minor: 0 });
+    expect(cancelChargeAt({ ...base, penalties }, before("2027-04-07T00:00:00Z", CANCEL_MARGIN_MS))).toEqual({ kind: "charge", minor: 12_000 });
+  });
+
+  it("the higher charge applies from 10 minutes before its window", () => {
+    expect(cancelChargeAt({ ...base, penalties }, before("2027-04-08T00:00:00Z", CANCEL_MARGIN_MS + 1))).toEqual({ kind: "charge", minor: 12_000 });
+    expect(cancelChargeAt({ ...base, penalties }, before("2027-04-08T00:00:00Z", CANCEL_MARGIN_MS))).toEqual({ kind: "charge", minor: 50_000 });
   });
 });
 

@@ -4,12 +4,14 @@ import { MAX_AMOUNT_CENTS } from "@/lib/money";
 import { audit } from "@/server/audit";
 import { enqueue } from "@/server/jobs/queue";
 import { db } from "@/server/db";
-import { IdempotencyKeyConflict, TopupRefConflict } from "@/server/wallet/errors";
+import type { Prisma } from "@/generated/prisma/client";
+import { IdempotencyKeyConflict, PossibleDuplicate, TopupRefConflict } from "@/server/wallet/errors";
 import {
   creditInTx,
   debitInTx,
   getBalance,
   listEntries,
+  lockAgency,
   withLedgerTransaction,
   type Balance,
 } from "@/server/wallet/ledger";
@@ -19,10 +21,27 @@ import {
 // as `actor`. Each action is ONE transaction: the ledger entry and its audit row commit or roll
 // back together. A repeat (same idempotency key, same details) writes nothing, no audit row
 // either, and returns the original entry with `alreadyRecorded: true`.
+// A look-alike is stopped once: the payout and adjustment forms get a new key on every page
+// render, and a top-up is told apart only by the bank reference the admin types, so the same
+// entry typed twice would be recorded twice. An entry of the same kind and amount recorded for
+// the agency in the last 10 minutes (payout, adjustment), or a top-up of the same amount and
+// received date, throws PossibleDuplicate and writes nothing; the admin confirms again
+// (`confirmDuplicate`) to record it anyway.
 
 export type MoneyResult = { entry: LedgerEntry; alreadyRecorded: boolean };
 
 const EARLIEST_RECEIVED_ON = "2020-01-01";
+const LOOK_ALIKE_WINDOW_MS = 10 * 60_000;
+
+// Inside the entry's transaction, before anything is written. The agency row is locked first, so
+// two look-alikes sent at the same moment cannot both pass. An entry already recorded under this
+// very key is a plain repeat (the caller returns it), never a look-alike.
+async function refuseLookAlike(tx: Prisma.TransactionClient, agency: string, idempotencyKey: string, lookAlike: Prisma.LedgerEntryWhereInput): Promise<void> {
+  await lockAgency(tx, agency);
+  if (await tx.ledgerEntry.findUnique({ where: { idempotencyKey }, select: { id: true } })) return;
+  const existing = await tx.ledgerEntry.findFirst({ where: { ...lookAlike, agencyId: agency }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+  if (existing) throw new PossibleDuplicate(existing);
+}
 
 const agencyId = z.string().min(1).max(100);
 const positiveCents = z.number().int().min(1).max(MAX_AMOUNT_CENTS);
@@ -82,6 +101,7 @@ export const bankTopupInput = z
     amountCents: positiveCents,
     bankTransferRef,
     receivedOn,
+    confirmDuplicate: z.boolean().optional(),
   })
   .strict();
 
@@ -93,6 +113,7 @@ export const payoutInput = z
     amountCents: positiveCents,
     note: z.string().trim().min(1).max(500),
     idempotencyKey: z.uuid(),
+    confirmDuplicate: z.boolean().optional(),
   })
   .strict();
 
@@ -102,6 +123,7 @@ export const adjustmentInput = z
     amountCents: signedCents,
     reason: z.string().trim().min(5).max(500),
     idempotencyKey: z.uuid(),
+    confirmDuplicate: z.boolean().optional(),
   })
   .strict();
 
@@ -113,6 +135,7 @@ export type AdjustmentInput = z.input<typeof adjustmentInput>;
 // the same transfer can never be credited twice:
 //   same ref, same agency, same amount → the original entry, alreadyRecorded: true
 //   same ref, other amount or agency   → TopupRefConflict (names only the original amount)
+//   another ref, same amount and received date, same agency → PossibleDuplicate, until confirmed
 export async function confirmBankTopup(actor: string, raw: BankTopupInput): Promise<MoneyResult> {
   const input = bankTopupInput.parse(raw);
   const idempotencyKey = `topup:${input.bankTransferRef}`;
@@ -131,6 +154,9 @@ export async function confirmBankTopup(actor: string, raw: BankTopupInput): Prom
 
   try {
     return await withLedgerTransaction(async (tx) => {
+      if (!input.confirmDuplicate) {
+        await refuseLookAlike(tx, input.agencyId, idempotencyKey, { type: "TOPUP_BANK", amountCents: input.amountCents, reason: { endsWith: ` received ${input.receivedOn}` } });
+      }
       const { entry, created } = await creditInTx(tx, {
         agencyId: input.agencyId,
         type: "TOPUP_BANK",
@@ -183,10 +209,14 @@ async function recordAdminEntry(
     reason: string;
     idempotencyKey: string;
     action: "wallet.payout" | "wallet.adjustment";
+    confirmDuplicate: boolean;
   },
 ): Promise<MoneyResult> {
   const { agencyId: id, type, signedCents: signed, reason, idempotencyKey, action } = args;
   return withLedgerTransaction(async (tx) => {
+    if (!args.confirmDuplicate) {
+      await refuseLookAlike(tx, id, idempotencyKey, { type, amountCents: signed, createdAt: { gte: new Date(Date.now() - LOOK_ALIKE_WINDOW_MS) } });
+    }
     const { entry, created } =
       signed > 0 && type === "ADJUSTMENT"
         ? await creditInTx(tx, { agencyId: id, type, amountCents: signed, reason, actorUserId: actor, idempotencyKey })
@@ -219,6 +249,7 @@ export async function recordPayout(actor: string, raw: PayoutInput): Promise<Mon
     reason: input.note,
     idempotencyKey: `payout:${input.idempotencyKey}`,
     action: "wallet.payout",
+    confirmDuplicate: input.confirmDuplicate === true,
   });
 }
 
@@ -233,6 +264,7 @@ export async function recordAdjustment(actor: string, raw: AdjustmentInput): Pro
     reason: input.reason,
     idempotencyKey: `adjust:${input.idempotencyKey}`,
     action: "wallet.adjustment",
+    confirmDuplicate: input.confirmDuplicate === true,
   });
 }
 

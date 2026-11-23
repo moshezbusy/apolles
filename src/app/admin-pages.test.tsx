@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AdminHeader } from "@/components/AdminHeader";
-import { TopupForm, topUpConfirmText } from "@/app/admin/agencies/[id]/wallet/wallet-forms";
+import { TopupForm, afterSubmit, topUpConfirmText } from "@/app/admin/agencies/[id]/wallet/wallet-forms";
 
 const SIGN_OUT_FORM = /<form(?=[^>]*method="post")(?=[^>]*action="\/logout")[^>]*>\s*<button[^>]*type="submit"[^>]*>Sign out<\/button>\s*<\/form>/;
 
@@ -70,6 +70,13 @@ describe("wallet top-up form", () => {
     expect(topUpConfirmText(100000, "Sunrise", { bankTransferRef: "TR-9", receivedOn: "2026-11-18" })).toBe(
       "Confirm top-up of USD 1,000.00 to Sunrise? Bank transfer TR-9, received 18/11/2026.",
     );
+  });
+
+  it("a look-alike warning keeps the form on its confirm step with what was typed; success clears it; an error keeps the values", () => {
+    expect(afterSubmit({ status: "duplicate", message: "This looks like a duplicate" })).toEqual({ stayOnConfirm: true, clearValues: false });
+    expect(afterSubmit({ status: "success", message: "ok" })).toEqual({ stayOnConfirm: false, clearValues: true });
+    expect(afterSubmit({ status: "info", message: "already recorded" })).toEqual({ stayOnConfirm: false, clearValues: true });
+    expect(afterSubmit({ status: "error", message: "no" })).toEqual({ stayOnConfirm: false, clearValues: false });
   });
 
   it("asks for the bank's own transfer reference and warns against the agency reference", () => {

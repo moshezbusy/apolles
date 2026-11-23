@@ -1,19 +1,20 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Booking, BookingRoom, BookingStatus, Prisma } from "@/generated/prisma/client";
+import { formatUsd } from "@/lib/money";
 import { db } from "@/server/db";
 import { enqueue } from "@/server/jobs/queue";
+import { hitRateLimit } from "@/server/rate-limit";
 import { QuoteStayAlreadyBooked, QuoteStayChanged, claimQuoteStay, lockQuoteOfBooking, stayForDraft, syncQuoteOfBooking } from "@/server/quotes/quote-booking";
 import { SEVERAL_ROOMS_UNAVAILABLE } from "@/server/search/errors";
 import { MAX_ROOMS } from "@/server/search/input";
 import { findOffer } from "@/server/search/search";
 import { bookingSupplier, multiRoomAllowed } from "@/server/supplier";
-import { SupplierAuthError, SupplierError, SupplierRateLimited, SupplierRequestRejected } from "@/server/supplier/expedia/client";
-import { SupplierNotSent } from "@/server/supplier/expedia/booking";
+import { SupplierAuthError, SupplierError, SupplierNotSent, SupplierRateLimited, SupplierRequestRejected } from "@/server/supplier/expedia/client";
 import type { BookingSupplier, CancelPenalty, PriceBreakdown, RetrievedItinerary, SupplierAdapter, SupplierContext, SupplierLinks } from "@/server/supplier/types";
 import { captureHold, credit, getBalance, placeHoldInTx, releaseHold, withLedgerTransaction } from "@/server/wallet/ledger";
 import { InsufficientFunds } from "@/server/wallet/errors";
-import { cancelChargeForRooms } from "./cancel-charge";
+import { CANCEL_MARGIN_MS, cancelChargeAt, cancelChargeForRooms } from "./cancel-charge";
 import type { BookingEmailEvent } from "./emails";
 import { quotedMarkup } from "./selling";
 import { BookingStateConflict, transition } from "./states";
@@ -27,6 +28,10 @@ import { BookingStateConflict, transition } from "./states";
 //      FAILED. No clear answer → stay PENDING_CONFIRMATION with the hold, and reconcile later
 //      by affiliate reference. Never book again.
 //   4. Cancellation refunds (total − today's charge) only after the supplier confirms it.
+//   5. A booking is confirmed (and charged) only when the supplier shows every room "booked".
+//      A room pending there: look again later. Anything else: an admin looks, the money stays
+//      held, and the checks go on. A check never stops for good: after the first hour and a half
+//      it runs every hour, and a sweeper (upkeep.ts) makes sure a waiting booking always has one.
 // Every read and write is scoped by the session's agencyId.
 // Several rooms (plan 10): a booking has 1 to 8 rooms (BookingRoom), each with its own guests and
 // its own supplier price; the booking keeps the totals. The rooms always add up to the booking's
@@ -43,9 +48,20 @@ export class BookingUnavailable extends Error {}
 class BookingChangedSinceRead extends Error {}
 
 const PRICE_CHECK_VALID_MS = 10 * 60_000; // the book button needs a price check this recent
+// The review page asks the supplier again only when its last price check is at least this old,
+// and at most this many times per booking in a while (a page left reloading, or a script).
+const PRICE_CHECK_FRESH_MS = 60_000;
+const PRICE_CHECK_LIMIT = { limit: 12, windowMs: 10 * 60_000 };
 const RECONCILE_DELAY_MS = 2 * 60_000;
+const QUICK_RECHECK_MS = 30_000; // the supplier accepted the booking but its status could not be read yet
+const QUICK_RECHECKS = 4;
 const SAFETY_NET_MS = 5 * 60_000; // queued with every pending change, before the supplier call
 const CANCEL_RESTORE_AFTER_MS = 30 * 60_000; // a cancellation still "booked" this long after the request did not go through
+// After a cancellation was put back, the supplier is looked at again at these times: a
+// cancellation that went through late after all is then finished properly.
+const HOUR_MS = 3_600_000;
+export const RESTORE_WATCH_MS = 24 * HOUR_MS;
+const RESTORE_CHECKS_MS = [1, 3, 6, 12, 24].map((hours) => hours * HOUR_MS);
 // "Not found" twice, this far apart, means no booking. Rapid says a new itinerary may take a few
 // minutes before it can be found, so the gap is generous.
 const NOT_FOUND_CONFIRM_MS = 20 * 60_000;
@@ -54,7 +70,18 @@ const NOT_FOUND_CONFIRM_MS = 20 * 60_000;
 function definiteNo(error: unknown): error is SupplierError {
   return error instanceof SupplierRequestRejected || error instanceof SupplierAuthError || error instanceof SupplierRateLimited || error instanceof SupplierNotSent;
 }
-const MAX_RECONCILE_ATTEMPTS = 48;
+// The check of a booking without a clear answer never stops. The first 48 tries are a few
+// minutes apart; then an admin is told (once) and it goes on every hour for 7 days, and every
+// 6 hours after that, until the supplier answers or an admin settles the booking.
+const FAST_RECONCILE_ATTEMPTS = 48;
+const HOURLY_RECONCILE_ATTEMPTS = 7 * 24;
+const HOURLY_RECONCILE_MS = HOUR_MS;
+const SLOWEST_RECONCILE_MS = 6 * HOUR_MS;
+// A booking failed because the supplier did not have it is looked up again this long after: an
+// itinerary that turns up late is a room booked there that nobody paid for.
+const NOT_FOUND_REASON = "Reconciled: supplier has no such booking";
+const LATE_NOT_FOUND_CHECKS_MS = [6 * HOUR_MS, 24 * HOUR_MS];
+const LATE_NOT_FOUND_GIVE_UP_MS = 48 * HOUR_MS;
 
 const REFERENCE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O, 1/I
 function newReference(): string {
@@ -103,14 +130,15 @@ export function requestHasPersonalDetails(text: string): boolean {
 }
 
 // When free cancellation ends: the start of the first charge (an instant, from the hotel's time
-// with its offset). null: non-refundable, or no charge listed.
+// with its offset), less the safety margin the charge itself is worked out with (cancel-charge.ts).
+// null: non-refundable, or no charge listed.
 // Same as the cancel screen: nights that cannot be refunded, or a date that cannot be read, mean
 // no free-cancellation promise at all.
 export function freeCancelEnds(offer: { refundable: boolean; cancelPenalties: CancelPenalty[]; nonrefundableDateRanges?: unknown[] }): Date | null {
   if (!offer.refundable || (offer.nonrefundableDateRanges?.length ?? 0) > 0) return null;
   const starts = offer.cancelPenalties.map((p) => Date.parse(p.start));
   if (starts.length === 0 || starts.some((t) => !Number.isFinite(t))) return null;
-  return new Date(Math.min(...starts));
+  return new Date(Math.min(...starts) - CANCEL_MARGIN_MS);
 }
 
 export function specialRequestText(input: z.infer<typeof specialRequestsSchema> | undefined): string {
@@ -142,6 +170,16 @@ function supplierOf(deps: Deps): Supplier {
   return deps.supplier ?? bookingSupplier();
 }
 
+// The agent's IP address and browser, kept on the booking when it is entered, booked or
+// cancelled: the supplier asks for them on every call (Customer-Ip, User-Agent), also the ones
+// made later in the background, where there is no request to read them from.
+function agentOf(context: SupplierContext): { agentIp?: string; agentUserAgent?: string } {
+  return { ...(context.customerIp ? { agentIp: context.customerIp.slice(0, 64) } : {}), ...(context.userAgent ? { agentUserAgent: context.userAgent.slice(0, 255) } : {}) };
+}
+export function supplierContextOf(booking: Pick<Booking, "agentIp" | "agentUserAgent">): SupplierContext {
+  return { ...(booking.agentIp ? { customerIp: booking.agentIp } : {}), ...(booking.agentUserAgent ? { userAgent: booking.agentUserAgent } : {}) };
+}
+
 // Room prices add up to a total exactly, in its currency (addition only, BP5).
 function pricesAddUp(rooms: PriceBreakdown[], total: { minor: number; currency: string }): boolean {
   let sum = 0;
@@ -153,7 +191,7 @@ function pricesAddUp(rooms: PriceBreakdown[], total: { minor: number; currency: 
 }
 
 // A booking's rooms in room order (through the booking, so the agency scope holds).
-function roomsOf(booking: Pick<Booking, "id" | "agencyId">): Promise<BookingRoom[]> {
+export function roomsOf(booking: Pick<Booking, "id" | "agencyId">): Promise<BookingRoom[]> {
   return db.bookingRoom.findMany({ where: { bookingId: booking.id, booking: { agencyId: booking.agencyId } }, orderBy: { index: "asc" } });
 }
 
@@ -261,6 +299,7 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
     freeCancelEndsAt: freeCancelEnds(offer),
     nonrefundableDateRanges: offer.nonrefundableDateRanges as unknown as Prisma.InputJsonValue,
     priceCheckToken: bedGroup.priceCheckToken,
+    ...agentOf(ctx.supplierContext),
   };
   const roomRows = rooms.map((occupancy, index) => {
     const roomGuests = input.rooms[index]!.guests;
@@ -302,6 +341,9 @@ export type ReviewOutcome =
 // result on the draft. A changed price is kept with the old one, for the "old vs new" view.
 // The write is conditional on the booking still being a DRAFT: a book that ran during the
 // price check is never given another price afterwards.
+// The supplier is not asked again while the last check is under a minute old (the page shows that
+// check), and at most 12 times in 10 minutes per booking: a page that keeps reloading costs the
+// supplier nothing.
 export async function prepareReview(ctx: BookingContext, bookingId: string, deps: Deps = {}): Promise<ReviewOutcome> {
   const now = deps.now ?? new Date();
   const booking = await ownBooking(ctx.agencyId, bookingId);
@@ -309,6 +351,14 @@ export async function prepareReview(ctx: BookingContext, bookingId: string, deps
   const rooms = await roomsOf(booking);
   if (!roomsMatchBooking(booking, rooms)) throw new BookingUnavailable("This booking cannot be checked as it is. Search again for current prices.");
   if (rooms.length > 1 && !multiRoomAllowed()) throw new BookingUnavailable(SEVERAL_ROOMS_UNAVAILABLE);
+  const checkedAgoMs = booking.bookToken && booking.priceCheckedAt ? now.getTime() - booking.priceCheckedAt.getTime() : null;
+  const lastCheck: ReviewOutcome = { kind: "ready", booking, priceChanged: booking.previousTotalMinor !== null };
+  if (checkedAgoMs !== null && checkedAgoMs >= 0 && checkedAgoMs < PRICE_CHECK_FRESH_MS) return lastCheck;
+  if (!(await hitRateLimit(`review:${booking.id}`, PRICE_CHECK_LIMIT.limit, PRICE_CHECK_LIMIT.windowMs)).allowed) {
+    // Too many checks: the last one is shown while it is still good enough to book with.
+    if (checkedAgoMs !== null && checkedAgoMs >= 0 && checkedAgoMs <= PRICE_CHECK_VALID_MS) return lastCheck;
+    throw new BookingUnavailable("The price was checked too many times in a short while. Wait a few minutes, then try again.");
+  }
   let result;
   try {
     result = await supplierOf(deps).priceCheck(
@@ -367,13 +417,14 @@ function holdKey(id: string, what: "hold" | "capture" | "release" | "refund"): s
   return `booking:${id}:${what}`;
 }
 
-// One email per booking change, sent by the job queue; queued with the change itself.
-async function queueEmail(tx: Prisma.TransactionClient, bookingId: string, event: BookingEmailEvent): Promise<void> {
-  await enqueue("email.booking", { bookingId, event }, { dedupeKey: `email.booking:${bookingId}:${event}` }, tx);
+// One email per booking change, sent by the job queue; queued with the change itself. An event
+// that can happen more than once for a booking (a cancellation put back) names the time too.
+export async function queueEmail(tx: Prisma.TransactionClient, bookingId: string, event: BookingEmailEvent, occurrence?: Date): Promise<void> {
+  await enqueue("email.booking", { bookingId, event }, { dedupeKey: `email.booking:${bookingId}:${event}${occurrence ? `:${occurrence.toISOString()}` : ""}` }, tx);
 }
 
 // Every check gets its own job (a unique key), so none is ever skipped as a repeat.
-async function scheduleReconcile(bookingId: string, at: Date, client?: Prisma.TransactionClient): Promise<void> {
+export async function scheduleReconcile(bookingId: string, at: Date, client?: Prisma.TransactionClient): Promise<void> {
   await enqueue("booking.reconcile", { bookingId }, { runAt: at, dedupeKey: `booking.reconcile:${bookingId}:${randomUUID()}` }, client);
 }
 
@@ -401,6 +452,8 @@ export async function book(
   deps: Deps = {},
 ): Promise<BookOutcome> {
   const now = deps.now ?? new Date();
+  // Which supplier, before anything is held: a wrong setting stops here with nothing written.
+  const supplier = supplierOf(deps);
   const booking = await ownBooking(ctx.agencyId, bookingId);
   if (booking.status !== "DRAFT") return { kind: "already", bookingId: booking.id };
   if (!confirm.acceptedTerms) return { kind: "review_again", message: "Accept the terms and conditions to book." };
@@ -432,7 +485,7 @@ export async function book(
         to: "PENDING_CONFIRMATION",
         actorUserId: ctx.userId,
         reason: "Agent booked",
-        data: { holdId: hold.holdId, chargedMinor: booking.totalMinor },
+        data: { holdId: hold.holdId, chargedMinor: booking.totalMinor, ...agentOf(ctx.supplierContext) },
       });
       await scheduleReconcile(booking.id, new Date(now.getTime() + SAFETY_NET_MS), tx);
       return hold.holdId;
@@ -452,7 +505,7 @@ export async function book(
   const [countryCode = "", number = ""] = booking.leadPhone.replace(/^\+/, "").split(" ");
   let result;
   try {
-    result = await supplierOf(deps).book(
+    result = await supplier.book(
       {
         bookToken: booking.bookToken,
         affiliateReferenceId: booking.reference,
@@ -473,16 +526,76 @@ export async function book(
     await scheduleReconcile(booking.id, new Date(now.getTime() + RECONCILE_DELAY_MS));
     return { kind: "pending", bookingId: booking.id };
   }
+  // The supplier took the booking. That alone is not "confirmed": the rooms' own status says so.
+  // Its itinerary and links are kept at once (the checks then read this itinerary, and never
+  // take "not found yet" for "no booking"), then the status is read. Booked: confirmed and
+  // charged. Not readable yet, or a room still pending: the booking waits, the money stays held,
+  // and a check follows shortly. Anything else needs an admin.
   try {
-    await confirmBooking(booking.id, holdId, { itineraryId: result.itineraryId, links: result.links }, ctx.userId, "Supplier confirmed the booking");
+    await db.booking.updateMany({
+      where: { id: booking.id, status: "PENDING_CONFIRMATION" },
+      data: { supplierItineraryId: result.itineraryId, supplierLinks: result.links as Prisma.InputJsonValue },
+    });
+    let itinerary: RetrievedItinerary | null = null;
+    try {
+      itinerary = result.links.retrieve
+        ? await supplier.retrieve(result.links, ctx.supplierContext)
+        : await supplier.findByAffiliateReference({ affiliateReferenceId: booking.reference, email: booking.leadEmail }, ctx.supplierContext);
+    } catch (error) {
+      if (!(error instanceof SupplierError)) throw error;
+    }
+    const settled = itinerary ? await settlePending(booking, holdId, itinerary, result.links, ctx.userId, "Supplier confirmed the booking", deps) : "wait";
+    if (settled === "confirmed") return { kind: "confirmed", bookingId: booking.id };
+    if (settled === "failed") return { kind: "failed", bookingId: booking.id };
+    await scheduleReconcile(booking.id, new Date(now.getTime() + QUICK_RECHECK_MS));
   } catch (error) {
     // The supplier said yes but our own write failed: the queued job confirms it from the
     // supplier's side (capture is idempotent).
     console.error(`booking confirm write failed: ${error instanceof Error ? error.name : "Error"}`);
-    return { kind: "pending", bookingId: booking.id };
   }
-  await fillRoomsFromSupplier(booking.id, deps);
-  return { kind: "confirmed", bookingId: booking.id };
+  return { kind: "pending", bookingId: booking.id };
+}
+
+// A booking waiting for confirmation, with the supplier's own view of it in hand. Confirmed (the
+// hold captured) only when the supplier has exactly our rooms and every one is "booked". One
+// room that the supplier shows cancelled is no booking: failed, the hold released (as before).
+// A room still pending: wait. Anything else (a room missing, cancelled among several, a status
+// we do not know, no rooms at all): an admin is told, the money stays held, the checks go on.
+// The hold is never captured in those cases.
+async function settlePending(
+  booking: Booking,
+  holdId: string,
+  found: RetrievedItinerary,
+  links: SupplierLinks,
+  actorUserId: string | null,
+  confirmedReason: string,
+  deps: Deps,
+): Promise<"confirmed" | "failed" | "wait"> {
+  const rooms = await roomsOf(booking);
+  const oneRoom = rooms.length <= 1;
+  const sameRooms = found.rooms.length === Math.max(rooms.length, 1);
+  if (sameRooms && found.rooms.every((room) => room.status === "booked")) {
+    const theirs = oneRoom ? found.rooms[0] : undefined;
+    await confirmBooking(
+      booking.id,
+      holdId,
+      { itineraryId: found.itineraryId, links: { ...links, ...(theirs?.cancelLink ? { cancel: theirs.cancelLink } : {}) }, roomId: theirs?.id ?? null, hotelConfirmationId: theirs?.hotelConfirmationId ?? null },
+      actorUserId,
+      confirmedReason,
+    );
+    await fillRoomsFromSupplier(booking.id, deps, found);
+    return "confirmed";
+  }
+  if (oneRoom && sameRooms && found.rooms[0]?.status === "cancelled") {
+    await failBooking(booking.id, holdId, actorUserId, "Supplier shows the booking as cancelled");
+    return "failed";
+  }
+  const wrong = !sameRooms || found.rooms.some((room) => room.status !== "booked" && room.status !== "pending");
+  const why = oneRoom ? "The supplier does not show this booking as booked" : "Some rooms are missing or cancelled at the supplier";
+  if (wrong && (await db.$transaction((tx) => flagForAdmin(tx, booking.id, why)))) {
+    console.error(`booking ${booking.reference}: not booked at the supplier as expected, needs an admin`);
+  }
+  return "wait";
 }
 
 function sameName(a: string | null, b: string): boolean {
@@ -567,20 +680,36 @@ async function confirmBooking(
   });
 }
 
-async function failBooking(bookingId: string, holdId: string, actorUserId: string | null, reason: string): Promise<void> {
+// `recheckAt`: later looks at the supplier for a booking failed because it was not found there.
+async function failBooking(bookingId: string, holdId: string, actorUserId: string | null, reason: string, recheckAt: Date[] = []): Promise<void> {
   await releaseHold(holdId, holdKey(bookingId, "release"));
   await db.$transaction(async (tx) => {
     await transition(tx, { bookingId, from: "PENDING_CONFIRMATION", to: "FAILED", actorUserId, reason, data: { failureReason: reason, bookToken: null } });
     await queueEmail(tx, bookingId, "failed");
+    for (const at of recheckAt) await scheduleReconcile(bookingId, at, tx);
   });
 }
 
 // The supplier's view of the booking: through its retrieve link when we have one, otherwise
-// by our affiliate reference (a booking confirmed by reconciliation has no retrieve link).
-async function supplierView(booking: Booking, supplier: Supplier): Promise<RetrievedItinerary | null> {
+// by our affiliate reference (a booking confirmed by reconciliation has no retrieve link). Sent
+// with the agent's IP and browser as kept on the booking.
+export async function supplierView(booking: Booking, supplier: Supplier): Promise<RetrievedItinerary | null> {
   const links = (booking.supplierLinks ?? {}) as SupplierLinks;
-  if (links.retrieve) return supplier.retrieve(links, {});
-  return supplier.findByAffiliateReference({ affiliateReferenceId: booking.reference, email: booking.leadEmail }, {});
+  const context = supplierContextOf(booking);
+  if (links.retrieve) return supplier.retrieve(links, context);
+  return supplier.findByAffiliateReference({ affiliateReferenceId: booking.reference, email: booking.leadEmail }, context);
+}
+
+// The same for a booking still waiting for confirmation: when its retrieve link is refused (an
+// itinerary may not be readable there for a short while), it is looked up by our reference.
+async function pendingView(booking: Booking, supplier: Supplier): Promise<RetrievedItinerary | null> {
+  try {
+    return await supplierView(booking, supplier);
+  } catch (error) {
+    const links = (booking.supplierLinks ?? {}) as SupplierLinks;
+    if (!links.retrieve || !(error instanceof SupplierRequestRejected)) throw error;
+    return supplier.findByAffiliateReference({ affiliateReferenceId: booking.reference, email: booking.leadEmail }, supplierContextOf(booking));
+  }
 }
 
 // The background job for bookings without a clear supplier answer (and cancellations).
@@ -589,64 +718,60 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
   const booking = await db.booking.findUnique({ where: { id: bookingId } });
   if (!booking) return "nothing";
   const supplier = supplierOf(deps);
+  const context = supplierContextOf(booking);
   const attempt = booking.reconcileAttempts + 1;
-  const retry = async (delayMs: number, data: Prisma.BookingUpdateInput = {}) => {
-    if (attempt >= MAX_RECONCILE_ATTEMPTS) {
-      // Gave up: flag it for an admin (the admin bookings list shows it), keep the money as is.
-      await db.$transaction(async (tx) => {
-        await tx.booking.update({ where: { id: booking.id }, data: { ...data, reconcileAttempts: attempt } });
-        await flagForAdmin(tx, booking.id, "The supplier check gave up after many tries");
+  // Looks again later, and never stops: a few minutes apart at first, then (an admin is told,
+  // once) every hour for 7 days, then every 6 hours. The count and the next job are written
+  // together, only while the booking is still in the status this check read (a change of status
+  // starts the count again and brings its own job). One job at a time: when another check of
+  // this booking is already queued inside the wait, that one carries on and none is added.
+  const retry = async (delayMs: number, data: { lastNotFoundAt?: Date } = {}) => {
+    const wait = attempt < FAST_RECONCILE_ATTEMPTS ? delayMs : attempt < FAST_RECONCILE_ATTEMPTS + HOURLY_RECONCILE_ATTEMPTS ? HOURLY_RECONCILE_MS : SLOWEST_RECONCILE_MS;
+    const next = new Date(now.getTime() + wait);
+    const slowsDown = attempt === FAST_RECONCILE_ATTEMPTS;
+    await db.$transaction(async (tx) => {
+      const counted = await tx.booking.updateMany({ where: { id: booking.id, status: booking.status }, data: { ...data, reconcileAttempts: attempt } });
+      if (counted.count === 0) return;
+      if (slowsDown) await flagForAdmin(tx, booking.id, "The supplier gave no clear answer after many tries: the check goes on every hour");
+      const queued = await tx.job.findFirst({
+        where: { kind: "booking.reconcile", status: "QUEUED", runAt: { lte: next }, payload: { path: ["bookingId"], equals: booking.id } },
+        select: { id: true },
       });
-      console.error(`booking ${booking.reference}: reconcile gave up, needs an admin`);
-      return "retry" as const;
-    }
-    await db.booking.update({ where: { id: booking.id }, data: { ...data, reconcileAttempts: attempt } });
-    await scheduleReconcile(booking.id, new Date(now.getTime() + delayMs));
+      if (!queued) await scheduleReconcile(booking.id, next, tx);
+    });
+    if (slowsDown) console.error(`booking ${booking.reference}: no clear answer from the supplier after ${attempt} checks, needs an admin; checking every hour from now`);
     return "retry" as const;
   };
 
   if (booking.status === "PENDING_CONFIRMATION" && booking.holdId) {
+    // A booking the supplier took (it gave us an itinerary) is usually readable there within a
+    // minute or two: its first looks come quickly (30 seconds, then 1, 2 and 4 minutes).
+    const again = booking.supplierItineraryId && attempt <= QUICK_RECHECKS ? QUICK_RECHECK_MS * 2 ** (attempt - 1) : RECONCILE_DELAY_MS * 2;
     let found;
     try {
-      found = await supplier.findByAffiliateReference({ affiliateReferenceId: booking.reference, email: booking.leadEmail }, {});
+      found = await pendingView(booking, supplier);
     } catch (error) {
-      if (error instanceof SupplierError) return retry(RECONCILE_DELAY_MS * 2);
+      if (error instanceof SupplierError) return retry(again);
       throw error;
     }
     if (found) {
-      const rooms = await roomsOf(booking);
-      if (rooms.length > 1) {
-        // Several rooms: confirmed only when the supplier has every room booked. A room cancelled,
-        // missing or unclear there needs an admin; the booking is never failed while some of its
-        // rooms may be booked (the money stays held). A room still pending: look again later.
-        if (found.rooms.length === rooms.length && found.rooms.every((r) => r.status === "booked")) {
-          await confirmBooking(booking.id, booking.holdId, { itineraryId: found.itineraryId, links: {} }, null, `Reconciled: supplier has all ${rooms.length} rooms`);
-          await fillRoomsFromSupplier(booking.id, deps, found);
-          return "confirmed";
-        }
-        const wrong = found.rooms.length !== rooms.length || found.rooms.some((r) => r.status !== "booked" && r.status !== "pending");
-        if (wrong && (await db.$transaction((tx) => flagForAdmin(tx, booking.id, "Some rooms are missing or cancelled at the supplier")))) {
-          console.error(`booking ${booking.reference}: some rooms are not booked at the supplier, needs an admin`);
-        }
-        return retry(RECONCILE_DELAY_MS * 2);
-      }
-      const room = found.rooms[0];
-      if (room?.status === "cancelled") {
-        await failBooking(booking.id, booking.holdId, null, "Supplier shows the booking as cancelled");
-        return "failed";
-      }
-      await confirmBooking(
-        booking.id,
+      const rooms = await db.bookingRoom.count({ where: { bookingId: booking.id } });
+      const settled = await settlePending(
+        booking,
         booking.holdId,
-        { itineraryId: found.itineraryId, links: { ...(room?.cancelLink ? { cancel: room.cancelLink } : {}) }, roomId: room?.id ?? null, hotelConfirmationId: room?.hotelConfirmationId ?? null },
+        found,
+        (booking.supplierLinks ?? {}) as SupplierLinks,
         null,
-        "Reconciled: supplier has the booking",
+        rooms > 1 ? `Reconciled: supplier has all ${rooms} rooms` : "Reconciled: supplier has the booking",
+        deps,
       );
-      await fillRoomsFromSupplier(booking.id, deps, found);
-      return "confirmed";
+      return settled === "wait" ? retry(again) : settled;
     }
+    // The supplier took this booking (it gave us an itinerary): "not found" is then never "no
+    // booking", only "not readable yet". It stays pending, and after many tries an admin looks.
+    if (booking.supplierItineraryId) return retry(again);
     if (booking.lastNotFoundAt && now.getTime() - booking.lastNotFoundAt.getTime() >= NOT_FOUND_CONFIRM_MS) {
-      await failBooking(booking.id, booking.holdId, null, "Reconciled: supplier has no such booking");
+      await failBooking(booking.id, booking.holdId, null, NOT_FOUND_REASON, LATE_NOT_FOUND_CHECKS_MS.map((ms) => new Date(now.getTime() + ms)));
       return "failed";
     }
     return retry(NOT_FOUND_CONFIRM_MS, booking.lastNotFoundAt ? {} : { lastNotFoundAt: now });
@@ -685,21 +810,24 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
     if (!next) return finish();
     if (!itinerary) return retry(RECONCILE_DELAY_MS * 2);
     // The cancel stopped at an unclear answer before this room: the rooms not sent yet are sent
-    // now, in room order, each once.
+    // now, in room order, each once. The supplier charges by the moment it gets each cancel, so
+    // the charge is worked out again for this moment first (it only ever goes up).
     if (next.cancelRequestedAt === null) {
-      const sent = await sendRoomCancels(booking, supplier, {}, null, now);
+      await raiseCancelCharge(booking, rooms, now);
+      const sent = await sendRoomCancels(booking, supplier, context, null, now);
       if (sent === "done") return finish();
       if (sent === "restored") return "restored";
       return retry(RECONCILE_DELAY_MS * 2);
     }
     // Sent and still booked: a cancellation may take a while at the supplier. After a good while
-    // it did not go through: a booking with nothing cancelled is put back, as before; one with
+    // it did not go through: a booking with nothing cancelled is put back (the agent and an admin
+    // are told, and the supplier is watched for a day in case it goes through late); one with
     // some rooms cancelled can never be put back (nor refunded for a room the supplier kept),
     // so an admin finishes it.
     const theirs = supplierRoomFor(booking, rooms, next, itinerary);
     if (theirs?.status === "booked" && now.getTime() - next.cancelRequestedAt.getTime() >= CANCEL_RESTORE_AFTER_MS) {
       if (rooms.every((room) => room.status === "ACTIVE")) {
-        await db.$transaction((tx) => restoreConfirmed(tx, booking.id, null, "Reconciled: the cancellation did not go through"));
+        await db.$transaction((tx) => restoreConfirmed(tx, booking.id, null, "Reconciled: the cancellation did not go through", now));
         return "restored";
       }
       const label = `Room ${next.index + 1} of ${rooms.length}`;
@@ -710,12 +838,112 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
     return retry(RECONCILE_DELAY_MS * 2);
   }
 
-  // Confirmed, but the retrieve after booking failed: the safety-net job fills the rooms now.
-  if (booking.status === "CONFIRMED" && !booking.needsAttention) await fillRoomsFromSupplier(booking.id, deps);
+  if (booking.status === "CONFIRMED") {
+    // A cancellation was put back not long ago: did the supplier cancel after all?
+    if (booking.cancelRestoredAt && now.getTime() - booking.cancelRestoredAt.getTime() <= RESTORE_WATCH_MS + HOUR_MS) {
+      let itinerary;
+      try {
+        itinerary = await supplierView(booking, supplier);
+      } catch (error) {
+        if (error instanceof SupplierError) return "nothing"; // the next look of the watch tries again
+        throw error;
+      }
+      return itinerary ? finishLateCancel(booking, itinerary, now) : "nothing";
+    }
+    // Confirmed, but the retrieve after booking failed: the safety-net job fills the rooms now.
+    if (!booking.needsAttention) await fillRoomsFromSupplier(booking.id, deps);
+    return "nothing";
+  }
+
+  // Failed because the supplier did not have it: the late looks. An itinerary that turns up now
+  // is a room booked at the supplier that the agency was not charged for. Nothing is charged
+  // here; an admin is told at once (flag and email) and settles it by hand.
+  if (booking.status === "FAILED" && booking.failureReason === NOT_FOUND_REASON) {
+    let found;
+    try {
+      found = await supplier.findByAffiliateReference({ affiliateReferenceId: booking.reference, email: booking.leadEmail }, context);
+    } catch (error) {
+      if (!(error instanceof SupplierError)) throw error;
+      // The supplier cannot be asked now: once more in an hour, for two days after the failure.
+      if (booking.lastNotFoundAt && now.getTime() - booking.lastNotFoundAt.getTime() < LATE_NOT_FOUND_GIVE_UP_MS) await scheduleReconcile(booking.id, new Date(now.getTime() + HOUR_MS));
+      return "nothing";
+    }
+    if (found && (found.rooms.length === 0 || found.rooms.some((room) => room.status !== "cancelled"))) {
+      const fresh = await db.$transaction(async (tx) => {
+        const flagged = await flagForAdmin(tx, booking.id, "Marked not confirmed and the money returned, but the supplier has this booking: the room is booked there and the agency was not charged");
+        if (flagged) await queueEmail(tx, booking.id, "found_after_failed");
+        return flagged;
+      });
+      if (fresh) console.error(`booking ${booking.reference}: FAILED here but booked at the supplier, the agency was not charged, needs an admin now`);
+    }
+    return "nothing";
+  }
   return "nothing";
 }
 
-export type CancelQuote = { allowed: true; chargeMinor: number; refundMinor: number } | { allowed: false; reason: string };
+// The background check of a booking failed for good (its job ran out of tries on an error of our
+// own, not the supplier's): an admin is told. The sweeper queues a new check, so it goes on.
+export async function flagReconcileFailed(bookingId: string): Promise<void> {
+  const booking = await db.booking.findUnique({ where: { id: bookingId }, select: { id: true, reference: true, status: true } });
+  if (!booking || (booking.status !== "PENDING_CONFIRMATION" && booking.status !== "CANCEL_PENDING")) return;
+  if (await db.$transaction((tx) => flagForAdmin(tx, booking.id, "The background check of this booking failed: an admin looks at it"))) {
+    console.error(`booking ${booking.reference}: its background check failed, needs an admin`);
+  }
+}
+
+// A booking put back to CONFIRMED after a cancellation the supplier did not confirm, and the
+// supplier now shows it cancelled: the cancellation went through late. Every room cancelled
+// there: it is finished as the agent asked, with the charge quoted then (one refund, the
+// "cancelled" email). Only some rooms: nothing can be worked out here, an admin finishes it.
+async function finishLateCancel(booking: Booking, itinerary: RetrievedItinerary, now: Date): Promise<"cancelled" | "nothing"> {
+  const rooms = await roomsOf(booking);
+  const active = rooms.filter((room) => room.status === "ACTIVE");
+  const cancelledThere = active.filter((room) => supplierRoomFor(booking, rooms, room, itinerary)?.status === "cancelled");
+  if (cancelledThere.length === 0) return "nothing";
+  if (cancelledThere.length < active.length || active.length < rooms.length || booking.cancelRestoredChargeMinor === null) {
+    if (await db.$transaction((tx) => flagForAdmin(tx, booking.id, "Rooms were cancelled at the supplier after the cancellation was put back: an admin finishes it"))) {
+      console.error(`booking ${booking.reference}: rooms cancelled at the supplier after the cancellation was put back, needs an admin`);
+    }
+    return "nothing";
+  }
+  try {
+    await db.$transaction(async (tx) => {
+      await transition(tx, {
+        bookingId: booking.id,
+        from: "CONFIRMED",
+        to: "CANCEL_PENDING",
+        actorUserId: null,
+        reason: "Reconciled: the supplier cancelled the booking after the cancellation was put back",
+        data: { cancelChargeMinor: booking.cancelRestoredChargeMinor, cancelRequestedAt: now, cancelRestoredAt: null, cancelRestoredChargeMinor: null },
+      });
+      await scheduleReconcile(booking.id, new Date(now.getTime() + SAFETY_NET_MS), tx);
+    });
+  } catch (error) {
+    if (error instanceof BookingStateConflict) return "nothing"; // it moved on meanwhile (the agent cancelled again)
+    throw error;
+  }
+  for (const room of active) await markRoomCancelled(booking, room, null, `Reconciled: room ${room.index + 1} of ${rooms.length} cancelled at the supplier`);
+  await finishCancel(await db.booking.findUniqueOrThrow({ where: { id: booking.id } }), null, "Reconciled: supplier cancelled the booking");
+  return "cancelled";
+}
+
+// What the agent is told when a cancellation is not done, each with a short code: the page shows
+// the server's own sentence for the code it is sent back with (never text taken from a URL).
+export const CANCEL_MESSAGES = {
+  not_confirmed: "Only a confirmed booking can be cancelled.",
+  stay_started: "The stay has started. Contact Apolles support to change it.",
+  needs_support: "This cancellation needs Apolles support: the charge cannot be worked out automatically.",
+  charge_changed: "The cancellation charge changed. Check the new charge below, then cancel again.",
+  try_later: "The booking could not be cancelled right now. Try again in a few minutes.",
+  not_online: "This booking cannot be cancelled online. Contact Apolles support.",
+  not_online_now: "This booking cannot be cancelled online right now. Contact Apolles support.",
+  already: "This booking is already being cancelled.",
+  refused: "The hotel did not accept the cancellation. The booking is still confirmed and nothing was refunded. Contact Apolles support.",
+  part_refused: "The hotel did not cancel every room. Apolles support will finish the cancellation; the refund follows once every room is cancelled.",
+} as const;
+export type CancelMessageCode = keyof typeof CANCEL_MESSAGES;
+
+export type CancelQuote = { allowed: true; chargeMinor: number; refundMinor: number } | { allowed: false; reason: string; code: CancelMessageCode };
 
 function paidMinor(booking: Booking): number {
   return booking.chargedMinor ?? booking.totalMinor;
@@ -726,7 +954,8 @@ function paidMinor(booking: Booking): number {
 // rest of the amount actually charged. The rooms must be exactly what was paid for, all still
 // booked: anything else is worked out by Apolles support, never guessed.
 export function cancelQuote(booking: Booking, rooms: Pick<BookingRoom, "totalMinor" | "status">[], now: Date): CancelQuote {
-  if (booking.status !== "CONFIRMED") return { allowed: false, reason: "Only a confirmed booking can be cancelled." };
+  const no = (code: CancelMessageCode) => ({ allowed: false, reason: CANCEL_MESSAGES[code], code }) as const;
+  if (booking.status !== "CONFIRMED") return no("not_confirmed");
   const paid = paidMinor(booking);
   const roomsTotal = rooms.reduce((n, room) => n + room.totalMinor, 0);
   const consistent = rooms.length > 0 && rooms.every((room) => room.status === "ACTIVE") && roomsTotal === paid;
@@ -743,10 +972,57 @@ export function cancelQuote(booking: Booking, rooms: Pick<BookingRoom, "totalMin
         now,
       )
     : ({ kind: "unknown" } as const);
-  if (charge.kind === "stay_started") return { allowed: false, reason: "The stay has started. Contact Apolles support to change it." };
-  if (charge.kind === "unknown") return { allowed: false, reason: "This cancellation needs Apolles support: the charge cannot be worked out automatically." };
+  if (charge.kind === "stay_started") return no("stay_started");
+  if (charge.kind === "unknown") return no("needs_support");
   const chargeMinor = Math.min(charge.minor, paid);
   return { allowed: true, chargeMinor, refundMinor: paid - chargeMinor };
+}
+
+// A cancellation whose remaining rooms are sent later than the agent's click (by the check, after
+// an unclear answer): the supplier charges each room by the moment it gets that room's cancel.
+// So the charge is worked out again, room by room: a room already sent at the time it was sent,
+// a room sent now at this moment. It only ever goes up, never down, and the change is written in
+// the booking's trail. A charge that cannot be worked out now (the stay started, nights, a
+// percentage that does not divide) keeps the whole amount for now: nothing is refunded
+// automatically and an admin works out the refund.
+async function raiseCancelCharge(booking: Booking, rooms: BookingRoom[], now: Date): Promise<void> {
+  const paid = paidMinor(booking);
+  let sum: number | null = 0;
+  for (const room of rooms) {
+    const charge = cancelChargeAt(
+      {
+        refundable: booking.refundable,
+        totalMinor: room.totalMinor,
+        currency: booking.currency,
+        checkin: booking.checkin,
+        penalties: booking.cancelPenalties as unknown as CancelPenalty[],
+        nonrefundableDateRanges: booking.nonrefundableDateRanges as unknown as { start: string; end: string }[],
+      },
+      room.cancelRequestedAt ?? now,
+    );
+    if (charge.kind !== "charge") {
+      sum = null;
+      break;
+    }
+    sum += charge.minor;
+  }
+  const consistent = rooms.reduce((n, room) => n + room.totalMinor, 0) === paid;
+  const known = sum !== null && consistent && Number.isSafeInteger(sum);
+  const charge = known ? Math.min(sum!, paid) : paid;
+  const before = booking.cancelChargeMinor ?? 0;
+  if (charge <= before) return;
+  await db.$transaction(async (tx) => {
+    const raised = await tx.booking.updateMany({ where: { id: booking.id, status: "CANCEL_PENDING" }, data: { cancelChargeMinor: charge } });
+    if (raised.count === 0) return;
+    if (known) {
+      await tx.bookingEvent.create({
+        data: { bookingId: booking.id, fromStatus: "CANCEL_PENDING", toStatus: "CANCEL_PENDING", actorUserId: null, reason: `The cancellation charge is now ${formatUsd(charge)} (was ${formatUsd(before)}): the remaining rooms are cancelled later than the agent asked` },
+      });
+    } else {
+      await flagForAdmin(tx, booking.id, `The cancellation charge could not be worked out when the remaining rooms were cancelled (it was ${formatUsd(before)}): nothing is refunded automatically, an admin works out the refund`);
+    }
+  });
+  if (!known) console.error(`booking ${booking.reference}: the cancellation charge could not be worked out again, needs an admin`);
 }
 
 // Once every room is cancelled at the supplier, and only then: one refund (idempotent key), the
@@ -781,7 +1057,7 @@ async function finishCancel(booking: Booking, actorUserId: string | null, reason
 // again while the booking stays flagged (a check that retries every few minutes would otherwise
 // fill the trail); a new reason is. The booking row is locked first, so two flags at once write
 // each reason once. True when something new was recorded.
-async function flagForAdmin(tx: Prisma.TransactionClient, bookingId: string, reason: string, actorUserId: string | null = null): Promise<boolean> {
+export async function flagForAdmin(tx: Prisma.TransactionClient, bookingId: string, reason: string, actorUserId: string | null = null): Promise<boolean> {
   const [current] = await tx.$queryRaw<{ status: BookingStatus }[]>`SELECT "status" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
   if (!current) throw new BookingNotFound();
   const text = reason.slice(0, 300);
@@ -793,17 +1069,34 @@ async function flagForAdmin(tx: Prisma.TransactionClient, bookingId: string, rea
 }
 
 // Back to CONFIRMED when nothing of the booking was cancelled: no charge, and every room's
-// cancel may be sent again by a later cancellation.
-async function restoreConfirmed(tx: Prisma.TransactionClient, bookingId: string, actorUserId: string | null, reason: string): Promise<void> {
-  await transition(tx, { bookingId, from: "CANCEL_PENDING", to: "CONFIRMED", actorUserId, reason, data: { cancelChargeMinor: null, cancelRequestedAt: null } });
+// cancel may be sent again by a later cancellation. It is never silent: the charge and refund
+// the agent was quoted stay in the booking's trail (and on the booking, for the watch below),
+// the agent gets an email saying the cancellation did not go through and what to do, an admin is
+// told, and the supplier is looked at again for 24 hours in case the cancellation goes through
+// late after all (reconcile then finishes it properly).
+async function restoreConfirmed(tx: Prisma.TransactionClient, bookingId: string, actorUserId: string | null, reason: string, now: Date): Promise<void> {
+  const before = await tx.booking.findUniqueOrThrow({ where: { id: bookingId }, select: { cancelChargeMinor: true, chargedMinor: true, totalMinor: true } });
+  const paid = before.chargedMinor ?? before.totalMinor;
+  const quoted = before.cancelChargeMinor === null ? "" : `. Quoted to the agent: charge ${formatUsd(before.cancelChargeMinor)}, refund ${formatUsd(Math.max(0, paid - before.cancelChargeMinor))}; nothing was charged or refunded`;
+  await transition(tx, {
+    bookingId,
+    from: "CANCEL_PENDING",
+    to: "CONFIRMED",
+    actorUserId,
+    reason: `${reason.slice(0, 180)}${quoted}`,
+    data: { cancelChargeMinor: null, cancelRequestedAt: null, cancelRestoredAt: now, cancelRestoredChargeMinor: before.cancelChargeMinor },
+  });
   await tx.bookingRoom.updateMany({ where: { bookingId, status: "ACTIVE" }, data: { cancelRequestedAt: null } });
+  await flagForAdmin(tx, bookingId, "A cancellation did not go through at the supplier: the booking is confirmed again", actorUserId);
+  await queueEmail(tx, bookingId, "cancel_not_done", now);
+  for (const ms of RESTORE_CHECKS_MS) await scheduleReconcile(bookingId, new Date(now.getTime() + ms), tx);
 }
 
 // Which of the supplier's rooms is this room of ours: by the supplier room id we stored. A
 // booking of one room falls back to the booking's own room id, then to the supplier's first
 // room (as before plan 10); several rooms without a stored id match by order only when the
 // counts agree.
-function supplierRoomFor(booking: Booking, rooms: BookingRoom[], room: BookingRoom, itinerary: RetrievedItinerary): RetrievedItinerary["rooms"][number] | undefined {
+export function supplierRoomFor(booking: Booking, rooms: BookingRoom[], room: BookingRoom, itinerary: RetrievedItinerary): RetrievedItinerary["rooms"][number] | undefined {
   const id = room.supplierRoomId ?? (rooms.length === 1 ? booking.supplierRoomId : null);
   const byId = id ? itinerary.rooms.find((theirs) => theirs.id === id) : undefined;
   if (rooms.length === 1) return byId ?? itinerary.rooms[0];
@@ -862,7 +1155,7 @@ async function sendRoomCancels(booking: Booking, supplier: Supplier, context: Su
         await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${booking.id} FOR UPDATE`;
         // Nothing cancelled yet: as with one room, the booking is confirmed again, no money moves.
         if ((await tx.bookingRoom.count({ where: { bookingId: booking.id, status: "CANCELLED" } })) === 0) {
-          await restoreConfirmed(tx, booking.id, actorUserId, reason);
+          await restoreConfirmed(tx, booking.id, actorUserId, reason, now);
           return "restored" as const;
         }
         // Some rooms are cancelled: the booking cannot go back, and nothing is refunded for a
@@ -877,7 +1170,8 @@ async function sendRoomCancels(booking: Booking, supplier: Supplier, context: Su
   return "done";
 }
 
-export type CancelOutcome = { kind: "cancelled" | "pending" | "refused" | "part_refused" | "not_allowed"; message?: string };
+export type CancelOutcome = { kind: "cancelled" | "pending" } | { kind: "refused" | "part_refused" | "not_allowed"; message: string; code: CancelMessageCode };
+const notDone = (kind: "refused" | "part_refused" | "not_allowed", code: CancelMessageCode): CancelOutcome => ({ kind, message: CANCEL_MESSAGES[code], code });
 
 // Screen 12: the agent cancels the whole booking: every room, one supplier call per room (Rapid
 // cancels room by room). Today's charge is fixed when the agent asks, and the refund (charged −
@@ -887,8 +1181,8 @@ export async function cancel(ctx: BookingContext, bookingId: string, confirm: { 
   const booking = await ownBooking(ctx.agencyId, bookingId);
   let rooms = await roomsOf(booking);
   const quote = cancelQuote(booking, rooms, now);
-  if (!quote.allowed) return { kind: "not_allowed", message: quote.reason };
-  if (quote.chargeMinor !== confirm.expectedChargeMinor) return { kind: "not_allowed", message: "The cancellation charge changed. Check it again." };
+  if (!quote.allowed) return notDone("not_allowed", quote.code);
+  if (quote.chargeMinor !== confirm.expectedChargeMinor) return notDone("not_allowed", "charge_changed");
   const supplier = supplierOf(deps);
 
   // Every room's own cancel link before anything is sent: a booking is never part-cancelled for
@@ -905,20 +1199,20 @@ export async function cancel(ctx: BookingContext, bookingId: string, confirm: { 
         try {
           itinerary = await supplierView(booking, supplier);
         } catch (error) {
-          if (error instanceof SupplierError) return { kind: "refused", message: "The booking could not be cancelled right now. Try again in a few minutes." };
+          if (error instanceof SupplierError) return notDone("refused", "try_later");
           throw error;
         }
         const room = itinerary?.rooms[0];
         cancelLink = room?.cancelLink ?? null;
         roomId = room?.id ?? roomId;
-        if (!cancelLink) return { kind: "not_allowed", message: "This booking cannot be cancelled online. Contact Apolles support." };
+        if (!cancelLink) return notDone("not_allowed", "not_online");
       }
       oneRoom = { cancelLink, roomId };
     } else {
       // Several rooms: one retrieve fills every room's link (checked against its main guest).
       await fillRoomsFromSupplier(booking.id, deps);
       rooms = await roomsOf(booking);
-      if (linkMissing()) return { kind: "not_allowed", message: "This booking cannot be cancelled online right now. Contact Apolles support." };
+      if (linkMissing()) return notDone("not_allowed", "not_online_now");
     }
   }
 
@@ -935,6 +1229,10 @@ export async function cancel(ctx: BookingContext, bookingId: string, confirm: { 
         data: {
           cancelChargeMinor: quote.chargeMinor,
           cancelRequestedAt: now,
+          // A new cancellation: the watch of an earlier one that was put back ends here.
+          cancelRestoredAt: null,
+          cancelRestoredChargeMinor: null,
+          ...agentOf(ctx.supplierContext),
           ...(oneRoom ? { supplierRoomId: oneRoom.roomId, supplierLinks: { ...((booking.supplierLinks ?? {}) as SupplierLinks), cancel: oneRoom.cancelLink } } : {}),
         },
       });
@@ -946,7 +1244,7 @@ export async function cancel(ctx: BookingContext, bookingId: string, confirm: { 
       await scheduleReconcile(booking.id, new Date(now.getTime() + SAFETY_NET_MS), tx);
     });
   } catch (error) {
-    if (error instanceof BookingStateConflict) return { kind: "not_allowed", message: "This booking is already being cancelled." };
+    if (error instanceof BookingStateConflict) return notDone("not_allowed", "already");
     throw error;
   }
 
@@ -958,8 +1256,8 @@ export async function cancel(ctx: BookingContext, bookingId: string, confirm: { 
     console.error(`cancel room write failed: ${error instanceof Error ? error.name : "Error"}`);
     return { kind: "pending" };
   }
-  if (sent === "restored") return { kind: "refused", message: "The supplier did not accept the cancellation. Contact Apolles support." };
-  if (sent === "refused") return { kind: "part_refused", message: "The supplier did not cancel every room. Apolles support will finish the cancellation." };
+  if (sent === "restored") return notDone("refused", "refused");
+  if (sent === "refused") return notDone("part_refused", "part_refused");
   if (sent !== "done") return { kind: "pending" };
   try {
     await finishCancel(await db.booking.findUniqueOrThrow({ where: { id: booking.id } }), ctx.userId, "Supplier confirmed the cancellation");
