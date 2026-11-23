@@ -3,10 +3,12 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { input } from "@/components/ui";
 
-// "Destination or hotel" box (screen 07): type two letters, pick a city or area from the list.
-// Only a destination picked from the list is sent (its id, in a hidden field); free text is
-// not a destination. Keyboard: arrows move, Enter picks (the first one when none is highlighted),
-// Escape closes. A text with no match says so.
+// Destination box (screen 07): type two letters, pick a city or area from the list. The search
+// finds cities and areas only, not hotel names (searching by hotel name comes later), and the
+// box says so plainly. Only a destination picked from the list is sent (its id, in a hidden
+// field); free text is not a destination. Keyboard: arrows move, Enter picks (the first one when
+// none is highlighted), Escape closes. A text with no match says so; so does the server's "too
+// many requests" (instead of an empty list that looks like "nothing found").
 
 type Destination = { id: string; label: string; type: string };
 
@@ -15,8 +17,11 @@ export function enterChoice(options: Destination[], active: number): Destination
 }
 
 export function noMatchText(typed: string): string {
-  return `No destination matches "${typed}". Check the spelling.`;
+  return `No city or area matches "${typed}". Check the spelling, or type the city the hotel is in: hotel names are not searched.`;
 }
+
+export const TOO_MANY_TEXT = "Too many searches. Wait a moment, then type again.";
+export const DESTINATION_PLACEHOLDER = "City or area, for example Paris";
 
 export function DestinationPicker({ defaultId, defaultLabel }: { defaultId: string; defaultLabel: string }) {
   const [text, setText] = useState(defaultLabel);
@@ -26,6 +31,8 @@ export function DestinationPicker({ defaultId, defaultLabel }: { defaultId: stri
   const [active, setActive] = useState(-1);
   // The text the shown list (or "no match") answers, so an old answer is never shown as current.
   const [answered, setAnswered] = useState("");
+  // The text for which the server said "too many requests" (HTTP 429).
+  const [limitedFor, setLimitedFor] = useState<string | null>(null);
   const listId = useId();
   const request = useRef<AbortController | null>(null);
 
@@ -38,10 +45,16 @@ export function DestinationPicker({ defaultId, defaultLabel }: { defaultId: stri
       request.current = controller;
       try {
         const response = await fetch(`/search/destinations?q=${encodeURIComponent(q)}`, { signal: controller.signal });
+        if (response.status === 429) {
+          setLimitedFor(q);
+          setOpen(true);
+          return;
+        }
         if (!response.ok) return;
         const body = (await response.json()) as { destinations?: Destination[] };
         setOptions(Array.isArray(body.destinations) ? body.destinations : []);
         setAnswered(q);
+        setLimitedFor(null);
         setActive(-1);
         setOpen(true);
       } catch {
@@ -58,8 +71,9 @@ export function DestinationPicker({ defaultId, defaultLabel }: { defaultId: stri
   }
 
   const searching = !(chosen?.label === text || text.trim().length < 2);
-  const showList = open && searching && options.length > 0;
-  const showNoMatch = open && searching && options.length === 0 && answered === text.trim();
+  const showLimited = open && searching && limitedFor === text.trim();
+  const showList = open && searching && !showLimited && options.length > 0;
+  const showNoMatch = open && searching && !showLimited && options.length === 0 && answered === text.trim();
 
   return (
     <div className="relative">
@@ -75,7 +89,7 @@ export function DestinationPicker({ defaultId, defaultLabel }: { defaultId: stri
         aria-activedescendant={showList && active >= 0 ? `${listId}-${active}` : undefined}
         autoComplete="off"
         maxLength={60}
-        placeholder="City or area"
+        placeholder={DESTINATION_PLACEHOLDER}
         value={text}
         className={input}
         onChange={(event) => {
@@ -127,12 +141,12 @@ export function DestinationPicker({ defaultId, defaultLabel }: { defaultId: stri
           ))}
         </ul>
       ) : null}
-      {showNoMatch ? (
+      {showNoMatch || showLimited ? (
         <p
           role="status"
           className="absolute left-0 right-0 z-40 mt-1.5 rounded-[11px] border border-[#e1e6e3] bg-white px-4 py-3 text-[13px] text-muted shadow-[0_15px_38px_rgba(19,47,39,0.14)]"
         >
-          {noMatchText(text.trim())}
+          {showLimited ? TOO_MANY_TEXT : noMatchText(text.trim())}
         </p>
       ) : null}
     </div>

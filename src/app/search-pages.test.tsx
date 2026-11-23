@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requireAgent } from "@/server/auth/guards";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
+import { seedRateLimit } from "@/test/rate-limit";
 
 vi.mock("next/navigation", () => ({
   redirect: vi.fn((url: string) => {
@@ -88,8 +89,13 @@ describe("search action and destinations (screen 07)", () => {
     // Another user's id is ignored; dates already past fall back to the defaults.
     const other = await db.recentSearch.create({ data: { agencyId: "B", userId: "user-1", destinationId: "paris", destinationName: "Not mine", checkin: "2020-01-01", checkout: "2020-01-03", adults: 1, childAges: [] } });
     expect(renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({ again: other.id }) }))).not.toContain("Not mine");
+    expect(again).not.toContain("Those dates have passed.");
     await db.recentSearch.update({ where: { id: recent.id }, data: { checkin: "2020-01-01", checkout: "2020-01-03" } });
-    expect(renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({ again: recent.id }) }))).not.toContain('value="2020-01-01"');
+    const past = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({ again: recent.id }) }));
+    expect(past).not.toContain('value="2020-01-01"');
+    // The agent is told, instead of the dates being swapped quietly.
+    expect(past).toContain("Those dates have passed. Pick new dates.");
+    expect(html).not.toContain("Those dates have passed.");
     await expect(clearRecentAction()).rejects.toThrow("NEXT_REDIRECT:/search");
     expect(await db.recentSearch.count({ where: { agencyId: "A" } })).toBe(0);
     expect(await db.recentSearch.count({ where: { agencyId: "B" } })).toBe(1); // only the session agency's are cleared
@@ -143,6 +149,27 @@ describe("search action and destinations (screen 07)", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toMatch(/no-store/);
     expect(await response.json()).toEqual({ destinations: [{ id: "paris", label: "Paris, Ile-de-France, France", type: "city" }] });
+  });
+
+  it("destination suggestions are limited per user: one agent at the limit gets 429, a colleague still gets the list", async () => {
+    const { GET } = await import("./(agent)/search/destinations/route");
+    await seedRateLimit("destinations:user:user-1", 120, 60_000);
+    signInAs("A");
+    const refused = await GET(new Request("http://localhost/search/destinations?q=par"));
+    expect(refused.status).toBe(429);
+    vi.mocked(requireAgent).mockResolvedValue({ userId: "user-2", agencyId: "A" });
+    const colleague = await GET(new Request("http://localhost/search/destinations?q=par"));
+    expect(colleague.status).toBe(200);
+    // The refused agent did not use up the agency's ceiling.
+    const agencyHits = await db.rateLimitBucket.findMany({ where: { key: "destinations:agency:A" } });
+    expect(agencyHits.reduce((n, b) => n + b.count, 0)).toBe(1);
+  });
+
+  it("the destination box says plainly that it finds cities and areas", async () => {
+    signInAs("A");
+    const { default: SearchPage } = await import("./(agent)/search/page");
+    const html = renderToStaticMarkup(await SearchPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain('placeholder="City or area, for example Paris"');
   });
 
   it("the search page shows the form with sensible defaults and no nationality field", async () => {
@@ -244,7 +271,9 @@ describe("results page (screen 08)", () => {
     const best = [...offers].sort((x, y) => x.price.total.minor - y.price.total.minor)[0]!;
     expect(html).toContain("<strong>Room:</strong> ");
     expect(html).toContain(best.roomName.replace(/&/g, "&amp;"));
-    expect(html).toContain(`name="r" value="${best.rateId}"`);
+    // The rate is named by its room and its rate id together.
+    const bestRoomId = (hotel.offers as { rateId: string; roomId: string }[]).find((o) => o.rateId === best.rateId)!.roomId;
+    expect(html).toContain(`name="r" value="${bestRoomId}~${best.rateId}"`);
     expect(html).toContain("Book this room");
     expect(html).toContain("Add to quote");
     for (const o of offers) for (const b of o.bedGroups) expect(html).not.toContain(b.priceCheckToken);
@@ -297,7 +326,133 @@ describe("results page (screen 08)", () => {
     await db.searchSnapshot.update({ where: { id }, data: { expiresAt: new Date(Date.now() - 1000) } });
     const html = await renderResults(id);
     expect(html).toMatch(/expired/i);
-    expect(html).toContain('href="/search"');
+    // One click runs the same search again: a form with the search's id, not a link to an empty form.
+    expect(html).toContain("Search again");
+    expect(html).toContain(`name="snapshotId" value="${id}"`);
+    expect(html).not.toContain('href="/search"');
+  });
+
+  it("Search again on expired results runs the same search (read from the stored one) and opens the new results, keeping the quote", async () => {
+    await db.user.create({ data: { id: "user-1", email: "a@t.local", name: "A", role: "AGENT", agencyId: "A" } });
+    signInAs("A");
+    const id = await search("A", [{ adults: 2, childAges: [5] }]);
+    await db.searchSnapshot.update({ where: { id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    const { searchAgainAction } = await import("./(agent)/search/actions");
+    const quote = "q".repeat(25);
+    // Fields other than the search id and the quote are never read.
+    const failure = await searchAgainAction(form({ snapshotId: id, quote, destinationId: "elsewhere", checkin: "2020-01-01" })).catch((e: Error) => e);
+    const target = String((failure as Error).message).match(/^NEXT_REDIRECT:\/search\/([a-z0-9]+)\?quote=q{25}$/);
+    expect(target).not.toBeNull();
+    expect(target![1]).not.toBe(id);
+    const fresh = await db.searchSnapshot.findUniqueOrThrow({ where: { id: target![1]! } });
+    expect(fresh).toMatchObject({ agencyId: "A", userId: "user-1" });
+    expect(fresh.query).toMatchObject({ destinationId: "paris", rooms: [{ adults: 2, childAges: [5] }] });
+    expect(fresh.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    expect(await db.recentSearch.count({ where: { userId: "user-1" } })).toBe(1);
+  });
+
+  it("Search again: another agency's search does nothing; a search that cannot run comes back with the reason", async () => {
+    const id = await search("A");
+    const { searchAgainAction } = await import("./(agent)/search/actions");
+    signInAs("B");
+    await expect(searchAgainAction(form({ snapshotId: id }))).rejects.toThrow("NEXT_REDIRECT:/search");
+    expect(await db.searchSnapshot.count()).toBe(1);
+    signInAs("A");
+    // Its dates are over: the search is refused, and the expired page says what to do.
+    await db.searchSnapshot.update({ where: { id }, data: { expiresAt: new Date(Date.now() - 1000), query: { destinationId: "paris", checkin: "2020-01-01", checkout: "2020-01-03", rooms: [{ adults: 2, childAges: [] }], countryCode: "IL" } } });
+    await expect(searchAgainAction(form({ snapshotId: id }))).rejects.toThrow(`NEXT_REDIRECT:/search/${id}?again=input`);
+    expect(await renderResults(id, { again: "input" })).toContain("This search cannot be run again as it is. Check the destination, dates and guests above, then search.");
+    // Searchable dates again, but the agent is over the limit.
+    await db.searchSnapshot.update({ where: { id }, data: { query: { destinationId: "paris", checkin: isoDaysFromNow(10), checkout: isoDaysFromNow(12), rooms: [{ adults: 2, childAges: [] }], countryCode: "IL" } } });
+    await db.rateLimitBucket.deleteMany({ where: { key: "search:user:user-1" } });
+    await seedRateLimit("search:user:user-1", 30, 60_000);
+    await expect(searchAgainAction(form({ snapshotId: id }))).rejects.toThrow(`NEXT_REDIRECT:/search/${id}?again=limited`);
+  });
+
+  it("applying filters, changing the sort and clearing filters keep the quote the search adds to", async () => {
+    signInAs("A");
+    const id = await search("A");
+    const quote = "q".repeat(25);
+    const html = await renderResults(id, { quote, name: "Hotel" });
+    expect(html).toContain(`<input type="hidden" name="quote" value="${quote}"/>`);
+    expect(html).toContain(`href="/search/${id}?quote=${quote}"`); // Clear filters
+    const plain = await renderResults(id, { name: "Hotel" });
+    expect(plain).not.toContain('name="quote"');
+    expect(plain).toContain(`href="/search/${id}"`);
+  });
+
+  it("paging says which hotels are shown, of how many", async () => {
+    signInAs("A");
+    const id = await search("A");
+    expect(await renderResults(id)).toContain("1-2 of 2");
+  });
+
+  describe("a destination with more hotels than one supplier call", () => {
+    // 252 hotels: the first search asks for 250, two remain for "Load more hotels".
+    async function manyHotels(): Promise<void> {
+      const ids = Array.from({ length: 250 }, (_, i) => String(100 + i));
+      await db.property.createMany({ data: ids.map((id) => ({ id, name: `Inn ${id}`, city: "Paris", countryCode: "FR", rank: Number(id) - 99, expediaCollect: true, active: true, catalogSeenRunId: "r" })) });
+      await db.destinationProperty.createMany({ data: ids.map((propertyId) => ({ destinationId: "paris", propertyId })) });
+      // Hotels 11 and 12 come last in rank, so they are the two not asked for yet.
+      await db.property.updateMany({ where: { id: { in: ["11", "12"] } }, data: { rank: 1_000 } });
+    }
+
+    it("says that only the first hotels are shown, and offers Load more with the page's query kept", async () => {
+      signInAs("A");
+      await manyHotels();
+      const id = await search("A");
+      const html = await renderResults(id, { sort: "price_asc", free: "1" });
+      expect(html).toContain("Showing the first 250 of 252 hotels in this destination.");
+      expect(html).toContain("Load more hotels");
+      expect(html).toContain('<input type="hidden" name="back" value="sort=price_asc&amp;free=1"/>');
+    });
+
+    it("a hotel-name filter with no match says the rest is not loaded yet and offers Load more right there", async () => {
+      signInAs("A");
+      await manyHotels();
+      const id = await search("A");
+      const html = await renderResults(id, { name: "Hotel 11" });
+      expect(html).toContain("No hotel matches these filters among the first 250 of 252 hotels in this destination. Load more hotels to look in the rest.");
+      expect(html).not.toContain("No hotels match these filters.");
+      expect(html.match(/Load more hotels</g)).toHaveLength(1); // the button, next to the message
+      expect(html).toContain('name="back" value="name=Hotel+11"');
+    });
+
+    it("Load more returns to the same view (filters, sort, page, quote) and sends the agent's IP and browser to the supplier", async () => {
+      signInAs("A");
+      await manyHotels();
+      const id = await search("A");
+      const { FakeSupplierAdapter } = await import("@/server/supplier/fake");
+      const spy = vi.spyOn(FakeSupplierAdapter.prototype, "searchAvailability");
+      const { loadMoreAction } = await import("./(agent)/search/[id]/actions");
+      const quote = "q".repeat(25);
+      const back = `sort=price_asc&name=Hotel&stars=4&stars=5&cursor=20&quote=${quote}&evil=1&notice=unavailable`;
+      try {
+        await expect(loadMoreAction(form({ snapshotId: id, back }))).rejects.toThrow(`NEXT_REDIRECT:/search/${id}?sort=price_asc&name=Hotel&stars=4&stars=5&cursor=20&quote=${quote}`);
+        expect((spy.mock.calls[0] as unknown[])[1]).toEqual({ customerIp: "203.0.113.9", userAgent: "TestBrowser/1.0" });
+      } finally {
+        spy.mockRestore();
+      }
+      expect((await db.searchSnapshot.findUniqueOrThrow({ where: { id } })).nextIndex).toBe(252);
+      expect(await renderResults(id, { name: "Hotel 11" })).toContain("1 property found");
+    });
+
+    it("Load more that is refused says why, on the same view", async () => {
+      signInAs("A");
+      await manyHotels();
+      const id = await search("A");
+      const { loadMoreAction } = await import("./(agent)/search/[id]/actions");
+      await db.rateLimitBucket.deleteMany({ where: { key: "search:user:user-1" } });
+    await seedRateLimit("search:user:user-1", 30, 60_000);
+      await expect(loadMoreAction(form({ snapshotId: id, back: "sort=price_desc" }))).rejects.toThrow(`NEXT_REDIRECT:/search/${id}?sort=price_desc&notice=limited`);
+      expect(await renderResults(id, { sort: "price_desc", notice: "limited" })).toContain("Too many searches. Wait a minute and load more hotels again.");
+      // A code the page does not know (anything can be typed in a URL) shows no message.
+      expect(await renderResults(id, { notice: "constructor" })).not.toContain('role="alert"');
+      // Another agency's id does nothing.
+      signInAs("B");
+      await expect(loadMoreAction(form({ snapshotId: id, back: "" }))).rejects.toThrow(`NEXT_REDIRECT:/search/${id}`);
+      expect((await db.searchSnapshot.findUniqueOrThrow({ where: { id } })).nextIndex).toBe(250);
+    });
   });
 });
 
@@ -361,6 +516,39 @@ describe("hotel page (screen 09)", () => {
     }
     expect(html).toContain("Government-issued photo identification is required at check-in.");
     expect(html).not.toMatch(/&lt;(p|ul|li)&gt;/);
+  });
+
+  it("names each rate by its room and rate id together, and shows the free-cancellation deadline in one wording", async () => {
+    const { html } = await searchAndRender("A");
+    expect(html).toContain('name="r" value="room-1~rate-0-1"');
+    expect(html).toMatch(/Free cancellation until (Mon|Tue|Wed|Thu|Fri|Sat|Sun), [A-Z][a-z]{2} \d{1,2}, \d{4}, 00:00 hotel time/);
+    expect(html).not.toContain("Free cancellation before check-in");
+  });
+
+  it("expired prices: Search again in one click, and a way back to the hotels", async () => {
+    const { id } = await searchAndRender("A");
+    await db.searchSnapshot.update({ where: { id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    const { default: HotelPage } = await import("./(agent)/search/[id]/hotels/[propertyId]/page");
+    const html = renderToStaticMarkup(
+      await HotelPage({ params: Promise.resolve({ id, propertyId: "11" }), searchParams: Promise.resolve({ sort: "price_asc", quote: "q".repeat(25) }) }),
+    );
+    expect(html).toContain("These prices expired");
+    expect(html).toContain(`name="snapshotId" value="${id}"`);
+    expect(html).toContain(`name="quote" value="${"q".repeat(25)}"`);
+    expect(html).toContain(`href="/search/${id}?sort=price_asc&amp;quote=${"q".repeat(25)}"`);
+    expect(html).toContain("Back to hotels");
+    expect(html).not.toContain('href="/search"');
+  });
+
+  it("too many hotel pages: the message, and a way back to the hotels", async () => {
+    const { id } = await searchAndRender("A");
+    await db.rateLimitBucket.deleteMany({ where: { key: "hotel:user:user-1" } });
+    await seedRateLimit("hotel:user:user-1", 120, 60_000);
+    const { default: HotelPage } = await import("./(agent)/search/[id]/hotels/[propertyId]/page");
+    const html = renderToStaticMarkup(await HotelPage({ params: Promise.resolve({ id, propertyId: "11" }), searchParams: Promise.resolve({ sort: "price_asc" }) }));
+    expect(html).toContain("Too many hotel pages opened. Wait a minute and try again.");
+    expect(html).toContain(`href="/search/${id}?sort=price_asc"`);
+    expect(html).toContain("Back to hotels");
   });
 
   it("never sends the price-check token to the browser", async () => {

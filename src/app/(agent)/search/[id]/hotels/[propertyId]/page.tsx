@@ -2,18 +2,21 @@ import type { Metadata } from "next";
 import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { alertError, btnPrimary, card, cellTop, cellWide, link, sectionTitle, tbody, tr } from "@/components/ui";
+import { alertError, alertInfo, btnPrimary, btnSecondary, card, cellTop, cellWide, link, sectionTitle, tbody, tr } from "@/components/ui";
+import { freeCancellation } from "@/lib/cancellation";
 import { requireAgent } from "@/server/auth/guards";
 import { SearchRateLimited } from "@/server/search/errors";
-import { getHotelOffers, searchSummary } from "@/server/search/search";
+import { getHotelOffers, offerRef, searchSummary } from "@/server/search/search";
 import type { Offer } from "@/server/supplier/types";
 import { HotelPhoto, Stars, shortDate, stayText } from "../../../parts";
 import { CancellationPolicy, Policies, PriceDetails, SupplierText } from "../../../../_components/hotel-info";
 import { cancellationLabel } from "../../../../_components/rate-text";
+import { SubmitButton } from "../../../../_components/submit-button";
 import { addToQuoteAction } from "../../../../quotes/actions";
 import { AddToQuote } from "../../../../quotes/add-to-quote";
-import { freeCancelEnds } from "@/server/booking/service";
 import { QUOTES_ONE_ROOM, openQuotes, quoteCode } from "@/server/quotes/quotes";
+import { searchAgainAction } from "../../../actions";
+import { keptParams, resultsHref } from "../../../kept-params";
 import { quoteParam } from "../../../quote-param";
 
 type QuoteChoice = { id: string; label: string };
@@ -22,8 +25,6 @@ export const metadata: Metadata = { title: "Hotel | Apolles", robots: { index: f
 
 type Params = Promise<{ id: string; propertyId: string }>;
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
-
-const KEEP = ["sort", "name", "room", "min", "max", "stars", "free", "cursor", "quote"];
 
 // "Book room" opens guest details (screen 10) with the rate and the chosen bed type only; the
 // price and the price-check token stay on the server. The bed choice sits in another cell, so
@@ -36,6 +37,7 @@ function RateRow({
   quotes,
   quoteId,
   severalRooms,
+  now,
 }: {
   offer: Offer;
   stay: string;
@@ -43,8 +45,9 @@ function RateRow({
   quotes: QuoteChoice[];
   quoteId: string | null;
   severalRooms: boolean;
+  now: Date;
 }) {
-  const cancel = cancellationLabel(offer);
+  const cancel = cancellationLabel(offer, now);
   const formId = `book-${offer.roomId}-${offer.rateId}`.replace(/[^A-Za-z0-9_-]/g, "_");
   return (
     <tr className={`${tr} align-top`}>
@@ -71,7 +74,13 @@ function RateRow({
         <details className="mt-1.5">
           <summary className="cursor-pointer text-xs font-semibold text-brand">Cancellation policy</summary>
           <div className="mt-1.5">
-            <CancellationPolicy refundable={offer.refundable} penalties={offer.cancelPenalties} nonrefundableDateRanges={offer.nonrefundableDateRanges} />
+            <CancellationPolicy
+              refundable={offer.refundable}
+              penalties={offer.cancelPenalties}
+              nonrefundableDateRanges={offer.nonrefundableDateRanges}
+              total={offer.price.total}
+              nights={offer.price.nights}
+            />
           </div>
         </details>
       </td>
@@ -82,7 +91,8 @@ function RateRow({
         <form id={formId} method="get" action="/book/new">
           <input type="hidden" name="s" value={snapshotId} />
           <input type="hidden" name="p" value={offer.propertyId} />
-          <input type="hidden" name="r" value={offer.rateId} />
+          {/* The room and the rate together: a rate id alone can repeat across rooms. */}
+          <input type="hidden" name="r" value={offerRef(offer)} />
           {offer.bedGroups.length === 1 ? <input type="hidden" name="b" value={offer.bedGroups[0]!.id} /> : null}
           <button type="submit" className={`${btnPrimary} w-full`}>
             Book room
@@ -98,24 +108,29 @@ function RateRow({
 // requires on this page (AP1, AP2, AP3, BP3, BP4, BP5). The rates come from the search's
 // stored snapshot, scoped to the agency; the price is checked again before booking (plan 3).
 export default async function HotelPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
-  const { agencyId } = await requireAgent();
+  const { agencyId, userId } = await requireAgent();
   const { id, propertyId } = await params;
   const query = await searchParams;
   const now = new Date();
   const summary = await searchSummary(agencyId, id, now);
   if (!summary) notFound();
 
-  const back = new URLSearchParams();
-  for (const key of KEEP) for (const v of [query[key] ?? []].flat()) if (v) back.append(key, v.slice(0, 100));
-  const backHref = `/search/${id}${back.toString() ? `?${back}` : ""}`;
+  const back = keptParams(query);
+  const backHref = resultsHref(id, back);
+  const backLink = (
+    <Link href={backHref} className={link}>
+      ← Back to hotels
+    </Link>
+  );
 
   let data;
   try {
-    data = await getHotelOffers(agencyId, id, propertyId, now);
+    data = await getHotelOffers({ agencyId, userId }, id, propertyId, now);
   } catch (error) {
     if (!(error instanceof SearchRateLimited)) throw error;
     return (
-      <main className="mx-auto w-[min(1260px,calc(100%-40px))] py-8">
+      <main className="mx-auto flex w-[min(1260px,calc(100%-40px))] flex-col gap-4 py-8">
+        {backLink}
         <p role="alert" className={alertError}>
           {error.message}
         </p>
@@ -125,10 +140,19 @@ export default async function HotelPage({ params, searchParams }: { params: Para
   if (!data) {
     if (summary.expired) {
       return (
-        <main className="mx-auto w-[min(1260px,calc(100%-40px))] py-8">
-          <p role="alert" className={alertError}>
-            These prices expired (they are kept for 30 minutes). <Link href="/search" className={link}>Search again</Link>
-          </p>
+        <main className="mx-auto flex w-[min(1260px,calc(100%-40px))] flex-col gap-4 py-8">
+          {backLink}
+          <div role="alert" className={`${alertInfo} flex flex-wrap items-center justify-between gap-3`}>
+            <span>These prices expired (they are kept for 30 minutes). Search again for current prices.</span>
+            {/* One click runs the same search again and opens its results. */}
+            <form action={searchAgainAction}>
+              <input type="hidden" name="snapshotId" value={id} />
+              {back.get("quote") ? <input type="hidden" name="quote" value={back.get("quote") ?? ""} /> : null}
+              <SubmitButton className={btnSecondary} pendingText="Searching…">
+                Search again
+              </SubmitButton>
+            </form>
+          </div>
         </main>
       );
     }
@@ -147,12 +171,9 @@ export default async function HotelPage({ params, searchParams }: { params: Para
   const desc = one(query.rs) === "price_desc";
   const sorted = offers
     .filter((o) => !roomText || `${o.roomName} ${o.bedGroups.map((b) => b.description).join(" ")}`.toLowerCase().includes(roomText))
-    // Free cancellation still ahead (the same rule as the booking's deadline), never one already over.
-    .filter((o) => {
-      if (!freeOnly) return true;
-      const end = freeCancelEnds(o);
-      return end !== null && end > now;
-    })
+    // Free cancellation still ahead: the one rule (src/lib/cancellation.ts), the same as the
+    // label, the results filter and the booking's deadline. Never one already over.
+    .filter((o) => !freeOnly || freeCancellation(o, now) !== null)
     .sort((a, b) => (desc ? b.price.total.minor - a.price.total.minor : a.price.total.minor - b.price.total.minor));
   const filtered = roomText !== "" || freeOnly;
   // Plan 5b: "Add to quote" lists the agency's open quotes; one opened from a quote is preselected.
@@ -162,9 +183,7 @@ export default async function HotelPage({ params, searchParams }: { params: Para
 
   return (
     <main className="mx-auto flex w-[min(1260px,calc(100%-40px))] flex-col gap-6 py-6">
-      <Link href={backHref} className={link}>
-        ← Back to hotels
-      </Link>
+      {backLink}
 
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <HotelPhoto url={content?.heroImage?.url} alt={name} className="h-28 w-full rounded-[14px] sm:w-44" />
@@ -226,7 +245,7 @@ export default async function HotelPage({ params, searchParams }: { params: Para
             </thead>
             <tbody className={tbody}>
               {sorted.map((offer) => (
-                <RateRow key={`${offer.roomId}-${offer.rateId}`} offer={offer} stay={stay} snapshotId={id} quotes={quotes} quoteId={quoteId} severalRooms={severalRooms} />
+                <RateRow key={`${offer.roomId}-${offer.rateId}`} offer={offer} stay={stay} snapshotId={id} quotes={quotes} quoteId={quoteId} severalRooms={severalRooms} now={now} />
               ))}
             </tbody>
           </table>
