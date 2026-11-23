@@ -369,8 +369,10 @@ describe("admin TOTP", () => {
       const code = await validCode(secret);
       expect(await confirmTotpForSession(sessionId, code)).toBe("OK");
 
-      const rows = await auditRows();
-      expect(rows).toHaveLength(1);
+      // Confirming from the setup page also completes the sign-in of that session.
+      const all = await auditRows();
+      expect(all.map((r) => r.action).sort()).toEqual(["admin.totp.confirm", "user.sign-in"]);
+      const rows = all.filter((r) => r.action === "admin.totp.confirm");
       expect(rows[0]).toMatchObject({
         actorUserId: admin.id,
         action: "admin.totp.confirm",
@@ -379,7 +381,7 @@ describe("admin TOTP", () => {
         before: { totpConfirmed: false },
         after: { totpConfirmed: true },
       });
-      const json = JSON.stringify(rows);
+      const json = JSON.stringify(all);
       expect(json).not.toContain(secret);
       expect(json).not.toContain(code);
     });
@@ -391,7 +393,7 @@ describe("admin TOTP", () => {
       expect((await auditRows()).map((r) => r.action)).toEqual(["admin.totp.confirm"]);
     });
 
-    it("a wrong code or a normal sign-in code writes no audit row", async () => {
+    it("a wrong code writes no audit row; a normal sign-in code writes only the sign-in row", async () => {
       const admin = await createAdmin();
       const secret = secretOf((await startTotpEnrollment(admin.id)).otpauthUrl);
       expect(await confirmTotp(admin.id, await wrongCode(secret))).toBe(false);
@@ -400,8 +402,12 @@ describe("admin TOTP", () => {
       const other = await createAdmin("admin2@example.com");
       const otherSecret = secretOf((await startTotpEnrollment(other.id)).otpauthUrl);
       await db.user.update({ where: { id: other.id }, data: { totpConfirmedAt: new Date() } });
-      expect(await verifyTotpForSession(await sessionIdFor(other.id), await validCode(otherSecret))).toBe(true);
-      expect(await auditRows()).toHaveLength(0);
+      const otherCode = await validCode(otherSecret);
+      expect(await verifyTotpForSession(await sessionIdFor(other.id), otherCode)).toBe(true);
+      const rows = await auditRows();
+      expect(rows.map((r) => [r.action, r.actorUserId])).toEqual([["user.sign-in", other.id]]);
+      expect(JSON.stringify(rows)).not.toContain(otherSecret);
+      expect(JSON.stringify(rows)).not.toContain(otherCode);
     });
 
     it("'Generate a new key' writes admin.totp.regenerate (neither key in the row)", async () => {
@@ -429,6 +435,83 @@ describe("admin TOTP", () => {
       const { admin } = await confirmedAdmin();
       await expect(startTotpEnrollment(admin.id, { regenerate: true })).rejects.toThrow();
       expect(await auditRows()).toHaveLength(0);
+    });
+  });
+
+  describe("secret encrypted at rest (TOTP_ENCRYPTION_KEY)", () => {
+    const KEY = Buffer.alloc(32, 7).toString("base64");
+    afterEach(() => vi.unstubAllEnvs());
+    const storedSecret = async (id: string) => (await db.user.findUniqueOrThrow({ where: { id } })).totpSecret!;
+
+    it("a new key is stored encrypted, the setup page still shows the same key, and its codes work", async () => {
+      vi.stubEnv("TOTP_ENCRYPTION_KEY", KEY);
+      const admin = await createAdmin();
+      const first = await startTotpEnrollment(admin.id);
+      const secret = secretOf(first.otpauthUrl);
+      const stored = await storedSecret(admin.id);
+      expect(stored).toMatch(/^enc:v1:/);
+      expect(stored).not.toContain(secret);
+      // Reloading the setup page shows the same key (read back from the encrypted value).
+      expect((await startTotpEnrollment(admin.id)).otpauthUrl).toBe(first.otpauthUrl);
+
+      const sessionId = await sessionIdFor(admin.id);
+      expect(await confirmTotpForSession(sessionId, await wrongCode(secret))).toBe("WRONG");
+      expect(await confirmTotpForSession(sessionId, await validCode(secret))).toBe("OK");
+      expect(await verifiedAt(sessionId)).not.toBeNull();
+      expect(await storedSecret(admin.id)).toBe(stored);
+    });
+
+    it("a secret stored plain before encryption still works and is encrypted on the next right code", async () => {
+      const { admin, secret, sessionId } = await confirmedAdmin(); // stored plain: no key yet
+      expect(await storedSecret(admin.id)).toBe(secret);
+
+      vi.stubEnv("TOTP_ENCRYPTION_KEY", KEY);
+      // A wrong code does not rewrite anything.
+      expect(await checkTotpForSession(sessionId, await wrongCode(secret))).toBe("WRONG");
+      expect(await storedSecret(admin.id)).toBe(secret);
+      expect(await checkTotpForSession(sessionId, await validCode(secret))).toBe("OK");
+      const stored = await storedSecret(admin.id);
+      expect(stored).toMatch(/^enc:v1:/);
+      expect(stored).not.toContain(secret);
+
+      // The encrypted secret keeps working for the next sign-in (a later time step).
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(Date.now() + 120_000);
+      const next = await sessionIdFor(admin.id);
+      expect(await checkTotpForSession(next, await validCode(secret))).toBe("OK");
+      expect(await storedSecret(admin.id)).toBe(stored);
+    });
+
+    it("without a key nothing changes: the secret stays as it is", async () => {
+      const { admin, secret, sessionId } = await confirmedAdmin();
+      expect(await checkTotpForSession(sessionId, await validCode(secret))).toBe("OK");
+      expect(await storedSecret(admin.id)).toBe(secret);
+    });
+
+    it("an encrypted secret that cannot be opened (key removed) fails loudly and is not counted as a wrong code", async () => {
+      vi.stubEnv("TOTP_ENCRYPTION_KEY", KEY);
+      const admin = await createAdmin();
+      const secret = secretOf((await startTotpEnrollment(admin.id)).otpauthUrl);
+      await db.user.update({ where: { id: admin.id }, data: { totpConfirmedAt: new Date() } });
+      const sessionId = await sessionIdFor(admin.id);
+      vi.stubEnv("TOTP_ENCRYPTION_KEY", "");
+      await expect(checkTotpForSession(sessionId, await validCode(secret))).rejects.toThrow(/TOTP_ENCRYPTION_KEY is not set/);
+      const row = await db.user.findUniqueOrThrow({ where: { id: admin.id } });
+      expect(row.failedLogins).toBe(0);
+      expect(row.lockedUntil).toBeNull();
+    });
+  });
+
+  describe("sign-in audit", () => {
+    it("a right code for a session writes one user.sign-in row; a wrong code writes none", async () => {
+      const { admin, secret, sessionId } = await confirmedAdmin();
+      expect(await checkTotpForSession(sessionId, await wrongCode(secret))).toBe("WRONG");
+      expect(await db.auditLog.count({ where: { action: "user.sign-in" } })).toBe(0);
+      expect(await checkTotpForSession(sessionId, await validCode(secret))).toBe("OK");
+      const rows = await db.auditLog.findMany({ where: { action: "user.sign-in" } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ actorUserId: admin.id, targetType: "User", targetId: admin.id });
+      expect(rows[0]?.after).toEqual({ secondStep: "totp" });
     });
   });
 });

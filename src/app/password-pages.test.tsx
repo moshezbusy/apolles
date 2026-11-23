@@ -24,7 +24,7 @@ describe("/set-password/[token]", () => {
   });
 
   it("SET token → 'Set your password' with the form, button disabled", async () => {
-    vi.mocked(checkPasswordLink).mockResolvedValue({ usable: true, purpose: "SET" });
+    vi.mocked(checkPasswordLink).mockResolvedValue({ usable: true, purpose: "SET", role: "AGENT" });
     const html = await renderSetPassword();
     expect(checkPasswordLink).toHaveBeenCalledWith(TOKEN);
     expect(html).toContain("Set your password");
@@ -34,15 +34,23 @@ describe("/set-password/[token]", () => {
     expect(html).toContain("At least 8 characters, with letters and numbers.");
   });
 
+  it("an admin's link shows the admin rule: at least 12 characters", async () => {
+    vi.mocked(checkPasswordLink).mockResolvedValue({ usable: true, purpose: "SET", role: "ADMIN" });
+    const html = await renderSetPassword();
+    expect(html).toContain("At least 12 characters, with letters and numbers.");
+    expect(html).toContain("At least 12 characters</li>");
+    expect(html).not.toContain("At least 8 characters");
+  });
+
   it("RESET token → 'Create a new password'", async () => {
-    vi.mocked(checkPasswordLink).mockResolvedValue({ usable: true, purpose: "RESET" });
+    vi.mocked(checkPasswordLink).mockResolvedValue({ usable: true, purpose: "RESET", role: "AGENT" });
     const html = await renderSetPassword();
     expect(html).toContain("Create a new password");
     expect(html).not.toContain("Set your password");
   });
 
   it("unusable token → expired state with 'Send a new link' to /forgot-password, no form", async () => {
-    vi.mocked(checkPasswordLink).mockResolvedValue({ usable: false, purpose: null });
+    vi.mocked(checkPasswordLink).mockResolvedValue({ usable: false, purpose: null, role: null });
     const html = await renderSetPassword();
     expect(html).toContain("This link has expired");
     expect(html).toContain("Send a new link");
@@ -52,7 +60,7 @@ describe("/set-password/[token]", () => {
   });
 
   it("an expired or used invitation → 'This set-up link has expired', 72 hours, and how to get a new one", async () => {
-    vi.mocked(checkPasswordLink).mockResolvedValue({ usable: false, purpose: "SET" });
+    vi.mocked(checkPasswordLink).mockResolvedValue({ usable: false, purpose: "SET", role: null });
     const html = await renderSetPassword();
     expect(html).toContain("This set-up link has expired");
     expect(html).toContain("Set-up links work for 72 hours and can be used once.");
@@ -63,7 +71,7 @@ describe("/set-password/[token]", () => {
   });
 
   it("an expired reset link keeps the 60-minute wording", async () => {
-    vi.mocked(checkPasswordLink).mockResolvedValue({ usable: false, purpose: "RESET" });
+    vi.mocked(checkPasswordLink).mockResolvedValue({ usable: false, purpose: "RESET", role: null });
     const html = await renderSetPassword();
     expect(html).toContain("This link has expired");
     expect(html).toContain("Reset links work for 60 minutes and can be used once.");

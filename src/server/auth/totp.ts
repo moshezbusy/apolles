@@ -8,15 +8,18 @@ import {
   releaseAttempt,
   reserveAttempt,
 } from "@/server/auth/lockout";
+import { isSealedTotpSecret, openTotpSecret, sealTotpSecret, totpEncryptionKey } from "@/server/auth/totp-secret";
 
 // Admin two-step sign-in with an authenticator app: standard TOTP (RFC 6238) with
 // SHA-1, 6 digits and a 30-second step, which every authenticator app supports.
 // A code from the previous or next step is accepted too (clock drift), and each step's
 // code is accepted once only (User.totpLastUsedStep).
 // Secrets and codes are never logged.
-// Audit: confirming TOTP (admin.totp.confirm) and "Generate a new key" (admin.totp.regenerate)
-// each write an audit row in the same transaction as the change. The rows hold only whether
-// TOTP is confirmed, never a secret or a code.
+// The secret is stored encrypted when TOTP_ENCRYPTION_KEY is set (totp-secret.ts). A secret
+// stored plain before that still works and is encrypted on its owner's next right code.
+// Audit: confirming TOTP (admin.totp.confirm), "Generate a new key" (admin.totp.regenerate) and
+// a completed admin sign-in (user.sign-in) each write an audit row in the same transaction as
+// the change. The rows hold only whether TOTP is confirmed, never a secret or a code.
 
 const ISSUER = "Apolles";
 const PERIOD_SECONDS = 30;
@@ -35,7 +38,7 @@ type TotpUser = {
   email: string;
   role: "ADMIN" | "AGENT";
   status: "ACTIVE" | "SUSPENDED";
-  totpSecret: string | null;
+  totpSecret: string | null; // as stored: encrypted ("enc:v1:…") or, from before, plain
   totpConfirmedAt: Date | null;
   lockedUntil: Date | null;
 };
@@ -76,7 +79,8 @@ async function wrongCode(user: TotpUser, slot: number): Promise<TotpCheckResult>
 
 type Claim = {
   user: TotpUser;
-  secret: string;
+  stored: string; // the secret column as it was read (the claim only matches while unchanged)
+  secret: string; // the secret itself
   step: number;
   confirm: boolean; // enrollment: also set totpConfirmedAt
   sessionId?: string; // also mark this session as verified
@@ -88,7 +92,10 @@ type Claim = {
 // second UPDATE waits for the first and then no longer matches, so only one succeeds.
 // The same transaction resets the failed-attempt counter (which also gives back the slot
 // this attempt reserved) and marks the session verified.
-async function claimStep({ user, secret, step, confirm, sessionId }: Claim): Promise<TotpCheckResult> {
+async function claimStep({ user, stored, secret, step, confirm, sessionId }: Claim): Promise<TotpCheckResult> {
+  // A secret still stored plain is encrypted now that its owner proved it with a right code
+  // (only when a key is configured).
+  const reseal = !isSealedTotpSecret(stored) && totpEncryptionKey() !== null;
   try {
     return await db.$transaction(async (tx) => {
       const now = new Date();
@@ -97,7 +104,7 @@ async function claimStep({ user, secret, step, confirm, sessionId }: Claim): Pro
           id: user.id,
           role: "ADMIN",
           status: "ACTIVE",
-          totpSecret: secret,
+          totpSecret: stored,
           totpConfirmedAt: confirm ? null : { not: null },
           AND: [
             notLockedAt(now),
@@ -109,6 +116,7 @@ async function claimStep({ user, secret, step, confirm, sessionId }: Claim): Pro
           failedLogins: 0,
           lockedUntil: null,
           ...(confirm ? { totpConfirmedAt: now } : {}),
+          ...(reseal ? { totpSecret: sealTotpSecret(secret, user.id) } : {}),
         },
       });
       if (claimed.count !== 1) {
@@ -125,6 +133,8 @@ async function claimStep({ user, secret, step, confirm, sessionId }: Claim): Pro
           data: { totpVerifiedAt: now },
         });
         if (marked.count !== 1) throw new SessionGone();
+        // The admin's sign-in is complete (password, then this code).
+        await audit(user.id, "user.sign-in", "User", user.id, undefined, { secondStep: "totp" }, tx);
       }
       if (confirm) {
         await audit(user.id, "admin.totp.confirm", "User", user.id, { totpConfirmed: false }, { totpConfirmed: true }, tx);
@@ -152,6 +162,11 @@ async function checkCode(
   if (isLocked(user.lockedUntil)) return "LOCKED";
   // Not 6 digits cannot be a guess of the code: refused without counting.
   if (!CODE_PATTERN.test(code)) return "WRONG";
+  // Read the stored secret before an attempt slot is taken: a secret that cannot be opened
+  // (TOTP_ENCRYPTION_KEY missing or changed) is a set-up fault, not a wrong guess, and fails
+  // loudly without counting toward the lockout. The error names no secret.
+  const stored = user.totpSecret;
+  const secret = openTotpSecret(stored, user.id);
 
   // Take an attempt slot BEFORE the code is checked (H1, lockout.ts). No slot left (locked,
   // or the last slots are taken by attempts still in flight) → refused unchecked, so parallel
@@ -159,11 +174,10 @@ async function checkCode(
   const slot = await reserveAttempt(user.id);
   if (slot === null) return "LOCKED";
 
-  const secret = user.totpSecret;
   try {
     const step = await matchStep(secret, code);
     if (step === null) return await wrongCode(user, slot);
-    const result = await claimStep({ user, secret, step, confirm, ...(sessionId !== undefined ? { sessionId } : {}) });
+    const result = await claimStep({ user, stored, secret, step, confirm, ...(sessionId !== undefined ? { sessionId } : {}) });
     // The code matched but could not be used: its step was already used (replay), or the TOTP
     // state or the session changed meanwhile. That is not a wrong guess, so the slot is handed
     // back (as before H1, such a refusal does not count). OK already reset the counter in the
@@ -222,7 +236,7 @@ export async function startTotpEnrollment(
   const user = await read();
   if (!user || user.role !== "ADMIN") throw new Error("startTotpEnrollment: not an admin");
   if (user.totpConfirmedAt) throw new Error("startTotpEnrollment: TOTP is already set up");
-  if (!regenerate && user.totpSecret) return { otpauthUrl: otpauthUrlFor(user.email, user.totpSecret) };
+  if (!regenerate && user.totpSecret) return { otpauthUrl: otpauthUrlFor(user.email, openTotpSecret(user.totpSecret, userId)) };
 
   const secret = generateSecret({ length: SECRET_BYTES });
   const stored = await db.$transaction(async (tx) => {
@@ -230,7 +244,7 @@ export async function startTotpEnrollment(
       // Without `regenerate`, only fill an empty secret: of two parallel first visits, one
       // stores its secret and the other shows that same secret (below).
       where: { id: userId, role: "ADMIN", totpConfirmedAt: null, ...(regenerate ? {} : { totpSecret: null }) },
-      data: { totpSecret: secret, totpLastUsedStep: null },
+      data: { totpSecret: sealTotpSecret(secret, userId), totpLastUsedStep: null },
     });
     // Only the "Generate a new key" button is an event; the first key of a first visit is not.
     if (updated.count === 1 && regenerate) {
@@ -242,7 +256,7 @@ export async function startTotpEnrollment(
 
   const current = await read();
   if (!regenerate && current && !current.totpConfirmedAt && current.totpSecret) {
-    return { otpauthUrl: otpauthUrlFor(current.email, current.totpSecret) };
+    return { otpauthUrl: otpauthUrlFor(current.email, openTotpSecret(current.totpSecret, userId)) };
   }
   throw new Error("startTotpEnrollment: TOTP is already set up");
 }

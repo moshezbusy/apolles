@@ -2,17 +2,22 @@
 
 import { useActionState, useState } from "react";
 import {
+  COMMON_PASSWORD_COPY,
   PASSWORDS_DIFFER_COPY,
   PASSWORD_MAX_LENGTH,
-  PASSWORD_RULE_COPY,
+  PASSWORD_MIN_LENGTH,
+  type PasswordRole,
+  isCommonPassword,
   isValidPassword,
+  passwordRuleCopy,
 } from "@/lib/password-rule";
 import { alertError, btnPrimary, hint, input, label } from "@/components/ui";
 import { setPasswordAction, type SetPasswordState } from "./actions";
 import { ExpiredLink } from "./expired-link";
 
 
-export function SetPasswordForm({ token, title, invitation = false }: { token: string; title: string; invitation?: boolean }) {
+// `role`: whose link this is. An admin needs a longer password than an agent.
+export function SetPasswordForm({ token, title, invitation = false, role = "AGENT" }: { token: string; title: string; invitation?: boolean; role?: PasswordRole }) {
   const [state, formAction, pending] = useActionState<SetPasswordState, FormData>(
     setPasswordAction,
     null,
@@ -24,7 +29,9 @@ export function SetPasswordForm({ token, title, invitation = false }: { token: s
   if (state && "status" in state) return <ExpiredLink invitation={invitation} />;
 
   // Same rule as the server, which checks again on submit.
-  const ready = isValidPassword(password) && password === confirm;
+  const ready = isValidPassword(password, role) && password === confirm;
+  const minLength = PASSWORD_MIN_LENGTH[role];
+  const tooCommon = isCommonPassword(password);
   const showMismatch = confirm.length > 0 && password !== confirm;
 
   return (
@@ -54,11 +61,11 @@ export function SetPasswordForm({ token, title, invitation = false }: { token: s
         />
       </label>
       <p id="password-rule" className={`-mt-2 ${hint}`}>
-        {PASSWORD_RULE_COPY}
+        {passwordRuleCopy(role)}
       </p>
       <ul aria-label="Password rule" className="-mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
         {[
-          { ok: password.length >= 8, text: "At least 8 characters" },
+          { ok: password.length >= minLength, text: `At least ${minLength} characters` },
           { ok: /\p{L}/u.test(password) && /\p{Nd}/u.test(password), text: "Letters and numbers" },
         ].map((rule) => (
           <li key={rule.text} className={rule.ok ? "font-semibold text-brand" : "text-muted"}>
@@ -66,6 +73,7 @@ export function SetPasswordForm({ token, title, invitation = false }: { token: s
           </li>
         ))}
       </ul>
+      {tooCommon ? <p className="-mt-1 text-xs text-[#8a3f32]">{COMMON_PASSWORD_COPY}</p> : null}
       <label className="-mt-1 flex items-center gap-2 text-xs text-[#4d5a54]">
         <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} className="h-4 w-4 accent-brand" />
         Show passwords

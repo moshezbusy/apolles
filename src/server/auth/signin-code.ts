@@ -1,5 +1,6 @@
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
+import { audit } from "@/server/audit";
 import { db } from "@/server/db";
 import { sendEmail } from "@/server/email/port";
 import { hitRateLimit, refundRateLimit } from "@/server/rate-limit";
@@ -121,6 +122,8 @@ export async function verifySignInCode(sessionId: string, code: string, now: Dat
       return "wrong" as const;
     }
     await tx.session.update({ where: { id: sessionId }, data: { emailVerifiedAt: now, codeHash: null, codeExpiresAt: null } });
+    // The agent's sign-in is complete (password, then this code). Never the code itself.
+    await audit(user.id, "user.sign-in", "User", user.id, undefined, { secondStep: "email-code" }, tx);
     return "ok" as const;
   });
   if (result === "ok") {

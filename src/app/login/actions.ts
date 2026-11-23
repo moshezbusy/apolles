@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { LOGIN_ERROR_COPY, login } from "@/server/auth/login";
 import { PASSWORD_MAX_LENGTH } from "@/server/auth/password";
+import { audit } from "@/server/audit";
 import { getClientIp } from "@/server/client-ip";
 import { SIGN_IN_RATE_LIMIT_COPY, hitIpRateLimit, refundIpRateLimit } from "@/server/rate-limit";
 import {
@@ -78,6 +79,9 @@ export async function loginAction(
       return { error: CODE_NOT_SENT_COPY[sent === "limited-hour" ? "limited-hour" : "failed"] };
     }
   }
+  // An agent on a known device is signed in now: audited here. A new device is audited when
+  // its email code is right (signin-code.ts), an admin when the TOTP code is (totp.ts).
+  if (knownDevice) await audit(result.userId, "user.sign-in", "User", result.userId, undefined, { secondStep: "known-device" });
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: true,

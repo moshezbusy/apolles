@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { PASSWORDS_DIFFER_COPY, PASSWORD_RULE_COPY } from "@/lib/password-rule";
+import { COMMON_PASSWORD_COPY, PASSWORDS_DIFFER_COPY, passwordRuleCopy } from "@/lib/password-rule";
 import { consumePasswordToken } from "@/server/auth/password-tokens";
 import { getClientIp } from "@/server/client-ip";
 import { SET_PASSWORD_RATE_LIMIT_COPY, hitIpRateLimit } from "@/server/rate-limit";
@@ -41,7 +41,9 @@ export async function setPasswordAction(
   if (password !== confirm) return { error: PASSWORDS_DIFFER_COPY };
 
   const result = await consumePasswordToken(token, password);
-  if (result === "INVALID_PASSWORD") return { error: PASSWORD_RULE_COPY };
+  if (result === "INVALID_PASSWORD") return { error: passwordRuleCopy("AGENT") };
+  if (result === "INVALID_ADMIN_PASSWORD") return { error: passwordRuleCopy("ADMIN") };
+  if (result === "COMMON_PASSWORD") return { error: COMMON_PASSWORD_COPY };
   if (result === "EXPIRED") return { status: "expired" };
   redirect("/login?reset=1");
 }

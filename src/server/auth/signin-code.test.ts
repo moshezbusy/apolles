@@ -42,6 +42,12 @@ describe("sign-in code on a new device (plan 8e)", () => {
     expect(await verifySignInCode(sessionId, codeOf())).toBe("ok");
     expect((await getSession(token))!.emailVerifiedAt).not.toBeNull();
     expect((await db.session.findUniqueOrThrow({ where: { id: sessionId } })).codeHash).toBeNull();
+    // The completed sign-in is audited once (the wrong code was not), without the code.
+    const rows = await db.auditLog.findMany({ where: { action: "user.sign-in" } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actorUserId: "u1", targetType: "User", targetId: "u1" });
+    expect(rows[0]?.after).toEqual({ secondStep: "email-code" });
+    expect(JSON.stringify(rows)).not.toContain(codeOf());
   });
 
   it("expires after 10 minutes (no strike); 3 wrong codes lock the account and end the session; at most 3 codes per sign-in", async () => {

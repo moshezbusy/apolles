@@ -1,9 +1,11 @@
 import { z } from "zod";
 import type { PasswordTokenPurpose, Role, AccountStatus } from "@/generated/prisma/enums";
+import { passwordProblem } from "@/lib/password-rule";
+import { audit } from "@/server/audit";
 import { db } from "@/server/db";
 import { sendEmail, type EmailMessage } from "@/server/email/port";
 import { normalizeEmail } from "@/server/users";
-import { hashPassword, isValidPassword } from "@/server/auth/password";
+import { hashPassword } from "@/server/auth/password";
 import { destroyUserSessions } from "@/server/auth/session";
 import { forgetDevices } from "@/server/auth/signin-code";
 import { MAX_RAW_TOKEN_LENGTH, generateRawToken, hashToken } from "@/server/auth/token";
@@ -17,7 +19,9 @@ export const PASSWORD_TOKEN_TTL_MS: Readonly<Record<PasswordTokenPurpose, number
   RESET: 60 * 60 * 1000,
 };
 
-export type ConsumePasswordTokenResult = "OK" | "EXPIRED" | "INVALID_PASSWORD";
+// INVALID_PASSWORD / INVALID_ADMIN_PASSWORD: the password breaks the rule of an agent / an
+// admin (who needs a longer one). COMMON_PASSWORD: it is on the list of most-used passwords.
+export type ConsumePasswordTokenResult = "OK" | "EXPIRED" | "INVALID_PASSWORD" | "INVALID_ADMIN_PASSWORD" | "COMMON_PASSWORD";
 
 type AccountState = {
   role: Role;
@@ -77,18 +81,20 @@ export async function issuePasswordToken(
 // set-up link has expired" to someone who was invited; it is null only for a link that was
 // never issued. Knowing the purpose needs the whole secret link, so it tells nothing about
 // who has an account.
-export type PasswordLink = { usable: boolean; purpose: PasswordTokenPurpose | null };
+// `role` is given only for a usable link: the password rule depends on it (admins need a
+// longer password), and the form shows the right rule.
+export type PasswordLink = { usable: boolean; purpose: PasswordTokenPurpose | null; role: Role | null };
 
 // Only reads; the token is not consumed.
 export async function checkPasswordLink(raw: string): Promise<PasswordLink> {
-  if (!isPlausibleToken(raw)) return { usable: false, purpose: null };
+  if (!isPlausibleToken(raw)) return { usable: false, purpose: null, role: null };
   const row = await db.passwordToken.findUnique({
     where: { tokenHash: hashToken(raw) },
     select: { purpose: true, usedAt: true, expiresAt: true, user: { select: accountSelect } },
   });
-  if (!row) return { usable: false, purpose: null };
+  if (!row) return { usable: false, purpose: null, role: null };
   const usable = row.usedAt === null && row.expiresAt.getTime() > Date.now() && isAccountActive(row.user);
-  return { usable, purpose: row.purpose };
+  return { usable, purpose: row.purpose, role: usable ? row.user.role : null };
 }
 
 // Is this link still usable, and is it a SET or a RESET link? Unknown, used, expired, or
@@ -98,24 +104,28 @@ export async function findUsablePasswordToken(raw: string): Promise<PasswordToke
   return link.usable ? link.purpose : null;
 }
 
-// Sets a new password through a link. The password rule is checked first, so a weak
-// password does not use up the link. The link is then claimed with one conditional UPDATE
-// (unused and unexpired) inside the same transaction that saves the password, clears any
-// lockout (agents only) and ends every session of the user: two parallel submits of one
-// link cannot both succeed, and a failure leaves nothing half-done.
+// Sets a new password through a link. The link is read first (junk or dead links cost nothing
+// and say nothing about the password), then the password rule of the account's role is
+// checked, so a weak password does not use up the link. The link is then claimed with one
+// conditional UPDATE (unused and unexpired) inside the same transaction that saves the
+// password, clears any lockout (agents only), ends every session of the user and writes the
+// audit row: two parallel submits of one link cannot both succeed, and a failure leaves
+// nothing half-done. Afterwards the user is told by email that the password changed.
 export async function consumePasswordToken(
   raw: string,
   newPassword: string,
 ): Promise<ConsumePasswordTokenResult> {
-  if (!isValidPassword(newPassword)) return "INVALID_PASSWORD";
-  // Cheap read first, so junk or dead links do not cost an argon2 hash.
-  if ((await findUsablePasswordToken(raw)) === null) return "EXPIRED";
+  const link = await checkPasswordLink(raw);
+  if (!link.usable || link.role === null) return "EXPIRED";
+  const problem = passwordProblem(newPassword, link.role);
+  if (problem === "RULE") return link.role === "ADMIN" ? "INVALID_ADMIN_PASSWORD" : "INVALID_PASSWORD";
+  if (problem === "COMMON") return "COMMON_PASSWORD";
 
   // argon2 is slow on purpose: hash before the transaction, not while holding locks.
   const passwordHash = await hashPassword(newPassword);
   const tokenHash = hashToken(raw);
 
-  return db.$transaction(async (tx) => {
+  const changed = await db.$transaction(async (tx) => {
     // Lock the owner's user row first, in the same order as issuePasswordToken (user, then
     // tokens), so a link issued at the same moment cannot deadlock with this one.
     await tx.$queryRaw`
@@ -129,14 +139,17 @@ export async function consumePasswordToken(
       where: { tokenHash, usedAt: null, expiresAt: { gt: now } },
       data: { usedAt: now },
     });
-    if (claimed.count !== 1) return "EXPIRED";
+    if (claimed.count !== 1) return null;
 
     const { userId, user } = await tx.passwordToken.findUniqueOrThrow({
       where: { tokenHash },
-      select: { userId: true, user: { select: accountSelect } },
+      select: { userId: true, user: { select: { ...accountSelect, email: true, name: true } } },
     });
     // Suspended since the read above: the link is spent, the password is not changed.
-    if (!isAccountActive(user)) return "EXPIRED";
+    if (!isAccountActive(user)) return null;
+    // The role changed since the read above (never happens today): do not apply the wrong rule.
+    if (user.role !== link.role) return null;
+    const firstPassword = (await tx.user.count({ where: { id: userId, passwordHash: null } })) === 1;
 
     // Agents: a new password also clears the lockout. Admins (R36): it does not, because
     // the lockout also counts wrong TOTP codes, and a reset link must not let anyone with
@@ -155,8 +168,40 @@ export async function consumePasswordToken(
     await destroyUserSessions(userId, tx);
     // Plan 8e: every device is forgotten too; the next sign-in asks for an email code.
     await forgetDevices(userId, tx);
-    return "OK";
+    // The row says that a password was set or changed and how; never the password or the link.
+    await audit(userId, firstPassword ? "user.password.set" : "user.password.change", "User", userId, undefined, { via: "link" }, tx);
+    return { email: user.email, name: user.name, firstPassword, at: now };
   });
+  if (!changed) return "EXPIRED";
+
+  await notifyPasswordChanged(changed);
+  return "OK";
+}
+
+// "2026-11-08 10:15 UTC"
+function formatUtc(date: Date): string {
+  return `${date.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+// Tells the account owner that the password was set or changed, so a change they did not make
+// is noticed at once. Best effort: the password is already saved, and a mail problem must not
+// make the change look failed. Logged without the address.
+async function notifyPasswordChanged(change: { email: string; name: string; firstPassword: boolean; at: Date }): Promise<void> {
+  try {
+    const base = appUrl();
+    await sendEmail({
+      to: change.email,
+      subject: change.firstPassword ? "Your Apolles password was set" : "Your Apolles password was changed",
+      text:
+        `Hello ${change.name},\n\n` +
+        `The password of your Apolles account was ${change.firstPassword ? "set" : "changed"} on ${formatUtc(change.at)}. ` +
+        `Every device that was signed in was signed out.\n\n` +
+        `If this was you, there is nothing to do.\n\n` +
+        `If this was not you, choose a new password right away with "Forgot password": ${base}/forgot-password\n`,
+    });
+  } catch (error) {
+    console.error("password-changed email failed", { error: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 function appUrl(): string {

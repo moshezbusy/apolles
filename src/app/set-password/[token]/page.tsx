@@ -26,8 +26,8 @@ export default async function SetPasswordPage({
 
   return (
     <AuthShell>
-      {link.usable && link.purpose ? (
-        <SetPasswordForm token={token} title={TITLES[link.purpose]} invitation={invitation} />
+      {link.usable && link.purpose && link.role ? (
+        <SetPasswordForm token={token} title={TITLES[link.purpose]} invitation={invitation} role={link.role} />
       ) : (
         <ExpiredLink invitation={invitation} />
       )}

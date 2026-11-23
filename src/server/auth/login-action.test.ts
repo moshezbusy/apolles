@@ -77,6 +77,23 @@ describe("loginAction", () => {
     sentEmails.length = 0;
   });
 
+  describe("sign-in audit", () => {
+    it("an agent on a known device: one user.sign-in row; a wrong password or a new device (code still pending) writes none", async () => {
+      const agent = await createAgent();
+      await loginAction(null, form({ email: "agent@example.com", password: "nope12345" }));
+      await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/login/verify");
+      expect(await db.auditLog.count({ where: { action: "user.sign-in" } })).toBe(0);
+
+      jar.set(DEVICE_COOKIE, await trustDevice(agent.id));
+      await expect(loginAction(null, form({ email: "agent@example.com", password: GOOD }))).rejects.toThrow("NEXT_REDIRECT:/search");
+      const rows = await db.auditLog.findMany({ where: { action: "user.sign-in" } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ actorUserId: agent.id, targetType: "User", targetId: agent.id });
+      expect(rows[0]?.after).toEqual({ secondStep: "known-device" });
+      expect(JSON.stringify(rows)).not.toContain(GOOD);
+    });
+  });
+
   describe("sign-in code that cannot be sent", () => {
     it("mail provider down → a clear message, no crash, no cookie and no half-made session left", async () => {
       await createAgent();
