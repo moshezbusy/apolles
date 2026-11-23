@@ -44,6 +44,12 @@ export type CancelPenalty = {
 
 export type BedGroup = { id: string; description: string; priceCheckToken: string };
 
+// Which supplier an offer or a booking belongs to. "expedia" is the main supplier: Expedia, or
+// the fake supplier in its place (SUPPLIER_MODE=fake). "hotelbeds" comes through the supplier
+// layer service (src/server/supplier/hotelbeds-layer). Never shown to agents or clients.
+export const SUPPLIER_IDS = ["expedia", "hotelbeds"] as const;
+export type SupplierId = (typeof SUPPLIER_IDS)[number];
+
 export type Offer = {
   propertyId: string;
   roomId: string;
@@ -56,6 +62,7 @@ export type Offer = {
   amenities: string[]; // what the rate includes (meal plan, perks), as the supplier names it
   price: PriceBreakdown; // the whole stay: the sum of roomPrices
   roomPrices: PriceBreakdown[]; // one per occupancy asked, in the same order
+  supplier?: SupplierId; // absent: the main supplier ("expedia")
 };
 
 export type PropertyOffers = { propertyId: string; offers: Offer[] };
@@ -135,7 +142,15 @@ export type BookInput = {
   bookToken: string; // from the latest price check
   affiliateReferenceId: string; // the Apolles reference (TR1), unique per booking
   lead: { givenName: string; familyName: string; email: string; phone: Phone };
-  rooms: { givenName: string; familyName: string }[]; // each room's main guest, in room order (TR5)
+  rooms: {
+    givenName: string; // each room's main guest, in room order (TR5)
+    familyName: string;
+    // Every guest of the room (adults first, then children) and its occupancy: the supplier layer
+    // needs them all; Expedia takes the main guest only and ignores these.
+    guests?: { givenName: string; familyName: string }[];
+    adults?: number;
+    childAges?: number[];
+  }[];
   specialRequest?: string; // to the hotel (on room 1), not guaranteed; never personal or payment details
 };
 
@@ -147,6 +162,9 @@ export type SupplierRoomStatus = "booked" | "pending" | "cancelled" | "other";
 
 export type RetrievedItinerary = {
   itineraryId: string;
+  // The supplier asks for a person to look at this booking (the supplier layer's reviewReason,
+  // e.g. its final price differs from the approved one). The booking is flagged for an admin.
+  reviewNeeded?: boolean;
   rooms: {
     id: string;
     status: SupplierRoomStatus;
