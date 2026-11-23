@@ -18,6 +18,7 @@ import {
 import { completeSignIn } from "@/server/auth/lockout";
 import { DEVICE_COOKIE, isTrustedDevice, sendSignInCode } from "@/server/auth/signin-code";
 import { isDemoAgentWithoutCode } from "@/server/content/demo-seed";
+import { AFTER_SIGN_IN_PATH, afterSignInPath } from "@/lib/return-path";
 import { CODE_NOT_SENT_COPY } from "./verify/copy";
 
 export type LoginFormState = { error: string } | null;
@@ -34,6 +35,9 @@ export async function loginAction(
   _previous: LoginFormState,
   formData: FormData,
 ): Promise<LoginFormState> {
+  // The page the agent was on when the session ended (only a safe path on this site).
+  const next = afterSignInPath(formData.get("next"));
+
   // Per-IP limit first: a refused request never reaches the account (no attempt slot, no
   // change to failedLogins, no password check). Every request is counted here, before the
   // check; a right password hands its count back below, so only failed attempts add up and an
@@ -84,7 +88,8 @@ export async function loginAction(
   if (knownDevice) await audit(result.userId, "user.sign-in", "User", result.userId, undefined, { secondStep: "known-device" });
   cookieStore.set(SESSION_COOKIE, token, sessionCookieOptions());
 
-  if (!result.needsTotp && !knownDevice) redirect("/login/verify");
+  // The email-code step carries the return page on, so the agent still lands there after it.
+  if (!result.needsTotp && !knownDevice) redirect(next === AFTER_SIGN_IN_PATH ? "/login/verify" : `/login/verify?next=${encodeURIComponent(next)}`);
   // Admins continue to the admin area (TOTP step is added with admin TOTP).
-  redirect(result.needsTotp ? "/admin" : "/search");
+  redirect(result.needsTotp ? "/admin" : next);
 }

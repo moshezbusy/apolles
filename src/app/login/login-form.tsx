@@ -1,15 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { alertError, btnPrimary, input, label } from "@/components/ui";
 import { loginAction, type LoginFormState } from "./actions";
 
-export function LoginForm() {
+// `next`: the page to return to after sign-in (checked again on the server, actions.ts).
+export function LoginForm({ next }: { next?: string }) {
   const [state, formAction, pending] = useActionState<LoginFormState, FormData>(
     loginAction,
     null,
   );
+  // Kept in state so the typed email stays after a wrong password (React clears the other fields).
+  const [email, setEmail] = useState("");
 
   return (
     <form action={formAction} className="flex flex-col gap-3.5" noValidate>
@@ -18,6 +21,7 @@ export function LoginForm() {
           {state.error}
         </p>
       ) : null}
+      {next ? <input type="hidden" name="next" value={next} /> : null}
 
       <label className={label}>
         Email
@@ -27,6 +31,8 @@ export function LoginForm() {
           autoComplete="email"
           required
           maxLength={254}
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
           placeholder="name@agency.com"
           className={input}
         />

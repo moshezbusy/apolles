@@ -1,5 +1,6 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { REQUEST_PATH_HEADER, safeReturnPath } from "@/lib/return-path";
 import {
   SESSION_COOKIE,
   destroySession,
@@ -17,9 +18,16 @@ async function currentSession(): Promise<SessionContext | null> {
 
 // Where to send someone without a valid session: a browser that still holds a session cookie
 // had a session that ended (12 hours, sign-out elsewhere, suspension), so the sign-in page
-// says "you were signed out" (screen 24). No cookie: the plain sign-in page.
+// says "you were signed out" (screen 24). No cookie: the plain sign-in page. Either way the
+// page the agent was on goes along as `next` (only a safe path on this site, src/proxy.ts), so
+// signing in again brings them back to it.
 async function signInPath(): Promise<string> {
-  return (await cookies()).get(SESSION_COOKIE)?.value ? "/login?expired=1" : "/login";
+  const params = new URLSearchParams();
+  if ((await cookies()).get(SESSION_COOKIE)?.value) params.set("expired", "1");
+  const next = safeReturnPath((await headers()).get(REQUEST_PATH_HEADER));
+  if (next) params.set("next", next);
+  const query = params.toString();
+  return query ? `/login?${query}` : "/login";
 }
 
 // For every agent page and server action. The agencyId comes only from the session,
