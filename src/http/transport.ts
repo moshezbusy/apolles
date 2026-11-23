@@ -19,6 +19,12 @@ export interface HttpRequest {
    */
   idempotent: boolean;
   /**
+   * Non-idempotent calls only: hand a 5xx answer back to the caller instead of turning it into
+   * OUTCOME_UNKNOWN here. The caller must then treat every 5xx as unknown unless it recognises
+   * an exact, documented refusal in the body (Hotelbeds' price-change refusal on book).
+   */
+  returnServerErrors?: boolean;
+  /**
    * Secret values (API keys, secrets) to mask wherever they appear in the
    * audit log, including supplier responses that echo them back.
    */
@@ -85,6 +91,7 @@ export class HttpTransport {
             res.status === 429 ? 'RATE_LIMITED' : 'UNAVAILABLE',
             `${req.operation}: HTTP ${res.status}`,
           );
+          if (!req.idempotent && req.returnServerErrors && res.status >= 500) return res;
           if (!req.idempotent) throw this.unknownOutcome(req, lastError);
           continue;
         }

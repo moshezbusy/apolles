@@ -229,6 +229,16 @@ describe('Hotelbeds adapter', () => {
     expect(r.total).toBeUndefined();
   });
 
+  it('Book: the exact HTTP 500 price-change refusal (seen live) is a definite failure; any other 500 stays unknown', async () => {
+    const refusal = { error: { code: 'PRODUCT_ERROR', message: 'Price has changed: Unable to book as the price difference exceeds the allowed tolerance - Current tolerance: 0.00%' } };
+    const changed = (await make([{ status: 500, body: refusal }]).adapter.book(bookReq, { requestId: 'r' }).catch((e) => e)) as SupplierError;
+    expect(changed.code).toBe('RATE_CHANGED');
+    const otherCode = (await make([{ status: 500, body: { error: { code: 'SYSTEM_ERROR', message: refusal.error.message } } }]).adapter.book(bookReq, { requestId: 'r' }).catch((e) => e)) as SupplierError;
+    expect(otherCode.code).toBe('OUTCOME_UNKNOWN');
+    const otherText = (await make([{ status: 500, body: { error: { code: 'PRODUCT_ERROR', message: 'Internal error' } } }]).adapter.book(bookReq, { requestId: 'r' }).catch((e) => e)) as SupplierError;
+    expect(otherText.code).toBe('OUTCOME_UNKNOWN');
+  });
+
   it('Book: 4xx with error = definite failure; 5xx / empty = outcome unknown', async () => {
     const sold = (await make([{ status: 400, body: { error: { code: 'PRODUCT_ERROR', message: 'Insufficient allotment' } } }]).adapter.book(bookReq, { requestId: 'r' }).catch((e) => e)) as SupplierError;
     expect(sold.code).toBe('SOLD_OUT');

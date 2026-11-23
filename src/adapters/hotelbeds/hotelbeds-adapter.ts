@@ -224,10 +224,17 @@ export class HotelbedsAdapter implements SupplierAdapter {
     };
     if (req.specialRequests) body['remark'] = req.specialRequests;
 
-    const res = await this.call<{ booking?: HbBooking; error?: HbError }>('book', 'POST', '/bookings', body, TIMEOUTS.book, ctx, false);
+    const res = await this.call<{ booking?: HbBooking; error?: HbError }>('book', 'POST', '/bookings', body, TIMEOUTS.book, ctx, false, true);
     if (res.status >= 400) {
       // A 4xx with an error body is a definite "not booked"; anything else stays unknown.
       if (res.json.error && res.status < 500) throw this.error(res, 'book');
+      // One exception, seen live on the test environment (23.11.2026): Hotelbeds answers a price
+      // change at booking time with HTTP 500, code PRODUCT_ERROR, "Price has changed: Unable to book
+      // as the price difference exceeds the allowed tolerance". That is a refusal (the tolerance check
+      // runs before anything is booked), so it is a definite "not booked", not an unknown outcome.
+      if (isPriceChangeRefusal(res.json.error)) {
+        throw new SupplierError(this.id, 'RATE_CHANGED', `book: Hotelbeds refused, ${errText(res.json.error)}`.trim(), { supplierCode: res.json.error?.code });
+      }
       throw new SupplierError(this.id, 'OUTCOME_UNKNOWN', `book: HTTP ${res.status} without a readable error`);
     }
     const b = res.json.booking;
@@ -407,6 +414,7 @@ export class HotelbedsAdapter implements SupplierAdapter {
 
   private async call<T>(
     operation: string, method: 'GET' | 'POST' | 'DELETE', path: string, body: unknown, timeoutMs: number, ctx: CallContext, idempotent: boolean,
+    returnServerErrors = false,
   ): Promise<{ status: number; json: T }> {
     const apiKey = this.cfg.secrets.get(this.cfg.secretNames.apiKey);
     const secret = this.cfg.secrets.get(this.cfg.secretNames.secret);
@@ -421,7 +429,7 @@ export class HotelbedsAdapter implements SupplierAdapter {
     const res: HttpResponse = await this.cfg.transport.send(
       {
         operation, method, url: `${this.cfg.baseUrl.replace(/\/+$/, '')}${path}`, headers,
-        body: body === undefined ? undefined : JSON.stringify(body), timeoutMs, idempotent,
+        body: body === undefined ? undefined : JSON.stringify(body), timeoutMs, idempotent, returnServerErrors,
         // Hotelbeds echoes the API key back in auditData.internal.
         sensitiveValues: [apiKey, secret],
       },
@@ -455,6 +463,13 @@ export class HotelbedsAdapter implements SupplierAdapter {
 }
 
 // --------------------------------------------------------------- helpers
+
+// Only this exact refusal is trusted on a 5xx: the code and both parts of the message must match.
+export function isPriceChangeRefusal(e: HbError | undefined): boolean {
+  if (!e || e.code !== 'PRODUCT_ERROR') return false;
+  const m = String(e.message ?? '');
+  return /price has changed/i.test(m) && /exceeds the allowed tolerance/i.test(m);
+}
 
 export function signature(apiKey: string, secret: string, unixSeconds: number): string {
   return createHash('sha256').update(`${apiKey}${secret}${unixSeconds}`).digest('hex');
