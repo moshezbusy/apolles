@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exceedsTolerance, moneyFromDecimal, moneyToDecimal, percentChange } from '../src/core/money.js';
+import { currencyExponent, exceedsTolerance, moneyFromDecimal, moneyToDecimal, percentChange } from '../src/core/money.js';
 import { otaAmount } from '../src/adapters/ota/messages.js';
 
 describe('money', () => {
@@ -13,6 +13,41 @@ describe('money', () => {
   it('never rounds a price silently', () => {
     expect(() => moneyFromDecimal('10.005', 'USD')).toThrow();
     expect(moneyFromDecimal('10.500', 'USD').minor).toBe(1050);
+  });
+  it('knows every currency without decimals, and the three-decimal ones', () => {
+    for (const c of ['BIF', 'CLP', 'DJF', 'GNF', 'ISK', 'JPY', 'KMF', 'KRW', 'PYG', 'RWF', 'UGX', 'UYI', 'VND', 'VUV', 'XAF', 'XOF', 'XPF']) {
+      expect(currencyExponent(c), c).toBe(0);
+    }
+    for (const c of ['BHD', 'IQD', 'JOD', 'KWD', 'LYD', 'OMR', 'TND']) expect(currencyExponent(c), c).toBe(3);
+    expect(currencyExponent('USD')).toBe(2);
+    expect(moneyFromDecimal('1500000', 'PYG')).toEqual({ minor: 1500000, currency: 'PYG' }); // not 150,000,000
+    expect(moneyToDecimal({ minor: 1500000, currency: 'VND' })).toBe('1500000');
+    expect(() => moneyFromDecimal('1500.50', 'UGX')).toThrow();
+  });
+  it('refuses exponent notation and negative amounts', () => {
+    expect(() => moneyFromDecimal('1e3', 'USD')).toThrow();
+    expect(() => moneyFromDecimal(1e21, 'USD')).toThrow();
+    expect(() => moneyFromDecimal(1e-7, 'USD')).toThrow();
+    expect(() => moneyFromDecimal('-12', 'USD')).toThrow(/negative/i);
+    expect(() => moneyFromDecimal(-5, 'USD')).toThrow(/negative/i);
+    expect(() => moneyFromDecimal(Number.NaN, 'USD')).toThrow();
+    expect(() => moneyFromDecimal(Number.POSITIVE_INFINITY, 'USD')).toThrow();
+  });
+  it('numbers are read through their exact decimal text, never float math', () => {
+    expect(moneyFromDecimal(305.75, 'USD')).toEqual({ minor: 30575, currency: 'USD' });
+    expect(moneyFromDecimal(17.1, 'USD').minor).toBe(1710);
+    expect(() => moneyFromDecimal(0.1 + 0.2, 'USD')).toThrow(); // 0.30000000000000004: more precision than cents
+  });
+  it('rounds half-up only when asked, on the decimal digits', () => {
+    const round = { round: 'half-up' } as const;
+    expect(moneyFromDecimal('10.555', 'EUR', round).minor).toBe(1056);
+    expect(moneyFromDecimal('10.554', 'EUR', round).minor).toBe(1055);
+    expect(moneyFromDecimal('2.675', 'USD', round).minor).toBe(268); // float math says 267
+    expect(moneyFromDecimal(1391.794, 'USD', round).minor).toBe(139179);
+    expect(moneyFromDecimal(0.285, 'USD', round).minor).toBe(29);
+    expect(moneyFromDecimal('1234.5', 'JPY', round).minor).toBe(1235);
+    expect(moneyFromDecimal('0.999', 'USD', round).minor).toBe(100);
+    expect(() => moneyFromDecimal('-0.285', 'USD', round)).toThrow();
   });
   it('rejects garbage', () => {
     expect(() => moneyFromDecimal('1,000.00', 'USD')).toThrow();

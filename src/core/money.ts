@@ -10,35 +10,59 @@ export interface Money {
   currency: string;
 }
 
+/**
+ * ISO 4217 minor units for every currency that does not have 2 decimals.
+ * A missing entry here is a price off by a factor of 100 (1,500,000 PYG
+ * read as 150,000,000), so the list is complete, not "the common ones".
+ */
 const EXPONENTS: Record<string, number> = {
-  JPY: 0, KRW: 0, CLP: 0, ISK: 0, VND: 0, XAF: 0, XOF: 0,
-  BHD: 3, JOD: 3, KWD: 3, OMR: 3, TND: 3, LYD: 3, IQD: 3,
+  // no decimals
+  BIF: 0, CLP: 0, DJF: 0, GNF: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0, PYG: 0, RWF: 0,
+  UGX: 0, UYI: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0, XPF: 0,
+  // three decimals
+  BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
+  // four decimals (accounting units, not used for payments)
+  CLF: 4, UYW: 4,
 };
 
 export function currencyExponent(currency: string): number {
   return EXPONENTS[currency.toUpperCase()] ?? 2;
 }
 
-/** Parse "1234.5" / "1234.50" / "-12" exactly. Throws on anything else. */
-export function moneyFromDecimal(value: string | number, currency: string): Money {
+export interface MoneyParseOptions {
+  /**
+   * What to do with more decimals than the currency has. Default: refuse
+   * (never round a price silently). 'half-up' is for suppliers whose API is
+   * known to send extra decimals (TBO, Hotelbeds); the rounding is done on
+   * the decimal digits, not with float math.
+   */
+  round?: 'half-up';
+}
+
+/**
+ * Parse "1234.5" / "1234.50" exactly, digit by digit. A number is read
+ * through its decimal text (305.75 -> "305.75"), never multiplied as a
+ * float. Refused: negative amounts (a supplier price or fee is never
+ * negative), exponent notation ("1e3"), separators, anything else.
+ */
+export function moneyFromDecimal(value: string | number, currency: string, opts: MoneyParseOptions = {}): Money {
   const cur = normalizeCurrency(currency);
   const exp = currencyExponent(cur);
-  const str = typeof value === 'number' ? numberToPlainString(value) : value.trim();
-  const m = /^(-)?(\d+)(?:\.(\d+))?$/.exec(str);
+  if (typeof value === 'number' && !Number.isFinite(value)) throw new Error(`Invalid money amount: ${value}`);
+  // String(number) is the shortest text that reads back as the same number; very large or small numbers come out as "1e+21" and are refused below.
+  const str = typeof value === 'number' ? String(value) : String(value).trim();
+  if (str.startsWith('-')) throw new Error(`Negative money amount refused: "${value}"`);
+  const m = /^(\d+)(?:\.(\d+))?$/.exec(str);
   if (!m) throw new Error(`Invalid money amount: "${value}"`);
-  const [, sign, whole, fracRaw = ''] = m;
-  let frac = fracRaw;
-  if (frac.length > exp) {
-    // Only allow extra digits if they are zeros; never silently round a price.
-    if (/[^0]/.test(frac.slice(exp))) {
-      throw new Error(`Amount "${value}" has more precision than ${cur} allows`);
-    }
-    frac = frac.slice(0, exp);
+  const [, whole, frac = ''] = m;
+  let minor = BigInt(`${whole}${frac.slice(0, exp).padEnd(exp, '0')}`);
+  const extra = frac.slice(exp);
+  if (/[^0]/.test(extra)) {
+    if (opts.round !== 'half-up') throw new Error(`Amount "${value}" has more precision than ${cur} allows`);
+    if (extra.charCodeAt(0) - 48 >= 5) minor += 1n;
   }
-  frac = frac.padEnd(exp, '0');
-  const minor = Number(`${whole}${frac}`);
-  if (!Number.isSafeInteger(minor)) throw new Error(`Amount out of range: "${value}"`);
-  return { minor: sign ? -minor : minor, currency: cur };
+  if (minor > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`Amount out of range: "${value}"`);
+  return { minor: Number(minor), currency: cur };
 }
 
 export function moneyToDecimal(m: Money): string {
@@ -101,8 +125,3 @@ function normalizeCurrency(c: string): string {
   return cur;
 }
 
-function numberToPlainString(n: number): string {
-  if (!Number.isFinite(n)) throw new Error(`Invalid money amount: ${n}`);
-  // toFixed(6) then strip zeros avoids exponent notation for normal prices.
-  return n.toFixed(6).replace(/\.?0+$/, '');
-}
