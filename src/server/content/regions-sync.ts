@@ -1,8 +1,9 @@
 import { db } from "@/server/db";
 import { ExpediaContentSource } from "@/server/supplier/expedia/content";
 import type { ContentSource, RegionInfo } from "@/server/supplier/types";
+import { type Sleep, withSyncRetry } from "./retry";
 import { CONTENT_COUNTRIES } from "./scope";
-import { finishSyncRun, startSyncRun } from "./sync-run";
+import { finishSyncRun, skipSyncForDemo, startSyncRun, syncHeartbeat } from "./sync-run";
 
 // Daily destinations sync (plan 2b, task 4). For every country in CONTENT_COUNTRIES, follows
 // every page of Rapid /regions (cities and multi-city areas, with their hotel ids). Each
@@ -11,9 +12,15 @@ import { finishSyncRun, startSyncRun } from "./sync-run";
 // nothing, records the run FAILED, and the job queue retries it. A country that returns fewer
 // than half of its active regions (none, say) also fails the run: that is a supplier problem,
 // not cities that closed overnight.
+// A page that times out or is rate limited is asked for again (up to 3 tries, retry.ts) before
+// the run gives up. With the demo supplier the sync does nothing (skipSyncForDemo).
 
 const MAX_PAGES_PER_COUNTRY = 500; // a supplier loop must not keep the worker busy forever
 const MIN_KEPT_SHARE = 0.5;
+// A page can hold big cities with tens of thousands of hotel links: far more than the default
+// 5 seconds of a transaction. The links are written in pieces, within a generous limit.
+const SAVE_TIMEOUT_MS = 120_000;
+const LINKS_PER_STATEMENT = 10_000;
 
 // One page of regions in one transaction: a few statements per page, not per region.
 async function savePage(regions: RegionInfo[], runId: string): Promise<void> {
@@ -39,14 +46,18 @@ async function savePage(regions: RegionInfo[], runId: string): Promise<void> {
         "countryCode" = EXCLUDED."countryCode", "propertyCount" = EXCLUDED."propertyCount",
         "active" = true, "seenRunId" = EXCLUDED."seenRunId", "updatedAt" = now()`;
     await tx.destinationProperty.deleteMany({ where: { destinationId: { in: rows.map((r) => r.id) } } });
-    if (links.length > 0) await tx.destinationProperty.createMany({ data: links, skipDuplicates: true });
-  });
+    for (let i = 0; i < links.length; i += LINKS_PER_STATEMENT) {
+      await tx.destinationProperty.createMany({ data: links.slice(i, i + LINKS_PER_STATEMENT), skipDuplicates: true });
+    }
+  }, { timeout: SAVE_TIMEOUT_MS, maxWait: 10_000 });
 }
 
-export async function syncRegions(deps: { source?: ContentSource } = {}): Promise<{ destinations: number; deactivated: number }> {
+export async function syncRegions(deps: { source?: ContentSource; sleep?: Sleep } = {}): Promise<{ destinations: number; deactivated: number }> {
+  const counts = { destinations: 0, deactivated: 0 };
+  if (skipSyncForDemo("content.regions", deps.source !== undefined)) return counts;
   const source = deps.source ?? new ExpediaContentSource();
   const run = await startSyncRun("content.regions");
-  const counts = { destinations: 0, deactivated: 0 };
+  const alive = syncHeartbeat(run.id);
 
   try {
     for (const countryCode of CONTENT_COUNTRIES) {
@@ -54,7 +65,8 @@ export async function syncRegions(deps: { source?: ContentSource } = {}): Promis
       let seen = 0;
       for (let page = 0; ; page++) {
         if (page >= MAX_PAGES_PER_COUNTRY) throw new Error(`regions sync: more than ${MAX_PAGES_PER_COUNTRY} pages for ${countryCode}`);
-        const result = await source.listRegions(next ? { countryCode, next } : { countryCode });
+        const result = await withSyncRetry(() => source.listRegions(next ? { countryCode, next } : { countryCode }), deps.sleep);
+        await alive(); // also stops a run that a newer one took over, before it writes
         await savePage(result.regions, run.id);
         seen += result.regions.length;
         counts.destinations += result.regions.length;
@@ -67,6 +79,7 @@ export async function syncRegions(deps: { source?: ContentSource } = {}): Promis
       }
     }
 
+    await alive(true); // never deactivate from a run that was taken over
     counts.deactivated = await db.destination
       .updateMany({
         where: { countryCode: { in: [...CONTENT_COUNTRIES] }, seenRunId: { not: run.id }, active: true },
