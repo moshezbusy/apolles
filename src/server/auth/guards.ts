@@ -18,13 +18,13 @@ async function currentSession(): Promise<SessionContext | null> {
 
 // Where to send someone without a valid session: a browser that still holds a session cookie
 // had a session that ended (12 hours, sign-out elsewhere, suspension), so the sign-in page
-// says "you were signed out" (screen 24). No cookie: the plain sign-in page. Either way the
-// page the agent was on goes along as `next` (only a safe path on this site, src/proxy.ts), so
-// signing in again brings them back to it.
-async function signInPath(): Promise<string> {
+// says "you were signed out" (screen 24). No cookie: the plain sign-in page. For an agent page
+// the page the agent was on goes along as `next` (only a safe path on this site, src/proxy.ts),
+// so signing in again brings them back to it. Admins always continue to /admin.
+async function signInPath({ returnHere }: { returnHere: boolean }): Promise<string> {
   const params = new URLSearchParams();
   if ((await cookies()).get(SESSION_COOKIE)?.value) params.set("expired", "1");
-  const next = safeReturnPath((await headers()).get(REQUEST_PATH_HEADER));
+  const next = returnHere ? safeReturnPath((await headers()).get(REQUEST_PATH_HEADER)) : null;
   if (next) params.set("next", next);
   const query = params.toString();
   return query ? `/login?${query}` : "/login";
@@ -34,7 +34,7 @@ async function signInPath(): Promise<string> {
 // never from the request. Anyone else (no session, expired, suspended, admin) goes to /login.
 export async function requireAgent(): Promise<{ userId: string; agencyId: string }> {
   const session = await currentSession();
-  if (!session) redirect(await signInPath());
+  if (!session) redirect(await signInPath({ returnHere: true }));
   if (session.user.role !== "AGENT" || !session.agency) redirect("/login");
   // Plan 8e: a new device must enter the email sign-in code first.
   if (!session.emailVerifiedAt) redirect("/login/verify");
@@ -57,7 +57,7 @@ export async function requireAgentPendingCode(): Promise<{ userId: string; sessi
 //   code not entered yet       → /admin/2fa
 export async function requireAdmin(): Promise<{ userId: string }> {
   const session = await currentSession();
-  if (!session) redirect(await signInPath());
+  if (!session) redirect(await signInPath({ returnHere: false }));
   if (session.user.role !== "ADMIN") redirect("/login");
   if (!session.user.totpConfirmedAt) redirect("/admin/2fa/setup");
   if (!session.totpVerifiedAt) redirect("/admin/2fa");

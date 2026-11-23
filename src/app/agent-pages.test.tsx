@@ -10,6 +10,7 @@ vi.mock("next/navigation", () => ({
   redirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
+  usePathname: vi.fn(() => null), // the header marks the open section (NavSection.tsx)
 }));
 vi.mock("@/server/auth/guards", () => ({ requireAgent: vi.fn() }));
 
