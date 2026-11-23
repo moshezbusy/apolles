@@ -1,4 +1,5 @@
 import http from "node:http";
+import { isIP } from "node:net";
 import { pathToFileURL } from "node:url";
 import { createApollesClient, TokenRejected } from "./apolles-client";
 import { loadConfig, type McpConfig } from "./config";
@@ -22,6 +23,29 @@ const SHUTDOWN_GRACE_MS = 25_000;
 const KNOWN_METHODS = new Set(["initialize", "ping", "tools/list", "tools/call", "notifications/initialized", "notifications/cancelled"]);
 
 type Answer = { status: number; headers?: Record<string, string>; json?: unknown; label?: string };
+
+// One bare IP literal (IPv6 lower-cased), or null. No port, brackets or zone: only an address
+// may reach the app's rate-limit keys.
+function ipLiteral(text: string | undefined): string | null {
+  if (text === undefined || text.includes("%")) return null;
+  const version = isIP(text);
+  if (version === 4) return text;
+  if (version === 6) return text.toLowerCase();
+  return null;
+}
+
+// The assistant's address, passed on to the app (F4): the right-most X-Forwarded-For entry,
+// which the one proxy in front of us (Caddy) set, else the socket's address. Anything to its left
+// was sent by the client and is never used.
+export function clientIpOf(req: http.IncomingMessage): string | null {
+  const header = req.headers["x-forwarded-for"];
+  const value = Array.isArray(header) ? header.join(",") : header;
+  if (value !== undefined) {
+    const forwarded = ipLiteral(value.split(",").at(-1)?.trim());
+    if (forwarded !== null) return forwarded;
+  }
+  return ipLiteral(req.socket.remoteAddress);
+}
 
 function bearerOf(header: string | undefined): string | null {
   const match = header?.match(/^Bearer +(\S+)$/i);
@@ -100,6 +124,7 @@ export function createMcpServer(cfg: McpConfig, fetchFn: typeof fetch = fetch): 
     // Every POST needs a token: this is how an assistant finds out where to sign in.
     const token = bearerOf(req.headers.authorization);
     if (token === null) return unauthorized;
+    const clientIp = clientIpOf(req);
 
     const body = await readBody(req);
     if (body === "too_large") return { status: 413, headers: { Connection: "close" }, json: { error: "too_large" } };
@@ -109,7 +134,7 @@ export function createMcpServer(cfg: McpConfig, fetchFn: typeof fetch = fetch): 
     try {
       outcome = await handleRpc(body, {
         listTools,
-        callTool: (name, args) => callTool(name, args, (path, apiBody) => client.post(path, token, apiBody)),
+        callTool: (name, args) => callTool(name, args, (path, apiBody) => client.post(path, token, apiBody, clientIp)),
       });
     } catch (error) {
       if (error instanceof TokenRejected) return { ...unauthorized, label: "tools/call" };

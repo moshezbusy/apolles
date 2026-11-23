@@ -5,6 +5,7 @@ import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import { seedRateLimit } from "@/test/rate-limit";
 import { exchangeCode, issueAuthCode, verifyAiToken } from "@/server/ai/tokens";
+import { hotelLink } from "@/server/ai/links";
 import { aiRates, aiSearch, type AiAuth } from "@/server/ai/search-api";
 import { ExpediaAdapter } from "@/server/supplier/expedia/adapter";
 import { SupplierRateLimited } from "@/server/supplier/expedia/client";
@@ -19,12 +20,19 @@ vi.mock("@/server/ai/tokens", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/ai/tokens")>();
   return { ...actual, verifyAiToken: vi.fn(actual.verifyAiToken) };
 });
+// The link builder too (same behaviour), so a test can make the work fail after the caller checks.
+vi.mock("@/server/ai/links", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/ai/links")>();
+  return { ...actual, hotelLink: vi.fn(actual.hotelLink) };
+});
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 const RESOURCE = "https://mcp.example.test/mcp";
 const REDIRECT = "https://claude.ai/api/mcp/auth_callback";
-const SERVICE_KEY = "test-service-key-0123456789";
-const IP = "198.51.100.20";
+// At least 32 characters (F9).
+const SERVICE_KEY = "test-service-key-0123456789-abcdef";
+const IP = "198.51.100.20"; // the address the request came from (the MCP server's, in production)
+const CLIENT_IP = "203.0.113.50"; // the assistant's address, passed on by the MCP server
 const MINUTE = 60_000;
 const DAY = 86_400_000;
 const SEARCH_MESSAGE = "Check the destination, dates and guests.";
@@ -139,7 +147,7 @@ async function agent(email: string) {
 }
 
 type Agent = Awaited<ReturnType<typeof agent>>;
-const authOf = (a: Agent): AiAuth => ({ serviceKey: SERVICE_KEY, bearer: a.token, ip: IP });
+const authOf = (a: Agent, clientIp: string | null = CLIENT_IP): AiAuth => ({ serviceKey: SERVICE_KEY, bearer: a.token, ip: IP, clientIp });
 
 const searchBody = {
   destination_id: "paris",
@@ -168,6 +176,10 @@ afterEach(() => {
 
 async function search(body: unknown, deps = fakeAdapter(), who: Agent = a) {
   return aiSearch(authOf(who), body, { adapter: deps.adapter, content: none, now: NOW });
+}
+
+async function resetBuckets() {
+  await db.rateLimitBucket.deleteMany({});
 }
 
 async function auditRows() {
@@ -210,35 +222,80 @@ describe("caller checks, in order", () => {
     expect((await search(searchBody)).status).toBe(401);
   });
 
-  it("10 wrong keys from one IP → the 11th call is refused with 429 even with the right key, before any token lookup", async () => {
+  // F4: a valid key is never refused because of earlier failures (an internal container could
+  // otherwise lock the MCP server out); failures are only counted and logged.
+  it("wrong keys are counted and logged, a louder line at 10; the right key still passes", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    for (let i = 0; i < 10; i++) {
-      expect(await aiSearch({ serviceKey: `wrong-${i}`, bearer: a.token, ip: IP }, searchBody)).toEqual({ status: 401, json: { error: "unauthorized" } });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (let i = 0; i < 12; i++) {
+      expect(await aiSearch({ serviceKey: `wrong-${i}`, bearer: a.token, ip: IP, clientIp: CLIENT_IP }, searchBody)).toEqual({
+        status: 401,
+        json: { error: "unauthorized" },
+      });
     }
-    expect(await aiSearch(authOf(a), searchBody, { adapter: fakeAdapter().adapter, content: none, now: NOW })).toEqual({ status: 429, json: { error: "rate_limited" } });
-    expect(await aiRates(authOf(a), { search_id: "x", hotel_id: "1" })).toEqual({ status: 429, json: { error: "rate_limited" } });
     expect(verifyAiToken).not.toHaveBeenCalled();
-    // Only the failures were counted; the refused calls did not add to them.
-    const fails = await db.rateLimitBucket.findMany({ where: { key: `ai-api:keyfail:ip:${IP}` } });
-    expect(fails.map((b) => b.count)).toEqual([10]);
-    // One fixed line per failure: neither the key nor the address.
-    expect(warn.mock.calls).toEqual(Array.from({ length: 10 }, () => ["ai api: bad service key"]));
-    // Another address is not affected.
-    expect((await aiSearch({ ...authOf(a), ip: "198.51.100.21" }, searchBody, { adapter: fakeAdapter().adapter, content: none, now: NOW })).status).toBe(200);
-  });
-
-  it("good calls are not limited by the IP: 700 in a minute from one address still pass", async () => {
-    await seedRateLimit(`ai-api:ip:${IP}`, 700, MINUTE);
     expect((await search(searchBody)).status).toBe(200);
-    const rates = await aiRates(authOf(a), { search_id: "nope", hotel_id: "1" }, { now: NOW });
-    expect(rates.status).toBe(404);
+    expect((await aiRates(authOf(a), { search_id: "x", hotel_id: "1" })).status).toBe(404);
+    // Counted per address the request came from, never per the client address it claims.
+    const fails = await db.rateLimitBucket.findMany({ where: { key: { startsWith: "ai-api:keyfail:" } } });
+    expect(fails.map((b) => [b.key, b.count])).toEqual([[`ai-api:keyfail:ip:${IP}`, 12]]);
+    // Fixed lines: neither the key nor the address.
+    expect(warn.mock.calls).toEqual(Array.from({ length: 12 }, () => ["ai api: bad service key"]));
+    expect(error.mock.calls).toEqual([["ai api: repeated bad service keys"]]);
   });
 
-  it("the loose per-IP ceiling: the 6,001st call in a minute → 429, before the key and the token are checked", async () => {
-    await seedRateLimit(`ai-api:ip:${IP}`, 6_000, MINUTE);
+  it("the client address is ignored without the right key: nothing is counted for it", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await seedRateLimit(`ai-api:badtoken:ip:${CLIENT_IP}`, 30, 15 * MINUTE);
+    await seedRateLimit(`ai-api:ip:${CLIENT_IP}`, 600, MINUTE);
+    // Without the key, the full buckets of that client address do not matter: 401, not 429.
+    expect(await aiSearch({ serviceKey: "wrong", bearer: "junk", ip: IP, clientIp: CLIENT_IP }, searchBody)).toEqual({ status: 401, json: { error: "unauthorized" } });
+    const buckets = await db.rateLimitBucket.findMany({ where: { key: { contains: CLIENT_IP } } });
+    expect(buckets.map((b) => b.count)).toEqual([30, 30, 600, 600]);
+  });
+
+  // F4: every MCP call reaches the app from the MCP server's one address; the per-IP limits use
+  // the assistant's address the server passes on, so one caller cannot use them up for all.
+  it("the per-IP ceiling (600 a minute) counts the client address: its 601st call → 429 before the token is checked", async () => {
+    await seedRateLimit(`ai-api:ip:${CLIENT_IP}`, 600, MINUTE);
     expect(await aiSearch(authOf(a), searchBody)).toEqual({ status: 429, json: { error: "rate_limited" } });
-    expect(await aiRates({ serviceKey: null, bearer: null, ip: IP }, {})).toEqual({ status: 429, json: { error: "rate_limited" } });
+    expect(await aiRates(authOf(a), {})).toEqual({ status: 429, json: { error: "rate_limited" } });
     expect(verifyAiToken).not.toHaveBeenCalled();
+    // Another client behind the same MCP server is not affected, nor is the server's own address.
+    expect((await aiSearch(authOf(a, "203.0.113.51"), searchBody, { adapter: fakeAdapter().adapter, content: none, now: NOW })).status).toBe(200);
+    expect(await db.rateLimitBucket.count({ where: { key: `ai-api:ip:${IP}` } })).toBe(0);
+  });
+
+  it("30 invalid tokens from one client address in 15 minutes → its next call is 429 before any token lookup", async () => {
+    for (let i = 0; i < 30; i++) {
+      expect(await aiSearch({ ...authOf(a), bearer: `junk-${i}` }, searchBody)).toEqual({ status: 401, json: { error: "invalid_token" } });
+    }
+    vi.mocked(verifyAiToken).mockClear();
+    expect(await aiSearch(authOf(a), searchBody)).toEqual({ status: 429, json: { error: "rate_limited" } });
+    expect(await aiRates({ ...authOf(a), bearer: null }, {})).toEqual({ status: 429, json: { error: "rate_limited" } });
+    expect(verifyAiToken).not.toHaveBeenCalled();
+    // Only invalid tokens count; the refused calls did not add to them.
+    const bad = await db.rateLimitBucket.findMany({ where: { key: { startsWith: "ai-api:badtoken:" } } });
+    expect(bad.map((b) => [b.key, b.count])).toEqual([[`ai-api:badtoken:ip:${CLIENT_IP}`, 30]]);
+    // Another client address is not affected.
+    expect((await aiSearch(authOf(a, "203.0.113.51"), searchBody, { adapter: fakeAdapter().adapter, content: none, now: NOW })).status).toBe(200);
+  });
+
+  it("good calls do not count as invalid tokens", async () => {
+    for (let i = 0; i < 3; i++) expect((await search(searchBody)).status).toBe(200);
+    expect(await db.rateLimitBucket.count({ where: { key: { startsWith: "ai-api:badtoken:" } } })).toBe(0);
+  });
+
+  it("a client address that is not one IP address is never used: the request's own address is", async () => {
+    for (const clientIp of [null, "", "unknown", "203.0.113.5, 198.51.100.9", "not an ip", "203.0.113.5:80", "x".repeat(300)]) {
+      await resetBuckets();
+      expect((await aiSearch({ ...authOf(a, clientIp), bearer: "junk" }, searchBody)).status).toBe(401);
+      const keys = (await db.rateLimitBucket.findMany({ where: { key: { startsWith: "ai-api:" } } })).map((b) => b.key).sort();
+      expect(keys, String(clientIp)).toEqual([`ai-api:badtoken:ip:${IP}`, `ai-api:ip:${IP}`]);
+    }
+    await resetBuckets();
+    expect((await aiSearch({ ...authOf(a, "2001:DB8::1"), bearer: "junk" }, searchBody)).status).toBe(401);
+    expect(await db.rateLimitBucket.count({ where: { key: "ai-api:badtoken:ip:2001:db8::1" } })).toBe(1);
   });
 
   it("21st tool call by one agent in a minute → 429 rate_limited (audited)", async () => {
@@ -490,6 +547,12 @@ describe("unexpected errors after the caller is known", () => {
     const rows = await db.auditLog.findMany({ where: { action: "ai.get_hotel_rates" } });
     expect(rows.map((r) => r.after)).toEqual([{ outcome: "error" }]);
 
+    // The route: APP_URL must be valid now (without it the API is closed, F10), so the link
+    // builder fails instead.
+    vi.stubEnv("APP_URL", "https://app.example.test/");
+    vi.mocked(hotelLink).mockImplementationOnce(() => {
+      throw new Error("boom");
+    });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await ratesRoute.POST(
       new Request("https://app.example.test/api/ai/v1/rates", {
@@ -597,6 +660,19 @@ describe("get_hotel_rates", () => {
     expect(link.searchParams.get("hotel")).toBe("1");
   });
 
+  // F11: the assistant's own per-agency bucket, never the website's hotel-page bucket.
+  it("rate lookups use the assistant's own agency bucket: a full website bucket does not stop them", async () => {
+    const found = await search(searchBody);
+    const args = { search_id: (found.json as { search_id: string }).search_id, hotel_id: "1" };
+    await seedRateLimit(`hotel:agency:${a.agencyId}`, 120, MINUTE);
+    expect((await aiRates(authOf(a), args, { now: NOW })).status).toBe(200);
+    await db.rateLimitBucket.deleteMany({ where: { key: `ai-hotel:agency:${a.agencyId}` } });
+    await seedRateLimit(`ai-hotel:agency:${a.agencyId}`, 60, MINUTE);
+    const limited = await aiRates(authOf(a), args, { now: NOW });
+    expect(limited.status).toBe(429);
+    expect(limited.json).toMatchObject({ error: "rate_limited" });
+  });
+
   it("an expired search → 404 with the message to search again", async () => {
     const id = await searchId();
     const later = new Date(NOW.getTime() + 31 * MINUTE);
@@ -684,7 +760,7 @@ describe("routes /api/ai/v1/search and /api/ai/v1/rates", () => {
 
   it("on → POST only; other methods 405", async () => {
     for (const route of [searchRoute, ratesRoute]) {
-      const res = await route.GET();
+      const res = await route.GET(post("/api/ai/v1/search", "{}"));
       expect(res.status).toBe(405);
       expect(res.headers.get("allow")).toBe("POST");
     }
@@ -714,6 +790,49 @@ describe("routes /api/ai/v1/search and /api/ai/v1/rates", () => {
     const notJson = await ratesRoute.POST(post("/api/ai/v1/rates", "{not json", auth));
     expect(notJson.status).toBe(400);
     expect(await notJson.json()).toMatchObject({ error: "invalid_request" });
+  });
+
+  // F10: Next.js itself fills X-Forwarded-For with the caller's address when a request has none,
+  // so that header cannot tell the MCP server from the internet. A request that came through the
+  // public proxy names the app's public host (Host, or X-Forwarded-Host when the proxy rewrites
+  // Host); the MCP server calls the internal address. Those get the same 404 as "off".
+  it("a request for the app's public host → 404 for every method, before any check", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const auth = { authorization: `Bearer ${a.token}` };
+    for (const extra of [{ host: "app.example.test" }, { host: "APP.example.test:443" }, { "x-forwarded-host": "app.example.test" }, { host: "apolles-staging:3000", "x-forwarded-host": "app.example.test" }]) {
+      for (const route of [searchRoute, ratesRoute]) {
+        for (const method of ["POST", "GET", "PUT", "PATCH", "DELETE", "OPTIONS"] as const) {
+          const handler = route[method] as (r: Request) => Promise<Response>;
+          const res = await handler(post("/api/ai/v1/search", JSON.stringify(searchBody), { ...auth, ...extra }));
+          expect(res.status, `${method} ${JSON.stringify(extra)}`).toBe(404);
+          expect(res.headers.get("cache-control")).toBe("no-store");
+        }
+      }
+    }
+    expect(verifyAiToken).not.toHaveBeenCalled();
+    expect(await db.rateLimitBucket.count({ where: { key: { startsWith: "ai-api:" } } })).toBe(0);
+  });
+
+  it("APP_URL not valid → closed (the public host cannot be told apart)", async () => {
+    vi.stubEnv("APP_URL", "not a url");
+    expect((await searchRoute.POST(post("/api/ai/v1/search", JSON.stringify(searchBody), { authorization: `Bearer ${a.token}` }))).status).toBe(404);
+    expect(verifyAiToken).not.toHaveBeenCalled();
+  });
+
+  it("the internal address (with the X-Forwarded-For Next.js adds) is answered", async () => {
+    const res = await searchRoute.POST(post("/api/ai/v1/search", JSON.stringify(searchBody), { host: "apolles-staging:3000", "x-forwarded-for": "172.18.0.7", authorization: `Bearer ${a.token}` }));
+    expect(res.status).not.toBe(404);
+    expect((await searchRoute.GET(post("/api/ai/v1/search", "{}", { host: "apolles-staging:3000" }))).status).toBe(405);
+  });
+
+  it("the client address header reaches the limits only with the right key", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await ratesRoute.POST(post("/api/ai/v1/rates", JSON.stringify({ search_id: "x", hotel_id: "1" }), { authorization: "Bearer junk", "x-apolles-client-ip": CLIENT_IP }));
+    expect(res.status).toBe(401);
+    expect(await db.rateLimitBucket.count({ where: { key: `ai-api:badtoken:ip:${CLIENT_IP}` } })).toBe(1);
+    const noKey = await ratesRoute.POST(post("/api/ai/v1/rates", "{}", { "x-apolles-service-key": "wrong", authorization: "Bearer junk", "x-apolles-client-ip": "203.0.113.77" }));
+    expect(noKey.status).toBe(401);
+    expect(await db.rateLimitBucket.count({ where: { key: { contains: "203.0.113.77" } } })).toBe(0);
   });
 
   it("a session cookie without a token is not accepted", async () => {

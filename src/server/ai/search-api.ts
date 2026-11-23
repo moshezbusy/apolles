@@ -4,24 +4,28 @@ import { isCountryCode } from "@/lib/countries";
 import { currencyExponent, type Money } from "@/lib/supplier-money";
 import { audit } from "@/server/audit";
 import type { getContent } from "@/server/content/content-cache";
-import { getClientIp } from "@/server/client-ip";
+import { bareIp, getClientIp } from "@/server/client-ip";
 import { db } from "@/server/db";
 import { hitRateLimit, peekRateLimit } from "@/server/rate-limit";
 import { destinationById, suggestDestinations } from "@/server/search/destinations";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "@/server/search/errors";
 import { getHotelOffers, listResults, searchSummary, startSearch, type HotelCard, type ListOptions } from "@/server/search/search";
 import type { Occupancy, Offer, SupplierAdapter } from "@/server/supplier/types";
-import { mcpResource, serviceKeyMatches } from "./config";
+import { aiSearchEnabled, appPublicHost, mcpResource, serviceKeyMatches } from "./config";
 import { hotelLink } from "./links";
 import { verifyAiToken } from "./tokens";
 
 // The internal AI search API (plan 11, design §5 and §7): the only way the separate MCP server
 // reaches Apolles. Search only: it starts and reads searches of the token's own agency and never
-// touches bookings, money or clients. Checks, in this order, on every call:
-//   1. a loose per-IP ceiling, and a refusal once one address has sent 10 wrong service keys in
-//      15 minutes (only failures count: all real traffic comes from the MCP server's one address,
-//      often seen as "unknown", so a tight per-IP limit would lock every agent out at once),
-//   2. the MCP server's own service key (no token lookup without it),
+// touches bookings, money or clients. A request for the app's public host came through the
+// public proxy, not from the MCP server: 404, as when the feature is off. Then, in this order,
+// on every call:
+//   1. the MCP server's own service key, always compared (no token lookup without it). Wrong
+//      keys are counted per address and logged, but never lock out a right key: every real call
+//      comes from the MCP server's one address,
+//   2. per-IP limits on the assistant's own address, which the MCP server passes on in
+//      X-Apolles-Client-Ip (read only with the right key, and only as one IP literal): a loose
+//      ceiling, and a refusal once that address has sent 30 invalid tokens in 15 minutes,
 //   3. the agent's search token (read from the database every time: a revoke or a suspension
 //      stops the very next call),
 //   4. the agent's tool-call limits (per minute and per day),
@@ -30,7 +34,9 @@ import { verifyAiToken } from "./tokens";
 // Every call that passed 1-3 writes one audit row: the agent, the connection and the outcome
 // (also "error" when something unexpected failed); never the token, the IP or text from the request.
 
-export type AiAuth = { serviceKey: string | null; bearer: string | null; ip: string };
+// `ip`: the address the request came from (getClientIp). `clientIp`: the assistant's address as
+// the MCP server passed it on, unchecked; trusted only once the service key matched.
+export type AiAuth = { serviceKey: string | null; bearer: string | null; ip: string; clientIp?: string | null };
 export type ApiResult = { status: 200 | 400 | 401 | 403 | 404 | 429 | 503; json: unknown };
 // Tests inject the supplier, the content source and the clock; production passes nothing.
 export type AiDeps = { adapter?: SupplierAdapter; content?: typeof getContent; now?: Date };
@@ -38,8 +44,11 @@ export type AiDeps = { adapter?: SupplierAdapter; content?: typeof getContent; n
 type Caller = { connectionId: string; userId: string; agencyId: string };
 type Outcome = "ok" | "rate_limited" | "invalid" | "unavailable" | "not_found" | "ambiguous" | "error";
 
-const IP_LIMIT = { limit: 6_000, windowMs: 60_000 }; // backstop only
-const KEY_FAILURES = { limit: 10, windowMs: 15 * 60_000 }; // wrong service keys per IP
+const IP_LIMIT = { limit: 600, windowMs: 60_000 }; // per assistant address, backstop only
+const BAD_TOKENS = { limit: 30, windowMs: 15 * 60_000 }; // invalid tokens per assistant address
+// Wrong service keys per address: counted for the log only (a 48-byte random key cannot be
+// guessed); at the 10th in the window, one louder line.
+const KEY_FAILURES = { alarmAt: 10, windowMs: 15 * 60_000 };
 // Per agent, every tool call. The day bucket has its own key: buckets are rows keyed by
 // (key, window start), and at midnight UTC a minute window and the day window start together.
 const AGENT_LIMITS = [
@@ -135,18 +144,25 @@ const roomsOut = (rooms: Occupancy[]) => rooms.map((r) => ({ adults: r.adults, c
 // Steps 1-4. `deny` is the answer when a check fails; a caller means steps 1-3 passed (and the
 // agent's limit may still have refused: then the call is audited as rate_limited).
 async function authenticate(auth: AiAuth): Promise<{ deny: ApiResult } | { caller: Caller; limited: boolean }> {
-  const ip = await hitRateLimit(`ai-api:ip:${auth.ip}`, IP_LIMIT.limit, IP_LIMIT.windowMs);
-  if (!ip.allowed) return { deny: result(429, { error: "rate_limited" }) };
-  // Refused before the key is compared, so an address that guessed 10 times cannot try an 11th.
-  const failKey = `ai-api:keyfail:ip:${auth.ip}`;
-  if ((await peekRateLimit(failKey, KEY_FAILURES.windowMs)) >= KEY_FAILURES.limit) return { deny: result(429, { error: "rate_limited" }) };
   if (!serviceKeyMatches(auth.serviceKey)) {
-    await hitRateLimit(failKey, KEY_FAILURES.limit, KEY_FAILURES.windowMs);
+    const failKey = `ai-api:keyfail:ip:${auth.ip}`;
+    await hitRateLimit(failKey, KEY_FAILURES.alarmAt, KEY_FAILURES.windowMs);
     console.warn("ai api: bad service key");
+    if ((await peekRateLimit(failKey, KEY_FAILURES.windowMs)) === KEY_FAILURES.alarmAt) console.error("ai api: repeated bad service keys");
     return { deny: result(401, { error: "unauthorized" }) };
   }
+  // The key matched, so the MCP server sent this; still only one IP literal is used.
+  const clientIp = bareIp(auth.clientIp) ?? auth.ip;
+  const ip = await hitRateLimit(`ai-api:ip:${clientIp}`, IP_LIMIT.limit, IP_LIMIT.windowMs);
+  if (!ip.allowed) return { deny: result(429, { error: "rate_limited" }) };
+  // Refused before the lookup, so an address that sent 30 junk tokens cannot keep the database busy.
+  const badKey = `ai-api:badtoken:ip:${clientIp}`;
+  if ((await peekRateLimit(badKey, BAD_TOKENS.windowMs)) >= BAD_TOKENS.limit) return { deny: result(429, { error: "rate_limited" }) };
   const caller = auth.bearer === null ? null : await verifyAiToken(auth.bearer, mcpResource());
-  if (!caller) return { deny: result(401, { error: "invalid_token" }) };
+  if (!caller) {
+    await hitRateLimit(badKey, BAD_TOKENS.limit, BAD_TOKENS.windowMs);
+    return { deny: result(401, { error: "invalid_token" }) };
+  }
   for (const { suffix, limit, windowMs } of AGENT_LIMITS) {
     const hit = await hitRateLimit(`ai:user:${caller.userId}${suffix}`, limit, windowMs);
     if (!hit.allowed) return { caller, limited: true };
@@ -369,7 +385,10 @@ async function hotelRates(caller: Caller, body: unknown, deps: AiDeps, log: Call
   let found: Awaited<ReturnType<typeof getHotelOffers>>;
   try {
     // The answer uses no hotel content (photos, policies), so none is loaded for it.
-    found = await getHotelOffers(caller.agencyId, input.search_id, input.hotel_id, now, { content: deps.content ?? (async () => new Map()) });
+    found = await getHotelOffers(caller.agencyId, input.search_id, input.hotel_id, now, {
+      content: deps.content ?? (async () => new Map()),
+      source: "AI",
+    });
   } catch (error) {
     const { res, outcome } = searchErrorResult(error);
     await log.done(outcome);
@@ -461,6 +480,28 @@ export function aiNotFound(): Response {
   return new Response(null, { status: 404, headers: NO_STORE });
 }
 
+// Host header value → "host[:port]" lower case, without the default port, or null.
+function hostOf(value: string | null): string | null {
+  if (value === null) return null;
+  try {
+    return new URL(`https://${value.trim()}`).host;
+  } catch {
+    return null;
+  }
+}
+
+// True when the routes must answer 404 whatever the method: the feature is off, or the request
+// came through the public proxy (F10). An X-Forwarded-For header cannot tell: Next.js adds one
+// with the caller's address to every request that has none. A proxied request names the app's
+// public host, in Host or (when the proxy rewrites Host) in X-Forwarded-Host; the MCP server
+// calls the internal address. So the API does not depend on the proxy's own block rule alone.
+export function aiApiClosed(request: Request): boolean {
+  if (!aiSearchEnabled()) return true;
+  const publicHost = appPublicHost();
+  if (publicHost === null) return true;
+  return [request.headers.get("host"), request.headers.get("x-forwarded-host")].some((h) => hostOf(h) === publicHost);
+}
+
 export function aiMethodNotAllowed(): Response {
   return new Response(null, { status: 405, headers: { ...NO_STORE, Allow: "POST" } });
 }
@@ -475,6 +516,7 @@ export async function handleAiRequest(
     serviceKey: request.headers.get("x-apolles-service-key"),
     bearer: bearerOf(request.headers.get("authorization")),
     ip: getClientIp(request.headers),
+    clientIp: request.headers.get("x-apolles-client-ip"),
   };
   try {
     const body = await readJson(request);

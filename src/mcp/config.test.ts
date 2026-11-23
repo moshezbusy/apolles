@@ -4,7 +4,7 @@ import { loadConfig } from "./config";
 const ENV = {
   MCP_PUBLIC_URL: "https://mcp.example.test/",
   APOLLES_INTERNAL_URL: "http://app:3000",
-  AI_MCP_SERVICE_KEY: "test-service-key-0123456789",
+  AI_MCP_SERVICE_KEY: "test-service-key-0123456789-abcdef",
   APP_PUBLIC_URL: "https://app.example.test/",
   PORT: "9090",
 };
@@ -26,7 +26,7 @@ describe("MCP server config", () => {
     expect(loadConfig(ENV)).toEqual({
       publicUrl: "https://mcp.example.test",
       internalUrl: "http://app:3000",
-      serviceKey: "test-service-key-0123456789",
+      serviceKey: "test-service-key-0123456789-abcdef",
       authServer: "https://app.example.test",
       port: 9090,
     });
@@ -71,6 +71,21 @@ describe("MCP server config", () => {
     expect(() => loadConfig({ ...ENV, APOLLES_INTERNAL_URL: "ftp://app" })).toThrow("APOLLES_INTERNAL_URL");
     expect(() => loadConfig({ ...ENV, APOLLES_INTERNAL_URL: "not a url" })).toThrow("APOLLES_INTERNAL_URL");
     expect(loadConfig({ ...ENV, APOLLES_INTERNAL_URL: "https://app.internal/" }).internalUrl).toBe("https://app.internal");
+  });
+
+  // F9: a short key set by hand would weaken the internal API's second factor.
+  it("a service key shorter than 32 characters stops the server, without showing the key", () => {
+    expect(() => loadConfig({ ...ENV, AI_MCP_SERVICE_KEY: "k".repeat(31) })).toThrow("AI_MCP_SERVICE_KEY must be at least 32 characters");
+    expect(() => loadConfig({ ...ENV, AI_MCP_SERVICE_KEY: "k".repeat(31) })).toThrow(expect.objectContaining({ message: expect.not.stringContaining("kkk") }));
+    expect(loadConfig({ ...ENV, AI_MCP_SERVICE_KEY: "k".repeat(32) }).serviceKey).toBe("k".repeat(32));
+  });
+
+  // F8: the same normalization as the app's (src/server/ai/config.ts), so the resource in the
+  // metadata is exactly the audience the app binds tokens to.
+  it("MCP_PUBLIC_URL is normalized: lower-case host, no default port, no trailing slash", () => {
+    expect(loadConfig({ ...ENV, MCP_PUBLIC_URL: "https://MCP.Example.TEST/" }).publicUrl).toBe("https://mcp.example.test");
+    expect(loadConfig({ ...ENV, MCP_PUBLIC_URL: "https://mcp.example.test:443" }).publicUrl).toBe("https://mcp.example.test");
+    expect(loadConfig({ ...ENV, MCP_PUBLIC_URL: "https://mcp.example.test:8443/" }).publicUrl).toBe("https://mcp.example.test:8443");
   });
 
   it("the error names the variable, never its value", () => {

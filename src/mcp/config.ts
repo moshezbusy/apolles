@@ -6,9 +6,9 @@ import { z } from "zod";
 // value stops the server before it listens. Errors name the variable, never its value.
 
 export type McpConfig = {
-  publicUrl: string; // MCP_PUBLIC_URL: this server's public address, without a trailing slash
+  publicUrl: string; // MCP_PUBLIC_URL: this server's public address, normalized (see publicAddress)
   internalUrl: string; // APOLLES_INTERNAL_URL: where the Apolles AI API is reached
-  serviceKey: string; // AI_MCP_SERVICE_KEY: this server's key for the Apolles AI API
+  serviceKey: string; // AI_MCP_SERVICE_KEY: this server's key for the Apolles AI API, 32+ characters
   authServer: string; // APP_PUBLIC_URL: the OAuth issuer, the same string as the app's (R3)
   port: number; // PORT, default 8080
 };
@@ -20,18 +20,34 @@ type Env = Readonly<Record<string, string | undefined>>;
 const publicUrl = z.url({ protocol: /^https$/ });
 const internalUrl = z.url({ protocol: /^https?$/ });
 const DEFAULT_PORT = 8080;
+// openssl rand -base64 48 gives 64 characters; the app refuses a key under 32 as well.
+const MIN_SERVICE_KEY_LENGTH = 32;
 
 function required(value: string | undefined, name: string): string {
   if (value === undefined || value.trim() === "") throw new Error(`${name} is not set`);
   return value;
 }
 
-function url(value: string | undefined, name: string, schema: typeof publicUrl, kind: string): string {
+function urlOf(value: string | undefined, name: string, schema: typeof publicUrl, kind: string): string {
   const parsed = schema.safeParse(required(value, name));
   if (!parsed.success) throw new Error(`${name} must be ${kind} URL`);
   const { search, hash } = new URL(parsed.data);
   if (search || hash) throw new Error(`${name} must not have a query or a fragment`);
   return parsed.data.replace(/\/+$/, "");
+}
+
+// The address as the app reads MCP_PUBLIC_URL (src/server/ai/config.ts mcpResource): lower-case
+// host, default port dropped, no trailing slash. The metadata's resource must be exactly the
+// audience the app binds tokens to.
+function publicAddress(value: string | undefined): string {
+  const url = new URL(urlOf(value, "MCP_PUBLIC_URL", publicUrl, "an https"));
+  return `${url.protocol}//${url.host}${url.pathname}`.replace(/\/+$/, "");
+}
+
+function serviceKey(value: string | undefined): string {
+  const key = required(value, "AI_MCP_SERVICE_KEY");
+  if (key.length < MIN_SERVICE_KEY_LENGTH) throw new Error(`AI_MCP_SERVICE_KEY must be at least ${MIN_SERVICE_KEY_LENGTH} characters`);
+  return key;
 }
 
 function port(value: string | undefined): number {
@@ -43,10 +59,10 @@ function port(value: string | undefined): number {
 
 export function loadConfig(env: Env = process.env): McpConfig {
   return {
-    publicUrl: url(env.MCP_PUBLIC_URL, "MCP_PUBLIC_URL", publicUrl, "an https"),
-    internalUrl: url(env.APOLLES_INTERNAL_URL, "APOLLES_INTERNAL_URL", internalUrl, "an http(s)"),
-    serviceKey: required(env.AI_MCP_SERVICE_KEY, "AI_MCP_SERVICE_KEY"),
-    authServer: url(env.APP_PUBLIC_URL, "APP_PUBLIC_URL", publicUrl, "an https"),
+    publicUrl: publicAddress(env.MCP_PUBLIC_URL),
+    internalUrl: urlOf(env.APOLLES_INTERNAL_URL, "APOLLES_INTERNAL_URL", internalUrl, "an http(s)"),
+    serviceKey: serviceKey(env.AI_MCP_SERVICE_KEY),
+    authServer: urlOf(env.APP_PUBLIC_URL, "APP_PUBLIC_URL", publicUrl, "an https"),
     port: port(env.PORT),
   };
 }

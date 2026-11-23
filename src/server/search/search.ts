@@ -31,6 +31,7 @@ const MAX_SNAPSHOTS_PER_AGENCY = 50; // older searches are removed, so one agenc
 // An AI assistant's searches have their own, smaller limits (plan 11): a separate rate bucket and a
 // separate cap, so an assistant can never use up the agent's own searches or push them out.
 const AI_SEARCH_RATE_LIMIT = { limit: 10, windowMs: 60_000 }; // per agency
+const AI_HOTEL_RATE_LIMIT = { limit: 60, windowMs: 60_000 }; // an assistant's rate lookups, per agency
 const MAX_AI_SNAPSHOTS_PER_AGENCY = 20;
 
 export type SearchContext = { agencyId: string; userId: string; supplierContext: SupplierContext };
@@ -551,10 +552,16 @@ export async function getHotelOffers(
   snapshotId: string,
   propertyId: string,
   now: Date = new Date(),
-  deps: { content?: typeof getContent } = {},
+  deps: { content?: typeof getContent; source?: SearchSource } = {},
 ): Promise<{ offers: Offer[]; content: PropertyContent | null; hotel: { name: string; city: string; starRating: string | null } } | null> {
-  const { allowed } = await hitRateLimit(`hotel:agency:${agencyId}`, HOTEL_RATE_LIMIT.limit, HOTEL_RATE_LIMIT.windowMs);
-  if (!allowed) throw new SearchRateLimited("Too many hotel pages opened. Wait a minute and try again.");
+  // An assistant's rate lookups have their own, smaller bucket (plan 11), so they never use up
+  // the agency's hotel pages on the website. The website's default is unchanged.
+  const ai = deps.source === "AI";
+  const { limit, windowMs } = ai ? AI_HOTEL_RATE_LIMIT : HOTEL_RATE_LIMIT;
+  const { allowed } = await hitRateLimit(`${ai ? "ai-hotel" : "hotel"}:agency:${agencyId}`, limit, windowMs);
+  if (!allowed) {
+    throw new SearchRateLimited(ai ? "Too many rate lookups. Wait a minute and try again." : "Too many hotel pages opened. Wait a minute and try again.");
+  }
   const snapshot = await ownSnapshot(agencyId, snapshotId);
   if (!snapshot || snapshot.expiresAt <= now) return null;
   if (typeof propertyId !== "string" || propertyId.length > 64) return null;

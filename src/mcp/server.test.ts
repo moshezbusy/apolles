@@ -10,7 +10,7 @@ import { createMcpServer } from "./server";
 const CFG: McpConfig = {
   publicUrl: "https://mcp.example.test",
   internalUrl: "http://apolles.internal:3000",
-  serviceKey: "test-service-key-0123456789",
+  serviceKey: "test-service-key-0123456789-abcdef",
   authServer: "https://app.example.test",
   port: 0,
 };
@@ -225,6 +225,35 @@ describe("POST /mcp", () => {
     expect(init?.redirect).toBe("error");
     expect(logged.join("\n")).not.toContain(TOKEN);
     expect(logged.join("\n")).not.toContain(CFG.serviceKey);
+  });
+
+  // F4: the app's per-IP limits must count the assistant's address, not this server's one.
+  it("passes on the caller's address: the right-most X-Forwarded-For entry (the one Caddy set)", async () => {
+    await rpc({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "search_hotels", arguments: SEARCH_ARGS } }, { ...auth, "X-Forwarded-For": "6.6.6.6, 203.0.113.9" });
+    expect(new Headers(fetchSpy.mock.calls[0]![1]?.headers).get("x-apolles-client-ip")).toBe("203.0.113.9");
+    await rpc({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "search_hotels", arguments: SEARCH_ARGS } }, { ...auth, "X-Forwarded-For": "2001:DB8::7" });
+    expect(new Headers(fetchSpy.mock.calls[1]![1]?.headers).get("x-apolles-client-ip")).toBe("2001:db8::7");
+  });
+
+  it("without a usable X-Forwarded-For, the socket's address; never anything but one IP", async () => {
+    for (const xff of [undefined, "junk", "203.0.113.9:80", "203.0.113.9, ", "[2001:db8::7]", "fe80::1%eth0", "6.6.6.6, unknown"]) {
+      fetchSpy.mockClear();
+      const headers: Record<string, string> = xff === undefined ? auth : { ...auth, "X-Forwarded-For": xff };
+      await rpc({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "search_hotels", arguments: SEARCH_ARGS } }, headers);
+      expect(new Headers(fetchSpy.mock.calls[0]![1]?.headers).get("x-apolles-client-ip"), String(xff)).toBe("127.0.0.1");
+    }
+  });
+
+  // F6: only Apolles saying the token is invalid means "sign in again". A wrong service key (a
+  // setup fault on our side) must not send the agent round the sign-in loop.
+  it("an API 401 that is not invalid_token → the unavailable tool error, not HTTP 401", async () => {
+    for (const reply of [jsonResponse(401, { error: "unauthorized" }), jsonResponse(401, undefined), new Response("<html>", { status: 401 })]) {
+      fetchSpy.mockResolvedValueOnce(reply);
+      const res = await call("search_hotels", SEARCH_ARGS);
+      expect(res.status).toBe(200);
+      expect(res.headers["www-authenticate"]).toBeUndefined();
+      expect(res.json).toMatchObject({ result: { isError: true, content: [{ text: UNAVAILABLE }] } });
+    }
   });
 
   it("get_hotel_rates posts to /rates", async () => {

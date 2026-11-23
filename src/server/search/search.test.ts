@@ -422,6 +422,33 @@ describe("search service", () => {
     await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none })).rejects.toBeInstanceOf(SearchRateLimited);
   });
 
+  // F11 (plan 11): an assistant's rate lookups have their own, smaller bucket, so they never use
+  // up the agency's hotel pages on the website (nor the other way round).
+  it("an assistant's rate lookups have their own bucket (60 a minute), apart from the website's hotel pages", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const none = async () => new Map();
+    await seedRateLimit("hotel:agency:A", 120, 60_000);
+    await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none })).rejects.toBeInstanceOf(SearchRateLimited);
+    expect(await getHotelOffers("A", snapshotId, "1", NOW, { content: none, source: "AI" })).not.toBeNull();
+    await db.rateLimitBucket.deleteMany({ where: { key: "ai-hotel:agency:A" } });
+    await seedRateLimit("ai-hotel:agency:A", 60, 60_000);
+    await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none, source: "AI" })).rejects.toBeInstanceOf(SearchRateLimited);
+    await db.rateLimitBucket.deleteMany({ where: { key: "hotel:agency:A" } });
+    expect(await getHotelOffers("A", snapshotId, "1", NOW, { content: none })).not.toBeNull();
+  });
+
+  it("an assistant's 60th rate lookup in a minute passes, its 61st is refused", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const none = async () => new Map();
+    await seedRateLimit("ai-hotel:agency:A", 59, 60_000);
+    expect(await getHotelOffers("A", snapshotId, "1", NOW, { content: none, source: "AI" })).not.toBeNull();
+    await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none, source: "AI" })).rejects.toBeInstanceOf(SearchRateLimited);
+  });
+
   it("findOffer returns one rate of the agency's own search, never another agency's or an expired one", async () => {
     await hotels(1);
     const { adapter } = fakeAdapter(everyone);

@@ -225,6 +225,18 @@ describe("POST /oauth/token", () => {
     }
   });
 
+  // F8: the refresh token is already bound to the MCP server, so a refresh without `resource`
+  // means that one (RFC 8707 makes it optional). Another resource is still refused.
+  it("refresh without resource → the MCP server; with another resource → invalid_target", async () => {
+    const { codeGrant, client } = await setup();
+    const first = (await tokens(codeGrant)).body;
+    const other = await tokens({ grant_type: "refresh_token", refresh_token: first.refresh_token as string, client_id: client.id, resource: "https://evil.example/mcp" });
+    expect(other.body).toEqual({ error: "invalid_target" });
+    const next = await tokens({ grant_type: "refresh_token", refresh_token: first.refresh_token as string, client_id: client.id });
+    expect(next.res.status).toBe(200);
+    expect(await verifyAiToken(next.body.access_token as string, RESOURCE)).toMatchObject({ connectionId: expect.any(String) });
+  });
+
   it("unknown client → 401 invalid_client; missing client_id → invalid_request", async () => {
     const { codeGrant } = await setup();
     const unknown = await tokens({ ...codeGrant, client_id: "nope" });

@@ -52,7 +52,7 @@ const APP = join(SRC, "app");
 const AI_API = join(APP, "api", "ai");
 const RESOURCE = "https://mcp.example.test/mcp";
 const REDIRECT = "https://claude.ai/api/mcp/auth_callback";
-const SERVICE_KEY = "test-service-key-0123456789";
+const SERVICE_KEY = "test-service-key-0123456789-abcdef"; // at least 32 characters (F9)
 
 // ---------- helpers ----------
 
@@ -289,7 +289,7 @@ describe("only the AI API accepts a search token", () => {
 
 // Every route.ts behind the agent and admin sign-in, found on disk. A new one fails the test
 // below until it is added here (and so tested).
-const GUARDED_ROUTE_FILES = [join(APP, "(agent)"), join(APP, "admin")].flatMap((dir) => walk(dir).filter((f) => f.endsWith(`${sep}route.ts`)));
+const GUARDED_ROUTE_FILES = [join(APP, "(agent)"), join(APP, "(link)"), join(APP, "admin")].flatMap((dir) => walk(dir).filter((f) => f.endsWith(`${sep}route.ts`)));
 const ROUTE_URLS: Record<string, string> = {
   "src/app/(agent)/bookings/[id]/voucher/route.ts": "/bookings/x/voucher",
   "src/app/(agent)/bookings/[id]/statement/route.ts": "/bookings/x/statement",
@@ -391,8 +391,10 @@ describe("public quote endpoints (/q/[token]) refuse a search token as the link 
 
 // ---------- 3. Every agent and admin server action ----------
 
-// Found on disk, so an action added later is covered without touching this test.
-const ACTION_FILES = [join(APP, "(agent)"), join(APP, "admin")].flatMap((dir) => walk(dir).filter((f) => f.endsWith(`${sep}actions.ts`)));
+// Found on disk, so an action added later is covered without touching this test. (link) holds
+// agent pages opened from outside links (the assistant's /search/open), outside (agent) so they
+// can send the agent back after sign-in.
+const ACTION_FILES = [join(APP, "(agent)"), join(APP, "(link)"), join(APP, "admin")].flatMap((dir) => walk(dir).filter((f) => f.endsWith(`${sep}actions.ts`)));
 
 type Action = (...args: unknown[]) => Promise<unknown>;
 
@@ -411,6 +413,7 @@ describe("every agent and admin server action refuses a search token", () => {
       "src/app/(agent)/quotes/actions.ts",
       "src/app/(agent)/settings/actions.ts",
       "src/app/(agent)/search/actions.ts",
+      "src/app/(link)/search/open/actions.ts",
       "src/app/admin/agencies/[id]/wallet/actions.ts",
       "src/app/admin/agencies/actions.ts",
     ]) {

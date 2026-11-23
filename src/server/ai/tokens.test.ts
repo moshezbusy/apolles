@@ -109,11 +109,34 @@ describe("AI search tokens", () => {
       vi.stubEnv("AI_MCP_SERVICE_KEY", "");
       expect(serviceKeyMatches("")).toBe(false);
       expect(serviceKeyMatches(null)).toBe(false);
-      vi.stubEnv("AI_MCP_SERVICE_KEY", "s3rvice-key-for-tests");
+      vi.stubEnv("AI_MCP_SERVICE_KEY", "s3rvice-key-for-tests-0123456789ab");
       expect(serviceKeyMatches(null)).toBe(false);
       expect(serviceKeyMatches("")).toBe(false);
-      expect(serviceKeyMatches("s3rvice-key-for-test")).toBe(false);
-      expect(serviceKeyMatches("s3rvice-key-for-tests")).toBe(true);
+      expect(serviceKeyMatches("s3rvice-key-for-tests-0123456789a")).toBe(false);
+      expect(serviceKeyMatches("s3rvice-key-for-tests-0123456789ab")).toBe(true);
+    });
+
+    // F9: a short key set by hand would weaken the internal API's second factor.
+    it("a configured key shorter than 32 characters matches nothing, with one error line", () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const short = "a".repeat(31);
+      vi.stubEnv("AI_MCP_SERVICE_KEY", short);
+      expect(serviceKeyMatches(short)).toBe(false);
+      expect(serviceKeyMatches(short)).toBe(false);
+      expect(error.mock.calls).toEqual([["AI_MCP_SERVICE_KEY is shorter than 32 characters: the AI API refuses every call"]]);
+      vi.stubEnv("AI_MCP_SERVICE_KEY", "a".repeat(32));
+      expect(serviceKeyMatches("a".repeat(32))).toBe(true);
+      error.mockRestore();
+    });
+
+    // F8: the same address written another way is the same audience.
+    it("MCP_PUBLIC_URL is normalized: lower-case host, no trailing slash", () => {
+      vi.stubEnv("MCP_PUBLIC_URL", "https://MCP.Example.TEST/");
+      expect(mcpResource()).toBe("https://mcp.example.test/mcp");
+      vi.stubEnv("MCP_PUBLIC_URL", "https://mcp.example.test:443");
+      expect(mcpResource()).toBe("https://mcp.example.test/mcp");
+      vi.stubEnv("MCP_PUBLIC_URL", "https://mcp.example.test/?x=1");
+      expect(() => mcpResource()).toThrow();
     });
   });
 

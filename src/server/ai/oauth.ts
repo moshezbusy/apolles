@@ -289,7 +289,10 @@ export async function handleTokenRequest(fields: Record<string, string> | null, 
   if (!parsed.success) return oauthError("invalid_request");
   const input = parsed.data;
   if (!isSupportedScope(input.scope)) return oauthError("invalid_scope");
-  if (input.resource !== mcpResource()) return oauthError("invalid_target");
+  // A code exchange must name the MCP server. A refresh token is already bound to it, so a
+  // refresh without `resource` means that one (RFC 8707 makes it optional there; F8).
+  const resource = input.grant_type === "refresh_token" ? (input.resource ?? mcpResource()) : input.resource;
+  if (resource === undefined || resource !== mcpResource()) return oauthError("invalid_target");
 
   const client = await findKnownClient(input.client_id);
   if (!client) return oauthError("invalid_client", 401);
@@ -308,7 +311,7 @@ export async function handleTokenRequest(fields: Record<string, string> | null, 
         clientId: client.id,
         redirectUri: input.redirect_uri,
         codeVerifier: input.code_verifier,
-        resource: input.resource,
+        resource,
       }),
     );
   }
@@ -321,7 +324,7 @@ export async function handleTokenRequest(fields: Record<string, string> | null, 
     );
     if (!byConnection.allowed) return tooMany(byConnection);
   }
-  return tokenAnswer(await refresh({ refreshToken: input.refresh_token, clientId: client.id, resource: input.resource }));
+  return tokenAnswer(await refresh({ refreshToken: input.refresh_token, clientId: client.id, resource }));
 }
 
 const revokeBody = z

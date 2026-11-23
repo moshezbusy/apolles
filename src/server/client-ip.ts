@@ -24,6 +24,17 @@ export function parseTrustedProxyHops(raw: string | undefined): number {
   return Number(raw);
 }
 
+// Exactly one bare IPv4/IPv6 literal (no port, no brackets, no zone), IPv6 lower-cased; null
+// for anything else. Also for addresses another trusted process passes on (the AI connector's
+// X-Apolles-Client-Ip), so no other text can end up in a rate-limit key.
+export function bareIp(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string" || raw.includes("%")) return null;
+  const version = isIP(raw);
+  if (version === 4) return raw;
+  if (version === 6) return raw.toLowerCase();
+  return null;
+}
+
 // "1.2.3.4:5678" → "1.2.3.4"; "[2001:db8::1]" / "[2001:db8::1]:443" → "2001:db8::1".
 // Returns null when the text is not an IP literal.
 function normalizeIp(raw: string): string | null {
@@ -31,14 +42,11 @@ function normalizeIp(raw: string): string | null {
   const bracketed = /^\[([^\]]+)\](?::\d{1,5})?$/.exec(text);
   if (bracketed) {
     const inner = bracketed[1]!;
-    return isIP(inner) === 6 ? inner.toLowerCase() : null;
+    return isIP(inner) === 6 ? bareIp(inner) : null;
   }
   const withPort = /^(\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}$/.exec(text);
   if (withPort) text = withPort[1]!;
-  const version = isIP(text);
-  if (version === 4) return text;
-  if (version === 6) return text.toLowerCase();
-  return null;
+  return bareIp(text);
 }
 
 function fromForwardedFor(value: string | null, hops: number): string | null {
