@@ -210,6 +210,9 @@ describe("client page /q/[token]", () => {
     });
     const html = await renderClientPage(token);
     expect(html).toContain("Confirmed");
+    // A clear confirmed box with the advisor's contact.
+    expect(html).toContain("Your stay at Secrets The Vine is confirmed");
+    expect(html).toContain("Dana Cohen");
     expect(html).toContain("Send my selections");
     expect((await clientQuote(token))?.view).toMatchObject({ state: "open", stays: [{ booked: true, confirmed: true }, { booked: false }] });
   });
@@ -227,6 +230,30 @@ describe("client page /q/[token]", () => {
     // Cached 40 days ago (too old for a search page, which would fetch again).
     await db.propertyContentCache.create({ data: { propertyId: "p1", data: content, fetchedAt: new Date(Date.now() - 40 * 86_400_000) } });
     expect(await renderClientPage(token)).toContain("https://i.travelapi.com/hotels/p1/hero.jpg");
+    expect(vi.mocked(getContent)).not.toHaveBeenCalled();
+  });
+
+  it("Hotel details come from our own cache only, as plain text; a destination with one hotel shows its rooms at once", async () => {
+    const token = await sharedToken();
+    const html = await renderClientPage(token);
+    expect(html).toContain("Hide rooms");
+    expect(html).toContain("Hotel details");
+    const content = {
+      propertyId: "p1", name: "Secrets The Vine", address: { line1: "1 Main", city: "Cancun", stateProvince: null, postalCode: null, countryCode: "MX" }, starRating: "5.0", coordinates: null,
+      heroImage: { url: "https://i.travelapi.com/hotels/p1/hero.jpg", caption: null }, images: [{ url: "https://i.travelapi.com/hotels/p1/pool.jpg", caption: null }, { url: "https://evil.example/x.jpg", caption: null }], amenities: [],
+      checkin: { beginTime: null, endTime: null, instructions: null, specialInstructions: null, minAge: null }, checkout: { time: null }, fees: { mandatory: null, optional: null },
+      knowBeforeYouGo: null, description: "<p>Adults only <b>beach</b> resort.</p><script>bad()</script>", onsiteCurrency: null, rooms: [],
+    };
+    await db.propertyContentCache.create({ data: { propertyId: "p1", data: content, fetchedAt: new Date(Date.now() - 40 * 86_400_000) } });
+    const { proposalContent } = await import("./q/[token]/proposal");
+    const data = await clientQuote(token);
+    const { details } = await proposalContent(data!, "cache");
+    const hotelId = Object.keys(data!.propertyByHotel)[0]!;
+    expect(details[hotelId]).toEqual({
+      photos: ["https://i.travelapi.com/hotels/p1/hero.jpg", "https://i.travelapi.com/hotels/p1/pool.jpg"],
+      description: [{ kind: "p", text: "Adults only beach resort." }],
+      address: "1 Main, Cancun",
+    });
     expect(vi.mocked(getContent)).not.toHaveBeenCalled();
   });
 
@@ -318,6 +345,30 @@ describe("agent side", () => {
     expect(html).toContain("1 of 1 destinations selected");
     expect(html).toContain("Client note: Sea view please");
   });
+  it("the editor: Select for client, price age, the pick badge and Book this room; opening it clears the new-selection badge", async () => {
+    const { default: Editor } = await import("./(agent)/quotes/[id]/page");
+    const render = async () => renderToStaticMarkup(await Editor({ params: Promise.resolve({ id: quoteId }) }));
+    let html = await render();
+    expect(html).toContain("Select for client");
+    expect(html).toContain("Price from");
+    expect(html).toContain("Refresh prices");
+    expect(html).not.toContain("Book this room");
+    const room = await db.quoteRoom.findFirstOrThrow({ where: { hotel: { stay: { quoteId } } } });
+    const { selectForClientAction } = await import("./(agent)/quotes/actions");
+    const form = new FormData();
+    form.set("roomId", room.id);
+    signInAs(agencyB, agentB);
+    expect(await selectForClientAction(null, form)).toMatchObject({ status: "error" });
+    signInAs(agencyA, agentA);
+    expect(await selectForClientAction(null, form)).toBeNull();
+    await db.quote.update({ where: { id: quoteId }, data: { selectionUnseen: true } });
+    html = await render();
+    expect(html).toContain("Your pick for the client");
+    expect(html).toContain("Book this room");
+    expect(html).toContain("New selection");
+    expect((await db.quote.findUniqueOrThrow({ where: { id: quoteId } })).selectionUnseen).toBe(false);
+  });
+
   it("the editor: offer status with Close quote, the phone hint, and Extend offer once the offer ran out", async () => {
     const { default: Editor } = await import("./(agent)/quotes/[id]/page");
     const render = async () => renderToStaticMarkup(await Editor({ params: Promise.resolve({ id: quoteId }) }));
@@ -359,7 +410,7 @@ describe("agent side", () => {
     const panel = (dirty: boolean) =>
       renderToStaticMarkup(
         <QuoteDirtyProvider initialDirty={dirty}>
-          <SendPanel quoteId={quoteId} shareUrl={null} hasClient hasEmail phoneHint={null} closed={false} actions={{ copy: never, whatsapp: never, email: never, renew: never }} />
+          <SendPanel quoteId={quoteId} shareUrl={null} hasClient hasEmail phoneHint={null} closed={false} actions={{ copy: never, whatsapp: never, email: never, renew: never, preview: async () => ({ ok: false, error: "x" }) }} />
         </QuoteDirtyProvider>,
       );
     const saved = panel(false);

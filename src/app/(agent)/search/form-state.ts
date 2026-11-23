@@ -2,7 +2,8 @@
 // had entered, so nothing has to be typed again.
 export type SearchFormValues = {
   destinationId: string;
-  destinationLabel: string;
+  destinationLabel: string; // what the box shows: the destination's or the hotel's name
+  propertyId: string; // a hotel chosen by name ("" when a destination was chosen)
   checkin: string;
   checkout: string;
   rooms: SearchFormRoom[]; // in room order, 1 to 8 (plan 10)
@@ -35,6 +36,7 @@ export function readSearchForm(formData: FormData): SearchFormValues {
   return {
     destinationId: text(formData.get("destinationId")),
     destinationLabel: text(formData.get("destinationLabel")),
+    propertyId: text(formData.get("propertyId")),
     checkin: text(formData.get("checkin")),
     checkout: text(formData.get("checkout")),
     rooms,
@@ -42,7 +44,7 @@ export function readSearchForm(formData: FormData): SearchFormValues {
 }
 
 // Numbers for the search schema: anything that is not a whole number becomes NaN, which the
-// schema refuses (never a silent 0).
+// schema refuses (never a silent 0). The hotel (propertyId) is not part of it: see toHotelSearchInput.
 export function toSearchInput(values: SearchFormValues) {
   const int = (s: string) => (/^\d{1,2}$/.test(s) ? Number(s) : Number.NaN);
   return {
@@ -51,6 +53,12 @@ export function toSearchInput(values: SearchFormValues) {
     checkout: values.checkout,
     rooms: values.rooms.map((room) => ({ adults: int(room.adults), childAges: room.childAges.map(int) })),
   };
+}
+
+// A hotel chosen by name: the hotel, the dates and the rooms (the destination is read on the server).
+export function toHotelSearchInput(values: SearchFormValues) {
+  const { checkin, checkout, rooms } = toSearchInput(values);
+  return { propertyId: values.propertyId, checkin, checkout, rooms };
 }
 
 // Every child the agent added must have an age: a missing one ("4,") is refused, never dropped

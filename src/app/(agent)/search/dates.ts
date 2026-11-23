@@ -32,6 +32,7 @@ export function defaultSearchValues(now: Date): SearchFormValues {
   return {
     destinationId: "",
     destinationLabel: "",
+    propertyId: "",
     checkin: iso(new Date(now.getTime() + 14 * DAY_MS)),
     checkout: iso(new Date(now.getTime() + 16 * DAY_MS)),
     rooms: [{ adults: "2", childAges: [] }],

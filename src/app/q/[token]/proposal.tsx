@@ -1,32 +1,47 @@
 import { initials } from "@/components/Header";
 import { safeImageUrl } from "@/lib/supplier-image";
+import { toBlocks } from "@/lib/supplier-text";
 import { getCachedContent, getContent } from "@/server/content/content-cache";
 import type { ClientQuote, ClientQuoteData } from "@/server/quotes/sharing";
-import { Selection, ViewPing } from "./selection";
+import { type HotelDetails, Selection, ViewPing } from "./selection";
 import { day, texts, type Lang } from "./texts";
 
 // The proposal as the client sees it. The agent's Preview (/quotes/[id]/preview) draws the same
 // page with `token` null: nothing is counted and nothing can be sent from it.
-// Hotel photos for the proposal, by our own hotel id (the supplier's id stays on the server).
-// Best effort: the page still works without them. "cache": the public client page, which reads
-// our own cache only and never calls the supplier. "fetch": the signed-in agent's Preview, which
-// may fetch missing content (and so fills the cache for the client).
-export async function proposalPhotos(data: ClientQuoteData, source: "cache" | "fetch"): Promise<Record<string, string>> {
+// Hotel photos and details for the proposal, by our own hotel id (the supplier's id stays on the
+// server). Best effort: the page still works without them. "cache": the public client page,
+// which reads our own cache only and never calls the supplier. "fetch": the signed-in agent's
+// Preview, which may fetch missing content (and so fills the cache for the client). The
+// description is turned into plain text blocks (supplier HTML never reaches the page as HTML).
+export type ProposalContent = { photos: Record<string, string>; details: Record<string, HotelDetails> };
+
+const MAX_PHOTOS = 12;
+
+export async function proposalContent(data: ClientQuoteData, source: "cache" | "fetch"): Promise<ProposalContent> {
   const photos: Record<string, string> = {};
+  const details: Record<string, HotelDetails> = {};
   try {
     const ids = [...new Set(Object.values(data.propertyByHotel))];
     const content = ids.length === 0 ? new Map() : source === "cache" ? await getCachedContent(ids) : await getContent(ids);
     for (const [hotelId, propertyId] of Object.entries(data.propertyByHotel)) {
-      const url = safeImageUrl(content.get(propertyId)?.heroImage?.url);
+      const c = content.get(propertyId);
+      const url = safeImageUrl(c?.heroImage?.url);
       if (url) photos[hotelId] = url;
+      if (!c) continue;
+      const images = [c.heroImage, ...c.images].map((i) => safeImageUrl(i?.url)).filter((u): u is string => !!u);
+      details[hotelId] = {
+        photos: [...new Set(images)].slice(0, MAX_PHOTOS),
+        description: toBlocks(c.description).slice(0, 30),
+        address: [c.address.line1, c.address.city, c.address.stateProvince].filter(Boolean).join(", "),
+      };
     }
   } catch (error) {
     console.error(`client quote content failed: ${error instanceof Error ? error.name : "Error"}`);
   }
-  return photos;
+  return { photos, details };
 }
 
-export function Proposal({ quote, token, logoSrc, photos }: { quote: ClientQuote; token: string | null; logoSrc: string; photos: Record<string, string> }) {
+export function Proposal({ quote, token, logoSrc, content }: { quote: ClientQuote; token: string | null; logoSrc: string; content: ProposalContent }) {
   const lang: Lang = quote.language;
   const t = texts(lang);
 
@@ -96,7 +111,7 @@ export function Proposal({ quote, token, logoSrc, photos }: { quote: ClientQuote
         </section>
 
         {hasRooms ? (
-          <Selection token={token} quote={quote} photos={photos} lang={lang} />
+          <Selection token={token} quote={quote} photos={content.photos} details={content.details} lang={lang} />
         ) : (
           <div className="rounded-[18px] border border-line bg-white p-6 text-center">
             <ViewPing token={token} />
