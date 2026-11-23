@@ -9,7 +9,7 @@ const MASK = '***';
 const SENSITIVE_NAMES = [
   'password', 'messagepassword', 'passwd', 'pwd', 'secret', 'apikey', 'api_key', 'token',
   'accesstoken', 'access_token', 'clientsecret', 'client_secret',
-  'cardnumber', 'card_number', 'cardno', 'pan', 'cvv', 'cvc', 'cv2', 'seriescode', 'securitycode',
+  'cardnumber', 'card_number', 'cardno', 'pan', 'cvv', 'cvv2', 'cvc', 'cv2', 'cardcvc', 'seriescode', 'securitycode', 'cardsecuritycode',
   'expiredate', 'expirydate', 'expiry', 'expiration',
 ];
 
@@ -24,7 +24,10 @@ const JSON_KV = new RegExp(`("(?:${NAMES_RE})"\\s*:\\s*)("(?:[^"\\\\]|\\\\.)*"|-
 // Query string: ?password=x&
 const QUERY_KV = new RegExp(`([?&](?:${NAMES_RE})=)([^&#\\s]*)`, 'gi');
 
-const SENSITIVE_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key', 'api-key', 'apikey', 'x-signature']);
+const SENSITIVE_HEADERS = new Set([
+  'authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key', 'api-key', 'apikey', 'x-signature',
+  'x-auth-token', 'ocp-apim-subscription-key', 'x-api-secret',
+]);
 
 export function redactText(text: string): string {
   if (!text) return text;
@@ -45,16 +48,24 @@ export function redactHeaders(headers: Record<string, string>): Record<string, s
   return out;
 }
 
+// Digits with single spaces or dashes between them.
+const CARD_RUN = /\b\d(?:[ -]?\d){12,18}\b/g;
+// Groups of 3-6 digits joined by dots (4111.1111.1111.1111). Kept apart from
+// the pattern above so decimal prices ("300.00 360.50") are never touched.
+const CARD_DOTTED = /\b\d{3,6}(?:\.\d{3,6}){2,4}\b/g;
+
 /**
- * Any 13-19 digit run (spaces/dashes allowed) that passes the Luhn check is
- * treated as a card number and masked, keeping only the last 4 digits.
+ * Any 13-19 digit run (spaces, dashes or dots between groups) that passes
+ * the Luhn check is treated as a card number and masked, keeping only the
+ * last 4 digits.
  */
 export function maskCardNumbers(text: string): string {
-  return text.replace(/\b\d(?:[ -]?\d){12,18}\b/g, (match) => {
-    const digits = match.replace(/[ -]/g, '');
+  const mask = (match: string) => {
+    const digits = match.replace(/[ .-]/g, '');
     if (digits.length < 13 || digits.length > 19 || !luhnValid(digits)) return match;
     return `${MASK}${digits.slice(-4)}`;
-  });
+  };
+  return text.replace(CARD_RUN, mask).replace(CARD_DOTTED, mask);
 }
 
 export function luhnValid(digits: string): boolean {

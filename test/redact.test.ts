@@ -22,4 +22,20 @@ describe('redaction', () => {
   it('masks auth headers', () => {
     expect(redactHeaders({ Authorization: 'Basic abc', 'content-type': 'x' })).toEqual({ Authorization: '***', 'content-type': 'x' });
   });
+  it('masks the other spellings of the card security code', () => {
+    const out = redactText('{"cardCVC":"737","CVV2":"123","CardSecurityCode":456,"cardNumber":"x"}');
+    expect(out).toBe('{"cardCVC":"***","CVV2":"***","CardSecurityCode":"***","cardNumber":"***"}');
+    expect(redactText('<Card CardSecurityCode="737" CVV2="123"/>')).not.toMatch(/737|123/);
+    expect(redactText('<cardCVC>737</cardCVC>')).toBe('<cardCVC>***</cardCVC>');
+  });
+  it('masks card numbers written with dots', () => {
+    expect(redactText('card 4111.1111.1111.1111 ok')).toBe('card ***1111 ok');
+    expect(redactText('amex 3782.822463.10005')).toBe('amex ***0005');
+    // prices and dates are left alone
+    expect(redactText('total 300.00 then 360.50 on 2027.03.01')).toBe('total 300.00 then 360.50 on 2027.03.01');
+  });
+  it('masks more auth headers', () => {
+    expect(redactHeaders({ 'X-Auth-Token': 'a', 'Ocp-Apim-Subscription-Key': 'b', 'x-api-secret': 'c', accept: 'json' }))
+      .toEqual({ 'X-Auth-Token': '***', 'Ocp-Apim-Subscription-Key': '***', 'x-api-secret': '***', accept: 'json' });
+  });
 });
