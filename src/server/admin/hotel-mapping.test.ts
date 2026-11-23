@@ -111,7 +111,7 @@ describe("hotel mapping (admin-approved list)", () => {
     expect(html).toContain("supplier layer id 59");
     expect(html).toContain("Proposed");
     expect(html).toContain("Checked the address");
-    for (const button of ["Approve link", "Reject link", "Remove link", "Search hotels"]) expect(html).toContain(`>${button}</button>`);
+    for (const button of ["Approve link", "Reject link", "Remove link", "Search hotels"]) expect(html).toContain(">" + button + "</button>");
     expect(html).toContain("Supplier layer hotel ids with no link yet: 60, 24");
     vi.mocked(requireAdmin).mockRejectedValue(new Error("NEXT_REDIRECT:/login"));
     await expect(Page({ searchParams: Promise.resolve({}) })).rejects.toThrow("NEXT_REDIRECT");
