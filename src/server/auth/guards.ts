@@ -44,6 +44,15 @@ export async function requireAgent(
   return { userId: session.user.id, agencyId: session.agency.id, sessionId: session.sessionId };
 }
 
+// Only for a layout that must not redirect (the (link) group: a layout gets no searchParams, so
+// it could not send the agent back to the page after sign-in). The same checks as requireAgent,
+// but null instead of a redirect. Never an access check: each page calls requireAgent itself.
+export async function currentAgent(): Promise<{ userId: string; agencyId: string; sessionId: string } | null> {
+  const session = await currentSession();
+  if (!session || session.user.role !== "AGENT" || !session.agency || !session.emailVerifiedAt) return null;
+  return { userId: session.user.id, agencyId: session.agency.id, sessionId: session.sessionId };
+}
+
 // Only for /login/verify and its actions: an agent session still waiting for its sign-in code.
 export async function requireAgentPendingCode(): Promise<{ userId: string; sessionId: string; email: string }> {
   const session = await currentSession();

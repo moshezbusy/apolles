@@ -4,7 +4,7 @@ import { alertError, alertInfo, btnPrimary, card, link, pageTitle } from "@/comp
 import { formatDmy, nightsBetween } from "@/components/date-picker/calendar";
 import { requireAgent } from "@/server/auth/guards";
 import { openLinkHotel } from "@/server/search/open-link";
-import { Stars, stayText } from "../parts";
+import { Stars, stayText } from "@/app/(agent)/search/parts";
 import { showRatesAction } from "./actions";
 import { NOTICES, displayText, noticeOf, parseOpenFields } from "./query";
 

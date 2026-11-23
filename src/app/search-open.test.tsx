@@ -51,7 +51,7 @@ describe("result link page /search/open (plan 11, design §6)", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("shows the stay and a Show rates button, and runs no search", async () => {
-    const { default: Page } = await import("./(agent)/search/open/page");
+    const { default: Page } = await import("./(link)/search/open/page");
     const html = renderToStaticMarkup(await Page({ searchParams: params({ dest: "Evil name" }) }));
     expect(html).toContain("Hotel 11"); // from the database, not from `dest`
     expect(html).not.toContain("Evil name");
@@ -68,7 +68,7 @@ describe("result link page /search/open (plan 11, design §6)", () => {
   });
 
   it("a bad rooms text or bad dates gives the search page message with a link to /search", async () => {
-    const { default: Page } = await import("./(agent)/search/open/page");
+    const { default: Page } = await import("./(link)/search/open/page");
     for (const over of [{ rooms: "0" }, { rooms: "x" }, { in: "2027-02-30" }, { out: IN }, { hotel: "a b" }, { destId: "" }]) {
       const html = renderToStaticMarkup(await Page({ searchParams: params(over) }));
       expect(html).toContain("Check the destination, dates and guests.");
@@ -78,7 +78,7 @@ describe("result link page /search/open (plan 11, design §6)", () => {
   });
 
   it("an inactive or unknown hotel is not offered", async () => {
-    const { default: Page } = await import("./(agent)/search/open/page");
+    const { default: Page } = await import("./(link)/search/open/page");
     for (const hotel of ["12", "999"]) {
       const html = renderToStaticMarkup(await Page({ searchParams: params({ hotel }) }));
       expect(html).toContain("This hotel can no longer be booked. Choose another hotel.");
@@ -89,7 +89,7 @@ describe("result link page /search/open (plan 11, design §6)", () => {
 
   it("a signed-out agent is sent to sign in and comes back to the same link", async () => {
     vi.mocked(requireAgent).mockRejectedValue(new Error("NEXT_REDIRECT:/login"));
-    const { default: Page } = await import("./(agent)/search/open/page");
+    const { default: Page } = await import("./(link)/search/open/page");
     await expect(Page({ searchParams: params() })).rejects.toThrow("NEXT_REDIRECT:/login");
     const returnTo = vi.mocked(requireAgent).mock.calls[0]![0]!.returnTo!;
     expect(returnTo.startsWith("/search/open?")).toBe(true);
@@ -99,7 +99,7 @@ describe("result link page /search/open (plan 11, design §6)", () => {
   });
 
   it("shows the message of a failed attempt together with the form", async () => {
-    const { default: Page } = await import("./(agent)/search/open/page");
+    const { default: Page } = await import("./(link)/search/open/page");
     const html = renderToStaticMarkup(await Page({ searchParams: params({ notice: "ratelimited" }) }));
     expect(html).toContain("Too many searches. Wait a minute and try again.");
     expect(html).toContain("Show rates");
@@ -124,7 +124,7 @@ describe("Show rates action", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("searches the one hotel and opens its page", async () => {
-    const { showRatesAction } = await import("./(agent)/search/open/actions");
+    const { showRatesAction } = await import("./(link)/search/open/actions");
     await expect(showRatesAction(form(FIELDS))).rejects.toThrow(/^NEXT_REDIRECT:\/search\/[a-z0-9]+\/hotels\/11$/);
     const snapshot = await db.searchSnapshot.findFirstOrThrow();
     expect(snapshot).toMatchObject({ agencyId: "A", source: "WEB" });
@@ -133,20 +133,20 @@ describe("Show rates action", () => {
   });
 
   it("an inactive hotel goes back to the page with the invalid notice and searches nothing", async () => {
-    const { showRatesAction } = await import("./(agent)/search/open/actions");
+    const { showRatesAction } = await import("./(link)/search/open/actions");
     await expect(showRatesAction(form({ ...FIELDS, hotel: "12" }))).rejects.toThrow(/^NEXT_REDIRECT:\/search\/open\?.*notice=invalid/);
     expect(await db.searchSnapshot.count()).toBe(0);
   });
 
   it("bad fields never reach the supplier", async () => {
-    const { showRatesAction } = await import("./(agent)/search/open/actions");
+    const { showRatesAction } = await import("./(link)/search/open/actions");
     await expect(showRatesAction(form({ ...FIELDS, rooms: "9" }))).rejects.toThrow(/NEXT_REDIRECT:\/search\/open\?notice=invalid$/);
     expect(await db.searchSnapshot.count()).toBe(0);
   });
 
   it("requires an agent session", async () => {
     vi.mocked(requireAgent).mockRejectedValue(new Error("NEXT_REDIRECT:/login"));
-    const { showRatesAction } = await import("./(agent)/search/open/actions");
+    const { showRatesAction } = await import("./(link)/search/open/actions");
     await expect(showRatesAction(form(FIELDS))).rejects.toThrow("NEXT_REDIRECT:/login");
     expect(await db.searchSnapshot.count()).toBe(0);
   });
