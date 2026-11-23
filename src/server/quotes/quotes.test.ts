@@ -363,9 +363,19 @@ describe("booked quotes and the quote list for Add to quote", () => {
   });
 
   it("two quotes made at the same moment get two numbers", async () => {
-    const made = await Promise.all(Array.from({ length: 6 }, () => createQuote(agentA, agencyA)));
+    // Quotes started for a client always get a new row (an empty "+ New quote" draft is reused).
+    const clients = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => createClient(agentA, agencyA, { firstName: `C${i}`, lastName: "Test", phone: `+97250000000${i}`, email: "", nationality: "IL", notes: "" })),
+    );
+    const made = await Promise.all(clients.map((c) => createQuote(agentA, agencyA, { clientId: c.ok ? c.id : "" })));
     const numbers = await Promise.all(made.map(async (m) => (m.ok ? (await getQuote(agencyA, m.id))?.number : 0)));
     expect([...numbers].sort()).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it("several clicks on + New quote at the same moment open one empty draft", async () => {
+    const made = await Promise.all(Array.from({ length: 4 }, () => createQuote(agentA, agencyA)));
+    expect(new Set(made.map((m) => (m.ok ? m.id : ""))).size).toBe(1);
+    expect(await db.quote.count({ where: { agencyId: agencyA } })).toBe(1);
   });
 
   it("changing the client asks first, and a closed quote is not offered for 'Add to quote'", async () => {

@@ -3,9 +3,10 @@ import { Prisma } from "@/generated/prisma/client";
 import { audit } from "@/server/audit";
 import { ACTIVE_BOOKING, STAY_BOOKED, stayHasActiveBooking, syncQuoteBooked } from "@/server/quotes/quote-booking";
 import { db } from "@/server/db";
+import { phoneDigits } from "@/server/clients";
 import { formatMinor } from "@/lib/supplier-money";
 import { findOffer } from "@/server/search/search";
-import { clientDateAllowed, dayAhead, defaultClientDate, lastFreeDay, offerOver, parseMarkup, sellingMinor, todayIso } from "@/server/quotes/pricing";
+import { clientCancelView, clientDateAllowed, dayAhead, defaultClientDate, lastFreeDay, offerOver, parseMarkup, sellingMinor, supplierCancelView, todayIso } from "@/server/quotes/pricing";
 
 // Quotes (screens 14, 15; plan 5b). Every function takes the agencyId from the caller's session
 // (requireAgent), never from the request. A quote, destination, hotel or room of another agency is
@@ -20,7 +21,8 @@ export const MAX_ROOMS_PER_HOTEL = 10;
 // (several-room quotes are plan 10b), and the server refuses with it.
 export const QUOTES_ONE_ROOM = "Quotes are for one room for now.";
 
-export const QUOTE_TABS = ["all", "draft", "sent", "viewed", "selected", "booked"] as const;
+// "archived": the quotes the agent archived; every other tab leaves them out.
+export const QUOTE_TABS = ["all", "draft", "sent", "viewed", "selected", "booked", "archived"] as const;
 export type QuoteTab = (typeof QUOTE_TABS)[number];
 const TAB_STATUS = { draft: "DRAFT", sent: "SENT", viewed: "VIEWED", selected: "SELECTED", booked: "BOOKED" } as const;
 
@@ -55,17 +57,40 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 // ---------- create and read ----------
 
+// A draft nobody worked on: no destination, no client, no name, never shared or archived. "+ New
+// quote" makes one at once, so these pile up when the agent looks and leaves.
+export function emptyDraftWhere(agencyId: string): Prisma.QuoteWhereInput {
+  return { agencyId, status: "DRAFT", clientId: null, title: "", shareToken: null, sentAt: null, archivedAt: null, closedAt: null, stays: { none: {} }, bookings: { none: {} } };
+}
+
+const EMPTY_DRAFT_KEPT_MS = 24 * 60 * 60_000;
+
+// "+ New quote" (and a new quote from a search). Empty drafts are kept from piling up: the
+// agent's own empty draft of the last day is opened again instead of making another one (the
+// rare quote started for a client always gets a new row), and the agency's empty drafts not
+// touched for a day are deleted.
 export async function createQuote(
   actorUserId: string,
   agencyId: string,
   options: { clientId?: string | undefined } = {},
+  now: Date = new Date(),
 ): Promise<Result> {
   const clientId = options.clientId ? await ownClientId(agencyId, options.clientId) : null;
   if (options.clientId && !clientId) return fail("This client was not found.");
   const id = await db.$transaction(async (tx) => {
     const agency = await tx.agency.findUniqueOrThrow({ where: { id: agencyId }, select: { id: true } });
+    // The agency's row locked first: two clicks at once open the same empty draft.
+    await tx.$queryRaw`SELECT id FROM "Agency" WHERE id = ${agency.id} FOR UPDATE`;
+    await deleteStaleEmptyDrafts(tx, actorUserId, agencyId, now);
+    if (!clientId) {
+      const empty = await tx.quote.findFirst({ where: { ...emptyDraftWhere(agencyId), createdById: actorUserId }, orderBy: [{ editedAt: "desc" }, { id: "desc" }], select: { id: true } });
+      if (empty) {
+        await tx.quote.update({ where: { id: empty.id }, data: { editedAt: now } });
+        return empty.id;
+      }
+    }
     const quote = await tx.quote.create({
-      data: { agencyId: agency.id, agencyNumber: await nextAgencyNumber(tx, agency.id), createdById: actorUserId, clientId, ...(await newQuoteDefaults(tx, agencyId)) },
+      data: { agencyId: agency.id, agencyNumber: await nextAgencyNumber(tx, agency.id), createdById: actorUserId, clientId, editedAt: now, ...(await newQuoteDefaults(tx, agencyId)) },
       select: { id: true },
     });
     await audit(actorUserId, "quote.create", "Quote", quote.id, undefined, undefined, tx);
@@ -87,6 +112,14 @@ async function newQuoteDefaults(tx: Prisma.TransactionClient, agencyId: string) 
     markupValue: a.defaultMarkupValue,
     showCancellation: a.defaultShowCancellation,
   };
+}
+
+// Under the agency's row lock (nextAgencyNumber), or with the new quote's own transaction.
+async function deleteStaleEmptyDrafts(tx: Prisma.TransactionClient, actorUserId: string, agencyId: string, now: Date): Promise<void> {
+  const stale = await tx.quote.findMany({ where: { ...emptyDraftWhere(agencyId), editedAt: { lt: new Date(now.getTime() - EMPTY_DRAFT_KEPT_MS) } }, select: { id: true }, take: 200 });
+  if (stale.length === 0) return;
+  await tx.quote.deleteMany({ where: { ...emptyDraftWhere(agencyId), id: { in: stale.map((q) => q.id) } } });
+  for (const q of stale) await audit(actorUserId, "quote.delete", "Quote", q.id, undefined, { reason: "empty-draft" }, tx);
 }
 
 async function ownClientId(agencyId: string, clientId: string): Promise<string | null> {
@@ -116,6 +149,9 @@ export type QuoteListItem = {
   // still answer; "Extend offer" on the quote opens it again.
   expired: boolean;
   closed: boolean; // the agent closed it ("Close quote")
+  archived: boolean;
+  // The client sent something the agent has not opened yet: a selection, or only a message.
+  news: "selection" | "message" | null;
   // The latest confirmed booking made from the quote (plan 5d).
   booking: { id: string; reference: string; hotelName: string; confirmedAt: Date | null } | null;
 };
@@ -132,37 +168,86 @@ export function quoteExpired(
   return quote.stays.length > 0 && quote.stays.every((s) => !dayAhead(s.checkin, today));
 }
 
+// "New selection" until the agent opens the quote; "New message" when the client wrote without
+// choosing a room.
+export function newsOf(quote: { selectionUnseen: boolean; stays: { selectedRoomId: string | null }[] }): QuoteListItem["news"] {
+  if (!quote.selectionUnseen) return null;
+  return quote.stays.some((s) => s.selectedRoomId) ? "selection" : "message";
+}
+
 export type QuotePage = { quotes: QuoteListItem[]; nextCursor: string | null };
 
-// The agent's newest edit first, 20 per page. The cursor must be one of the agency's own quotes.
-export async function listQuotes(
-  agencyId: string,
-  options: { tab?: QuoteTab | undefined; q?: string | undefined; cursor?: string | undefined; clientId?: string | undefined },
-  now: Date = new Date(),
-): Promise<QuotePage> {
+// "Load more" adds a page to the list (up to this many pages in one view; after that the next
+// page starts after the last quote shown).
+export const MAX_QUOTE_PAGES = 25;
+
+type ListFilter = { q?: string | undefined; clientId?: string | undefined };
+
+// The agency's quotes matching the search box and the client filter, whatever the tab.
+function filterWhere(agencyId: string, options: ListFilter): Prisma.QuoteWhereInput {
   const where: Prisma.QuoteWhereInput = { agencyId };
-  const tab = options.tab ?? "all";
-  if (tab !== "all") where.status = TAB_STATUS[tab];
-  if (options.clientId) where.clientId = options.clientId;
+  if (options.clientId) where.clientId = options.clientId.slice(0, 64);
   const q = (options.q ?? "").trim().slice(0, 100);
   if (q) {
     const number = /^(?:q-?)?(\d{1,9})$/i.exec(q);
+    const digits = phoneDigits(q);
     where.OR = [
       { title: { contains: q, mode: "insensitive" } },
       { stays: { some: { destinationName: { contains: q, mode: "insensitive" } } } },
+      { stays: { some: { hotels: { some: { name: { contains: q, mode: "insensitive" } } } } } },
       { client: { firstName: { contains: q, mode: "insensitive" } } },
       { client: { lastName: { contains: q, mode: "insensitive" } } },
+      { client: { email: { contains: q.toLowerCase() } } }, // stored lowercase
+      // A phone typed in any form: "050-123", "+972 50 123" (as the client list finds it).
+      ...(/^[+0-9 \-()]+$/.test(q) && digits.length >= 3 ? [{ client: { phoneDigits: { contains: digits } } }] : []),
       // "Q-7" is the agency's own number (the internal one only on a row that has none yet).
       ...(number ? [{ agencyNumber: Number(number[1]) }, { agencyNumber: null, number: Number(number[1]) }] : []),
     ];
   }
+  return where;
+}
+
+function tabWhere(tab: QuoteTab): Prisma.QuoteWhereInput {
+  if (tab === "archived") return { archivedAt: { not: null } };
+  return tab === "all" ? { archivedAt: null } : { archivedAt: null, status: TAB_STATUS[tab] };
+}
+
+// How many quotes each tab holds, with the same search and client filter.
+export async function quoteTabCounts(agencyId: string, options: ListFilter = {}): Promise<Record<QuoteTab, number>> {
+  const where = filterWhere(agencyId, options);
+  const [byStatus, archived] = await Promise.all([
+    db.quote.groupBy({ by: ["status"], where: { ...where, archivedAt: null }, _count: { _all: true } }),
+    db.quote.count({ where: { ...where, archivedAt: { not: null } } }),
+  ]);
+  const count = (status: QuoteListItem["status"]) => byStatus.find((row) => row.status === status)?._count._all ?? 0;
+  return {
+    all: byStatus.reduce((n, row) => n + row._count._all, 0),
+    draft: count("DRAFT"),
+    sent: count("SENT"),
+    viewed: count("VIEWED"),
+    selected: count("SELECTED"),
+    booked: count("BOOKED"),
+    archived,
+  };
+}
+
+// The agent's newest edit first, 20 per page ("Load more": `pages` pages at once). The cursor
+// must be one of the agency's own quotes.
+export async function listQuotes(
+  agencyId: string,
+  options: { tab?: QuoteTab | undefined; q?: string | undefined; cursor?: string | undefined; clientId?: string | undefined; pages?: number | undefined },
+  now: Date = new Date(),
+): Promise<QuotePage> {
+  const where: Prisma.QuoteWhereInput = { ...filterWhere(agencyId, options), ...tabWhere(options.tab ?? "all") };
+  const pages = Math.min(Math.max(Math.trunc(options.pages ?? 1) || 1, 1), MAX_QUOTE_PAGES);
+  const size = QUOTE_PAGE_SIZE * pages;
   const cursor = options.cursor
     ? ((await db.quote.findFirst({ where: { id: options.cursor, agencyId }, select: { id: true } }))?.id ?? null)
     : null;
   const rows = await db.quote.findMany({
     where,
     orderBy: [{ editedAt: "desc" }, { id: "desc" }],
-    take: QUOTE_PAGE_SIZE + 1,
+    take: size + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     select: {
       id: true,
@@ -170,6 +255,8 @@ export async function listQuotes(
       agencyNumber: true,
       title: true,
       status: true,
+      archivedAt: true,
+      selectionUnseen: true,
       adults: true,
       childAges: true,
       sentAt: true,
@@ -181,7 +268,7 @@ export async function listQuotes(
       client: { select: { firstName: true, lastName: true, email: true } },
       stays: {
         orderBy: { position: "asc" },
-        select: { destinationName: true, checkin: true, checkout: true, hotels: { select: { _count: { select: { rooms: true } } } } },
+        select: { destinationName: true, checkin: true, checkout: true, selectedRoomId: true, hotels: { select: { _count: { select: { rooms: true } } } } },
       },
       bookings: {
         where: { agencyId, status: "CONFIRMED" },
@@ -191,7 +278,7 @@ export async function listQuotes(
       },
     },
   });
-  const page = rows.slice(0, QUOTE_PAGE_SIZE);
+  const page = rows.slice(0, size);
   return {
     quotes: page.map((row) => {
       const checkins = row.stays.map((s) => s.checkin).sort();
@@ -216,10 +303,12 @@ export async function listQuotes(
         editedAt: row.editedAt,
         expired: quoteExpired(row, now),
         closed: row.closedAt !== null,
+        archived: row.archivedAt !== null,
+        news: newsOf(row),
         booking: row.bookings[0] ?? null,
       };
     }),
-    nextCursor: rows.length > QUOTE_PAGE_SIZE ? (page.at(-1)?.id ?? null) : null,
+    nextCursor: rows.length > size ? (page.at(-1)?.id ?? null) : null,
   };
 }
 
@@ -244,6 +333,8 @@ const quoteDetailSelect = {
   clientNote: true,
   validUntil: true,
   closedAt: true,
+  archivedAt: true,
+  selectionUnseen: true,
   createdAt: true,
   updatedAt: true,
   editedAt: true,
@@ -260,6 +351,7 @@ const quoteDetailSelect = {
       selectedRoomId: true,
       selectedSellMinor: true,
       selectedCurrency: true,
+      selectedByAgent: true,
       hotels: {
         orderBy: { position: "asc" },
         select: {
@@ -283,6 +375,11 @@ const quoteDetailSelect = {
               currency: true,
               price: true,
               sellMinor: true,
+              pricedAt: true,
+              previousNetMinor: true,
+              cancelWorse: true,
+              unavailable: true,
+              needsRefresh: true,
             },
           },
         },
@@ -299,20 +396,62 @@ export async function getQuote(agencyId: string, quoteId: string): Promise<Quote
   return quote && { ...quote, number: shownNumber(quote) };
 }
 
-// The agency's quotes that can still take rooms (not booked, not closed), newest first, for "Add
-// to quote". `include`: one more quote that must be in the list even if it is older (the quote
-// the agent came from, "+ Add hotel"), if it is the agency's own and can still take rooms.
-export async function openQuotes(agencyId: string, include?: string | null): Promise<{ id: string; number: number; title: string }[]> {
-  const select = { id: true, number: true, agencyNumber: true, title: true } as const;
-  const open = { agencyId, status: { not: "BOOKED" }, closedAt: null } as const;
-  const shown = (q: { id: string; number: number; agencyNumber: number | null; title: string }) => ({ id: q.id, number: shownNumber(q), title: q.title });
+// The agent opened the quote: the "New selection" badge goes. Only the agency's own quote.
+export async function markSelectionSeen(agencyId: string, quoteId: string): Promise<void> {
+  if (typeof quoteId !== "string" || quoteId.length > 64) return;
+  await db.quote.updateMany({ where: { id: quoteId, agencyId, selectionUnseen: true }, data: { selectionUnseen: false } });
+}
+
+// For the header: how many of the agency's quotes have a selection or message the agent has not
+// opened yet (archived quotes included: the client may still have written).
+export async function countQuotesWithNewSelections(agencyId: string): Promise<number> {
+  return db.quote.count({ where: { agencyId, selectionUnseen: true } });
+}
+
+export type OpenQuote = { id: string; number: number; title: string; label: string };
+
+const pickerDay = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+// "Q-7 · Paris · Daniel Levy · Apr 10 to Apr 12": the picker says whose quote and which dates.
+function pickerLabel(q: { number: number; title: string; client: { firstName: string; lastName: string } | null; stays: { checkin: string; checkout: string }[] }): string {
+  const checkins = q.stays.map((s) => s.checkin).sort();
+  const checkouts = q.stays.map((s) => s.checkout).sort();
+  const day = (iso: string) => pickerDay.format(new Date(`${iso}T00:00:00Z`));
+  return [
+    quoteCode(q.number),
+    q.title || "Untitled quote",
+    q.client ? `${q.client.firstName} ${q.client.lastName}` : "No client",
+    ...(checkins[0] && checkouts.at(-1) ? [`${day(checkins[0])} to ${day(checkouts.at(-1) ?? "")}`] : []),
+  ].join(" · ");
+}
+
+// The agency's quotes that can still take rooms (not booked, closed or archived), the agent's
+// newest edit first, for "Add to quote": the first one is the quote used last. Empty drafts (no
+// destination, client or name) are left out, so the "Untitled quote" rows of "+ New quote" do not
+// pile up there. `include`: one more quote that must be in the list even if it is older or empty
+// (the quote the agent came from, "+ Add hotel"), if it is the agency's own and can still take rooms.
+export async function openQuotes(agencyId: string, include?: string | null): Promise<OpenQuote[]> {
+  const select = {
+    id: true,
+    number: true,
+    agencyNumber: true,
+    title: true,
+    client: { select: { firstName: true, lastName: true } },
+    stays: { select: { checkin: true, checkout: true } },
+  } as const;
+  const open = { agencyId, status: { not: "BOOKED" }, closedAt: null, archivedAt: null } as const;
+  type Row = Prisma.QuoteGetPayload<{ select: typeof select }>;
+  const shown = (q: Row): OpenQuote => {
+    const number = shownNumber(q);
+    return { id: q.id, number, title: q.title, label: pickerLabel({ ...q, number }) };
+  };
   const latest = await db.quote.findMany({
-    where: open,
+    where: { ...open, NOT: emptyDraftWhere(agencyId) },
     orderBy: [{ editedAt: "desc" }, { id: "desc" }],
     take: 30,
     select,
   });
-  if (!include || latest.some((q) => q.id === include)) return latest.map(shown);
+  if (!include || typeof include !== "string" || include.length > 64 || latest.some((q) => q.id === include)) return latest.map(shown);
   const extra = await db.quote.findFirst({ where: { ...open, id: include }, select });
   return (extra ? [extra, ...latest] : latest).map(shown);
 }
@@ -394,12 +533,12 @@ export async function updateQuoteSettings(
     // Nothing is removed without the agent's explicit yes: the form lists what goes and asks.
     if (clientChanged && input.confirmClientChange !== true) return { ok: false, error: CLIENT_CHANGE, confirm: "clientChange" } as const;
     if (clientChanged) {
-      await tx.quoteStay.updateMany({ where: { quoteId }, data: { selectedRoomId: null, selectedSellMinor: null, selectedCurrency: null } });
+      await tx.quoteStay.updateMany({ where: { quoteId }, data: { selectedRoomId: null, selectedSellMinor: null, selectedCurrency: null, selectedByAgent: false } });
     }
     await tx.quote.update({
       where: { id: quoteId },
       data: {
-        ...(clientChanged ? { status: "DRAFT", shareToken: null, clientNote: "", sentAt: null, viewedAt: null, viewCount: 0, selectedAt: null, validUntil: null } : {}),
+        ...(clientChanged ? { status: "DRAFT", shareToken: null, clientNote: "", sentAt: null, viewedAt: null, viewCount: 0, selectedAt: null, validUntil: null, selectionUnseen: false } : {}),
         editedAt: new Date(),
         title: input.title,
         clientId,
@@ -463,6 +602,204 @@ export async function reopenQuote(actorUserId: string, agencyId: string, quoteId
   });
 }
 
+// ---------- archive, delete, duplicate (screen 14) ----------
+
+// "Archive": the quote leaves the list and the "Add to quote" picker (the "Archived" tab keeps
+// it). A quote the client could still answer is closed at the same time, so a choice never lands
+// on a quote nobody looks at; "Unarchive" brings it back to the list and leaves it closed until
+// "Reopen quote". A draft is not archived: it is deleted.
+export async function archiveQuote(actorUserId: string, agencyId: string, quoteId: string, now: Date = new Date()): Promise<Result> {
+  return db.$transaction(async (tx) => {
+    const quote = await lockQuote(tx, agencyId, quoteId);
+    if (!quote) return fail(NOT_FOUND);
+    if (quote.status === "DRAFT") return fail("A draft is not archived. Delete it, or send it first.");
+    const row = await tx.quote.findUniqueOrThrow({ where: { id: quoteId }, select: { archivedAt: true } });
+    if (row.archivedAt) return { ok: true, id: quoteId } as const;
+    const closes = quote.status !== "BOOKED" && !quote.closedAt;
+    await tx.quote.update({ where: { id: quoteId }, data: { archivedAt: now, ...(closes ? { closedAt: now } : {}) } });
+    await audit(actorUserId, "quote.archive", "Quote", quoteId, undefined, closes ? { closed: true } : undefined, tx);
+    return { ok: true, id: quoteId } as const;
+  });
+}
+
+export async function unarchiveQuote(actorUserId: string, agencyId: string, quoteId: string): Promise<Result> {
+  return db.$transaction(async (tx) => {
+    const quote = await lockQuote(tx, agencyId, quoteId);
+    if (!quote) return fail(NOT_FOUND);
+    await tx.quote.update({ where: { id: quoteId }, data: { archivedAt: null, editedAt: new Date() } });
+    await audit(actorUserId, "quote.unarchive", "Quote", quoteId, undefined, undefined, tx);
+    return { ok: true, id: quoteId } as const;
+  });
+}
+
+// "Delete": drafts only (never sent, so no client has the link; a draft goes back to never sent
+// when its client changes, which withdraws the link). A draft with a booking made
+// from it (the agent chose a room for the client and booked it) is kept: the booking links to it.
+export async function deleteQuote(actorUserId: string, agencyId: string, quoteId: string): Promise<Result> {
+  return db.$transaction(async (tx) => {
+    const quote = await lockQuote(tx, agencyId, quoteId);
+    if (!quote) return fail(NOT_FOUND);
+    // A link made for the email preview but never sent reached nobody.
+    const row = await tx.quote.findUniqueOrThrow({ where: { id: quoteId }, select: { sentAt: true } });
+    if (quote.status !== "DRAFT" || row.sentAt) return fail("Only a draft that was never sent can be deleted. Archive this quote instead.");
+    if ((await tx.booking.count({ where: { quoteId, agencyId } })) > 0) return fail("This draft has a booking made from it, so it is kept. Archive it instead.");
+    await tx.quote.delete({ where: { id: quoteId } });
+    await audit(actorUserId, "quote.delete", "Quote", quoteId, undefined, undefined, tx);
+    return { ok: true, id: quoteId } as const;
+  });
+}
+
+// "Duplicate": a new draft with the same destinations, hotels, room options and settings (name,
+// language, cancellation terms, markup, guests and the prices the agent typed). Like mockup 14 it
+// starts with no client, the agency's default message and no selection. The prices are the saved
+// ones, so every room is marked "refresh prices before sending".
+export async function duplicateQuote(actorUserId: string, agencyId: string, quoteId: string): Promise<Result> {
+  if (typeof quoteId !== "string" || quoteId.length > 64) return fail(NOT_FOUND);
+  const source = await db.quote.findFirst({
+    where: { id: quoteId, agencyId },
+    select: {
+      title: true,
+      language: true,
+      showCancellation: true,
+      markupType: true,
+      markupValue: true,
+      adults: true,
+      childAges: true,
+      stays: {
+        orderBy: { position: "asc" },
+        select: {
+          destinationId: true,
+          destinationName: true,
+          checkin: true,
+          checkout: true,
+          position: true,
+          hotels: {
+            orderBy: { position: "asc" },
+            select: {
+              propertyId: true,
+              name: true,
+              city: true,
+              starRating: true,
+              agencyPick: true,
+              position: true,
+              rooms: {
+                orderBy: { position: "asc" },
+                select: {
+                  roomId: true,
+                  rateId: true,
+                  bedGroupId: true,
+                  roomName: true,
+                  bedDescription: true,
+                  amenities: true,
+                  refundable: true,
+                  freeCancelUntil: true,
+                  clientCancelUntil: true,
+                  netMinor: true,
+                  currency: true,
+                  price: true,
+                  sellMinor: true,
+                  pricedAt: true,
+                  position: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!source) return fail(NOT_FOUND);
+  const id = await db.$transaction(async (tx) => {
+    const defaults = await newQuoteDefaults(tx, agencyId);
+    const created = await tx.quote.create({
+      data: {
+        agencyId,
+        agencyNumber: await nextAgencyNumber(tx, agencyId),
+        createdById: actorUserId,
+        ...defaults,
+        title: source.title ? `${source.title} (copy)`.slice(0, 80) : "",
+        language: source.language,
+        showCancellation: source.showCancellation,
+        markupType: source.markupType,
+        markupValue: source.markupValue,
+        adults: source.adults,
+        childAges: source.childAges,
+        stays: {
+          create: source.stays.map(({ hotels, ...stay }) => ({
+            ...stay,
+            hotels: {
+              create: hotels.map(({ rooms, ...hotel }) => ({
+                ...hotel,
+                rooms: {
+                  create: rooms.map((room) => ({ ...room, price: room.price as Prisma.InputJsonValue, needsRefresh: true })),
+                },
+              })),
+            },
+          })),
+        },
+      },
+      select: { id: true },
+    });
+    await audit(actorUserId, "quote.duplicate", "Quote", created.id, undefined, { from: quoteId }, tx);
+    return created.id;
+  });
+  return { ok: true, id };
+}
+
+// ---------- the agent chooses for the client ----------
+
+// A quote with no pick left: back to what the client did (viewed, or only sent), or a draft.
+function statusWithoutPick(quote: { viewedAt: Date | null; sentAt: Date | null }): "VIEWED" | "SENT" | "DRAFT" {
+  return quote.viewedAt ? "VIEWED" : quote.sentAt ? "SENT" : "DRAFT";
+}
+
+// "Select for client": the client answered by phone or WhatsApp, so the agent records the
+// choice (marked as the agent's, and audited), and can then book it. A booked destination keeps
+// its pick; a destination whose check-in is not ahead takes no new one.
+export async function selectForClient(actorUserId: string, agencyId: string, roomId: string, now: Date = new Date()): Promise<Result> {
+  return db.$transaction(async (tx) => {
+    const room = await ownRoom(tx, agencyId, roomId);
+    const quoteId = room?.hotel.stay.quoteId;
+    if (!room || !quoteId) return fail(NOT_FOUND);
+    const quote = await lockForEdit(tx, agencyId, quoteId);
+    if (!quote) return fail(NOT_FOUND);
+    if (quote === "booked") return fail(BOOKED);
+    if (quote === "closed") return fail(CLOSED);
+    if (await stayHasActiveBooking(tx, room.hotel.stayId)) return fail(STAY_BOOKED);
+    const stay = await tx.quoteStay.findUniqueOrThrow({ where: { id: room.hotel.stayId }, select: { checkin: true } });
+    if (!dayAhead(stay.checkin, todayIso(now))) return fail("The check-in date of this destination has passed. Add a destination with new dates.");
+    const markup = await tx.quote.findUniqueOrThrow({ where: { id: quoteId }, select: { markupType: true, markupValue: true } });
+    // The pick keeps the selling price it has now, as a client's pick does.
+    await tx.quoteStay.update({
+      where: { id: room.hotel.stayId },
+      data: { selectedRoomId: room.id, selectedSellMinor: sellingMinor(room, markup), selectedCurrency: room.currency, selectedByAgent: true },
+    });
+    if (quote.status !== "SELECTED") await tx.quote.update({ where: { id: quoteId }, data: { status: "SELECTED" } });
+    await touch(tx, quoteId);
+    await audit(actorUserId, "quote.agent-selection", "Quote", quoteId, undefined, { by: "agent", stayId: room.hotel.stayId, roomId: room.id }, tx);
+    return { ok: true, id: quoteId } as const;
+  });
+}
+
+// "Clear selection" on a destination (the agent's or the client's pick). A booked one is frozen.
+export async function clearSelection(actorUserId: string, agencyId: string, stayId: string): Promise<Result> {
+  if (typeof stayId !== "string" || stayId.length > 64) return fail(NOT_FOUND);
+  return db.$transaction(async (tx) => {
+    const found = await tx.quoteStay.findFirst({ where: { id: stayId, quote: { agencyId } }, select: { quoteId: true } });
+    if (!found) return fail(NOT_FOUND);
+    const quote = await lockForEdit(tx, agencyId, found.quoteId);
+    if (!quote) return fail(NOT_FOUND);
+    if (quote === "booked") return fail(BOOKED);
+    if (quote === "closed") return fail(CLOSED);
+    if (await stayHasActiveBooking(tx, stayId)) return fail(STAY_BOOKED);
+    await tx.quoteStay.update({ where: { id: stayId }, data: { selectedRoomId: null, selectedSellMinor: null, selectedCurrency: null, selectedByAgent: false } });
+    await afterRemoval(tx, found.quoteId, actorUserId);
+    await touch(tx, found.quoteId);
+    await audit(actorUserId, "quote.agent-selection", "Quote", found.quoteId, undefined, { by: "agent", stayId, roomId: null }, tx);
+    return { ok: true, id: found.quoteId } as const;
+  });
+}
+
 async function roomCount(tx: Prisma.TransactionClient, quoteId: string): Promise<number> {
   return tx.quoteRoom.count({ where: { hotel: { stay: { quoteId } } } });
 }
@@ -476,11 +813,12 @@ async function touch(tx: Prisma.TransactionClient, quoteId: string): Promise<voi
 // clears the room id), so its stored price goes too, and a quote with no pick left is no longer
 // "Selected".
 async function afterRemoval(tx: Prisma.TransactionClient, quoteId: string, actorUserId: string): Promise<void> {
-  await tx.quoteStay.updateMany({ where: { quoteId, selectedRoomId: null }, data: { selectedSellMinor: null, selectedCurrency: null } });
-  const quote = await tx.quote.findUniqueOrThrow({ where: { id: quoteId }, select: { status: true, viewedAt: true, agencyId: true } });
+  await tx.quoteStay.updateMany({ where: { quoteId, selectedRoomId: null }, data: { selectedSellMinor: null, selectedCurrency: null, selectedByAgent: false } });
+  const quote = await tx.quote.findUniqueOrThrow({ where: { id: quoteId }, select: { status: true, viewedAt: true, sentAt: true, agencyId: true } });
   if (quote.status !== "SELECTED") return;
   const picks = await tx.quoteStay.count({ where: { quoteId, selectedRoomId: { not: null } } });
-  if (picks === 0) await tx.quote.update({ where: { id: quoteId }, data: { status: quote.viewedAt ? "VIEWED" : "SENT" } });
+  // A draft the agent chose for (never sent) goes back to a draft.
+  if (picks === 0) await tx.quote.update({ where: { id: quoteId }, data: { status: statusWithoutPick(quote) } });
   // The destinations that still have rooms may all be booked already: the quote is then booked.
   else await syncQuoteBooked(tx, quoteId, quote.agencyId, actorUserId);
 }
@@ -642,7 +980,7 @@ async function ownRoom(tx: Prisma.TransactionClient, agencyId: string, roomId: s
   if (typeof roomId !== "string" || roomId.length > 64) return null;
   return tx.quoteRoom.findFirst({
     where: { id: roomId, hotel: { stay: { quote: { agencyId } } } },
-    select: { id: true, refundable: true, freeCancelUntil: true, netMinor: true, currency: true, hotel: { select: { stayId: true, stay: { select: { quoteId: true } } } } },
+    select: { id: true, refundable: true, freeCancelUntil: true, netMinor: true, sellMinor: true, currency: true, hotel: { select: { stayId: true, stay: { select: { quoteId: true } } } } },
   });
 }
 
@@ -771,6 +1109,7 @@ export async function addFromSearch(
   try {
     return await db.$transaction(async (tx) => {
       if (quoteId === "new") {
+        await deleteStaleEmptyDrafts(tx, actorUserId, agencyId, now);
         // A new quote is created in the same transaction, so a refusal below leaves nothing behind.
         const created = await tx.quote.create({
           data: { agencyId, agencyNumber: await nextAgencyNumber(tx, agencyId), createdById: actorUserId, adults: query.adults, childAges: query.childAges, ...(await newQuoteDefaults(tx, agencyId)) },
@@ -887,4 +1226,37 @@ export function quoteNumbers(quote: Pick<QuoteDetail, "markupType" | "markupValu
     profitMin: profits.length ? Math.min(...profits) : null,
     profitMax: profits.length ? Math.max(...profits) : null,
   };
+}
+
+// ---------- before sending (mockup 15) ----------
+
+const checkDay = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+const fmtDay = (iso: string) => checkDay.format(new Date(`${iso}T00:00:00Z`));
+
+// What the agent should look at before the quote goes to the client. The agent can still send
+// ("Send anyway"): none of these stops a send by itself (the server refuses an email with no
+// room options on its own).
+export function preSendChecks(quote: Pick<QuoteDetail, "client" | "markupType" | "markupValue" | "stays">, now: Date = new Date()): string[] {
+  const today = todayIso(now);
+  const out: string[] = [];
+  const rooms = quote.stays.flatMap((s) => s.hotels.flatMap((h) => h.rooms));
+  if (rooms.length === 0) out.push("There is nothing to offer yet. Add at least one hotel with a room.");
+  if (!quote.client) out.push("No client is chosen. Pick or add a client in the Client card.");
+  for (const stay of quote.stays) {
+    const place = stay.destinationName.split(",")[0];
+    if (!dayAhead(stay.checkin, today)) out.push(`${place}: the check-in date (${fmtDay(stay.checkin)}) has passed.`);
+    for (const hotel of stay.hotels) {
+      for (const room of hotel.rooms) {
+        const name = `${hotel.name}, ${room.roomName}`;
+        if (sellingMinor(room, quote) - room.netMinor <= 0) out.push(`${name}: no profit on this room.`);
+        if (room.unavailable) out.push(`${name}: no longer available at the last price check. Remove it or refresh the prices.`);
+        else if (room.needsRefresh) out.push(`${name}: copied from another quote. Refresh the prices of ${place} first.`);
+        const supplier = supplierCancelView(room, today);
+        const client = clientCancelView(room, today);
+        if (supplier.kind === "ended") out.push(`${name}: free cancellation ended on ${fmtDay(supplier.on)}.`);
+        else if (client.kind === "ended") out.push(`${name}: the client's free-cancellation date (${fmtDay(client.on)}) has passed.`);
+      }
+    }
+  }
+  return out;
 }
