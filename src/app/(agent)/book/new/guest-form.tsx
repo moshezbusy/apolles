@@ -28,7 +28,13 @@ const fieldMessage = "text-[11px] font-semibold text-[#a0493b]";
 // room) and a label for each of its guests, adults first.
 export type GuestFormRoom = { heading: string | null; guests: string[] };
 
-type FieldProps = (name: string) => { name: string; className: string; "aria-invalid": true | undefined; "aria-describedby": string | undefined };
+// The class and the accessibility attributes of a field, by whether it is marked wrong.
+function fieldClass(errors: Record<string, string>, name: string): string {
+  return errors[name] ? invalidInput : input;
+}
+function describedBy(errors: Record<string, string>, name: string): string | undefined {
+  return errors[name] ? `${name}-error` : undefined;
+}
 
 // Screen 10: a given and family name for every guest of every room (lead guest first; each
 // room's first adult is its main guest, TR5), and the lead guest's email and phone (TR4). One
@@ -64,12 +70,6 @@ export function GuestForm({
     const first = Array.from(formRef.current?.querySelectorAll<HTMLInputElement>("input[name]") ?? []).find((el) => el.name in wrong);
     first?.focus();
   }, [state]);
-  const field: FieldProps = (name) => ({
-    name,
-    className: errors[name] ? invalidInput : input,
-    "aria-invalid": errors[name] ? true : undefined,
-    "aria-describedby": errors[name] ? `${name}-error` : undefined,
-  });
   return (
     <form id={FORM_ID} ref={formRef} key={JSON.stringify(v)} action={formAction} noValidate className="flex flex-col gap-5">
       {state ? (
@@ -86,27 +86,27 @@ export function GuestForm({
             <h2 id={`room-${r}`} className="text-base font-bold text-ink">
               {room.heading}
             </h2>
-            <RoomGuests room={room} r={r} v={v} field={field} errors={errors} />
+            <RoomGuests room={room} r={r} v={v} errors={errors} />
           </section>
         ) : (
-          <RoomGuests key={r} room={room} r={r} v={v} field={field} errors={errors} />
+          <RoomGuests key={r} room={room} r={r} v={v} errors={errors} />
         ),
       )}
       <fieldset className="grid gap-3 sm:grid-cols-[1fr_110px_1fr]">
         <legend className="mb-2 text-sm font-bold text-ink">Lead guest contact</legend>
         <label className={label}>
           Email
-          <input type="email" required maxLength={254} autoComplete="off" defaultValue={v.leadEmail ?? ""} {...field("leadEmail")} />
+          <input type="email" required maxLength={254} autoComplete="off" defaultValue={v.leadEmail ?? ""} name="leadEmail" className={fieldClass(errors, "leadEmail")} aria-invalid={errors.leadEmail ? true : undefined} aria-describedby={describedBy(errors, "leadEmail")} />
           <FieldError name="leadEmail" errors={errors} />
         </label>
         <label className={label}>
           Country code
-          <input type="text" inputMode="numeric" required maxLength={4} placeholder="972" defaultValue={v.phoneCountry ?? ""} {...field("phoneCountry")} />
+          <input type="text" inputMode="numeric" required maxLength={4} placeholder="972" defaultValue={v.phoneCountry ?? ""} name="phoneCountry" className={fieldClass(errors, "phoneCountry")} aria-invalid={errors.phoneCountry ? true : undefined} aria-describedby={describedBy(errors, "phoneCountry")} />
           <FieldError name="phoneCountry" errors={errors} />
         </label>
         <label className={label}>
           Phone number
-          <input type="tel" required maxLength={20} placeholder="50 123 4567" defaultValue={v.phoneNumber ?? ""} {...field("phoneNumber")} />
+          <input type="tel" required maxLength={20} placeholder="50 123 4567" defaultValue={v.phoneNumber ?? ""} name="phoneNumber" className={fieldClass(errors, "phoneNumber")} aria-invalid={errors.phoneNumber ? true : undefined} aria-describedby={describedBy(errors, "phoneNumber")} />
           <FieldError name="phoneNumber" errors={errors} />
         </label>
       </fieldset>
@@ -158,7 +158,7 @@ function FieldError({ name, errors }: { name: string; errors: Record<string, str
 }
 
 // A given and family name (and title) for each guest of one room.
-function RoomGuests({ room, r, v, field, errors }: { room: GuestFormRoom; r: number; v: Record<string, string>; field: FieldProps; errors: Record<string, string> }) {
+function RoomGuests({ room, r, v, errors }: { room: GuestFormRoom; r: number; v: Record<string, string>; errors: Record<string, string> }) {
   return (
     <>
       {room.guests.map((title, i) => {
@@ -181,12 +181,12 @@ function RoomGuests({ room, r, v, field, errors }: { room: GuestFormRoom; r: num
             </label>
             <label className={label}>
               Given name
-              <input type="text" required maxLength={60} autoComplete="off" defaultValue={v[given] ?? ""} {...field(given)} />
+              <input type="text" required maxLength={60} autoComplete="off" defaultValue={v[given] ?? ""} name={given} className={fieldClass(errors, given)} aria-invalid={errors[given] ? true : undefined} aria-describedby={describedBy(errors, given)} />
               <FieldError name={given} errors={errors} />
             </label>
             <label className={label}>
               Family name
-              <input type="text" required maxLength={60} autoComplete="off" defaultValue={v[family] ?? ""} {...field(family)} />
+              <input type="text" required maxLength={60} autoComplete="off" defaultValue={v[family] ?? ""} name={family} className={fieldClass(errors, family)} aria-invalid={errors[family] ? true : undefined} aria-describedby={describedBy(errors, family)} />
               <FieldError name={family} errors={errors} />
             </label>
           </fieldset>
