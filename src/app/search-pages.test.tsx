@@ -374,7 +374,7 @@ describe("results page (screen 08)", () => {
     const id = await search("A");
     const quote = "q".repeat(25);
     const html = await renderResults(id, { quote, name: "Hotel" });
-    expect(html).toContain(`<input type="hidden" name="quote" value="${quote}"/>`);
+    expect(html).toContain('<input type="hidden" name="quote" value="' + quote + '"/>');
     expect(html).toContain(`href="/search/${id}?quote=${quote}"`); // Clear filters
     const plain = await renderResults(id, { name: "Hotel" });
     expect(plain).not.toContain('name="quote"');
