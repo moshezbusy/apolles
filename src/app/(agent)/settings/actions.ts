@@ -24,8 +24,7 @@ function text(value: FormDataEntryValue | null): string {
   return typeof value === "string" ? value.slice(0, 300) : "";
 }
 
-const PROFILE_ERROR =
-  "Check the form: agency name 2–100 characters, a valid business email, a phone number with 7–15 digits, and a country.";
+const PROFILE_ERROR = "Check the form: a valid business email and a phone number with 7–15 digits.";
 
 export async function updateProfileAction(
   _previous: SettingsFormState,
@@ -33,12 +32,11 @@ export async function updateProfileAction(
 ): Promise<SettingsFormState> {
   const { userId, agencyId } = await requireAgent();
 
-  // Only the known fields are read (the form also carries Next.js internals).
+  // Only the fields an agent may change are read (the form also carries Next.js internals).
+  // The agency name and country are never read: an agent cannot change them (agency-profile.ts).
   const submitted = {
-    name: text(formData.get("name")),
     email: text(formData.get("email")),
     phone: text(formData.get("phone")),
-    country: text(formData.get("country")),
   };
   const parsed = agencyProfileInput.safeParse(submitted);
   if (!parsed.success) return { status: "error", message: PROFILE_ERROR, values: submitted };

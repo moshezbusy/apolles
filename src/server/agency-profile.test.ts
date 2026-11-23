@@ -24,7 +24,7 @@ function headerOnlyPng(width: number, height: number): Uint8Array {
   return Uint8Array.from(png(width, height).subarray(0, 33));
 }
 
-const valid = { name: "Sunrise Travel Ltd", email: "Office@Sunrise.example", phone: "+972 50-123-4567", country: "IL" };
+const valid = { email: "Office@Sunrise.example", phone: "+972 50-123-4567" };
 
 let agencyA: string;
 let agencyB: string;
@@ -43,10 +43,10 @@ describe("agency profile", () => {
   });
 
   describe("updateAgencyProfile", () => {
-    it("saves the four fields (email lowercased) and audits before/after", async () => {
+    it("saves the business email (lowercased) and phone, and audits before/after", async () => {
       await updateAgencyProfile(agentA, agencyA, valid);
       expect(await getAgencyProfile(agencyA)).toMatchObject({
-        name: "Sunrise Travel Ltd",
+        name: "Sunrise Travel",
         email: "office@sunrise.example",
         phone: "+972 50-123-4567",
         country: "IL",
@@ -55,8 +55,8 @@ describe("agency profile", () => {
       const rows = await db.auditLog.findMany({ where: { action: "agency.profile.update" } });
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ actorUserId: agentA, targetType: "Agency", targetId: agencyA });
-      expect(rows[0]?.before).toMatchObject({ name: "Sunrise Travel", email: null, phone: null, country: "IL" });
-      expect(rows[0]?.after).toMatchObject({ name: "Sunrise Travel Ltd", email: "office@sunrise.example" });
+      expect(rows[0]?.before).toEqual({ email: null, phone: null });
+      expect(rows[0]?.after).toEqual({ email: "office@sunrise.example", phone: "+972 50-123-4567" });
     });
 
     it("never touches another agency", async () => {
@@ -64,16 +64,24 @@ describe("agency profile", () => {
       expect(await getAgencyProfile(agencyB)).toMatchObject({ name: "Other Agency", email: null, phone: null });
     });
 
+    // The country is the point of sale sent to the hotel supplier with every search and booking,
+    // and the name is the agency's legal name: neither is the agent's to change.
     it.each([
-      ["short name", { ...valid, name: "A" }],
+      ["a new agency name", { ...valid, name: "Renamed Travel Ltd" }],
+      ["a new country", { ...valid, country: "US" }],
+      ["both", { ...valid, name: "Renamed Travel Ltd", country: "US" }],
+    ])("an agent cannot send %s: refused, nothing changes", async (_label, input) => {
+      await expect(updateAgencyProfile(agentA, agencyA, input as typeof valid)).rejects.toThrow();
+      expect(await getAgencyProfile(agencyA)).toMatchObject({ name: "Sunrise Travel", country: "IL", email: null });
+      expect(await db.auditLog.count()).toBe(0);
+    });
+
+    it.each([
       ["bad email", { ...valid, email: "not-an-email" }],
       ["phone with letters", { ...valid, phone: "+972 50 CALL ME" }],
       ["phone too short", { ...valid, phone: "12345" }],
       ["phone too long", { ...valid, phone: "+1 234 567 890 123 456" }],
-      ["unknown country", { ...valid, country: "XX" }],
       ["unknown field", { ...valid, agencyId: agencyB }],
-      ["right-to-left override in name", { ...valid, name: "Sunrise \u202Elevart" }],
-      ["NUL in name", { ...valid, name: "Sunrise\u0000Travel" }],
       ["newline in phone", { ...valid, phone: "+972 50\n123 4567" }],
       ["tab in phone", { ...valid, phone: "+972\t501234567" }],
     ])("rejects %s and changes nothing", async (_label, input) => {

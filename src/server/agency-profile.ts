@@ -1,15 +1,17 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { isCountryCode } from "@/lib/countries";
 import { IMAGE_MAX_PIXELS, IMAGE_MAX_SIDE, readImageInfo, validateImage } from "@/lib/image-info";
 import { audit } from "@/server/audit";
 import { db } from "@/server/db";
 import { normalizeEmail } from "@/server/users";
 
-// The agency profile the agent edits on /settings: name, business email, phone, country and
-// logo (spec 7א: the voucher shows them). Every function takes the agencyId from the
-// caller's session (requireAgent), never from the request, and audits each change in the
-// same transaction as the change.
+// The agency profile on /settings (spec 7א: the voucher shows it). The agent edits the
+// business email, the phone and the logo. The agency NAME and COUNTRY are shown but are not
+// the agent's to change: the country is the point of sale sent to the hotel supplier with
+// every search and booking (it decides which rates and taxes apply), and the name is the legal
+// name the admin approved. They are set when the admin opens the agency.
+// Every function takes the agencyId from the caller's session (requireAgent), never from the
+// request, and audits each change in the same transaction as the change.
 
 export const LOGO_MAX_BYTES = 512_000;
 const LOGO_MIN_WIDTH = 300;
@@ -28,19 +30,11 @@ const phone = z
     return digits >= 7 && digits <= 15;
   });
 
+// What an agent may change. Strict: a posted name or country (or anything else) is refused.
 export const agencyProfileInput = z
   .object({
-    // No control or invisible formatting characters (NUL, line breaks, right-to-left
-    // overrides): the name is shown in the admin list and printed on vouchers.
-    name: z
-      .string()
-      .trim()
-      .min(2)
-      .max(100)
-      .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value)),
     email: z.string().trim().max(254).pipe(z.email()),
     phone,
-    country: z.string().trim().refine(isCountryCode),
   })
   .strict();
 
@@ -88,7 +82,7 @@ export async function updateAgencyProfile(
     await tx.$queryRaw`SELECT id FROM "Agency" WHERE id = ${agencyId} FOR UPDATE`;
     const before = await tx.agency.findUniqueOrThrow({
       where: { id: agencyId },
-      select: { name: true, email: true, phone: true, country: true },
+      select: { email: true, phone: true },
     });
     await tx.agency.update({ where: { id: agencyId }, data: after });
     await audit(actorUserId, "agency.profile.update", "Agency", agencyId, before, after, tx);
