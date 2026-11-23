@@ -7,7 +7,6 @@ import { countryOptions } from "@/lib/countries";
 import { formatUsd } from "@/lib/money";
 import { LOGO_MAX_BYTES, LOGO_RULE_COPY, getAgencyProfile } from "@/server/agency-profile";
 import { requireAgent } from "@/server/auth/guards";
-import { getBankDetails } from "@/server/bank-details";
 import { getQuoteSettings } from "@/server/quote-settings";
 import { getAccount } from "@/server/users";
 import { getBalance } from "@/server/wallet/ledger";
@@ -15,6 +14,7 @@ import { changePasswordAction, removeLogoAction, updateBrandingAction, updateDef
 import { LogoForm } from "./logo-form";
 import { ProfileForm } from "./profile-form";
 import { BrandingForm, ChangePasswordForm, DefaultsForm } from "./quote-forms";
+import { TopUpByBankTransfer } from "../balance/top-up";
 
 export const metadata: Metadata = { title: "Agency settings · Apolles", robots: { index: false, follow: false } };
 
@@ -176,7 +176,6 @@ function PreferencesTab({ settings }: { settings: Settings }) {
 }
 
 function BalanceTab({ balance, reference }: { balance: { balanceCents: number; heldCents: number }; reference: string }) {
-  const bankDetails = getBankDetails();
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <section aria-labelledby="balance-title" className={`${card} p-6`}>
@@ -191,24 +190,8 @@ function BalanceTab({ balance, reference }: { balance: { balanceCents: number; h
           View balance activity
         </Link>
       </section>
-      <section aria-labelledby="transfer-title" className={`${card} p-6`}>
-        <h2 id="transfer-title" className="text-base font-bold text-ink">
-          Bank transfer
-        </h2>
-        <p className="mb-4 mt-1 text-[13px] text-muted">No fees from Apolles. The amount is added once Apolles confirms the transfer, usually within 1 to 3 business days.</p>
-        <dl className="grid grid-cols-[max-content_1fr] gap-x-8 gap-y-2 text-sm">
-          {bankDetails.map((detail) => (
-            <div key={detail.label} className="contents">
-              <dt className="text-muted">{detail.label}</dt>
-              <dd className="font-mono text-ink">{detail.value}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-4 rounded-[9px] border border-[#d3e3da] bg-brand-soft px-3 py-2.5 text-sm font-semibold text-brand">
-          Your reference: <span className="font-mono">{reference}</span>
-        </p>
-        <p className="mt-3 text-[13px] text-muted">Always write your reference so we can match the transfer to your agency. Unused balance can be returned to your bank account on request: contact support.</p>
-      </section>
+      {/* The same top-up wording as the balance page. */}
+      <TopUpByBankTransfer reference={reference} />
     </div>
   );
 }

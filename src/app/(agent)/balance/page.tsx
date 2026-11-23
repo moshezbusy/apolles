@@ -1,19 +1,20 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { card, cell, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
+import { btnSecondary, card, cell, emptyState, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { requireAgent } from "@/server/auth/guards";
-import { getBankDetails } from "@/server/bank-details";
+import { bookingIdsByReference } from "@/server/booking/list";
 import { forAgency } from "@/server/scope";
 import { getBalance } from "@/server/wallet/ledger";
 import { TYPE_LABEL } from "./labels";
+import { TopUpByBankTransfer } from "./top-up";
 
 export const metadata: Metadata = { title: "Balance · Apolles", robots: { index: false, follow: false } };
 
-type SearchParams = Promise<{ cursor?: string | string[] }>;
+type SearchParams = Promise<{ shown?: string | string[] }>;
 
-const NOTE = "Top-ups are credited after Apolles confirms the transfer. USD only.";
+const PAGE_SIZE = 50; // one page of the ledger
+const MAX_SHOWN = 500;
 
 function formatWhen(date: Date): string {
   return `${date.toISOString().slice(0, 16).replace("T", " ")} UTC`;
@@ -25,22 +26,29 @@ function signedUsd(cents: number): string {
 }
 
 // Agent balance page: available and held amounts, how to top up by bank transfer, and the
-// ledger history with the balance after each row. Everything is read for the agency of the
-// signed-in agent only (agencyId from the session, never from the request).
+// ledger history with the balance after each row, its booking (a link) and its reason. "Load
+// more" shows the next 50 rows below the ones already shown. Everything is read for the agency of
+// the signed-in agent only (agencyId from the session, never from the request).
 export default async function BalancePage({ searchParams }: { searchParams: SearchParams }) {
   const { agencyId } = await requireAgent();
-  const { cursor } = await searchParams;
+  const { shown: rawShown } = await searchParams;
+  const shownParam = Number(typeof rawShown === "string" ? rawShown : "");
+  const shown = Number.isInteger(shownParam) ? Math.min(Math.max(PAGE_SIZE, shownParam), MAX_SHOWN) : PAGE_SIZE;
   const scope = forAgency(agencyId);
 
-  let history;
-  try {
-    history = await scope.ledger.listWithBalance(typeof cursor === "string" && cursor ? cursor : undefined);
-  } catch (error) {
-    if (error instanceof Error && error.message === "Invalid cursor") redirect("/balance");
-    throw error;
-  }
-  const [balance, agency] = await Promise.all([getBalance(agencyId), scope.agency.profile()]);
-  const bankDetails = getBankDetails();
+  // Page after page of the agency's own ledger until `shown` rows (at most 10 pages).
+  const entries: Awaited<ReturnType<typeof scope.ledger.listWithBalance>>["entries"] = [];
+  let nextCursor: string | null = null;
+  do {
+    const page = await scope.ledger.listWithBalance(nextCursor ?? undefined, PAGE_SIZE);
+    entries.push(...page.entries);
+    nextCursor = page.nextCursor;
+  } while (nextCursor && entries.length < shown);
+  const [balance, agency, bookingIds] = await Promise.all([
+    getBalance(agencyId),
+    scope.agency.profile(),
+    bookingIdsByReference(agencyId, entries.map((e) => e.bookingRef ?? "")),
+  ]);
 
   return (
     <main className="flex-1">
@@ -65,31 +73,13 @@ export default async function BalancePage({ searchParams }: { searchParams: Sear
           </section>
         </div>
 
-        <section id="bank-transfer" aria-labelledby="bank-transfer-label" className={`${card} p-6`}>
-          <h2 id="bank-transfer-label" className="mb-4 text-base font-bold text-ink">
-            Top up by bank transfer
-          </h2>
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-8 gap-y-2 text-sm">
-            {bankDetails.map((detail) => (
-              <div key={detail.label} className="contents">
-                <dt className="text-muted">{detail.label}</dt>
-                <dd className="font-mono text-ink">{detail.value}</dd>
-              </div>
-            ))}
-          </dl>
-          {agency ? (
-            <p className="mt-4 rounded-[9px] border border-[#d3e3da] bg-brand-soft px-3 py-2.5 text-sm font-semibold text-brand">
-              Reference: <span className="font-mono">{agency.bankReference}</span>
-            </p>
-          ) : null}
-          <p className="mt-3 text-[13px] text-muted">{NOTE}</p>
-        </section>
+        <TopUpByBankTransfer reference={agency?.bankReference ?? null} />
 
         <section id="history" aria-labelledby="history-label">
           <h2 id="history-label" className="mb-3 text-lg font-bold text-ink">
             History
           </h2>
-          {history.entries.length === 0 ? (
+          {entries.length === 0 ? (
             <p className={emptyState}>No transactions yet.</p>
           ) : (
             <div className={tableWrap}>
@@ -103,10 +93,14 @@ export default async function BalancePage({ searchParams }: { searchParams: Sear
                   </tr>
                 </thead>
                 <tbody className={tbody}>
-                  {history.entries.map((entry) => (
+                  {entries.map((entry) => (
                     <tr key={entry.id} className={tr}>
                       <td data-label="Date" className={`${cell} whitespace-nowrap text-[13px] text-muted`}>{formatWhen(entry.createdAt)}</td>
-                      <td data-label="Description" className={`${td} font-semibold`}>{TYPE_LABEL[entry.type]}</td>
+                      <td data-label="Description" className={td}>
+                        <span className="font-semibold">{TYPE_LABEL[entry.type]}</span>
+                        {entry.bookingRef ? <BookingRef reference={entry.bookingRef} id={bookingIds.get(entry.bookingRef)} /> : null}
+                        {entry.reason ? <span className="block text-xs text-muted">{entry.reason}</span> : null}
+                      </td>
                       <td data-label="Amount"
                         className={`${cell} whitespace-nowrap text-right font-bold tabular-nums ${
                           entry.amountCents > 0 ? "text-brand" : "text-ink"
@@ -123,16 +117,33 @@ export default async function BalancePage({ searchParams }: { searchParams: Sear
               </table>
             </div>
           )}
-          {history.nextCursor ? (
-            <Link
-              href={`/balance?cursor=${encodeURIComponent(history.nextCursor)}`}
-              className={`mt-4 inline-block ${link}`}
-            >
-              Load more
-            </Link>
+          {nextCursor && shown < MAX_SHOWN ? (
+            <p className="mt-4">
+              <Link href={`/balance?shown=${shown + PAGE_SIZE}#history`} scroll={false} className={btnSecondary}>
+                Load more
+              </Link>
+            </p>
+          ) : nextCursor ? (
+            <p className="mt-4 text-[13px] text-muted">Showing the newest {MAX_SHOWN} rows. Contact Apolles support for older ones.</p>
           ) : null}
         </section>
       </div>
     </main>
+  );
+}
+
+// The booking of a row ("Booking APL-..."), a link when it is one of the agency's own bookings.
+function BookingRef({ reference, id }: { reference: string; id: string | undefined }) {
+  return (
+    <span className="block text-xs">
+      Booking{" "}
+      {id ? (
+        <Link href={`/bookings/${id}`} className={`${link} font-mono text-xs`}>
+          {reference}
+        </Link>
+      ) : (
+        <span className="font-mono">{reference}</span>
+      )}
+    </span>
   );
 }
