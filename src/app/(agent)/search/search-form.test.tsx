@@ -1,13 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SearchForm, ageText } from "./search-form";
-import { childAgesComplete, readSearchForm, toSearchInput, type SearchFormValues } from "./form-state";
+import { childAgesComplete, readSearchForm, toHotelSearchInput, toSearchInput, type SearchFormValues } from "./form-state";
 import { stayText } from "./parts";
 import { searchInputSchema } from "@/server/search/input";
 
 const values: SearchFormValues = {
   destinationId: "paris",
   destinationLabel: "Paris, France",
+  propertyId: "",
   checkin: "2026-12-03",
   checkout: "2026-12-05",
   rooms: [{ adults: "2", childAges: ["4", "0"] }],
@@ -132,6 +133,12 @@ describe("reading the search form (plan 10)", () => {
     expect(values.rooms).toEqual([{ adults: "2", childAges: ["9", "4"] }, { adults: "1", childAges: [] }]);
     expect(toSearchInput(values).rooms).toEqual([{ adults: 2, childAges: [9, 4] }, { adults: 1, childAges: [] }]);
     expect(childAgesComplete(values)).toBe(true);
+  });
+
+  it("a hotel chosen by name: the hotel, the dates and the rooms, never a destination from the form", () => {
+    const values = readSearchForm(form([["propertyId", "h1"], ["destinationId", "paris"], ["checkin", "2027-04-10"], ["checkout", "2027-04-12"], ["room_adults", "2"], ["room_children", ""]]));
+    expect(values.propertyId).toBe("h1");
+    expect(toHotelSearchInput(values)).toEqual({ propertyId: "h1", checkin: "2027-04-10", checkout: "2027-04-12", rooms: [{ adults: 2, childAges: [] }] });
   });
 
   it("reads one room more than the 8 allowed, so 9 rooms are refused, not cut; a child without an age is incomplete; a bad number is never a silent 0", () => {

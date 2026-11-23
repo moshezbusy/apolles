@@ -45,6 +45,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   if (again && !quote) {
     values.destinationId = again.destinationId;
     values.destinationLabel = again.destinationName;
+    values.propertyId = again.propertyId ?? "";
     values.rooms = again.rooms.map((r) => ({ adults: String(r.adults), childAges: r.childAges.map(String) }));
     if (again.checkin >= minDate) {
       values.checkin = again.checkin;

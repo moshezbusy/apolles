@@ -44,4 +44,14 @@ describe("recent searches (screen 07)", () => {
     await rememberSearch(A, { ...S(1), rooms: [{ adults: 2, childAges: [5] }] });
     expect(await db.recentSearch.count({ where: { userId: A.userId } })).toBe(1);
   });
+
+  it("a hotel chosen by name is kept with its hotel; the hotel and its city on the same dates are two searches", async () => {
+    await rememberSearch(A, { ...S(1), propertyId: "p7", destinationName: "Hotel Seven" });
+    await rememberSearch(A, S(1));
+    await rememberSearch(A, { ...S(1), propertyId: "p7", destinationName: "Hotel Seven" }); // again: moved up, not repeated
+    expect((await recentSearches(A)).map((r) => [r.destinationName, r.propertyId])).toEqual([
+      ["Hotel Seven", "p7"],
+      ["City 1", null],
+    ]);
+  });
 });

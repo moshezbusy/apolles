@@ -31,6 +31,7 @@ export function formValuesOf(s: SearchSummary): SearchFormValues {
   return {
     destinationId: s.destinationId,
     destinationLabel: s.destinationLabel,
+    propertyId: s.propertyId ?? "",
     checkin: s.checkin,
     checkout: s.checkout,
     rooms: s.rooms.map((r) => ({ adults: String(r.adults), childAges: r.childAges.map(String) })),

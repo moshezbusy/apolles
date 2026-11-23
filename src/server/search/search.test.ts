@@ -4,9 +4,9 @@ import { resetTestDb } from "@/test/db";
 import { seedRateLimit } from "@/test/rate-limit";
 import { SupplierRateLimited, SupplierRequestRejected } from "@/server/supplier/expedia/client";
 import type { AvailabilityQuery, Offer, PropertyOffers, SupplierAdapter } from "@/server/supplier/types";
-import { suggestDestinations } from "./destinations";
+import { hotelWords, suggestDestinations, suggestHotels } from "./destinations";
 import { SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
-import { cleanupSnapshots, findOffer, getHotelOffers, listResults, loadMore, offerRef, searchOneHotel, searchSummary, snapshotOffers, snapshotsToRemove, startSearch } from "./search";
+import { cleanupSnapshots, findOffer, getHotelOffers, listResults, loadMore, offerRef, searchOneHotel, searchSummary, snapshotOffers, snapshotsToRemove, startHotelSearch, startSearch } from "./search";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 const input = { destinationId: "paris", checkin: "2027-04-10", checkout: "2027-04-12", rooms: [{ adults: 2, childAges: [] as number[] }] };
@@ -404,6 +404,7 @@ describe("search service", () => {
       rooms: [{ adults: 2, childAges: [] }],
       adults: 2,
       childAges: [],
+      propertyId: null,
       expired: false,
     });
     expect(await searchSummary("B", snapshotId, NOW)).toBeNull();
@@ -747,5 +748,119 @@ describe("suggestDestinations", () => {
     expect(await suggestDestinations("p")).toEqual([]);
     expect(await suggestDestinations("x".repeat(61))).toEqual([]);
     expect(await suggestDestinations("%a")).toEqual([]);
+  });
+});
+
+describe("suggestHotels (hotel-name search)", () => {
+  beforeEach(async () => {
+    await resetTestDb();
+    await db.destination.create({ data: { id: "paris", name: "Paris", nameFull: "Paris, France", type: "city", countryCode: "FR", propertyCount: 9, seenRunId: "r" } });
+    await db.destination.create({ data: { id: "gone", name: "Gone", nameFull: "Gone, France", type: "city", countryCode: "FR", propertyCount: 1, active: false, seenRunId: "r" } });
+    const h = async (id: string, name: string, opts: { rank?: number; active?: boolean; expediaCollect?: boolean; destinationId?: string | null; city?: string; country?: string } = {}) => {
+      await db.property.create({
+        data: { id, name, city: opts.city ?? "Paris", countryCode: opts.country ?? "FR", rank: opts.rank ?? Number(id), expediaCollect: opts.expediaCollect ?? true, active: opts.active ?? true, catalogSeenRunId: "r" },
+      });
+      if (opts.destinationId !== null) await db.destinationProperty.create({ data: { destinationId: opts.destinationId ?? "paris", propertyId: id } });
+    };
+    await h("1", "The Ritz Paris", { rank: 1 });
+    await h("2", "Ritz Carlton Downtown", { rank: 5, city: "Athens", country: "GR" });
+    await h("3", "Ritzy Inn (closed)", { active: false });
+    await h("4", "Ritz Agency Hotel", { expediaCollect: false });
+    await h("5", "Ritz Lonely", { destinationId: null });
+    await h("6", "Ritz Gone", { destinationId: "gone" });
+    await h("7", "Hotel 100% Ritz_", { rank: 9 });
+  });
+
+  it("matches the start of the name and the start of any word, a whole-name match first; with the city and country", async () => {
+    expect(await suggestHotels("ritz")).toEqual([
+      { id: "2", name: "Ritz Carlton Downtown", place: "Athens, Greece" },
+      { id: "1", name: "The Ritz Paris", place: "Paris, France" },
+      { id: "7", name: "Hotel 100% Ritz_", place: "Paris, France" },
+    ]);
+    expect((await suggestHotels("ritz par")).map((s) => s.id)).toEqual(["1"]);
+    expect((await suggestHotels("RITZ CARL")).map((s) => s.id)).toEqual(["2"]);
+  });
+
+  it("only hotels that can be searched: active, Expedia-collect, in an active destination", async () => {
+    const ids = (await suggestHotels("rit")).map((s) => s.id);
+    expect(ids).not.toContain("3");
+    expect(ids).not.toContain("4");
+    expect(ids).not.toContain("5");
+    expect(ids).not.toContain("6");
+  });
+
+  it("too short, too long, punctuation and query syntax are harmless", async () => {
+    expect(await suggestHotels("ri")).toEqual([]);
+    expect(await suggestHotels("r".repeat(61))).toEqual([]);
+    expect(await suggestHotels("%%%")).toEqual([]);
+    expect(await suggestHotels("!:*&|")).toEqual([]);
+    // Not the start of any whole name: rank order.
+    expect((await suggestHotels("ritz & | ! :* (")).map((s) => s.id)).toEqual(["1", "2", "7"]);
+    expect((await suggestHotels("100%")).map((s) => s.id)).toEqual(["7"]);
+  });
+
+  it("hotelWords keeps only letters and digits, each word a prefix", () => {
+    expect(hotelWords("The Ritz-Carlton")).toBe("the:* & ritz:* & carlton:*");
+    expect(hotelWords("l'hôtel 5*")).toBe("l:* & hôtel:* & 5:*");
+    expect(hotelWords("':*&|!")).toBeNull();
+  });
+});
+
+describe("startHotelSearch (hotel chosen by name)", () => {
+  beforeEach(async () => {
+    await resetTestDb();
+    await agency("A", "IL");
+    await agency("B", "US");
+    await hotels(3);
+    // The hotel is also in a bigger area: its city is the search's destination.
+    await db.destination.create({ data: { id: "idf", name: "Ile-de-France", nameFull: "Ile-de-France, France", type: "multi_city_vicinity", countryCode: "FR", propertyCount: 50, seenRunId: "r" } });
+    await db.destinationProperty.create({ data: { destinationId: "idf", propertyId: "2" } });
+  });
+
+  const hotelInput = { propertyId: "2", checkin: "2027-04-10", checkout: "2027-04-12", rooms: [{ adults: 2, childAges: [] as number[] }] };
+
+  it("asks for that one hotel only, stores it with the search (agency and user of the session) and names it in the summary", async () => {
+    const { adapter, searchAvailability } = fakeAdapter(everyone);
+    const result = await startHotelSearch(ctx(), hotelInput, { adapter, now: NOW });
+    expect(result).toEqual({ snapshotId: expect.any(String), propertyId: "2", priced: true });
+    expect(searchAvailability).toHaveBeenCalledTimes(1);
+    expect(searchAvailability.mock.calls[0]![0]).toMatchObject({ propertyIds: ["2"], countryCode: "IL", occupancies: [{ adults: 2, childAges: [] }] });
+    const snapshot = await db.searchSnapshot.findUniqueOrThrow({ where: { id: result.snapshotId } });
+    expect(snapshot).toMatchObject({ agencyId: "A", userId: "u1", candidateIds: ["2"] });
+    expect(snapshot.query).toMatchObject({ destinationId: "paris", propertyId: "2" });
+    expect(await searchSummary("A", result.snapshotId, NOW)).toMatchObject({ destinationId: "paris", destinationLabel: "Hotel 2", propertyId: "2" });
+    expect(await searchSummary("B", result.snapshotId, NOW)).toBeNull();
+    expect((await listResults("A", result.snapshotId, { sort: "recommended" }, NOW))?.hotels.map((h) => h.propertyId)).toEqual(["2"]);
+  });
+
+  it("a hotel with no rooms for the dates gives an empty search, not an error", async () => {
+    const { adapter } = fakeAdapter(() => []);
+    await expect(startHotelSearch(ctx(), hotelInput, { adapter, now: NOW })).resolves.toMatchObject({ propertyId: "2", priced: false });
+  });
+
+  it("the same date and guest rules as a destination search; extra fields are refused", async () => {
+    const { adapter, searchAvailability } = fakeAdapter(everyone);
+    for (const patch of [{ checkout: "2027-05-09" }, { checkin: "2027-02-27", checkout: "2027-03-02" }, { rooms: [{ adults: 9, childAges: [] }] }, { rooms: [] }, { destinationId: "paris" }, { countryCode: "US" }]) {
+      await expect(startHotelSearch(ctx(), { ...hotelInput, ...patch }, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchInputInvalid);
+    }
+    expect(searchAvailability).not.toHaveBeenCalled();
+  });
+
+  it("a bad id, an inactive hotel or one in no active destination is refused before the supplier is asked", async () => {
+    const { adapter, searchAvailability } = fakeAdapter(everyone);
+    await expect(startHotelSearch(ctx(), { ...hotelInput, propertyId: "../x" }, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchInputInvalid);
+    await db.property.update({ where: { id: "3" }, data: { active: false } });
+    await expect(startHotelSearch(ctx(), { ...hotelInput, propertyId: "3" }, { adapter, now: NOW })).rejects.toThrow(/can no longer be booked/);
+    await db.destination.updateMany({ data: { active: false } });
+    await expect(startHotelSearch(ctx(), hotelInput, { adapter, now: NOW })).rejects.toThrow(/can no longer be booked/);
+    expect(searchAvailability).not.toHaveBeenCalled();
+    expect(await db.searchSnapshot.count()).toBe(0);
+  });
+
+  it("counts against the same per-user search limit", async () => {
+    const { adapter } = fakeAdapter(everyone);
+    await seedRateLimit("search:user:u1", 30, 60_000);
+    await expect(startHotelSearch(ctx(), hotelInput, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchRateLimited);
+    await expect(startHotelSearch(ctx("A", "u2"), hotelInput, { adapter, now: NOW })).resolves.toMatchObject({ priced: true });
   });
 });

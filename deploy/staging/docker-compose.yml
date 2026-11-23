@@ -1,4 +1,12 @@
-# Apolles staging on the owner's VPS. Run from this folder (deploy/staging):
+# Apolles staging on the owner's VPS.
+#
+# The server does NOT run this file. Since 2026-11-23 cron runs a pinned copy, owned by root, in
+# /opt/apolles-staging-deploy/ (with the pinned auto-update.sh), so that no commit on main can
+# change how the server runs staging. This file is the reviewed source of that copy: the owner
+# reviews a change here and then copies it to /opt by hand. Editing it in the repo, or merging a
+# change to it, does not change the server (README.md, section 5). Keep the two in step.
+#
+# For a first install from scratch (README.md, section 1), from this folder (deploy/staging):
 #   docker compose -p apolles-staging up -d --build
 # All settings and secrets come from ./.env on the server (never committed; see README.md).
 name: apolles-staging
@@ -34,6 +42,11 @@ services:
     # Forwards stop signals to the server and reaps child processes.
     init: true
     mem_limit: 1g
+    # The app needs no Linux capabilities (it runs as the image's "node" user on port 3000) and
+    # may never gain new privileges. Same lines as in the pinned copy in /opt.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     env_file: .env
     environment:
       # Demo mode: made-up hotels, rates and bookings, with a banner on every page, until
@@ -63,6 +76,10 @@ services:
     restart: unless-stopped
     init: true
     mem_limit: 256m
+    # As for the app: no Linux capabilities, no new privileges (same as the pinned copy in /opt).
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     env_file: .env
     environment:
       # Same supplier as the app (demo mode): the worker's jobs (booking checks, cancel
