@@ -1,3 +1,4 @@
+import type { Server } from 'node:http';
 import { resolve } from 'node:path';
 import { InMemoryBookingStore, type BookingStore } from '../store/booking-store.js';
 import { FileBookingStore } from '../store/file-booking-store.js';
@@ -37,4 +38,43 @@ export async function openBookingStore(
   }
   warn('BOOKINGS_FILE is not set: bookings are kept in memory and are lost on restart (development only)');
   return { store: new InMemoryBookingStore(), flush: async () => undefined, ok: () => true };
+}
+
+export interface ShutdownOptions {
+  server: Server;
+  /** Wait until the bookings are on disk. */
+  flush: () => Promise<void>;
+  /** Stop timers (reconcile, retention). */
+  stop?: () => void;
+  /** How long requests in flight may take to finish. */
+  timeoutMs: number;
+  log?: (msg: string) => void;
+}
+
+/**
+ * SIGTERM / SIGINT: stop taking new requests, let the ones in flight finish
+ * (a booking at the supplier can take a minute), then make sure everything
+ * is on disk. After `timeoutMs` the remaining connections are cut; a booking
+ * cut that way is PENDING on disk and comes back as UNKNOWN at the next
+ * start, where reconcile asks the supplier about it.
+ */
+export async function shutdownGracefully(opts: ShutdownOptions): Promise<'clean' | 'forced'> {
+  const log = opts.log ?? ((m: string) => console.log(m));
+  const closed = new Promise<void>((resolve) => opts.server.close(() => resolve()));
+  opts.server.closeIdleConnections(); // keep-alive connections with nothing in flight
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<'forced'>((resolve) => {
+    timer = setTimeout(() => resolve('forced'), opts.timeoutMs);
+  });
+  const how = await Promise.race([closed.then(() => 'clean' as const), timedOut]);
+  clearTimeout(timer);
+  if (how === 'forced') {
+    log(`Shutdown: requests still running after ${opts.timeoutMs} ms; closing their connections`);
+    opts.server.closeAllConnections();
+    await closed;
+  }
+  opts.stop?.();
+  await opts.flush();
+  log(`Shutdown complete (${how})`);
+  return how;
 }
