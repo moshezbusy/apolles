@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, destroySession } from "@/server/auth/session";
+import { SESSION_COOKIE, destroySession, sessionCookieOptions } from "@/server/auth/session";
 
 // CSRF protection for this POST: the browser's Origin header must name this same host
 // (the same rule Next.js applies to server actions). No Origin header → refused.
@@ -25,12 +25,6 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (rawToken) await destroySession(rawToken);
 
   const response = new NextResponse(null, { status: 303, headers: { Location: "/login" } });
-  response.cookies.set(SESSION_COOKIE, "", {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 0,
-  });
+  response.cookies.set(SESSION_COOKIE, "", sessionCookieOptions(0));
   return response;
 }

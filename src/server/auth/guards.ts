@@ -4,6 +4,8 @@ import {
   SESSION_COOKIE,
   destroySession,
   getSession,
+  rotateSessionToken,
+  sessionCookieOptions,
   type SessionContext,
 } from "@/server/auth/session";
 
@@ -78,4 +80,13 @@ export async function requireAdminPendingTotp(): Promise<{
 export async function endCurrentSession(): Promise<void> {
   const rawToken = (await cookies()).get(SESSION_COOKIE)?.value;
   if (rawToken) await destroySession(rawToken);
+}
+
+// For the action that just accepted the second sign-in step (email code, admin TOTP code):
+// this browser's session gets a new token and the cookie is replaced, so the token from the
+// half-signed-in state no longer opens anything (session.ts, rotateSessionToken). The action
+// redirects right after, so replacing the cookie here does not interrupt a page.
+export async function renewSessionCookie(sessionId: string): Promise<void> {
+  const renewed = await rotateSessionToken(sessionId);
+  if (renewed) (await cookies()).set(SESSION_COOKIE, renewed.token, sessionCookieOptions(renewed.maxAgeSeconds));
 }

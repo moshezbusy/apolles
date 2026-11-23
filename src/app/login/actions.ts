@@ -10,10 +10,10 @@ import { getClientIp } from "@/server/client-ip";
 import { SIGN_IN_RATE_LIMIT_COPY, hitIpRateLimit, refundIpRateLimit } from "@/server/rate-limit";
 import {
   SESSION_COOKIE,
-  SESSION_TTL_MS,
   createSession,
   destroySession,
   getSession,
+  sessionCookieOptions,
 } from "@/server/auth/session";
 import { completeSignIn } from "@/server/auth/lockout";
 import { DEVICE_COOKIE, isTrustedDevice, sendSignInCode } from "@/server/auth/signin-code";
@@ -82,13 +82,7 @@ export async function loginAction(
   // An agent on a known device is signed in now: audited here. A new device is audited when
   // its email code is right (signin-code.ts), an admin when the TOTP code is (totp.ts).
   if (knownDevice) await audit(result.userId, "user.sign-in", "User", result.userId, undefined, { secondStep: "known-device" });
-  cookieStore.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_TTL_MS / 1000,
-  });
+  cookieStore.set(SESSION_COOKIE, token, sessionCookieOptions());
 
   if (!result.needsTotp && !knownDevice) redirect("/login/verify");
   // Admins continue to the admin area (TOTP step is added with admin TOTP).

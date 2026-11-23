@@ -9,6 +9,7 @@ import { requireAdmin } from "@/server/auth/guards";
 import { verifyTotpAction } from "@/app/admin/2fa/actions";
 import { confirmTotpAction, regenerateTotpKeyAction } from "@/app/admin/2fa/setup/actions";
 import { RATE_LIMITS } from "@/server/rate-limit";
+import { startTotpEnrollment } from "@/server/auth/totp";
 import { seedRateLimit } from "@/test/rate-limit";
 
 type SetCall = { name: string; value: string; options: Record<string, unknown> };
@@ -100,6 +101,37 @@ describe("admin 2FA", () => {
         error: WRONG_COPY,
       });
       expect(await sessionVerified()).toBe(false);
+      expect(setCalls).toHaveLength(0);
+    });
+
+    it("right code → the session token is replaced: the cookie from before the code no longer opens anything", async () => {
+      await signedInAdmin({ confirmed: true });
+      const before = jar.get(SESSION_COOKIE)!;
+      await expect(verifyTotpAction(null, form({ code: await generate({ secret: SECRET }) }))).rejects.toThrow(/^NEXT_REDIRECT:\/admin$/);
+
+      expect(setCalls).toHaveLength(1);
+      const call = setCalls[0]!;
+      expect(call.name).toBe(SESSION_COOKIE);
+      expect(call.value).not.toBe(before);
+      expect(call.options).toMatchObject({ httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+      expect(call.options).not.toHaveProperty("domain");
+      expect(call.options.maxAge).toBeGreaterThan(0);
+      expect(call.options.maxAge).toBeLessThanOrEqual(12 * 60 * 60);
+      expect(await getSession(before)).toBeNull();
+      const session = await getSession(call.value);
+      expect(session?.totpVerifiedAt).not.toBeNull();
+      expect(await db.session.count()).toBe(1);
+    });
+
+    it("first-time setup: the confirming code replaces the session token too", async () => {
+      const admin = await signedInAdmin({ confirmed: false });
+      const before = jar.get(SESSION_COOKIE)!;
+      const { otpauthUrl } = await startTotpEnrollment(admin.id);
+      const secret = new URL(otpauthUrl).searchParams.get("secret")!;
+      await expect(confirmTotpAction(null, form({ code: await generate({ secret }) }))).rejects.toThrow(/^NEXT_REDIRECT:\/admin$/);
+      expect(setCalls.map((c) => c.name)).toEqual([SESSION_COOKIE]);
+      expect(await getSession(before)).toBeNull();
+      expect((await getSession(setCalls[0]!.value))?.totpVerifiedAt).not.toBeNull();
     });
 
     it("not exactly 6 digits → same copy, not counted as an attempt", async () => {
