@@ -20,8 +20,15 @@ const MAX_BODY = 256 * 1024;
  *   POST /v1/reconcile                  settle bookings waiting for a supplier answer (cron)
  *   GET  /health
  */
-export function createHttpServer(service: SupplierService, apiKey: string): Server {
+export interface HttpServerOptions {
+  /** Extra health flags for GET /health, e.g. { auditOk, storeOk }. `ok` is true only when all are. */
+  health?: () => Record<string, boolean>;
+}
+
+export function createHttpServer(service: SupplierService, apiKey: string, opts: HttpServerOptions = {}): Server {
   if (!apiKey || apiKey.length < 24) throw new Error('API key must be at least 24 characters');
+  // The value in .env.example is public: anyone could call the API with it.
+  if (/^change-?me/i.test(apiKey)) throw new Error('APOLLES_API_KEY is still the placeholder from .env.example; set a long random value');
   const keyBuf = Buffer.from(apiKey);
 
   return createServer(async (req, res) => {
@@ -29,7 +36,11 @@ export function createHttpServer(service: SupplierService, apiKey: string): Serv
     res.setHeader('x-request-id', requestId);
     try {
       const url = parseUrl(req.url);
-      if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true });
+      if (req.method === 'GET' && url.pathname === '/health') {
+        // Always 200 while the process answers; the flags say what is wrong.
+        const flags = opts.health?.() ?? {};
+        return send(res, 200, { ok: Object.values(flags).every(Boolean), ...flags });
+      }
       if (!authorized(req, keyBuf)) return send(res, 401, { error: 'UNAUTHORIZED' });
 
       const parts = url.pathname.split('/').filter(Boolean);

@@ -90,4 +90,53 @@ describe('http api', () => {
     expect(r.status).toBe(400);
     expect((await r.json()).error).toBe('INVALID_REQUEST');
   });
+  it('refuses to start with the placeholder key from .env.example, or a short one', () => {
+    expect(() => createHttpServer(setup().service, 'change-me-to-a-long-random-string-48-chars')).toThrow(/placeholder/);
+    expect(() => createHttpServer(setup().service, 'short')).toThrow(/24/);
+  });
+  it('a person settles a NEEDS_REVIEW booking over HTTP', async () => {
+    const s = setup({ timeoutNotBooked: true }, { reconcileDelaysMs: [], maxReconcileAttempts: 1 });
+    const srv = createHttpServer(s.service, KEY);
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+    const call = (path: string, body: unknown) =>
+      fetch(`${url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': KEY }, body: JSON.stringify(body) });
+    try {
+      const found = await (await call('/v1/search', search)).json();
+      const q = await (await call('/v1/quotes', { offerId: found.offers.find((o: { supplierId: string }) => o.supplierId === 'alpha').offerId })).json();
+      const b = await (await call('/v1/bookings', {
+        clientReference: 'HTTP-REVIEW-1', quoteId: q.quoteId, approvedTotal: q.offer.total,
+        holder: { firstName: 'Dana', lastName: 'Levi' },
+        guests: [[{ firstName: 'Dana', lastName: 'Levi', type: 'ADULT' }, { firstName: 'Avi', lastName: 'Levi', type: 'ADULT' }]],
+        payment: { type: 'AGENCY_CREDIT' },
+      })).json();
+      expect(b).toMatchObject({ status: 'UNKNOWN', booked: false });
+      const rec = await (await call('/v1/reconcile', {})).json();
+      expect(rec.bookings[0]).toMatchObject({ status: 'NEEDS_REVIEW', booked: false });
+      expect((await call('/v1/bookings/HTTP-REVIEW-1/resolve', { status: 'MAYBE', note: 'x' })).status).toBe(400);
+      expect((await call('/v1/bookings/HTTP-REVIEW-1/resolve', null)).status).toBe(400);
+      const done = await call('/v1/bookings/HTTP-REVIEW-1/resolve', { status: 'FAILED', note: 'Supplier confirmed by phone: no booking' });
+      expect(done.status).toBe(200);
+      expect(await done.json()).toMatchObject({ status: 'FAILED', booked: false });
+      expect((await call('/v1/bookings/HTTP-REVIEW-1/resolve', { status: 'FAILED', note: 'again' })).status).toBe(409);
+    } finally {
+      await new Promise<void>((r) => srv.close(() => r()));
+    }
+  });
+  it('/health reports the audit log and the bookings file', async () => {
+    expect(await (await fetch(`${base}/health`)).json()).toEqual({ ok: true });
+    let auditOk = true;
+    const srv = createHttpServer(setup().service, KEY, { health: () => ({ auditOk, storeOk: true }) });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/health`;
+    try {
+      expect(await (await fetch(url)).json()).toEqual({ ok: true, auditOk: true, storeOk: true });
+      auditOk = false;
+      const res = await fetch(url);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: false, auditOk: false, storeOk: true });
+    } finally {
+      await new Promise<void>((r) => srv.close(() => r()));
+    }
+  });
 });

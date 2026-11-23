@@ -23,6 +23,9 @@ export class InMemoryOfferCache implements OfferCache {
 
   constructor(private readonly now: () => number = Date.now, private readonly maxEntries = 200_000) {}
 
+  /** Stop background work (nothing yet). */
+  dispose(): void {}
+
   async putOffer(offer: RateOffer, ttlMs: number): Promise<void> {
     this.set(this.offers, offer.offerId, offer, ttlMs);
   }

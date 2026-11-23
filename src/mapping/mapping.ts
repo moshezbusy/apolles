@@ -48,6 +48,11 @@ export class InMemoryMappingStore implements MappingStore {
     this.boards.set(file.supplierId, new Map(Object.entries(file.boards ?? {}).map(([k, v]) => [k.toUpperCase(), v])));
   }
 
+  /** How many hotels are mapped for a supplier (0 = its searches can never return anything). */
+  hotelCount(supplierId: SupplierId): number {
+    return this.hotels.get(supplierId)?.size ?? 0;
+  }
+
   async supplierHotelCodes(supplierId: SupplierId, hotelIds: HotelId[]): Promise<Map<HotelId, string>> {
     const fwd = this.hotels.get(supplierId);
     const out = new Map<HotelId, string>();
@@ -69,17 +74,59 @@ export class InMemoryMappingStore implements MappingStore {
   }
 }
 
+const BOARDS: ReadonlySet<string> = new Set(['RO', 'BB', 'HB', 'FB', 'AI', 'UAI', 'OTHER']);
+
+/**
+ * Loads every <supplier>.json in the directory. A missing directory or a
+ * broken file stops startup: starting without mappings would make every
+ * search come back empty with no hint why.
+ */
 export async function loadMappingDir(dir: string): Promise<InMemoryMappingStore> {
   const store = new InMemoryMappingStore();
-  let names: string[] = [];
+  let names: string[];
   try {
     names = await readdir(dir);
-  } catch {
-    return store;
+  } catch (err) {
+    throw new Error(`Mappings directory ${dir} cannot be read: ${err instanceof Error ? err.message : String(err)}`);
   }
-  for (const name of names.filter((n) => n.endsWith('.json'))) {
-    const file = JSON.parse(await readFile(join(dir, name), 'utf8')) as SupplierMappingFile;
-    store.load(file);
+  const seen = new Set<string>();
+  for (const name of names.filter((n) => n.endsWith('.json')).sort()) {
+    const path = join(dir, name);
+    let file: unknown;
+    try {
+      file = JSON.parse(await readFile(path, 'utf8'));
+    } catch (err) {
+      throw new Error(`Mapping file ${path} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const problem = mappingProblem(file);
+    if (problem) throw new Error(`Mapping file ${path}: ${problem}`);
+    const mappingFile = file as SupplierMappingFile;
+    if (seen.has(mappingFile.supplierId)) throw new Error(`Mapping file ${path}: supplier ${mappingFile.supplierId} already has a mapping file`);
+    seen.add(mappingFile.supplierId);
+    try {
+      store.load(mappingFile);
+    } catch (err) {
+      throw new Error(`Mapping file ${path}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
   return store;
+}
+
+function mappingProblem(file: unknown): string | undefined {
+  const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+  if (!isObject(file)) return 'must be a JSON object';
+  if (typeof file['supplierId'] !== 'string' || !file['supplierId']) return 'supplierId is required';
+  const hotels = file['hotels'];
+  if (!isObject(hotels)) return '"hotels" must be an object: our hotel id -> supplier hotel code';
+  for (const [id, code] of Object.entries(hotels)) {
+    if (typeof code !== 'string' || !code) return `hotel ${id}: the supplier code must be text, e.g. "377201"`;
+  }
+  const boards = file['boards'];
+  if (boards !== undefined) {
+    if (!isObject(boards)) return '"boards" must be an object: supplier board code -> our board code';
+    for (const [raw, board] of Object.entries(boards)) {
+      if (typeof board !== 'string' || !BOARDS.has(board)) return `board ${raw}: must be one of ${[...BOARDS].join(', ')}`;
+    }
+  }
+  return undefined;
 }
