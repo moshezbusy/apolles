@@ -365,14 +365,3 @@ export async function clientOfBooking(agencyId: string, booking: { quoteId: stri
   return db.client.findFirst({ where: { agencyId, email: booking.leadEmail.toLowerCase() }, orderBy: [{ updatedAt: "desc" }, { id: "desc" }], select });
 }
 
-// "Add client": another client of the agency with the same email or phone number, so the agent
-// is warned before making a second card for one person. null: none.
-export async function findSimilarClient(agencyId: string, input: { email: string; phone: string }, exceptId?: string): Promise<{ id: string; firstName: string; lastName: string } | null> {
-  const or: Prisma.ClientWhereInput[] = [];
-  const email = input.email.trim();
-  if (email && z.email().safeParse(email).success) or.push({ email: normalizeEmail(email) });
-  const digits = phoneDigits(input.phone);
-  if (digits.length >= 7) or.push({ phoneDigits: digits });
-  if (or.length === 0) return null;
-  return db.client.findFirst({ where: { agencyId, OR: or, ...(exceptId ? { id: { not: exceptId } } : {}) }, orderBy: [{ updatedAt: "desc" }, { id: "desc" }], select: { id: true, firstName: true, lastName: true } });
-}

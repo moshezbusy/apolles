@@ -41,14 +41,6 @@ export function ClientForm({
           {state.message}
         </p>
       ) : null}
-      {state?.status === "error" && state.duplicate ? (
-        <p className="-mt-1.5 text-[13px]">
-          <Link href={`/clients?id=${encodeURIComponent(state.duplicate.id)}#client`} className="font-semibold text-brand hover:underline">
-            Open {state.duplicate.name}
-          </Link>
-          <input type="hidden" name="confirmDuplicate" value="1" />
-        </p>
-      ) : null}
       {clientId ? <input type="hidden" name="clientId" value={clientId} /> : null}
       <div className="grid gap-3.5 sm:grid-cols-2">
         <label className={label}>

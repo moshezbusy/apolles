@@ -130,22 +130,6 @@ describe("client actions", () => {
     expect(await getClient(agencyA, daniel)).toMatchObject({ firstName: "Daniel", companions: [{ firstName: "Noa" }] });
   });
 
-  it("warns before a second card with the same email or phone; saving again adds it; another agency's client does not count", async () => {
-    const { createClientAction } = await import("./(agent)/clients/actions");
-    const fields = { firstName: "Dani", lastName: "Levi", phone: "050 123 4567", email: "", nationality: "IL", notes: "" };
-    const state = await createClientAction(null, form({ ...fields, phone: "+972 50 123 4567" }));
-    expect(state).toMatchObject({ status: "error", duplicate: { id: daniel, name: "Daniel Levy" }, values: { firstName: "Dani" } });
-    expect(state?.status === "error" ? state.message : "").toBe("Daniel Levy already has this email or phone. Open that client, or choose Save client again to add a new one.");
-    expect(await db.client.count({ where: { agencyId: agencyA } })).toBe(1);
-    await expect(createClientAction(null, form({ ...fields, phone: "+972 50 123 4567", confirmDuplicate: "1" }))).rejects.toThrow(/NEXT_REDIRECT/);
-    expect(await db.client.count({ where: { agencyId: agencyA } })).toBe(2);
-    // The same email: warned too (case does not matter).
-    expect(await createClientAction(null, form({ ...fields, phone: "+1 555 000 1111", email: "DANIEL@example.com" }))).toMatchObject({ duplicate: { id: daniel } });
-    // Agency B is only ever warned about its own client with these details, never about agency A's.
-    signInAs(agencyB, agentB);
-    expect(await createClientAction(null, form({ ...fields, phone: "+972 50 123 4567" }))).toMatchObject({ duplicate: { name: "Secret Person" } });
-  });
-
   it("the client card lists the client's own bookings and opens on a phone where the agent is looking", async () => {
     const make = (agencyId: string, reference: string, leadEmail: string) =>
       db.booking.create({
