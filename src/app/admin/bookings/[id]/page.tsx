@@ -1,26 +1,33 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { alertError, card, cell, link, pageTitle, sectionTitle, table, tbody, td, th, thead, tr } from "@/components/ui";
+import { alertError, alertInfo, card, cell, link, pageTitle, sectionTitle, table, tbody, td, th, thead, tr } from "@/components/ui";
 import { oneRoomConfirmation, roomGuestLines, roomHeading } from "@/lib/guests";
 import { formatUsd } from "@/lib/money";
 import { getBookingForAdmin } from "@/server/admin/bookings";
 import { requireAdmin } from "@/server/auth/guards";
 import { STATUS_LABEL } from "@/server/booking/list";
+import { adminCancelQuote } from "@/server/booking/service";
+import { CancelForAgentForm, CheckNowForm, RefundForm, ReleaseHoldForm, ResolveForm } from "./booking-actions";
 
 export const metadata: Metadata = { title: "Booking · Admin · Apolles", robots: { index: false, follow: false } };
 
 type Params = Promise<{ id: string }>;
 
 // Admin: one booking with everything support needs, including the supplier's own itinerary
-// number (ER1, admin only), and its full event trail. Read-only in phase 1. A booking of several
-// rooms (plan 10) has a table of its rooms; the supplier's cancel links are never read here.
+// number (ER1, admin only), and its full event trail. A booking of several rooms (plan 10) has a
+// table of its rooms; the supplier's cancel links are never read here. The admin's tools for the
+// booking are on the right (booking-actions.tsx): each is shown only in the status it applies to,
+// and the server checks the status again.
 export default async function AdminBookingPage({ params }: { params: Params }) {
   await requireAdmin();
   const { id } = await params;
   const b = await getBookingForAdmin(id);
   if (!b) notFound();
   const severalRooms = b.rooms.length > 1;
+  const paid = b.chargedMinor ?? b.totalMinor;
+  const quote = b.status === "CONFIRMED" ? await adminCancelQuote(b.id) : null;
+  const checkable = b.status === "PENDING_CONFIRMATION" || b.status === "CANCEL_PENDING" || b.status === "CONFIRMED" || b.status === "FAILED";
   const rows: [string, string][] = [
     ["Status", STATUS_LABEL[b.status]],
     ["Agency", b.agency.name],
@@ -43,10 +50,19 @@ export default async function AdminBookingPage({ params }: { params: Params }) {
       <h1 className={`${pageTitle} mt-3`}>Booking {b.reference}</h1>
       {b.needsAttention ? (
         <p role="alert" className={`${alertError} mt-4`}>
-          Needs attention: this booking needs an admin to check it with the supplier and fix it by hand. {b.failureReason ?? ""}
+          Needs attention: check this booking with the supplier, fix it with the tools on this page, then mark it resolved. The history below says why it was flagged. {b.failureReason ?? ""}
         </p>
       ) : null}
-      <section className={`${card} mt-5 bg-white p-5`}>
+      {b.changeRequests.length > 0 ? (
+        <p role="status" className={`${alertInfo} mt-4`}>
+          The agent asked for a change to this booking.{" "}
+          <Link href={`/admin/change-requests?booking=${encodeURIComponent(b.id)}`} className={link}>
+            Open the change requests
+          </Link>
+        </p>
+      ) : null}
+      <div className="mt-5 grid items-start gap-5 lg:grid-cols-[1fr_340px]">
+      <section className={`${card} bg-white p-5`}>
         <dl className="grid gap-2 text-[13.5px] sm:grid-cols-[220px_1fr]">
           {rows.map(([k, v]) => (
             <div key={k} className="contents">
@@ -55,12 +71,29 @@ export default async function AdminBookingPage({ params }: { params: Params }) {
             </div>
           ))}
         </dl>
-        <p className="mt-3">
+        <p className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
           <Link href={`/admin/supplier-log?ref=${encodeURIComponent(b.reference)}`} className={link}>
             Supplier calls for this booking
           </Link>
+          <Link href={`/admin/agencies/${encodeURIComponent(b.agency.id)}/wallet`} className={link}>
+            {b.agency.name} wallet
+          </Link>
+          <Link href={`/admin/bookings?agency=${encodeURIComponent(b.agency.id)}`} className={link}>
+            Bookings of this agency
+          </Link>
         </p>
       </section>
+      <aside aria-label="Admin tools" className="flex flex-col gap-4">
+        {b.needsAttention ? <ResolveForm bookingId={b.id} /> : null}
+        {checkable ? <CheckNowForm bookingId={b.id} /> : null}
+        {quote?.allowed ? <CancelForAgentForm bookingId={b.id} reference={b.reference} chargeMinor={quote.chargeMinor} refundMinor={quote.refundMinor} /> : null}
+        {b.status === "CONFIRMED" && quote && !quote.allowed ? (
+          <p className={`${alertInfo}`}>Cancel for the agent: {quote.reason}</p>
+        ) : null}
+        {b.status === "CANCELLED_BY_SUPPLIER" && b.refundMinor === null ? <RefundForm bookingId={b.id} paidMinor={paid} /> : null}
+        {b.status === "PENDING_CONFIRMATION" && b.holdId ? <ReleaseHoldForm bookingId={b.id} heldMinor={paid} /> : null}
+      </aside>
+      </div>
       {severalRooms ? (
         <section aria-labelledby="rooms-title" className={`${card} mt-5 bg-white p-5`}>
           <h2 id="rooms-title" className={sectionTitle}>
@@ -119,8 +152,7 @@ export default async function AdminBookingPage({ params }: { params: Params }) {
               <tr key={e.id} className={tr}>
                 <td data-label="When (UTC)" className={`${cell} text-xs`}>{e.createdAt.toISOString().slice(0, 19).replace("T", " ")}</td>
                 <td data-label="Change" className={td}>
-                  {e.fromStatus ? `${STATUS_LABEL[e.fromStatus]} → ` : ""}
-                  {STATUS_LABEL[e.toStatus]}
+                  {e.fromStatus === e.toStatus ? `Note (${STATUS_LABEL[e.toStatus]})` : `${e.fromStatus ? `${STATUS_LABEL[e.fromStatus]} → ` : ""}${STATUS_LABEL[e.toStatus]}`}
                 </td>
                 <td data-label="By" className={td}>{e.actor?.email ?? "System"}</td>
                 <td data-label="Why" className={td}>{e.reason}</td>
