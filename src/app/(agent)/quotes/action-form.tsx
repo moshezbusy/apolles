@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useTransition } from "react";
+import { FormPending } from "./pending-button";
 import { alertError, alertSuccess } from "@/components/ui";
 import { useQuoteDirty } from "./[id]/dirty";
 import type { ActionState } from "./action-state";
@@ -34,7 +35,7 @@ export function ActionForm({
   className?: string;
   id?: string;
   // A question asked before the form is sent (an action that ends something, like closing a quote).
-  confirmText?: string;
+  confirmText?: string | undefined;
   keepValues?: boolean;
   trackDirty?: boolean;
 }) {
@@ -73,7 +74,8 @@ export function ActionForm({
       {/* While the action runs every field and button of the form is off (the buttons dim): the
           pending state, and no second click. `contents`: the fieldset adds no box of its own. */}
       <fieldset disabled={pending} className="contents">
-        {children}
+        {/* For PendingButton: a form sent by hand (keepValues) is not seen by useFormStatus. */}
+        <FormPending value={pending}>{children}</FormPending>
       </fieldset>
       {state?.status === "error" && state.confirm ? (
         // Asked for by the server: the agent's explicit yes to what the message describes.

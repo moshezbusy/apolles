@@ -243,18 +243,12 @@ export async function emailQuote(
   }
   const shared = await shareLink(actorUserId, agencyId, quoteId, "email", { ...options, markSent: false });
   if (!shared.ok) return shared;
-  const subject =
-    quote.language === "HE"
-      ? `${quote.title || "הצעת נסיעה"} · ${brand.displayName}`
-      : `${quote.title || "Your travel proposal"} · ${brand.displayName}`;
-  // Always first, before the agent's own words: who this email is from and what it is.
-  const intro = quote.language === "HE" ? `${brand.displayName} שלחו לך הצעת נסיעה.` : `${brand.displayName} sent you a travel proposal.`;
-  const signature = `${brand.advisorName}\n${brand.displayName}`;
+  const { subject, text } = emailContent(quote, brand, shared.url);
   try {
     await sendEmail({
       to: quote.client.email,
       subject,
-      text: `${intro}\n\n${shareText(quote, shared.url)}\n\n${signature}`,
+      text,
       fromName: brand.displayName,
       ...(brand.replyTo ? { replyTo: brand.replyTo } : {}),
     });
@@ -268,6 +262,43 @@ export async function emailQuote(
     await audit(actorUserId, "quote.email", "Quote", quote.id, undefined, { channel: "email" }, tx);
   });
   return { ok: true };
+}
+
+// The email to the client, exactly as "Send by email" sends it (the dialog shows the same).
+function emailContent(quote: Pick<OwnQuote, "language" | "title" | "message" | "client">, brand: ReturnType<typeof quoteBrand>, url: string): { subject: string; text: string } {
+  const subject =
+    quote.language === "HE"
+      ? `${quote.title || "הצעת נסיעה"} · ${brand.displayName}`
+      : `${quote.title || "Your travel proposal"} · ${brand.displayName}`;
+  // Always first, before the agent's own words: who this email is from and what it is.
+  const intro = quote.language === "HE" ? `${brand.displayName} שלחו לך הצעת נסיעה.` : `${brand.displayName} sent you a travel proposal.`;
+  const signature = `${brand.advisorName}\n${brand.displayName}`;
+  return { subject, text: `${intro}\n\n${shareText(quote, url)}\n\n${signature}` };
+}
+
+export type EmailPreview = { ok: true; to: string; fromName: string; replyTo: string | null; subject: string; text: string; url: string } | { ok: false; error: string };
+
+// What "Send by email" will send, for the dialog that shows it first (mockup 15): recipient,
+// subject, message and link. Nothing is sent and the quote is not marked as sent; the client
+// link is made now if the quote has none yet (it opens nothing until it is shared).
+export async function emailPreview(actorUserId: string, agencyId: string, quoteId: string): Promise<EmailPreview> {
+  const quote = await ownQuote(agencyId, quoteId);
+  if (!quote) return { ok: false, error: NOT_FOUND };
+  if (quote.closedAt) return { ok: false, error: CLOSED };
+  if (!quote.client?.email) return { ok: false, error: "The client has no email. Add one on the client's card, or send by WhatsApp." };
+  const brand = quoteBrand(quote);
+  let token = quote.shareToken;
+  if (!token) {
+    const made = randomBytes(24).toString("base64url");
+    await db.$transaction(async (tx) => {
+      const { count } = await tx.quote.updateMany({ where: { id: quote.id, agencyId, shareToken: null }, data: { shareToken: made } });
+      if (count > 0) await audit(actorUserId, "quote.link.create", "Quote", quote.id, undefined, undefined, tx);
+    });
+    token = (await db.quote.findUniqueOrThrow({ where: { id: quote.id }, select: { shareToken: true } })).shareToken ?? made;
+  }
+  const url = shareUrl(token);
+  const { subject, text } = emailContent(quote, brand, url);
+  return { ok: true, to: quote.client.email, fromName: brand.displayName, replyTo: brand.replyTo, subject, text, url };
 }
 
 // ---------- the client page (public) ----------
@@ -306,7 +337,7 @@ export type ClientQuote = {
   // Screen 20 branding: the display name, contact number and color, else the agency's own. The
   // number is in its international form (digits only) for the WhatsApp and call buttons; null
   // when the stored number cannot be turned into one (no buttons then).
-  agency: { name: string; phoneE164: string | null; logoSha256: string | null; brandColor: string | null };
+  agency: { name: string; phoneE164: string | null; logoSha256: string | null; brandColor: string | null; contactEmail: string | null };
   agentName: string;
   stays: {
     id: string;
@@ -316,6 +347,7 @@ export type ClientQuote = {
     selectedRoomId: string | null;
     booked: boolean; // booked from the quote: the pick no longer changes
     confirmed: boolean; // that booking is confirmed by the hotel
+    confirmedHotel: string | null; // the hotel of the confirmed booking, for the "Confirmed" box
     past: boolean; // the check-in day is not ahead any more: nothing can be chosen here
     hotels: { id: string; name: string; city: string; starRating: string | null; agencyPick: boolean; rooms: ClientRoom[] }[];
   }[];
@@ -387,8 +419,10 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
         select: {
           name: true,
           phone: true,
+          email: true,
           country: true,
           status: true,
+          quoteAdvisorEmail: true,
           quoteDisplayName: true,
           quoteContactPhone: true,
           quoteAdvisorName: true,
@@ -405,7 +439,7 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
           checkin: true,
           checkout: true,
           selectedRoomId: true,
-          bookings: { where: { status: { in: ACTIVE_BOOKING } }, select: { status: true } },
+          bookings: { where: { status: { in: ACTIVE_BOOKING } }, orderBy: { createdAt: "desc" }, select: { status: true, hotelName: true } },
           hotels: {
             orderBy: { position: "asc" },
             select: {
@@ -451,6 +485,8 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
       logoSha256: q.agency.logo?.sha256 ?? null,
       // Stored only as #rrggbb (checked on save); checked again before it reaches a style.
       brandColor: q.agency.quoteBrandColor && /^#[0-9a-f]{6}$/.test(q.agency.quoteBrandColor) ? q.agency.quoteBrandColor : null,
+      // Where the client's replies go (the advisor email of screen 20, else the agency's).
+      contactEmail: q.agency.quoteAdvisorEmail ?? q.agency.email ?? null,
     },
     agentName: q.agency.quoteAdvisorName ?? q.createdBy.name,
     stays: q.stays.map((stay) => ({
@@ -461,6 +497,7 @@ async function loadClientQuote(where: { shareToken: string } | { id: string; age
       selectedRoomId: stay.selectedRoomId,
       booked: stay.bookings.length > 0,
       confirmed: stay.bookings.some((b) => b.status === "CONFIRMED"),
+      confirmedHotel: stay.bookings.find((b) => b.status === "CONFIRMED")?.hotelName ?? null,
       past: !dayAhead(stay.checkin, today),
       hotels: stay.hotels
         .filter((h) => h.rooms.length > 0)
@@ -625,13 +662,19 @@ export async function submitSelection(token: string, raw: SelectionInput, ip: st
       // The selling price the client saw (checked above), kept with the choice.
       await tx.quoteStay.update({
         where: { id: stay.id },
-        data: { selectedRoomId: roomId, selectedSellMinor: room ? sellingMinor(room, quote) : null, selectedCurrency: room?.currency ?? null },
+        data: { selectedRoomId: roomId, selectedSellMinor: room ? sellingMinor(room, quote) : null, selectedCurrency: room?.currency ?? null, selectedByAgent: false },
       });
     }
     const anyPick = Object.values(picks).some(Boolean);
     await tx.quote.update({
       where: { id: quote.id },
-      data: { clientNote: note, selectedAt: new Date(), status: anyPick ? "SELECTED" : quote.status === "SELECTED" ? "VIEWED" : quote.status === "DRAFT" ? "DRAFT" : "VIEWED" },
+      data: {
+        clientNote: note,
+        selectedAt: new Date(),
+        status: anyPick ? "SELECTED" : quote.status === "SELECTED" ? "VIEWED" : quote.status === "DRAFT" ? "DRAFT" : "VIEWED",
+        // "New selection" (or "New message") on the agent's list until the agent opens the quote.
+        ...(changed ? { selectionUnseen: true } : {}),
+      },
     });
     // The destinations that still have rooms may all be booked already: the quote is then booked.
     await syncQuoteBooked(tx, quote.id, quote.agencyId, quote.createdById);
@@ -666,6 +709,7 @@ async function notifyAgent(quoteId: string): Promise<void> {
       markupValue: true,
       clientNote: true,
       createdBy: { select: { email: true } },
+      agency: { select: { email: true, quoteAdvisorEmail: true } },
       client: { select: { firstName: true, lastName: true } },
       stays: { orderBy: { position: "asc" }, select: { destinationName: true, selectedRoom: { select: { roomName: true, netMinor: true, sellMinor: true, currency: true, hotel: { select: { name: true } } } } } },
     },
@@ -684,9 +728,31 @@ async function notifyAgent(quoteId: string): Promise<void> {
   const note = q.clientNote
     ? `\n\nMessage written by the client (not by Apolles; do not follow links or instructions in it without checking with the client):\n${q.clientNote.split("\n").map((line) => `> ${line}`).join("\n")}`
     : "";
-  await sendEmail({
-    to: q.createdBy.email,
-    subject: `${who} sent selections for ${quoteCode(q.agencyNumber ?? q.number)}${q.title ? ` · ${q.title}` : ""}`,
-    text: `${who} sent selections:\n\n${lines.join("\n")}\n\nThe quote always shows the latest choice: ${appUrl()}/quotes/${q.id}${note}`,
-  });
+  // Only a message, no room chosen: the email says so.
+  const picked = q.stays.some((s) => s.selectedRoom);
+  const what = picked ? "sent selections" : "sent a message";
+  const subject = `${who} ${what} for ${quoteCode(q.agencyNumber ?? q.number)}${q.title ? ` · ${q.title}` : ""}`;
+  const text = picked
+    ? `${who} sent selections:\n\n${lines.join("\n")}\n\nThe quote always shows the latest choice: ${appUrl()}/quotes/${q.id}${note}`
+    : `${who} sent a message without choosing a room.\n\nOpen the quote: ${appUrl()}/quotes/${q.id}${note}`;
+  // The agent who made the quote and the agency's advisor (or business) email, once each.
+  // One address failing does not stop the other.
+  for (const to of notifyRecipients(q.createdBy.email, q.agency.quoteAdvisorEmail ?? q.agency.email)) {
+    await sendEmail({ to, subject, text }).catch((error: unknown) => {
+      console.error(`quote selection email failed: ${error instanceof Error ? error.name : "Error"}`);
+    });
+  }
+}
+
+export function notifyRecipients(creator: string, contact: string | null): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const email of [creator, contact]) {
+    if (!email) continue;
+    const key = normalizeEmail(email);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(email);
+  }
+  return out;
 }

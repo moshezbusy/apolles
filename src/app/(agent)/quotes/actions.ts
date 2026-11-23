@@ -4,26 +4,36 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
+import { createClient } from "@/server/clients";
 import { prepareQuoteBooking } from "@/server/quotes/quote-booking";
+import { refreshMessage, refreshStayPrices } from "@/server/quotes/refresh";
 import { supplierContextFrom } from "@/server/supplier-context";
 import {
   CLIENT_CHANGED,
   addFromSearch,
   addStay,
+  archiveQuote,
+  clearSelection,
   closeQuote,
   createQuote,
+  deleteQuote,
+  duplicateQuote,
+  getQuote,
   moveHotel,
   removeHotel,
   removeRoom,
   removeStay,
   reopenQuote,
+  selectForClient,
   setClientCancelDate,
   setRoomPrice,
   toggleAgencyPick,
+  unarchiveQuote,
   updateQuoteSettings,
   type Result,
 } from "@/server/quotes/quotes";
-import { emailQuote, extendOffer, renewLink, shareLink, whatsappLink } from "@/server/quotes/sharing";
+import { type EmailPreview, emailPreview, emailQuote, extendOffer, renewLink, shareLink, whatsappLink } from "@/server/quotes/sharing";
+import type { ClientFormState } from "../clients/form-state";
 import type { ActionState } from "./action-state";
 
 // Quote actions (screens 09, 14, 15). Each one checks the agent session itself and passes the
@@ -90,6 +100,85 @@ export async function reopenQuoteAction(_previous: ActionState, formData: FormDa
 export async function extendOfferAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
   const { userId, agencyId } = await requireAgent();
   return done(await extendOffer(userId, agencyId, text(formData, "quoteId", 64)), "Offer extended. Check that the prices are still right before you tell the client.");
+}
+
+// ---------- the quote list (screen 14): delete, archive, duplicate ----------
+
+// Each one goes back to the list with a short notice (the card it was on may be gone).
+export async function deleteQuoteAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const { userId, agencyId } = await requireAgent();
+  const result = await deleteQuote(userId, agencyId, text(formData, "quoteId", 64));
+  if (!result.ok) return { status: "error", message: result.error };
+  revalidatePath("/quotes");
+  redirect("/quotes?notice=deleted");
+}
+
+export async function archiveQuoteAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const { userId, agencyId } = await requireAgent();
+  const result = await archiveQuote(userId, agencyId, text(formData, "quoteId", 64));
+  if (!result.ok) return { status: "error", message: result.error };
+  revalidatePath("/quotes");
+  revalidatePath(`/quotes/${result.id}`);
+  redirect("/quotes?notice=archived");
+}
+
+export async function unarchiveQuoteAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const { userId, agencyId } = await requireAgent();
+  return done(await unarchiveQuote(userId, agencyId, text(formData, "quoteId", 64)), "Quote back in the list. It stays closed until you choose Reopen quote.");
+}
+
+export async function duplicateQuoteAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const { userId, agencyId } = await requireAgent();
+  const result = await duplicateQuote(userId, agencyId, text(formData, "quoteId", 64));
+  if (!result.ok) return { status: "error", message: result.error };
+  revalidatePath("/quotes");
+  redirect(`/quotes/${result.id}?notice=duplicated`);
+}
+
+// ---------- the agent chooses for the client ----------
+
+export async function selectForClientAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const { userId, agencyId } = await requireAgent();
+  return done(await selectForClient(userId, agencyId, text(formData, "roomId", 64)));
+}
+
+export async function clearSelectionAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const { userId, agencyId } = await requireAgent();
+  return done(await clearSelection(userId, agencyId, text(formData, "stayId", 64)));
+}
+
+// "Refresh prices" on a destination: one hotel search per hotel, then the rooms are updated.
+export async function refreshPricesAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const { userId, agencyId } = await requireAgent();
+  const result = await refreshStayPrices({ agencyId, userId, supplierContext: supplierContextFrom(await headers()) }, text(formData, "stayId", 64));
+  if (!result.ok) return { status: "error", message: result.error };
+  revalidatePath(`/quotes/${result.id}`);
+  revalidatePath("/quotes");
+  return { status: "success", message: refreshMessage(result.summary) };
+}
+
+// "+ Add a new client" on the quote: the client is saved, and the quote opens again with the new
+// client chosen in the Client field (saved with "Save changes", like any other client choice).
+const CLIENT_ERROR =
+  "Check the form: first and last name, a WhatsApp phone with 7 to 15 digits, a valid email or none, a nationality, and notes up to 1,000 characters.";
+
+// `quoteId` is bound by the page (never read from the form); it is checked against the agency here.
+export async function createClientForQuoteAction(quoteId: string, _previous: ClientFormState, formData: FormData): Promise<ClientFormState> {
+  const { userId, agencyId } = await requireAgent();
+  const values = {
+    firstName: text(formData, "firstName", 100),
+    lastName: text(formData, "lastName", 100),
+    phone: text(formData, "phone", 100),
+    email: text(formData, "email", 300),
+    nationality: text(formData, "nationality", 10),
+    notes: text(formData, "notes", 1100),
+  };
+  const quote = await getQuote(agencyId, String(quoteId).slice(0, 64));
+  if (!quote) return { status: "error", message: "This quote was not found.", values };
+  const result = await createClient(userId, agencyId, values);
+  if (!result.ok) return { status: "error", message: CLIENT_ERROR, values };
+  revalidatePath("/clients");
+  redirect(`/quotes/${encodeURIComponent(quote.id)}?client=${encodeURIComponent(result.id)}`);
 }
 
 export async function addStayAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
@@ -179,6 +268,14 @@ export async function emailAction(quoteId: string, confirmNetPrice?: boolean): P
   revalidatePath(`/quotes/${quoteId}`);
   revalidatePath("/quotes");
   return { ok: true, message: "Email sent to the client." };
+}
+
+// What "Send by email" will send (the dialog shows it before the agent sends).
+export async function emailPreviewAction(quoteId: string): Promise<EmailPreview> {
+  const { userId, agencyId } = await requireAgent();
+  const result = await emailPreview(userId, agencyId, String(quoteId).slice(0, 64));
+  if (result.ok) revalidatePath(`/quotes/${quoteId}`);
+  return result;
 }
 
 // A new client link: the old one stops working at once (a link sent to the wrong person).

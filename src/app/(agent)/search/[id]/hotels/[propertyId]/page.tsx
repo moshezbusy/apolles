@@ -14,7 +14,7 @@ import { cancellationLabel } from "../../../../_components/rate-text";
 import { SubmitButton } from "../../../../_components/submit-button";
 import { addToQuoteAction } from "../../../../quotes/actions";
 import { AddToQuote } from "../../../../quotes/add-to-quote";
-import { QUOTES_ONE_ROOM, openQuotes, quoteCode } from "@/server/quotes/quotes";
+import { QUOTES_ONE_ROOM, openQuotes } from "@/server/quotes/quotes";
 import { searchAgainAction } from "../../../actions";
 import { keptParams, resultsHref } from "../../../kept-params";
 import { quoteParam } from "../../../quote-param";
@@ -179,7 +179,7 @@ export default async function HotelPage({ params, searchParams }: { params: Para
   // Plan 5b: "Add to quote" lists the agency's open quotes; one opened from a quote is preselected.
   const quoteId = quoteParam(query.quote);
   const severalRooms = summary.rooms.length > 1;
-  const quotes = severalRooms ? [] : (await openQuotes(agencyId, quoteId)).map((q) => ({ id: q.id, label: `${quoteCode(q.number)} · ${q.title || "Untitled quote"}` }));
+  const quotes = severalRooms ? [] : (await openQuotes(agencyId, quoteId)).map((q) => ({ id: q.id, label: q.label }));
 
   return (
     <main className="mx-auto flex w-[min(1260px,calc(100%-40px))] flex-col gap-6 py-6">

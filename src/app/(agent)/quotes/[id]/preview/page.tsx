@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { alertInfo, link } from "@/components/ui";
 import { requireAgent } from "@/server/auth/guards";
 import { clientQuoteForAgency } from "@/server/quotes/sharing";
-import { Proposal, proposalPhotos } from "../../../../q/[token]/proposal";
+import { Proposal, proposalContent } from "../../../../q/[token]/proposal";
 
 export const metadata: Metadata = { title: "Preview | Apolles", robots: { index: false, follow: false } };
 
@@ -24,7 +24,7 @@ export default async function QuotePreviewPage({ params }: { params: Params }) {
           Preview: this is what your client sees. <Link href={`/quotes/${id}`} className={link}>Back to the quote</Link>
         </p>
       </div>
-      <Proposal quote={data.view} token={null} logoSrc="/settings/logo" photos={await proposalPhotos(data, "fetch")} />
+      <Proposal quote={data.view} token={null} logoSrc="/settings/logo" content={await proposalContent(data, "fetch")} />
     </>
   );
 }
