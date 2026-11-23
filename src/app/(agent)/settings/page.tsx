@@ -169,7 +169,7 @@ function PreferencesTab({ settings }: { settings: Settings }) {
       <p className="mb-5 mt-1 text-[13px] text-muted">Used automatically in new quotes. You can change them any time.</p>
       <DefaultsForm
         action={updateDefaultsAction}
-        values={{ markupType: settings.defaultMarkupType, markupValue: String(settings.defaultMarkupValue / 100), showCancellation: settings.defaultShowCancellation }}
+        values={{ markupType: settings.defaultMarkupType, markupValue: String(settings.defaultMarkupValue / 100), showCancellation: settings.defaultShowCancellation, validDays: String(settings.validDays) }}
       />
     </section>
   );

@@ -15,12 +15,16 @@ export function BookForm({
   expectedTotal,
   terms,
   canPay,
+  quoteCheck,
 }: {
   action: Action;
   bookingId: string;
   expectedTotal: number;
   terms: { agentTerms: string; supplierTerms: string | null };
   canPay: boolean;
+  // A booking from a quote whose price or terms are worse than what the client was quoted: the
+  // agent ticks that they saw it ("From quote" box). The server checks the tick again.
+  quoteCheck?: boolean;
 }) {
   const [state, formAction, pending] = useActionState<BookFormState, FormData>(action, null);
   return (
@@ -50,6 +54,12 @@ export function BookForm({
           , including the rate&apos;s cancellation policy.
         </span>
       </label>
+      {quoteCheck ? (
+        <label className="flex items-start gap-2 text-[13px] font-semibold text-ink">
+          <input type="checkbox" name="quoteChecked" required className="mt-0.5" />
+          <span>I checked the new price and terms</span>
+        </label>
+      ) : null}
       <button type="submit" disabled={pending || !canPay} className={btnPrimary}>
         {pending ? "Booking…" : `Book and pay ${formatUsd(expectedTotal)} from balance`}
       </button>
