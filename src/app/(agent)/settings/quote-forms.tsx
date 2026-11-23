@@ -133,11 +133,13 @@ export function DefaultsForm({
   values,
 }: {
   action: Action;
-  values: { markupType: string; markupValue: string; showCancellation: boolean };
+  values: { markupType: string; markupValue: string; showCancellation: boolean; validDays: string };
 }) {
   const [state, formAction, pending] = useActionState<SettingsFormState, FormData>(action, null);
   const typed = state?.status === "error" && state.values ? state.values : null;
-  const shown = typed ? { markupType: typed.markupType ?? "", markupValue: typed.markupValue ?? "", showCancellation: typed.showCancellation === "on" } : values;
+  const shown = typed
+    ? { markupType: typed.markupType ?? "", markupValue: typed.markupValue ?? "", showCancellation: typed.showCancellation === "on", validDays: typed.validDays ?? "" }
+    : values;
   return (
     <form key={JSON.stringify(shown)} action={formAction} className="flex flex-col gap-4" noValidate>
       <Message state={state} />
@@ -160,6 +162,11 @@ export function DefaultsForm({
           <span className={hint}>Sets the selling price in new quotes. You can edit it on each quote.</span>
         </label>
       </div>
+      <label className={`${label} sm:max-w-[260px]`}>
+        Offer valid for (days)
+        <input name="validDays" inputMode="numeric" maxLength={2} defaultValue={shown.validDays} className={input} />
+        <span className={hint}>1 to 30 days from the day you send a quote. After that the client sees that the offer expired, until you extend it.</span>
+      </label>
       <label className="flex items-start gap-2 text-sm text-ink">
         <input type="checkbox" name="showCancellation" defaultChecked={shown.showCancellation} className="mt-0.5 h-4 w-4 accent-brand" />
         <span>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { formatMinor } from "@/lib/supplier-money";
 import type { ClientQuote, ClientRoom } from "@/server/quotes/sharing";
@@ -12,11 +13,23 @@ type Photos = Record<string, string>;
 // chosen room again unselects it. "Send my selections" sends the choice and the note; it books
 // nothing and takes no card. The view is counted from here (in the browser), so link previews and
 // bots never count as the client opening the proposal.
+// Read-only (nothing can be chosen or sent) when the offer expired, the agent closed the quote, or
+// every destination is booked. A destination that is booked (shown as "Confirmed") or whose dates
+// passed is read-only by itself; the others can still be chosen.
 export function Selection({ token, quote, photos, lang }: { token: string | null; quote: ClientQuote; photos: Photos; lang: Lang }) {
   // token null: the agent's preview. Nothing is counted or sent.
   const t = texts(lang);
-  const locked = quote.status === "BOOKED";
-  const [picks, setPicks] = useState<Record<string, string>>(() =>
+  const router = useRouter();
+  const locked = quote.state !== "open";
+  const notice =
+    quote.state === "expired"
+      ? { title: t.expiredTitle, text: t.expiredText }
+      : quote.state === "closed"
+        ? { title: t.closedTitle, text: t.closedText }
+        : quote.state === "booked"
+          ? { title: t.lockedTitle, text: t.lockedText }
+          : null;
+  const [allPicks, setPicks] = useState<Record<string, string>>(() =>
     Object.fromEntries(quote.stays.filter((s) => s.selectedRoomId).map((s) => [s.id, s.selectedRoomId as string])),
   );
   const [note, setNote] = useState(quote.clientNote);
@@ -31,12 +44,16 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
     for (const s of quote.stays) for (const h of s.hotels) for (const r of h.rooms) map.set(r.id, r);
     return map;
   }, [quote]);
+  // After the offer was updated (the page reads it again), a choice of a room that is no longer
+  // offered is dropped; the others stay.
+  const picks = useMemo(() => Object.fromEntries(Object.entries(allPicks).filter(([, roomId]) => rooms.has(roomId))), [allPicks, rooms]);
   const chosen = Object.values(picks).map((id) => rooms.get(id)).filter((r): r is ClientRoom => !!r);
   const total = chosen.reduce((n, r) => n + r.sellMinor, 0);
   const staysWithHotels = quote.stays.filter((s) => s.hotels.length > 0);
 
   function toggle(stayId: string, roomId: string) {
-    if (locked || quote.stays.find((s) => s.id === stayId)?.booked) return;
+    const stay = quote.stays.find((s) => s.id === stayId);
+    if (locked || !stay || stay.booked || stay.past) return;
     setPicks((p) => {
       const next = { ...p };
       if (next[stayId] === roomId) delete next[stayId];
@@ -48,13 +65,30 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
 
   function send() {
     if (!token) return;
+    // The price shown for each chosen room goes with the choice: the server records it only if
+    // it is still the price (an open page can be days old).
+    const seen = Object.fromEntries(chosen.map((room) => [room.id, room.sellMinor]));
     start(async () => {
-      const result = await submitSelectionAction(token, picks, note);
+      const result = await submitSelectionAction(token, picks, note, seen);
       if (result.ok) {
         setMessage({ kind: "ok", text: t.sent });
         setSentOnce(true);
+        return;
       }
-      else setMessage({ kind: "error", text: result.error === "limited" ? t.limited : result.error === "locked" ? t.lockedText : t.failed });
+      const text = {
+        limited: t.limited,
+        locked: t.lockedText,
+        prices: t.pricesChanged,
+        updated: t.offerUpdated,
+        expired: t.expiredText,
+        closed: t.closedText,
+        invalid: t.failed,
+        gone: t.failed,
+      }[result.error];
+      setMessage({ kind: "error", text });
+      // Anything but a plain failure means the page is out of date: read the offer again. The
+      // choices stay (those whose room is gone are dropped above).
+      if (result.error !== "limited" && result.error !== "invalid") router.refresh();
     });
   }
 
@@ -72,10 +106,10 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
         </div>
       </div>
 
-      {locked ? (
-        <div className="rounded-[14px] border border-[#d3e3da] bg-brand-soft p-4 text-brand">
-          <strong className="block">{t.lockedTitle}</strong>
-          <span className="text-[14px]">{t.lockedText}</span>
+      {notice ? (
+        <div role="status" className="rounded-[14px] border border-[#d3e3da] bg-brand-soft p-4 text-brand">
+          <strong className="block">{notice.title}</strong>
+          <span className="text-[14px]">{notice.text}</span>
         </div>
       ) : null}
 
@@ -92,7 +126,9 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
                   {day(stay.checkin, lang)} {t.to} {day(stay.checkout, lang)} · {t.nights(n)}
                 </p>
               </div>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${pick ? "bg-brand-soft text-brand" : "bg-[#f1efe9] text-[#5f6863]"}`}>{stay.booked ? t.bookedStay : pick ? t.selected : t.noSelection}</span>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${pick ? "bg-brand-soft text-brand" : "bg-[#f1efe9] text-[#5f6863]"}`}>
+                {stay.confirmed ? t.bookedStay : stay.booked ? t.bookingStay : stay.past ? t.pastStay : pick ? t.selected : t.noSelection}
+              </span>
             </header>
             <div className="flex flex-col gap-3 p-3">
               {stay.hotels.map((hotel) => {
@@ -140,7 +176,7 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
                                 type="button"
                                 onClick={() => toggle(stay.id, room.id)}
                                 aria-pressed={on}
-                                disabled={locked || stay.booked}
+                                disabled={locked || stay.booked || stay.past}
                                 className={`flex w-full flex-wrap items-center justify-between gap-2 rounded-[12px] border bg-white p-3 text-start ${on ? "border-brand ring-2 ring-brand/30" : "border-line hover:border-[#bcd0c6]"}`}
                               >
                                 <span className="min-w-0">
@@ -151,9 +187,10 @@ export function Selection({ token, quote, photos, lang }: { token: string | null
                                       {t.rateIncludes}: {room.amenities.join(", ")}
                                     </span>
                                   ) : null}
-                                  {quote.showCancellation ? (
-                                    <span className={`block text-xs font-semibold ${room.freeUntil ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>
-                                      {room.freeUntil ? t.freeUntil(day(room.freeUntil, lang, true)) : room.refundable ? "" : t.nonRefundable}
+                                  {room.cancel ? (
+                                    // A date that passed is never shown as free cancellation.
+                                    <span className={`block text-xs font-semibold ${room.cancel.kind === "free" ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>
+                                      {room.cancel.kind === "free" ? t.freeUntil(day(room.cancel.until, lang, true)) : room.cancel.kind === "ended" ? t.freeEnded(day(room.cancel.on, lang, true)) : t.nonRefundable}
                                     </span>
                                   ) : null}
                                   {room.dueAtHotel ? (

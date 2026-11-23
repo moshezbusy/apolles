@@ -187,9 +187,15 @@ describe("agency settings", () => {
 
     it("preferences: the default markup and cancellation terms", async () => {
       const { updateDefaultsAction } = await import("./(agent)/settings/actions");
-      expect(await updateDefaultsAction(null, form({ markupType: "FIXED", markupValue: "35.5" }))).toEqual({ status: "success", message: "Changes saved." });
-      expect(await db.agency.findUniqueOrThrow({ where: { id: agencyA } })).toMatchObject({ defaultMarkupType: "FIXED", defaultMarkupValue: 3550, defaultShowCancellation: false });
-      expect(await tab("preferences")).toContain('value="35.5"');
+      expect(await updateDefaultsAction(null, form({ markupType: "FIXED", markupValue: "35.5", validDays: "10" }))).toEqual({ status: "success", message: "Changes saved." });
+      expect(await db.agency.findUniqueOrThrow({ where: { id: agencyA } })).toMatchObject({ defaultMarkupType: "FIXED", defaultMarkupValue: 3550, defaultShowCancellation: false, quoteValidDays: 10 });
+      const html = await tab("preferences");
+      expect(html).toContain('value="35.5"');
+      // "Offer valid for (days)": shown with its saved value; out of range is refused and what was typed is kept.
+      expect(html).toContain("Offer valid for (days)");
+      expect(html).toContain('name="validDays"');
+      expect(await updateDefaultsAction(null, form({ markupType: "FIXED", markupValue: "35.5", validDays: "45" }))).toMatchObject({ status: "error", values: { validDays: "45" } });
+      expect(await db.agency.findUniqueOrThrow({ where: { id: agencyA } })).toMatchObject({ quoteValidDays: 10 });
     });
 
     it("balance: the balance, the bank details and the agency's reference; no card payment", async () => {

@@ -68,6 +68,18 @@ describe("/clients page", () => {
     expect(html).toContain("Daughter · 7 years old");
   });
 
+  it("a phone that cannot be made into a WhatsApp number gets a hint; a local number of the agency's country does not", async () => {
+    expect(await render()).not.toContain("Add the country code to this phone number");
+    // The local way of the agency's country (IL): fine, it gets +972. The stored number is not rewritten.
+    await db.client.update({ where: { id: daniel }, data: { phone: "050-123 4567" } });
+    const local = await render();
+    expect(local).not.toContain("Add the country code to this phone number");
+    expect(local).toContain("050-123 4567");
+    // With or without the country code? Not clear: the agent is asked to add it.
+    await db.client.update({ where: { id: daniel }, data: { phone: "972 50 123 4567" } });
+    expect(await render()).toContain("Add the country code to this phone number");
+  });
+
   it("an id from another agency opens nothing of theirs", async () => {
     const other = await db.client.findFirstOrThrow({ where: { agencyId: agencyB } });
     const html = await render({ id: other.id });

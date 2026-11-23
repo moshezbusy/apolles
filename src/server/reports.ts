@@ -5,7 +5,8 @@ import { bookingSale } from "@/server/booking/selling";
 import { getBalance, listEntriesWithBalance } from "@/server/wallet/ledger";
 
 // Reporting (screen 19, plan 6): the agency's own bookings of a period, by booking date (UTC),
-// in USD. Sales use the agency's selling price (reports only, never charged); a booking without
+// in USD. Sales use the agency's selling price (reports only, never charged): the price quoted to
+// the client for a booking made from a quote, else the markup on the charge; a booking without
 // one counts its net, with no profit. Cancelled bookings count as no sale. "Paid from balance" is
 // what was really deducted: confirmed bookings and cancellation charges (not amounts only held). Every sum is done in
 // SQL, scoped by agencyId, over the (agencyId, createdAt) index.
@@ -93,14 +94,15 @@ export type Report = {
 function periodRows(agencyId: string, from: string, to: string): Prisma.Sql {
   return Prisma.sql`
     SELECT b.*,
-      CASE WHEN b.mt IS NULL THEN b.net
+      CASE WHEN b.sell IS NOT NULL THEN b.sell
+           WHEN b.mt IS NULL THEN b.net
            WHEN b.mt = 'FIXED' THEN b.net + b.mv
            ELSE b.net + (b.net * b.mv + 5000) / 10000 END AS sale
     FROM (
       SELECT "status"::text AS status, "checkin", "checkout", "hotelName", "hotelCity", "propertyId", "createdAt",
         COALESCE("chargedMinor", "totalMinor")::bigint AS net,
         COALESCE("cancelChargeMinor", 0)::bigint AS cancel_charge,
-        "sellMarkupType"::text AS mt, "sellMarkupValue"::bigint AS mv
+        "sellMarkupType"::text AS mt, "sellMarkupValue"::bigint AS mv, "sellMinor"::bigint AS sell
       FROM "Booking"
       WHERE "agencyId" = ${agencyId}
         AND "createdAt" >= ${new Date(ms(from))} AND "createdAt" < ${new Date(ms(to) + DAY)}
@@ -119,7 +121,7 @@ async function totals(agencyId: string, from: string, to: string): Promise<Total
       sum(sale) FILTER (WHERE ${LIVE}) AS sales,
       (COALESCE(sum(net) FILTER (WHERE status = 'CONFIRMED'), 0) + COALESCE(sum(cancel_charge) FILTER (WHERE status = 'CANCELLED'), 0)) AS paid,
       sum(sale - net) FILTER (WHERE ${LIVE}) AS profit,
-      count(*) FILTER (WHERE ${LIVE} AND mt IS NULL) AS unpriced,
+      count(*) FILTER (WHERE ${LIVE} AND mt IS NULL AND sell IS NULL) AS unpriced,
       count(*) FILTER (WHERE ${LIVE}) AS live,
       count(*) FILTER (WHERE NOT (${LIVE})) AS cancelled
     FROM r`;
@@ -159,7 +161,7 @@ export async function agencyReport(agencyId: string, period: Period, now: Date =
       where: { agencyId, status: { notIn: ["DRAFT", "EXPIRED", "FAILED"] }, createdAt: { gte: new Date(ms(period.from)), lt: new Date(ms(period.to) + DAY) } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 5,
-      select: { id: true, reference: true, hotelName: true, leadGivenName: true, leadFamilyName: true, status: true, totalMinor: true, chargedMinor: true, sellMarkupType: true, sellMarkupValue: true },
+      select: { id: true, reference: true, hotelName: true, leadGivenName: true, leadFamilyName: true, status: true, totalMinor: true, chargedMinor: true, sellMarkupType: true, sellMarkupValue: true, sellMinor: true },
     }),
     getBalance(agencyId),
     db.$queryRaw<{ topups: bigint | null; topup_count: bigint; refunds: bigint | null; refund_count: bigint }[]>`
@@ -220,7 +222,7 @@ export async function reportCsv(agencyId: string, period: Period): Promise<strin
     where: { agencyId, status: { notIn: ["DRAFT", "EXPIRED", "FAILED"] }, createdAt: { gte: new Date(ms(period.from)), lt: new Date(ms(period.to) + DAY) } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: CSV_MAX_ROWS,
-    select: { reference: true, createdAt: true, status: true, hotelName: true, hotelCity: true, leadGivenName: true, leadFamilyName: true, checkin: true, checkout: true, totalMinor: true, chargedMinor: true, sellMarkupType: true, sellMarkupValue: true },
+    select: { reference: true, createdAt: true, status: true, hotelName: true, hotelCity: true, leadGivenName: true, leadFamilyName: true, checkin: true, checkout: true, totalMinor: true, chargedMinor: true, sellMarkupType: true, sellMarkupValue: true, sellMinor: true },
   });
   const header = "Reference,Booked at (UTC),Status,Hotel,City,Lead guest,Check-in,Check-out,Net (USD),Selling price (USD),Profit (USD)";
   const lines = rows.map((r) => {

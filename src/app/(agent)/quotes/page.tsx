@@ -5,7 +5,7 @@ import { requireAgent } from "@/server/auth/guards";
 import { QUOTE_TABS, listQuotes, quoteCode, type QuoteListItem, type QuoteTab } from "@/server/quotes/quotes";
 import { shortDate } from "../search/parts";
 import { createQuoteAction } from "./actions";
-import { StatusPill, guestsText } from "./parts";
+import { QuotePill, guestsText } from "./parts";
 
 export const metadata: Metadata = { title: "Quotes | Apolles", robots: { index: false, follow: false } };
 
@@ -29,7 +29,8 @@ function ago(date: Date, now: Date): string {
   return days === 1 ? "Yesterday" : `${days} days ago`;
 }
 
-// Screen 14: the agency's quotes, newest change first, with status tabs and search.
+// Screen 14: the agency's quotes, the agent's newest edit first, with status tabs and search. A
+// client's view or selection changes the status line, never the order.
 export default async function QuotesPage({ searchParams }: { searchParams: SearchParams }) {
   const { agencyId } = await requireAgent();
   const params = await searchParams;
@@ -145,11 +146,20 @@ function QuoteCard({ quote, now }: { quote: QuoteListItem; now: Date }) {
         </div>
         <div className="text-[13px]">
           <p className={head}>Last updated</p>
-          <p className="font-semibold text-ink">{dayMonth.format(quote.updatedAt)}</p>
-          <p className="text-xs text-muted">{ago(quote.updatedAt, now)}</p>
+          <p className="font-semibold text-ink">{dayMonth.format(quote.editedAt)}</p>
+          <p className="text-xs text-muted">{ago(quote.editedAt, now)}</p>
         </div>
-        <StatusPill status={quote.status} />
-        {quote.status === "SELECTED" ? (
+        <QuotePill status={quote.status} closed={quote.closed} expired={quote.expired} partlyBooked={quote.status !== "BOOKED" && quote.booking !== null} />
+        {quote.closed ? (
+          <Link href={`/quotes/${quote.id}`} className={btnSecondary}>
+            Open
+          </Link>
+        ) : quote.expired ? (
+          // "Extend offer" is on the quote itself, next to its prices.
+          <Link href={`/quotes/${quote.id}`} className={btnSecondary}>
+            Extend offer
+          </Link>
+        ) : quote.status === "SELECTED" ? (
           <Link href={`/quotes/${quote.id}#selections`} className={btnPrimary}>
             Book selected option
           </Link>
@@ -174,7 +184,7 @@ function QuoteCard({ quote, now }: { quote: QuoteListItem; now: Date }) {
         <span className="ml-auto">
           {quote.status === "BOOKED" && quote.booking
             ? `Booked ${quote.booking.confirmedAt ? dayMonth.format(quote.booking.confirmedAt) : ""} · ${quote.booking.hotelName} · ${quote.booking.reference}`
-            : quote.selectedAt ? `Client sent selections ${ago(quote.selectedAt, now).toLowerCase()}` : quote.viewedAt ? `Viewed ${ago(quote.viewedAt, now).toLowerCase()}` : quote.sentAt ? "Waiting for client" : ""}
+            : quote.closed ? "Closed" : quote.expired ? "Offer expired" : quote.selectedAt ? `Client sent selections ${ago(quote.selectedAt, now).toLowerCase()}` : quote.viewedAt ? `Viewed ${ago(quote.viewedAt, now).toLowerCase()}` : quote.sentAt ? "Waiting for client" : ""}
         </span>
       </div>
     </li>

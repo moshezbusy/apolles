@@ -4,22 +4,40 @@ import { DateRangeField } from "@/components/date-picker/DateRangeField";
 import { RateIncludes } from "@/components/RateIncludes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { btnPrimary, btnSecondary, card, input, inputUnsized, label, link } from "@/components/ui";
+import { alertInfo, btnPrimary, btnSecondary, card, input, inputUnsized, label, link } from "@/components/ui";
+import { PHONE_NEEDS_COUNTRY_CODE, toE164Digits } from "@/lib/phone";
 import { formatMinor } from "@/lib/supplier-money";
 import { requireAgent } from "@/server/auth/guards";
 import { clientOptions } from "@/server/clients";
-import { sellingMinor } from "@/server/quotes/pricing";
-import { getQuote, quoteCode, quoteNumbers, type QuoteDetail } from "@/server/quotes/quotes";
+import { addDays, clientCancelView, defaultClientDate, offerLastDay, sellingMinor, supplierCancelView, todayIso } from "@/server/quotes/pricing";
+import { getQuote, quoteCode, quoteExpired, quoteNumbers, type QuoteDetail } from "@/server/quotes/quotes";
 import type { PriceBreakdown } from "@/server/supplier/types";
 import { dateRange } from "../../search/dates";
 import { DestinationPicker } from "../../search/destination-picker";
 import { Stars, shortDate } from "../../search/parts";
 import { ActionForm } from "../action-form";
-import { addStayAction, bookFromQuoteAction, copyLinkAction, emailAction, hotelAction, removeRoomAction, removeStayAction, renewLinkAction, roomDateAction, roomPriceAction, saveSettingsAction, whatsappAction } from "../actions";
+import {
+  addStayAction,
+  bookFromQuoteAction,
+  closeQuoteAction,
+  copyLinkAction,
+  emailAction,
+  extendOfferAction,
+  hotelAction,
+  removeRoomAction,
+  removeStayAction,
+  renewLinkAction,
+  reopenQuoteAction,
+  roomDateAction,
+  roomPriceAction,
+  saveSettingsAction,
+  whatsappAction,
+} from "../actions";
 import { type StayBooking, stayBookings } from "@/server/quotes/quote-booking";
 import { shareUrl } from "@/server/quotes/sharing";
+import { QuoteDirtyProvider } from "./dirty";
 import { SendPanel } from "./send-panel";
-import { StatusPill, guestsText } from "../parts";
+import { QuotePill, guestsText } from "../parts";
 
 export const metadata: Metadata = { title: "Quote | Apolles", robots: { index: false, follow: false } };
 
@@ -53,15 +71,23 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
   const clients = quote.client && !options.some((c) => c.id === quote.client?.id) ? [quote.client, ...options] : options;
   const totals = quoteNumbers(quote);
   const roomCount = totals.options;
-  const { minDate, maxDate } = dateRange(new Date());
+  const now = new Date();
+  const { minDate, maxDate } = dateRange(now);
+  const closed = quote.closedAt !== null;
+  const expired = quoteExpired(quote, now);
+  const partlyBooked = quote.status !== "BOOKED" && [...bookings.values()].some((b) => b.status === "CONFIRMED");
+  // The WhatsApp button needs the client's number in its international form.
+  const phoneHint = quote.client && !toE164Digits(quote.client.phone, quote.agency.country) ? PHONE_NEEDS_COUNTRY_CODE : null;
 
   return (
+    // The provider lets "Send quote" know while the settings form holds unsaved changes.
+    <QuoteDirtyProvider>
     <main className="mx-auto flex w-[min(1100px,calc(100%-40px))] flex-col gap-5 pb-16 pt-6">
       <Link href="/quotes" className={link}>
         ← Back to quotes
       </Link>
 
-      <ActionForm action={saveSettingsAction} className="flex flex-col gap-5">
+      <ActionForm action={saveSettingsAction} className="flex flex-col gap-5" keepValues trackDirty>
         <input type="hidden" name="quoteId" value={quote.id} />
         <section className={`${card} flex flex-wrap items-start justify-between gap-4 bg-white p-5`}>
           <div className="min-w-[260px] flex-1">
@@ -86,7 +112,7 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <StatusPill status={quote.status} />
+            <QuotePill status={quote.status} closed={closed} expired={expired} partlyBooked={partlyBooked} />
             <button type="submit" className={btnPrimary}>
               Save changes
             </button>
@@ -121,6 +147,14 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
                   <dd className="text-ink">{quote.client.phone}</dd>
                 </div>
               </dl>
+            ) : null}
+            {phoneHint ? (
+              <p role="note" className="text-xs font-semibold text-[#8a6a10]">
+                {phoneHint}{" "}
+                <Link href={`/clients?id=${quote.client?.id ?? ""}&edit=1`} className="underline">
+                  Open the client
+                </Link>
+              </p>
             ) : null}
             <Link href="/clients?new=1" className={link}>
               + Add a new client
@@ -221,6 +255,8 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
         </div>
       </ActionForm>
 
+      <OfferStatus quote={quote} closed={closed} expired={expired} partlyBooked={partlyBooked} />
+
       <section aria-labelledby="send-title" className={`${card} bg-white p-5`}>
         <h2 id="send-title" className={sectionHead}>
           Send quote
@@ -231,6 +267,8 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
           shareUrl={quote.shareToken ? shareUrl(quote.shareToken) : null}
           hasClient={!!quote.client}
           hasEmail={!!quote.client?.email}
+          phoneHint={phoneHint}
+          closed={closed}
           actions={{ copy: copyLinkAction, whatsapp: whatsappAction, email: emailAction, renew: renewLinkAction }}
         />
       </section>
@@ -248,7 +286,7 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
         </div>
 
         {quote.stays.map((stay) => (
-          <StaySection key={stay.id} quote={quote} stay={stay} />
+          <StaySection key={stay.id} quote={quote} stay={stay} booking={bookings.get(stay.id)} />
         ))}
 
         <section className={`${card} bg-white p-5`}>
@@ -269,6 +307,54 @@ export default async function QuoteEditorPage({ params }: { params: Params }) {
         <p className="text-center text-xs text-muted">Rates and availability remain subject to change until booking is confirmed.</p>
       </section>
     </main>
+    </QuoteDirtyProvider>
+  );
+}
+
+// Where the offer stands for the client, and the agent's buttons for it: "Extend offer" once it
+// ran out, "Close quote" to finish a quote on purpose (a trip booked in part, a client who went
+// quiet) and "Reopen quote" to take it up again.
+function OfferStatus({ quote, closed, expired, partlyBooked }: { quote: QuoteDetail; closed: boolean; expired: boolean; partlyBooked: boolean }) {
+  if (quote.status === "BOOKED") return null;
+  const lastDay = quote.validUntil ? shortDate(offerLastDay(quote.validUntil)) : null;
+  const text = closed
+    ? "This quote is closed: the client link shows that the proposal is closed, and nothing here changes until you reopen it. Bookings made from it are not affected."
+    : expired
+      ? `This offer expired${lastDay ? ` (its last day was ${lastDay})` : ""}: the client can read it but can no longer choose. The prices here are the ones saved when the rooms were added. Check them, then extend the offer.`
+      : lastDay
+        ? `The client sees: prices valid until ${lastDay}.${partlyBooked ? " Part of this trip is booked; the other destinations are still open to the client." : ""}`
+        : partlyBooked
+          ? "Part of this trip is booked; the other destinations are still open."
+          : "Not sent yet. The offer's validity starts when you send the quote.";
+  return (
+    <section aria-label="Offer status" className={`${closed || expired ? alertInfo : `${card} bg-white p-4`} flex flex-wrap items-center justify-between gap-3`}>
+      <p className="min-w-[240px] flex-1 text-[13px]">{text}</p>
+      <div className="flex flex-wrap items-start gap-2">
+        {expired && !closed ? (
+          <ActionForm action={extendOfferAction}>
+            <input type="hidden" name="quoteId" value={quote.id} />
+            <button type="submit" className={btnPrimary}>
+              Extend offer
+            </button>
+          </ActionForm>
+        ) : null}
+        {closed ? (
+          <ActionForm action={reopenQuoteAction}>
+            <input type="hidden" name="quoteId" value={quote.id} />
+            <button type="submit" className={btnPrimary}>
+              Reopen quote
+            </button>
+          </ActionForm>
+        ) : (
+          <ActionForm action={closeQuoteAction} confirmText="Close this quote? The client link will show that the proposal is closed. You can reopen it later.">
+            <input type="hidden" name="quoteId" value={quote.id} />
+            <button type="submit" className={btnSecondary}>
+              Close quote
+            </button>
+          </ActionForm>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -276,8 +362,11 @@ type Stay = QuoteDetail["stays"][number];
 type Hotel = Stay["hotels"][number];
 type Room = Hotel["rooms"][number];
 
-function StaySection({ quote, stay }: { quote: QuoteDetail; stay: Stay }) {
+// `booking`: the destination's active booking. A booked destination is frozen (the server refuses
+// every change to its hotels, rooms, prices and dates), so its edit controls are not drawn.
+function StaySection({ quote, stay, booking }: { quote: QuoteDetail; stay: Stay; booking: StayBooking | undefined }) {
   const n = nights(stay.checkin, stay.checkout);
+  const frozen = !!booking;
   return (
     <section className={`${card} overflow-hidden bg-white`}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
@@ -287,30 +376,40 @@ function StaySection({ quote, stay }: { quote: QuoteDetail; stay: Stay }) {
             {shortDate(stay.checkin)} to {shortDate(stay.checkout)} · {n} {n === 1 ? "night" : "nights"} · {stay.hotels.length} {stay.hotels.length === 1 ? "hotel" : "hotels"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href={`/search?quote=${quote.id}&stay=${stay.id}`} className={btnSecondary}>
-            + Add hotel
-          </Link>
-          <ActionForm action={removeStayAction}>
-            <input type="hidden" name="stayId" value={stay.id} />
-            <button type="submit" className={`${btnSecondary} text-[#9b3b2e]`}>
-              Remove destination
-            </button>
-          </ActionForm>
-        </div>
+        {frozen ? (
+          <p className="text-xs font-semibold text-brand">
+            {booking.status === "CONFIRMED" ? "Booked" : "Booking pending"} ·{" "}
+            <Link href={`/bookings/${booking.id}`} className="underline">
+              {booking.reference}
+            </Link>
+            . To change this destination, cancel the booking first.
+          </p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={`/search?quote=${quote.id}&stay=${stay.id}`} className={btnSecondary}>
+              + Add hotel
+            </Link>
+            <ActionForm action={removeStayAction}>
+              <input type="hidden" name="stayId" value={stay.id} />
+              <button type="submit" className={`${btnSecondary} text-[#9b3b2e]`}>
+                Remove destination
+              </button>
+            </ActionForm>
+          </div>
+        )}
       </div>
       <div className="flex flex-col gap-3 p-4">
         {stay.hotels.length === 0 ? (
           <p className="text-sm text-muted">No hotels yet. &quot;+ Add hotel&quot; opens Search with these dates and guests.</p>
         ) : (
-          stay.hotels.map((hotel, i) => <HotelBlock key={hotel.id} quote={quote} hotel={hotel} nightsCount={n} first={i === 0} last={i === stay.hotels.length - 1} />)
+          stay.hotels.map((hotel, i) => <HotelBlock key={hotel.id} quote={quote} hotel={hotel} nightsCount={n} first={i === 0} last={i === stay.hotels.length - 1} frozen={frozen} />)
         )}
       </div>
     </section>
   );
 }
 
-function HotelBlock({ quote, hotel, nightsCount, first, last }: { quote: QuoteDetail; hotel: Hotel; nightsCount: number; first: boolean; last: boolean }) {
+function HotelBlock({ quote, hotel, nightsCount, first, last, frozen }: { quote: QuoteDetail; hotel: Hotel; nightsCount: number; first: boolean; last: boolean; frozen: boolean }) {
   const sells = hotel.rooms.map((r) => sellingMinor(r, quote));
   const lowest = sells.length ? Math.min(...sells) : null;
   const tool = (what: string, text: string, title: string, disabled = false) => (
@@ -347,22 +446,29 @@ function HotelBlock({ quote, hotel, nightsCount, first, last }: { quote: QuoteDe
           {tool("up", "↑", "Move up", first)}
           {tool("down", "↓", "Move down", last)}
           {tool("pick", "★", hotel.agencyPick ? "Remove agency pick" : "Mark as agency pick")}
-          {tool("remove", "×", "Remove hotel")}
+          {frozen ? null : tool("remove", "×", "Remove hotel")}
         </div>
       </div>
       {hotel.rooms.map((room) => (
-        <RoomBlock key={room.id} quote={quote} room={room} />
+        <RoomBlock key={room.id} quote={quote} room={room} frozen={frozen} />
       ))}
     </article>
   );
 }
 
-function RoomBlock({ quote, room }: { quote: QuoteDetail; room: Room }) {
+function RoomBlock({ quote, room, frozen }: { quote: QuoteDetail; room: Room; frozen: boolean }) {
   const sell = sellingMinor(room, quote);
   const profit = sell - room.netMinor;
   const price = room.price as unknown as PriceBreakdown;
   const atHotel = price?.dueAtPropertyTotal ?? null;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso(new Date());
+  // Free cancellation as it stands today: a date that passed is never shown as free.
+  const supplier = supplierCancelView(room, today);
+  const client = clientCancelView(room, today);
+  // The client's date: after today, and at least one day before the supplier's.
+  const latestClientDay = room.freeCancelUntil ? defaultClientDate(room.freeCancelUntil) : null;
+  const tomorrow = addDays(today, 1);
+  const canSetDate = !frozen && supplier.kind === "free" && latestClientDay !== null && latestClientDay >= tomorrow;
   return (
     <div className="border-t border-line bg-[#fbfaf7] p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -373,11 +479,17 @@ function RoomBlock({ quote, room }: { quote: QuoteDetail; room: Room }) {
             {room.bedDescription}
             {atHotel ? ` · + ${formatMinor(atHotel.minor, atHotel.currency)} paid at the hotel` : ""}
             {" · "}
-            {room.refundable && room.freeCancelUntil ? (
+            {supplier.kind === "free" ? (
               <span className="text-[#2f7d4a]">
-                Free cancellation until {shortDate(room.freeCancelUntil)}
-                {room.clientCancelUntil ? <span className="font-semibold text-[#8a6a10]"> · client sees {shortDate(room.clientCancelUntil)}</span> : null}
+                Free cancellation until {shortDate(supplier.until)}
+                {client.kind === "free" ? (
+                  <span className="font-semibold text-[#8a6a10]"> · client sees {shortDate(client.until)}</span>
+                ) : client.kind === "ended" ? (
+                  <span className="font-semibold text-[#9b3b2e]"> · client sees: free cancellation ended on {shortDate(client.on)}</span>
+                ) : null}
               </span>
+            ) : supplier.kind === "ended" ? (
+              <span className="font-semibold text-[#9b3b2e]">Free cancellation ended on {shortDate(supplier.on)}: non-refundable now</span>
             ) : (
               <span className="text-[#9b3b2e]">Non-refundable</span>
             )}
@@ -393,48 +505,59 @@ function RoomBlock({ quote, room }: { quote: QuoteDetail; room: Room }) {
           <p className="text-xs font-semibold text-[#37413d]">Net</p>
           <p className="font-bold text-ink">{money(room.netMinor, room.currency)}</p>
         </div>
-        <ActionForm action={roomPriceAction} className="flex flex-wrap items-end gap-2">
-          <input type="hidden" name="roomId" value={room.id} />
-          <label className={`${label} flex-1`}>
-            Selling price
-            <input
-              type="text"
-              inputMode="decimal"
-              name="price"
-              defaultValue={room.sellMinor === null ? "" : (room.sellMinor / 100).toFixed(2)}
-              placeholder={(sellingMinor({ ...room, sellMinor: null }, quote) / 100).toFixed(2)}
-              className={input}
-            />
-          </label>
-          <button type="submit" className={btnSecondary}>
-            Set
-          </button>
-          <p className="basis-full text-[11px] text-muted">{room.sellMinor === null ? "From the markup" : "Your price · empty it to use the markup"}</p>
-        </ActionForm>
+        {frozen ? (
+          <div className="text-[13px]">
+            <p className="text-xs font-semibold text-[#37413d]">Selling price</p>
+            <p className="font-bold text-ink">{money(sell, room.currency)}</p>
+          </div>
+        ) : (
+          <ActionForm action={roomPriceAction} className="flex flex-wrap items-end gap-2" keepValues>
+            <input type="hidden" name="roomId" value={room.id} />
+            <label className={`${label} flex-1`}>
+              Selling price
+              <input
+                type="text"
+                inputMode="decimal"
+                name="price"
+                defaultValue={room.sellMinor === null ? "" : (room.sellMinor / 100).toFixed(2)}
+                placeholder={(sellingMinor({ ...room, sellMinor: null }, quote) / 100).toFixed(2)}
+                className={input}
+              />
+            </label>
+            <button type="submit" className={btnSecondary}>
+              Set
+            </button>
+            <p className="basis-full text-[11px] text-muted">{room.sellMinor === null ? "From the markup" : "Your price · empty it to use the markup"}</p>
+          </ActionForm>
+        )}
         <div className="text-[13px]">
           <p className="text-xs font-semibold text-[#37413d]">Profit</p>
-          <p className={`font-bold ${profit < 0 ? "text-[#9b3b2e]" : "text-ink"}`}>{formatMinor(profit, room.currency)}</p>
+          <p className={`font-bold ${profit <= 0 ? "text-[#9b3b2e]" : "text-ink"}`}>{formatMinor(profit, room.currency)}</p>
         </div>
-        {room.refundable && room.freeCancelUntil ? (
+        {canSetDate && latestClientDay ? (
           <ActionForm action={roomDateAction} className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="roomId" value={room.id} />
             <div className="flex-1">
-              <DateField name="date" label="Client sees free cancellation until" min={today} max={room.freeCancelUntil} today={today} defaultValue={room.clientCancelUntil ?? ""} />
+              <DateField name="date" label="Client sees free cancellation until" min={tomorrow} max={latestClientDay} today={today} defaultValue={client.kind === "free" ? client.until : ""} />
             </div>
             <button type="submit" className={btnSecondary}>
               Set
             </button>
-            <p className="basis-full text-[11px] text-muted">Supplier deadline: {shortDate(room.freeCancelUntil)}. Same date as the supplier or earlier only.</p>
+            <p className="basis-full text-[11px] text-muted">Supplier deadline: {shortDate(room.freeCancelUntil ?? "")}. At least one day before it, so there is time to cancel for the client.</p>
           </ActionForm>
         ) : (
           <div />
         )}
-        <ActionForm action={removeRoomAction}>
-          <input type="hidden" name="roomId" value={room.id} />
-          <button type="submit" className={`${btnSecondary} text-[#9b3b2e]`}>
-            Remove
-          </button>
-        </ActionForm>
+        {frozen ? (
+          <div />
+        ) : (
+          <ActionForm action={removeRoomAction}>
+            <input type="hidden" name="roomId" value={room.id} />
+            <button type="submit" className={`${btnSecondary} text-[#9b3b2e]`}>
+              Remove
+            </button>
+          </ActionForm>
+        )}
       </div>
     </div>
   );
@@ -457,7 +580,7 @@ function ClientSelections({ quote, bookings }: { quote: QuoteDetail; bookings: M
           <h2 id="selections-title" className="text-base font-bold">
             Client selections
           </h2>
-          <p className="text-xs text-[#cfe2d8]">Sent {dayMonth.format(quote.selectedAt)}. The client can change it until you book.</p>
+          <p className="text-xs text-[#cfe2d8]">Sent {dayMonth.format(quote.selectedAt)}. The client can change a destination until you book it.</p>
         </div>
         <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
           {picked.length} of {quote.stays.length} destinations selected
@@ -480,7 +603,7 @@ function ClientSelections({ quote, bookings }: { quote: QuoteDetail; bookings: M
                     The client chose this at {money(stay.selectedSellMinor, stay.selectedCurrency ?? room.currency)}. The price changed since.
                   </p>
                 ) : null}
-                <StayBookingLine booking={bookings.get(stay.id)} stayId={stay.id} canBook={quote.status !== "BOOKED"} />
+                <StayBookingLine booking={bookings.get(stay.id)} stayId={stay.id} canBook={quote.status !== "BOOKED" && quote.closedAt === null} />
               </>
             ) : (
               <p className="mt-1 text-[13px] text-muted">No hotel selected</p>

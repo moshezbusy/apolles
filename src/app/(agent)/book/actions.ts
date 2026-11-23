@@ -5,7 +5,9 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
 import { createClientFromGuest } from "@/server/clients";
-import { BookingInputInvalid, BookingNotFound, BookingRateExpired, book, createDraft } from "@/server/booking/service";
+import { audit } from "@/server/audit";
+import { BookingInputInvalid, BookingNotFound, BookingRateExpired, book, createDraft, getBooking } from "@/server/booking/service";
+import { QUOTE_CHECK_NEEDED, quoteReview } from "@/server/quotes/quote-booking";
 import { formatUsd } from "@/lib/money";
 import { supplierContextFrom } from "@/server/supplier-context";
 import { readGuestForm, toDraftInput, type BookFormState } from "./form-state";
@@ -47,6 +49,20 @@ export async function bookAction(_previous: BookFormState, formData: FormData): 
   const bookingId = formData.get("bookingId");
   const expected = formData.get("expectedTotal");
   if (typeof bookingId !== "string" || typeof expected !== "string" || !/^\d{1,10}$/.test(expected)) notFound();
+  // A draft made from a quote: when the price or the terms are worse than what the client was
+  // quoted (worked out here again, never taken from the page), booking needs the agent's tick
+  // "I checked the new price and terms". Without it nothing is held or sent.
+  const draft = await getBooking(agencyId, bookingId);
+  if (draft?.status === "DRAFT") {
+    const review = await quoteReview(agencyId, draft);
+    if (review?.needsCheck) {
+      if (formData.get("quoteChecked") !== "on") {
+        revalidatePath(`/book/${draft.id}`); // the page draws the box and the tick again
+        return { status: "error", message: QUOTE_CHECK_NEEDED };
+      }
+      await audit(userId, "booking.quote-check", "Booking", draft.id, undefined, { quoteId: review.quoteId, profitLower: review.profitLower, termsWorse: review.termsWorse, rateChanged: review.rateChanged });
+    }
+  }
   let outcome;
   try {
     outcome = await book(

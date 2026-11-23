@@ -3,6 +3,7 @@ import Link from "next/link";
 import { initials } from "@/components/Header";
 import { btnPrimary, btnSecondary, card, cell, emptyState, input, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { countryName, countryOptions } from "@/lib/countries";
+import { PHONE_NEEDS_COUNTRY_CODE, toE164Digits } from "@/lib/phone";
 import { getAgencyProfile } from "@/server/agency-profile";
 import { requireAgent } from "@/server/auth/guards";
 import { getClient, listClients, type ClientDetail } from "@/server/clients";
@@ -168,7 +169,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
               />
             </>
           ) : open ? (
-            <ClientPanel client={open} editHref={hrefFor({ id: open.id, extra: "edit" })} />
+            <ClientPanel client={open} editHref={hrefFor({ id: open.id, extra: "edit" })} country={profile?.country ?? ""} />
           ) : (
             <p className="text-sm text-muted">Choose a client to see their details.</p>
           )}
@@ -178,8 +179,11 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
   );
 }
 
-function ClientPanel({ client, editHref }: { client: ClientDetail; editHref: string }) {
+// `country`: the agency's country, whose calling code a number typed the local way gets.
+function ClientPanel({ client, editHref, country }: { client: ClientDetail; editHref: string; country: string }) {
   const name = `${client.firstName} ${client.lastName}`;
+  // The stored number is never rewritten; the agent is told when no WhatsApp link can be made from it.
+  const phoneHint = toE164Digits(client.phone, country) ? null : PHONE_NEEDS_COUNTRY_CODE;
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-start gap-3">
@@ -213,6 +217,7 @@ function ClientPanel({ client, editHref }: { client: ClientDetail; editHref: str
             <dt className="text-muted">WhatsApp phone</dt>
             <dd className="text-right font-semibold text-ink">{client.phone}</dd>
           </div>
+
           <div className="flex justify-between gap-3">
             <dt className="text-muted">Nationality</dt>
             <dd className="text-right font-semibold text-ink">{countryName(client.nationality)}</dd>
@@ -224,6 +229,11 @@ function ClientPanel({ client, editHref }: { client: ClientDetail; editHref: str
             </div>
           ) : null}
         </dl>
+        {phoneHint ? (
+          <p role="note" className="mt-2 text-xs font-semibold text-[#8a6a10]">
+            {phoneHint}
+          </p>
+        ) : null}
       </section>
 
       <section className="border-t border-line pt-4">
