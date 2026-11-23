@@ -57,7 +57,61 @@ export function defaultClientDate(lastFree: string): string {
   return addDays(lastFree, -1);
 }
 
-// The agent may show the client an earlier date, never a later one, and never a day in the past.
+// "Today" for every date check on a quote: the UTC calendar day (an agency has no time zone of
+// its own). To stay on the safe side for agencies and hotels ahead of UTC, a day counts as over
+// from the START of that UTC day: a date is still ahead only while it is after today.
+export function todayIso(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+export function dayAhead(day: string, today: string): boolean {
+  return day > today;
+}
+
+// The agent may show the client an earlier date than the supplier's, never the supplier's last
+// day itself or a later one (one day is kept to cancel for the client), and never a day that is
+// not ahead any more.
 export function clientDateAllowed(date: string, lastFree: string, today: string): boolean {
-  return isRealDay(date) && date <= lastFree && date >= today;
+  return isRealDay(date) && date <= defaultClientDate(lastFree) && dayAhead(date, today);
+}
+
+// Free cancellation as it is shown: still open until a day, over since a day, or none at all.
+export type CancelView = { kind: "free"; until: string } | { kind: "ended"; on: string } | { kind: "none" };
+
+type CancelRoom = { refundable: boolean; freeCancelUntil: string | null; clientCancelUntil: string | null };
+
+function cancelView(day: string | null, today: string): CancelView {
+  if (!day) return { kind: "none" };
+  return dayAhead(day, today) ? { kind: "free", until: day } : { kind: "ended", on: day };
+}
+
+// The supplier's own deadline of a quoted room (the agent's side). A date that passed is never
+// "free" again.
+export function supplierCancelView(room: CancelRoom, today: string): CancelView {
+  return cancelView(room.refundable ? room.freeCancelUntil : null, today);
+}
+
+// What the client is told: the date the agent chose, capped at one day before the supplier's
+// (a row saved before that cap is capped here).
+export function clientCancelView(room: CancelRoom, today: string): CancelView {
+  if (!room.refundable || !room.freeCancelUntil) return { kind: "none" };
+  const cap = defaultClientDate(room.freeCancelUntil);
+  return cancelView(room.clientCancelUntil && room.clientCancelUntil < cap ? room.clientCancelUntil : cap, today);
+}
+
+const DAY_MS = 86_400_000;
+
+// How long a shared quote stays open to the client: `days` whole UTC days, today included. The
+// offer ends at the start of the UTC day after them.
+export function offerEnd(now: Date, days: number): Date {
+  return new Date(Date.parse(`${todayIso(now)}T00:00:00.000Z`) + days * DAY_MS);
+}
+
+// The last whole day of the offer, for "Prices valid until <date>".
+export function offerLastDay(validUntil: Date): string {
+  return new Date(validUntil.getTime() - 1).toISOString().slice(0, 10);
+}
+
+export function offerOver(validUntil: Date | null, now: Date): boolean {
+  return validUntil !== null && now.getTime() >= validUntil.getTime();
 }

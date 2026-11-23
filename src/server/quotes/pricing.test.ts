@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { addDays, clientDateAllowed, defaultClientDate, lastFreeDay, parseMarkup, profitMinor, sellingMinor } from "@/server/quotes/pricing";
+import {
+  addDays,
+  clientCancelView,
+  clientDateAllowed,
+  dayAhead,
+  defaultClientDate,
+  lastFreeDay,
+  offerEnd,
+  offerLastDay,
+  offerOver,
+  parseMarkup,
+  profitMinor,
+  sellingMinor,
+  supplierCancelView,
+  todayIso,
+} from "@/server/quotes/pricing";
 
 const PCT10 = { markupType: "PERCENT" as const, markupValue: 1000 };
 const FIXED25 = { markupType: "FIXED" as const, markupValue: 2500 };
@@ -57,12 +72,56 @@ describe("cancellation dates", () => {
     expect(lastFreeDay(offer(true, []))).toBeNull();
   });
 
-  it("the client sees one day earlier by default, and never a later date than the supplier's", () => {
+  it("the client sees one day earlier by default, and never the supplier's last day or a later one", () => {
     expect(defaultClientDate("2027-10-18")).toBe("2027-10-17");
     expect(addDays("2027-03-01", -1)).toBe("2027-02-28");
-    expect(clientDateAllowed("2027-10-18", "2027-10-18", "2027-01-01")).toBe(true);
+    expect(clientDateAllowed("2027-10-17", "2027-10-18", "2027-01-01")).toBe(true);
+    // The supplier's own last day leaves no time to cancel for the client.
+    expect(clientDateAllowed("2027-10-18", "2027-10-18", "2027-01-01")).toBe(false);
     expect(clientDateAllowed("2027-10-19", "2027-10-18", "2027-01-01")).toBe(false);
     expect(clientDateAllowed("2026-12-31", "2027-10-18", "2027-01-01")).toBe(false);
+    // Today itself is over already (the day ends at its start, in UTC).
+    expect(clientDateAllowed("2027-01-01", "2027-10-18", "2027-01-01")).toBe(false);
     expect(clientDateAllowed("2027-02-30", "2027-10-18", "2027-01-01")).toBe(false);
+  });
+
+  it("today is the UTC day, and a day is ahead only while it is after today", () => {
+    expect(todayIso(new Date("2026-11-23T23:59:59.000Z"))).toBe("2026-11-23");
+    expect(dayAhead("2026-11-24", "2026-11-23")).toBe(true);
+    expect(dayAhead("2026-11-23", "2026-11-23")).toBe(false);
+    expect(dayAhead("2026-11-20", "2026-11-23")).toBe(false);
+  });
+
+  it("a free cancellation date that passed is shown as ended, never as free", () => {
+    const room = { refundable: true, freeCancelUntil: "2026-11-21", clientCancelUntil: "2026-11-20" };
+    expect(clientCancelView(room, "2026-11-10")).toEqual({ kind: "free", until: "2026-11-20" });
+    expect(clientCancelView(room, "2026-11-20")).toEqual({ kind: "ended", on: "2026-11-20" });
+    expect(clientCancelView(room, "2026-11-23")).toEqual({ kind: "ended", on: "2026-11-20" });
+    expect(supplierCancelView(room, "2026-11-20")).toEqual({ kind: "free", until: "2026-11-21" });
+    expect(supplierCancelView(room, "2026-11-23")).toEqual({ kind: "ended", on: "2026-11-21" });
+  });
+
+  it("the client's date is capped one day before the supplier's, also on a row saved with the same day", () => {
+    expect(clientCancelView({ refundable: true, freeCancelUntil: "2026-12-10", clientCancelUntil: "2026-12-10" }, "2026-11-23")).toEqual({ kind: "free", until: "2026-12-09" });
+    expect(clientCancelView({ refundable: true, freeCancelUntil: "2026-12-10", clientCancelUntil: null }, "2026-11-23")).toEqual({ kind: "free", until: "2026-12-09" });
+  });
+
+  it("no free cancellation for a non-refundable rate or a rate with no date", () => {
+    expect(clientCancelView({ refundable: false, freeCancelUntil: "2026-12-10", clientCancelUntil: "2026-12-09" }, "2026-11-23")).toEqual({ kind: "none" });
+    expect(clientCancelView({ refundable: true, freeCancelUntil: null, clientCancelUntil: null }, "2026-11-23")).toEqual({ kind: "none" });
+    expect(supplierCancelView({ refundable: true, freeCancelUntil: null, clientCancelUntil: null }, "2026-11-23")).toEqual({ kind: "none" });
+  });
+});
+
+describe("how long an offer is valid", () => {
+  it("whole UTC days, today included; it ends at the start of the next UTC day", () => {
+    const shared = new Date("2026-11-23T14:30:00.000Z");
+    const end = offerEnd(shared, 7);
+    expect(end.toISOString()).toBe("2026-11-30T00:00:00.000Z");
+    expect(offerLastDay(end)).toBe("2026-11-29");
+    expect(offerOver(end, new Date("2026-11-29T23:59:59.000Z"))).toBe(false);
+    expect(offerOver(end, new Date("2026-11-30T00:00:00.000Z"))).toBe(true);
+    expect(offerOver(null, new Date("2030-01-01T00:00:00.000Z"))).toBe(false);
+    expect(offerLastDay(offerEnd(shared, 1))).toBe("2026-11-23");
   });
 });
