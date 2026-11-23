@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { alertError, alertSuccess, btnPrimary, codeInput, label } from "@/components/ui";
 import type { VerifyState } from "./copy";
 
-export function VerifyForm({ verify, resend, next }: { verify: (p: VerifyState, f: FormData) => Promise<VerifyState>; resend: () => Promise<VerifyState>; next?: string }) {
+export function VerifyForm({ verify, resend, next }: { verify: (p: VerifyState, f: FormData) => Promise<VerifyState>; resend: () => Promise<VerifyState>; next?: string | undefined }) {
   const [state, formAction, pending] = useActionState<VerifyState, FormData>(verify, null);
   const [resent, resendAction, resending] = useActionState<VerifyState>(resend, null);
   const message = state ?? resent;

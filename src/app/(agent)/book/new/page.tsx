@@ -48,6 +48,8 @@ export default async function GuestDetailsPage({ searchParams }: { searchParams:
     clientOptions(agencyId),
   ]);
   const stay = stayText({ nights: offer.price.nights, rooms: found.rooms });
+  // Green only for a real free-cancellation promise (the one rule, src/lib/cancellation.ts).
+  const cancellation = cancellationLabel(offer);
   // A section per room when there are several (plan 10); one room looks as it always did.
   const rooms: GuestFormRoom[] = found.rooms.map((room, r) => ({
     heading: found.rooms.length > 1 ? roomTitle(r, room) : null,
@@ -60,7 +62,13 @@ export default async function GuestDetailsPage({ searchParams }: { searchParams:
         <h1 className={pageTitle}>Guest details</h1>
         <p className="mb-5 mt-1 text-sm text-muted">Enter the traveler names exactly as they appear on their travel documents.</p>
         {clients.length > 0 ? <ClientChooser clients={clients} selected={prefill?.clientId ?? ""} /> : null}
-        <GuestForm action={createDraftAction} rate={{ ...rate, ...(stayId ? { stay: stayId } : {}) }} rooms={rooms} prefill={prefill} />
+        <GuestForm
+          action={createDraftAction}
+          hidden={{ ...rate, ...(stayId ? { stay: stayId } : {}) }}
+          rooms={rooms}
+          prefill={prefill}
+          back={{ href: `/search/${encodeURIComponent(rate.s)}/hotels/${encodeURIComponent(rate.p)}`, label: "Back to room options" }}
+        />
       </section>
       <aside className={`${card} h-fit bg-white p-5`}>
         <h2 className="font-serif text-[22px] text-ink">{hotel.name}</h2>
@@ -72,7 +80,7 @@ export default async function GuestDetailsPage({ searchParams }: { searchParams:
         <p className="mt-2 text-[13px] text-[#37413d]">
           {shortDate(query.checkin)} to {shortDate(query.checkout)} · {stay}
         </p>
-        <p className={`mt-2 text-[13px] font-bold ${offer.refundable ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>{cancellationLabel(offer).text}</p>
+        <p className={`mt-2 text-[13px] font-bold ${cancellation.refundable ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>{cancellation.text}</p>
         <div className="mt-3 border-t border-line pt-3">
           <PriceDetails price={offer.price} stay={stay} />
           <p className="mt-2 text-xs text-muted">The price is checked again on the next page.</p>

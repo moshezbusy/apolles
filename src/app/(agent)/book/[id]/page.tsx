@@ -19,7 +19,8 @@ import { bookAction } from "../actions";
 import { SellingPrice } from "../../_components/selling-price";
 import { sellingPriceAction } from "../../bookings/[id]/actions";
 import { formatMinor } from "@/lib/supplier-money";
-import { dayAhead, lastFreeDay, todayIso } from "@/server/quotes/pricing";
+import { freeCancelText } from "@/server/booking/free-cancel";
+import { getQuoteSettings } from "@/server/quote-settings";
 import { type QuoteReview, quoteReview } from "@/server/quotes/quote-booking";
 import { quoteCode } from "@/server/quotes/quotes";
 import { Steps } from "../../_components/steps";
@@ -76,7 +77,7 @@ export default async function ReviewPage({ params }: { params: Params }) {
     content = null; // the rates and policies of the rate itself are still shown
   }
   // From a quote: what the client was quoted, next to what was just checked (the quote never sets the price).
-  const [{ balanceCents }, rooms, fromQuote] = await Promise.all([getBalance(agencyId), getBookingRooms(agencyId, b.id), quoteReview(agencyId, b)]);
+  const [{ balanceCents }, rooms, fromQuote, settings] = await Promise.all([getBalance(agencyId), getBookingRooms(agencyId, b.id), quoteReview(agencyId, b), getQuoteSettings(agencyId)]);
   const shortfall = Math.max(0, b.totalMinor - balanceCents);
   // Several rooms (plan 10) list each room with its guests and price; one room looks as before.
   const severalRooms = rooms.length > 1;
@@ -166,7 +167,18 @@ export default async function ReviewPage({ params }: { params: Params }) {
                   </dd>
                 </div>
               ) : null}
+              <div className="sm:col-span-2">
+                <dt className="font-semibold text-ink">Lead guest contact</dt>
+                <dd>
+                  {b.leadEmail} · {b.leadPhone} <span className="block text-xs text-muted">Sent to the hotel with the booking.</span>
+                </dd>
+              </div>
             </dl>
+            <p className="mt-3">
+              <Link href={`/book/${b.id}/edit`} className={link}>
+                Edit guest details
+              </Link>
+            </p>
           </section>
           <section aria-labelledby="cancel-title" className={`${card} bg-white p-5`}>
             <h2 id="cancel-title" className={sectionTitle}>
@@ -199,7 +211,14 @@ export default async function ReviewPage({ params }: { params: Params }) {
               ) : null}
               {shortfall > 0 ? (
                 <p role="alert" className={`${alertError} mt-2`}>
-                  Missing: {formatUsd(shortfall)}. <Link href="/balance" className={link}>How to top up</Link>
+                  Your balance is not enough for this booking. Missing: {formatUsd(shortfall)}. <Link href="/balance" className={link}>How to top up</Link>
+                  <span className="mt-1 block">
+                    This booking is kept for 7 days under{" "}
+                    <Link href="/bookings?tab=not_finished" className={link}>
+                      Bookings, Not finished
+                    </Link>
+                    : come back to it after the top-up.
+                  </span>
                 </p>
               ) : (
                 <p className="mt-1 text-xs text-muted">The total is paid from your balance when you book.</p>
@@ -212,18 +231,27 @@ export default async function ReviewPage({ params }: { params: Params }) {
               bookingId={b.id}
               netMinor={b.totalMinor}
               saved={b.sellMarkupType && b.sellMarkupValue !== null ? { markupType: b.sellMarkupType, markupValue: b.sellMarkupValue } : null}
+              suggested={settings ? { markupType: settings.defaultMarkupType, markupValue: settings.defaultMarkupValue } : null}
               title="Add your selling price (optional)"
             />
           </section>
           <section className={`${card} bg-white p-5`}>
-            <BookForm action={bookAction} bookingId={b.id} expectedTotal={b.totalMinor} terms={termsLinks()} canPay={shortfall === 0} quoteCheck={fromQuote?.needsCheck === true} />
+            <BookForm
+              key={b.priceCheckedAt?.toISOString() ?? "unchecked"}
+              action={bookAction}
+              bookingId={b.id}
+              expectedTotal={b.totalMinor}
+              terms={termsLinks()}
+              canPay={shortfall === 0}
+              quoteCheck={fromQuote?.needsCheck === true}
+              checkedAt={b.priceCheckedAt?.toISOString() ?? null}
+            />
             {(() => {
-              // A free day already past (booking inside the penalty window) is not shown as free.
-              const last = lastFreeDay({ refundable: b.refundable, cancelPenalties: b.cancelPenalties as unknown as CancelPenalty[] });
-              const free = last && dayAhead(last, todayIso(new Date())) ? last : null;
+              // The one wording (free-cancel.ts): only while free cancellation is still open.
+              const free = freeCancelText(b, new Date());
               return (
                 <p className={`mt-3 text-center text-xs font-semibold ${free ? "text-[#2f7d4a]" : "text-[#9b3b2e]"}`}>
-                  {free ? `Free cancellation until ${shortDate(free)} (hotel time)` : b.refundable ? "See the cancellation policy before booking" : "Non-refundable"}
+                  {free ?? (b.refundable ? "See the cancellation policy before booking" : "Non-refundable")}
                 </p>
               );
             })()}

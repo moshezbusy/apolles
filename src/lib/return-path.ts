@@ -12,7 +12,6 @@ const ORIGIN = "https://apolles.invalid";
 export function safeReturnPath(raw: unknown): string | null {
   if (typeof raw !== "string" || raw.length === 0 || raw.length > MAX_LENGTH) return null;
   if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return null;
-  // eslint-disable-next-line no-control-regex
   if (/[\u0000- \u007f]/.test(raw)) return null;
   let url: URL;
   try {

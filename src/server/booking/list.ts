@@ -2,11 +2,12 @@ import type { BookingStatus, Prisma } from "@/generated/prisma/client";
 import { currencyExponent } from "@/lib/supplier-money";
 import { db } from "@/server/db";
 
-// The agency's bookings list (screen 13) and its CSV export. Always scoped by agencyId;
-// drafts and expired drafts are not bookings and never listed.
+// The agency's bookings list (screen 13) and its CSV export. Always scoped by agencyId.
+// Drafts are not bookings: only the "Not finished" tab lists them (guest details entered, not
+// booked yet, so the agent can find one again after topping up); expired drafts never.
 
-export type BookingTab = "all" | "upcoming" | "in_stay" | "completed" | "pending" | "cancelled";
-export const BOOKING_TABS: readonly BookingTab[] = ["all", "upcoming", "in_stay", "completed", "pending", "cancelled"];
+export type BookingTab = "all" | "upcoming" | "in_stay" | "completed" | "pending" | "failed" | "cancelled" | "not_finished";
+export const BOOKING_TABS: readonly BookingTab[] = ["all", "upcoming", "in_stay", "completed", "pending", "failed", "cancelled", "not_finished"];
 
 export const STATUS_LABEL: Record<BookingStatus, string> = {
   DRAFT: "Draft",
@@ -21,20 +22,44 @@ export const STATUS_LABEL: Record<BookingStatus, string> = {
 
 const LISTED: BookingStatus[] = ["PENDING_CONFIRMATION", "CONFIRMED", "FAILED", "CANCEL_PENDING", "CANCELLED", "CANCELLED_BY_SUPPLIER"];
 const DEFAULT_TAKE = 20;
-const MAX_TAKE = 100;
+const MAX_TAKE = 200; // "Load more" shows the first 20, 40, ... up to 200 rows on one page
 const CSV_MAX_ROWS = 5_000;
 const UTF8_BOM = "\uFEFF";
 
-type Options = { tab: BookingTab; q?: string; cursor?: string; take?: number };
+// Booked between two days (UTC, both included) and check-in between two days (the hotel's
+// calendar dates). "unpriced": live bookings without a selling price, as the reports count them.
+export type BookingFilters = { bookedFrom?: string; bookedTo?: string; checkinFrom?: string; checkinTo?: string; unpriced?: boolean };
+type Options = { tab: BookingTab; q?: string; cursor?: string; take?: number } & BookingFilters;
+
+const DAY_MS = 86_400_000;
+const isDay = (v: string | undefined): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(`${v}T00:00:00Z`));
+
+// The filters from a page's or the export's query (the same names on both); anything else is left out.
+export function readBookingFilters(get: (key: string) => string | null | undefined): BookingFilters {
+  const day = (key: string) => {
+    const v = get(key)?.slice(0, 10);
+    return isDay(v ?? undefined) ? { [key]: v as string } : {};
+  };
+  return { ...day("bookedFrom"), ...day("bookedTo"), ...day("checkinFrom"), ...day("checkinTo"), ...(get("unpriced") === "1" ? { unpriced: true } : {}) };
+}
 
 function whereFor(agencyId: string, opts: Options, now: Date): Prisma.BookingWhereInput {
   const today = now.toISOString().slice(0, 10);
   const where: Prisma.BookingWhereInput = { agencyId, status: { in: LISTED } };
+  const and: Prisma.BookingWhereInput[] = [];
+  if (isDay(opts.bookedFrom)) and.push({ createdAt: { gte: new Date(`${opts.bookedFrom}T00:00:00Z`) } });
+  if (isDay(opts.bookedTo)) and.push({ createdAt: { lt: new Date(Date.parse(`${opts.bookedTo}T00:00:00Z`) + DAY_MS) } });
+  if (isDay(opts.checkinFrom)) and.push({ checkin: { gte: opts.checkinFrom } });
+  if (isDay(opts.checkinTo)) and.push({ checkin: { lte: opts.checkinTo } });
+  if (opts.unpriced) and.push({ status: { in: ["PENDING_CONFIRMATION", "CONFIRMED", "CANCEL_PENDING"] }, sellMinor: null, sellMarkupType: null });
+  if (and.length > 0) where.AND = and;
   if (opts.tab === "upcoming") Object.assign(where, { status: "CONFIRMED", checkin: { gt: today } });
   if (opts.tab === "in_stay") Object.assign(where, { status: "CONFIRMED", checkin: { lte: today }, checkout: { gt: today } });
   if (opts.tab === "completed") Object.assign(where, { status: "CONFIRMED", checkout: { lte: today } });
   if (opts.tab === "pending") where.status = { in: ["PENDING_CONFIRMATION", "CANCEL_PENDING"] };
   if (opts.tab === "cancelled") where.status = { in: ["CANCELLED", "CANCELLED_BY_SUPPLIER"] };
+  if (opts.tab === "failed") where.status = "FAILED";
+  if (opts.tab === "not_finished") where.status = "DRAFT";
   const raw = opts.q?.trim().slice(0, 100);
   // Prisma passes `contains` to LIKE as is: escape "%", "_" and "\" so they match literally.
   const q = raw?.replace(/[\\%_]/g, (c) => `\\${c}`);
@@ -67,6 +92,8 @@ const SELECT = {
   sellMinor: true,
   refundable: true,
   cancelPenalties: true,
+  nonrefundableDateRanges: true,
+  freeCancelEndsAt: true,
   currency: true,
   createdAt: true,
   // Plan 10: how many rooms (counted in the same query; the rooms' bookingId is indexed).
@@ -81,7 +108,7 @@ function withRoomCount({ _count, ...row }: SelectedRow): BookingRow {
   return { ...row, roomCount: Math.max(1, _count.rooms) };
 }
 
-export async function listBookings(agencyId: string, opts: Options, now: Date = new Date()): Promise<{ rows: BookingRow[]; nextCursor: string | null }> {
+export async function listBookings(agencyId: string, opts: Options, now: Date = new Date()): Promise<{ rows: BookingRow[]; nextCursor: string | null; total: number }> {
   const take = Math.min(Math.max(1, Math.trunc(opts.take ?? DEFAULT_TAKE)), MAX_TAKE);
   const where = whereFor(agencyId, opts, now);
   let cursor: { id: string } | undefined;
@@ -90,14 +117,26 @@ export async function listBookings(agencyId: string, opts: Options, now: Date = 
     const own = typeof opts.cursor === "string" && opts.cursor.length <= 64 ? await db.booking.findFirst({ where: { id: opts.cursor, agencyId }, select: { id: true } }) : null;
     if (own) cursor = { id: own.id };
   }
-  const rows = await db.booking.findMany({
-    where,
-    select: SELECT,
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: take + 1,
-    ...(cursor ? { cursor, skip: 1 } : {}),
-  });
-  return { rows: rows.slice(0, take).map(withRoomCount), nextCursor: rows.length > take ? (rows[take - 1]?.id ?? null) : null };
+  const [rows, total] = await Promise.all([
+    db.booking.findMany({
+      where,
+      select: SELECT,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: take + 1,
+      ...(cursor ? { cursor, skip: 1 } : {}),
+    }),
+    db.booking.count({ where }),
+  ]);
+  return { rows: rows.slice(0, take).map(withRoomCount), nextCursor: rows.length > take ? (rows[take - 1]?.id ?? null) : null, total };
+}
+
+// The agency's own bookings for some references (the balance history links each row to its
+// booking): reference → booking id. One query; another agency's reference finds nothing.
+export async function bookingIdsByReference(agencyId: string, references: string[]): Promise<Map<string, string>> {
+  const wanted = [...new Set(references.filter((r) => typeof r === "string" && r.length > 0 && r.length <= 40))].slice(0, 200);
+  if (wanted.length === 0) return new Map();
+  const rows = await db.booking.findMany({ where: { agencyId, reference: { in: wanted } }, select: { id: true, reference: true } });
+  return new Map(rows.map((r) => [r.reference, r.id]));
 }
 
 export function decimal(minor: number, currency: string): string {

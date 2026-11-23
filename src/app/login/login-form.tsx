@@ -6,7 +6,7 @@ import { alertError, btnPrimary, input, label } from "@/components/ui";
 import { loginAction, type LoginFormState } from "./actions";
 
 // `next`: the page to return to after sign-in (checked again on the server, actions.ts).
-export function LoginForm({ next }: { next?: string }) {
+export function LoginForm({ next }: { next?: string | undefined }) {
   const [state, formAction, pending] = useActionState<LoginFormState, FormData>(
     loginAction,
     null,
