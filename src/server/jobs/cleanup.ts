@@ -8,7 +8,7 @@ import { EMAIL_KINDS } from "./kinds";
 //   sessions, passwordTokens, trustedDevices   rows past their expiry (they no longer work).
 //   jobs            finished jobs after 30 days, failed ones after 90. An email job is kept: its
 //                   key is what stops the same email from being sent a second time.
-//   contentCache    hotel content fetched more than 7 days ago (never served that old).
+//   contentCache    hotel content fetched more than 30 days ago.
 // Every delete works in batches of at most 1,000 rows, at most 50 batches a run; what is left
 // goes with the next day's run. One part that fails does not stop the others; the run then
 // fails as a whole, so the job is tried again and the failure is logged.
@@ -16,7 +16,9 @@ import { EMAIL_KINDS } from "./kinds";
 const DAY_MS = 86_400_000;
 const DONE_JOBS_KEPT_MS = 30 * DAY_MS;
 const FAILED_JOBS_KEPT_MS = 90 * DAY_MS;
-const CONTENT_CACHE_KEPT_MS = 7 * DAY_MS;
+// 30 days, not less: the public client page of a quote shows hotel photos from this cache only
+// (it never asks the supplier), so content must outlive the time a quote stays open.
+const CONTENT_CACHE_KEPT_MS = 30 * DAY_MS;
 const BATCH_SIZE = 1_000;
 const MAX_BATCHES = 50;
 

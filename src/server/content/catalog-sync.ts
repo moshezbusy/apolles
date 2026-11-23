@@ -4,8 +4,9 @@ import { db } from "@/server/db";
 import { ExpediaContentSource } from "@/server/supplier/expedia/content";
 import type { ContentSource } from "@/server/supplier/types";
 import { openCatalogStream } from "./download";
+import { type Sleep, withSyncRetry } from "./retry";
 import { CONTENT_COUNTRIES } from "./scope";
-import { finishSyncRun, startSyncRun } from "./sync-run";
+import { finishSyncRun, skipSyncForDemo, startSyncRun, syncHeartbeat } from "./sync-run";
 
 // Daily hotel list sync (plan 2b, task 3). Reads Expedia's full catalog file line by line,
 // keeps the hotels in CONTENT_COUNTRIES, and upserts them in batches of 1,000. Only after the
@@ -14,6 +15,10 @@ import { finishSyncRun, startSyncRun } from "./sync-run";
 // A file that looks broken (empty, mostly invalid lines, or far fewer hotels than are active
 // now) deactivates nothing either: the run fails and the owner sees it, instead of search
 // suddenly offering no hotels.
+// A line that names its hotel but cannot be read otherwise (a field in a new shape, say) still
+// counts as "the hotel is in the file": the hotel keeps its stored details and stays active,
+// instead of vanishing from search over one bad field. The number of unreadable lines is logged.
+// With the demo supplier the sync does nothing (skipSyncForDemo).
 
 const BATCH_SIZE = 1_000;
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -53,6 +58,20 @@ type Row = {
   expediaCollect: boolean;
 };
 
+// Hotels named by lines that could not be read otherwise: marked as seen in this run, nothing
+// else changed (an inactive hotel is not switched on by a line we could not read).
+async function markSeen(ids: string[], runId: string): Promise<number> {
+  if (ids.length === 0) return 0;
+  const marked = await db.property.updateMany({ where: { id: { in: [...new Set(ids)] }, catalogSeenRunId: { not: runId } }, data: { catalogSeenRunId: runId } });
+  return marked.count;
+}
+
+// The hotel id of a line that failed the full check, if the line at least names it.
+function idOf(raw: unknown): string | null {
+  const id = raw && typeof raw === "object" ? (raw as { property_id?: unknown }).property_id : undefined;
+  return typeof id === "string" && SAFE_ID.test(id) ? id : null;
+}
+
 async function upsertBatch(input: Row[], runId: string): Promise<number> {
   // The same hotel twice in one statement would fail the whole batch: the last line wins.
   const rows = [...new Map(input.map((row) => [row.id, row])).values()];
@@ -76,20 +95,25 @@ async function upsertBatch(input: Row[], runId: string): Promise<number> {
 }
 
 export async function syncCatalog(
-  deps: { source?: ContentSource; open?: typeof openCatalogStream } = {},
-): Promise<{ upserted: number; invalid: number; skippedCountry: number; deactivated: number }> {
+  deps: { source?: ContentSource; open?: typeof openCatalogStream; sleep?: Sleep } = {},
+): Promise<{ upserted: number; invalid: number; invalidKept: number; skippedCountry: number; deactivated: number }> {
+  // invalidKept: hotels of unreadable lines that were kept as they are (still in the file).
+  const counts = { upserted: 0, invalid: 0, invalidKept: 0, skippedCountry: 0, deactivated: 0 };
+  if (skipSyncForDemo("content.catalog", deps.source !== undefined)) return counts;
   const source = deps.source ?? new ExpediaContentSource();
   const open = deps.open ?? openCatalogStream;
   const scope = new Set(CONTENT_COUNTRIES);
   const run = await startSyncRun("content.catalog");
-  const counts = { upserted: 0, invalid: 0, skippedCountry: 0, deactivated: 0 };
+  const alive = syncHeartbeat(run.id);
 
   try {
-    const { href } = await source.catalogLink();
+    const { href } = await withSyncRetry(() => source.catalogLink(), deps.sleep);
     let batch: Row[] = [];
+    let seenOnly: string[] = [];
     let lines = 0;
     for await (const line of await open(href)) {
       lines++;
+      await alive(); // at most one write every 30 seconds; stops a run that was taken over
       let raw: unknown;
       try {
         raw = JSON.parse(line);
@@ -100,6 +124,12 @@ export async function syncCatalog(
       const parsed = catalogLine.safeParse(raw);
       if (!parsed.success) {
         counts.invalid++;
+        const id = idOf(raw);
+        if (id) seenOnly.push(id);
+        if (seenOnly.length >= BATCH_SIZE) {
+          counts.invalidKept += await markSeen(seenOnly, run.id);
+          seenOnly = [];
+        }
         continue;
       }
       const p = parsed.data;
@@ -126,17 +156,24 @@ export async function syncCatalog(
       }
     }
     counts.upserted += await upsertBatch(batch, run.id);
+    counts.invalidKept += await markSeen(seenOnly, run.id);
+    if (counts.invalid > 0) {
+      console.warn(`catalog sync: ${counts.invalid} of ${lines} lines could not be read; ${counts.invalidKept} of their hotels were kept as they are`);
+    }
 
     const before = await db.property.count({ where: { countryCode: { in: [...scope] }, active: true } });
     if (counts.upserted === 0) throw new Error("catalog sync: refusing a file with no hotels in our countries");
     if (counts.invalid > Math.max(INVALID_ALLOWANCE, lines * MAX_INVALID_SHARE)) {
       throw new Error(`catalog sync: refusing a file with ${counts.invalid} unreadable lines of ${lines}`);
     }
-    if (counts.upserted < before * MIN_KEPT_SHARE) {
-      throw new Error(`catalog sync: refusing a file with ${counts.upserted} hotels while ${before} are active`);
+    // Hotels the file names: those read in full and those kept from a line that could not be read.
+    const inFile = counts.upserted + counts.invalidKept;
+    if (inFile < before * MIN_KEPT_SHARE) {
+      throw new Error(`catalog sync: refusing a file with ${inFile} hotels while ${before} are active`);
     }
 
     // The whole file was read: hotels of these countries that it did not list are inactive now.
+    await alive(true); // never deactivate from a run that was taken over
     counts.deactivated = await db.property.updateMany({
       where: { countryCode: { in: [...scope] }, catalogSeenRunId: { not: run.id }, active: true },
       data: { active: false },

@@ -1,3 +1,4 @@
+import { type CancellationKind, cancellationSummary } from "@/lib/cancellation";
 import { formatMinor, type Money } from "@/lib/supplier-money";
 import type { CancelPenalty, DueAtProperty, Offer, PriceLineKind } from "@/server/supplier/types";
 
@@ -39,10 +40,22 @@ export function penaltyText(p: CancelPenalty): string {
   return `From ${propertyTime(p.start)} to ${propertyTime(p.end)}: cancellation charge ${charge}.`;
 }
 
-// The short label next to the price (AP2): "Non-refundable", or free cancellation until the
-// first charge starts.
-export function cancellationLabel(offer: Pick<Offer, "refundable" | "cancelPenalties">): { refundable: boolean; text: string } {
-  if (!offer.refundable) return { refundable: false, text: "Non-refundable" };
-  const first = [...offer.cancelPenalties].sort((a, b) => a.start.localeCompare(b.start))[0];
-  return { refundable: true, text: first ? `Free cancellation until ${propertyTime(first.start)}` : "Free cancellation" };
+// The short label next to the price (AP2), by the one free-cancellation rule
+// (src/lib/cancellation.ts): "Free cancellation until <weekday>, <date>, <time> hotel time" only
+// while that deadline is still ahead; otherwise that charges apply, or "Non-refundable".
+// `refundable` is true only for a free-cancellation claim (the green label).
+export function cancellationLabel(
+  offer: Pick<Offer, "refundable" | "cancelPenalties"> & Partial<Pick<Offer, "nonrefundableDateRanges" | "price">>,
+  now: Date = new Date(),
+): { refundable: boolean; kind: CancellationKind; text: string } {
+  const { kind, text } = cancellationSummary(
+    {
+      refundable: offer.refundable,
+      cancelPenalties: offer.cancelPenalties,
+      nonrefundableDateRanges: offer.nonrefundableDateRanges ?? [],
+      ...(offer.price ? { price: { total: offer.price.total, nights: offer.price.nights } } : {}),
+    },
+    now,
+  );
+  return { refundable: kind === "free", kind, text };
 }

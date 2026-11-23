@@ -64,6 +64,7 @@ const SELECT = {
   chargedMinor: true,
   sellMarkupType: true,
   sellMarkupValue: true,
+  sellMinor: true,
   refundable: true,
   cancelPenalties: true,
   currency: true,

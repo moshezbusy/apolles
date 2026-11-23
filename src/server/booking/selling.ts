@@ -5,8 +5,10 @@ import { db } from "@/server/db";
 import { parseMarkup, sellingMinor } from "@/server/quotes/pricing";
 
 // The agency's own selling price of a booking (plan 6, screens 11 and 12), for its reports only.
-// It never changes what Apolles charges and is never on the voucher. It is a markup on the
-// charged total (the supplier's price, checked at booking), so it follows a price change.
+// It never changes what Apolles charges and is never on the voucher. Priced by hand it is a
+// markup on the charged total (the supplier's price, checked at booking), so it follows a price
+// change. A booking made from a quote keeps the price the client was quoted instead (sellMinor):
+// the client pays that price whatever the net became, so the profit is that price minus the charge.
 
 // No sale: cancelled (the refund comes back), failed or expired (nothing was booked).
 const NO_SALE: BookingStatus[] = ["CANCELLED", "CANCELLED_BY_SUPPLIER", "FAILED", "EXPIRED"];
@@ -19,20 +21,28 @@ export function bookingSale(b: {
   chargedMinor: number | null;
   sellMarkupType: "PERCENT" | "FIXED" | null;
   sellMarkupValue: number | null;
+  sellMinor?: number | null;
 }): Sale {
-  const priced = b.sellMarkupType !== null && b.sellMarkupValue !== null;
+  const quoted = b.sellMinor ?? null;
+  const priced = quoted !== null || (b.sellMarkupType !== null && b.sellMarkupValue !== null);
   if (NO_SALE.includes(b.status)) return { netMinor: 0, saleMinor: 0, profitMinor: 0, priced };
   const netMinor = b.chargedMinor ?? b.totalMinor;
   if (!priced) return { netMinor, saleMinor: netMinor, profitMinor: 0, priced };
-  const saleMinor = sellingMinor({ netMinor, sellMinor: null }, { markupType: b.sellMarkupType!, markupValue: b.sellMarkupValue! });
+  const saleMinor = quoted ?? sellingMinor({ netMinor, sellMinor: null }, { markupType: b.sellMarkupType!, markupValue: b.sellMarkupValue! });
   return { netMinor, saleMinor, profitMinor: saleMinor - netMinor, priced };
+}
+
+// The markup that shows a quoted price on the pages that draw "net + markup": the fixed
+// difference between the client's price and the net as it is now (negative: sold at a loss).
+export function quotedMarkup(sellMinor: number, netMinor: number): { sellMarkupType: "FIXED"; sellMarkupValue: number } {
+  return { sellMarkupType: "FIXED", sellMarkupValue: sellMinor - netMinor };
 }
 
 const input = z.object({ markupType: z.string().max(10), markupValue: z.string().max(20) }).strict();
 
 export type SellResult = { ok: true } | { ok: false; error: string };
 
-// "" as the type clears the selling price.
+// "" as the type clears the selling price. A price set by hand replaces a quoted one.
 export async function setSellingPrice(actorUserId: string, agencyId: string, bookingId: string, raw: z.input<typeof input>): Promise<SellResult> {
   const parsed = input.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Enter a markup." };
@@ -40,7 +50,7 @@ export async function setSellingPrice(actorUserId: string, agencyId: string, boo
   const markup = clear ? null : parseMarkup(parsed.data.markupType, parsed.data.markupValue);
   if (!clear && !markup) return { ok: false, error: "Enter a markup of 0 to 100% or a fixed USD amount up to 10,000, with up to 2 decimals." };
   if (typeof bookingId !== "string" || bookingId.length > 64) return { ok: false, error: "This booking was not found." };
-  const data = { sellMarkupType: markup?.markupType ?? null, sellMarkupValue: markup?.markupValue ?? null };
+  const data = { sellMarkupType: markup?.markupType ?? null, sellMarkupValue: markup?.markupValue ?? null, sellMinor: null };
   const done = await db.$transaction(async (tx) => {
     const updated = await tx.booking.updateMany({ where: { id: bookingId, agencyId, status: { not: "EXPIRED" } }, data });
     if (updated.count === 0) return false;

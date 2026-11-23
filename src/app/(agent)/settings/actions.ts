@@ -92,8 +92,13 @@ export async function updateBrandingAction(_previous: SettingsFormState, formDat
 
 export async function updateDefaultsAction(_previous: SettingsFormState, formData: FormData): Promise<SettingsFormState> {
   const { userId, agencyId } = await requireAgent();
-  const values = { markupType: text(formData.get("markupType")), markupValue: text(formData.get("markupValue")), showCancellation: formData.get("showCancellation") === "on" ? "on" : "" };
-  const result = await updateQuoteDefaults(userId, agencyId, { markupType: values.markupType, markupValue: values.markupValue, showCancellation: values.showCancellation === "on" });
+  const values = {
+    markupType: text(formData.get("markupType")),
+    markupValue: text(formData.get("markupValue")),
+    showCancellation: formData.get("showCancellation") === "on" ? "on" : "",
+    validDays: text(formData.get("validDays")),
+  };
+  const result = await updateQuoteDefaults(userId, agencyId, { markupType: values.markupType, markupValue: values.markupValue, showCancellation: values.showCancellation === "on", validDays: values.validDays });
   if (!result.ok) return { status: "error", message: result.error, values };
   revalidatePath("/settings");
   return { status: "success", message: "Changes saved." };

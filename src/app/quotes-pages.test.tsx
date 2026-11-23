@@ -207,6 +207,34 @@ describe("booking from a quote (plan 5d)", () => {
     expect(html).toContain("Secrets The Vine · APL-QUOTE001");
   });
 
+  it("a booked destination is frozen on the editor; a partly booked, expired or closed quote says so on the list", async () => {
+    const { quoteId, stayId } = await pickedQuote();
+    // A second destination that is not booked.
+    const second = await db.quoteStay.create({ data: { quoteId, destinationId: "cancun", destinationName: "Tulum, Mexico", checkin: "2099-04-12", checkout: "2099-04-14", position: 1 } });
+    const hotel = await db.quoteHotel.create({ data: { stayId: second.id, propertyId: "p1", name: "Tulum Hotel", city: "Tulum", position: 0 } });
+    await db.quoteRoom.create({ data: { hotelId: hotel.id, roomId: "x", rateId: "x", bedGroupId: "x", roomName: "Garden Room", bedDescription: "1 King Bed", refundable: false, netMinor: 50_000, currency: "USD", price: {}, position: 0 } });
+    await confirmedBooking(quoteId, stayId);
+    const { default: Editor } = await import("./(agent)/quotes/[id]/page");
+    const html = renderToStaticMarkup(await Editor({ params: Promise.resolve({ id: quoteId }) }));
+    expect(html).toContain("To change this destination, cancel the booking first.");
+    expect(html).toContain("Partly booked");
+    // One "Remove destination" and one room "Remove" are left: those of the destination that is not booked.
+    expect(html.match(/Remove destination/g)).toHaveLength(1);
+    expect(html.match(/name="price"/g)).toHaveLength(1);
+
+    const { default: List } = await import("./(agent)/quotes/page");
+    const list = async () => renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
+    expect(await list()).toContain("Partly booked");
+    await db.quote.update({ where: { id: quoteId }, data: { status: "SENT", validUntil: new Date(Date.now() - 86_400_000) } });
+    let page = await list();
+    expect(page).toContain("Expired");
+    expect(page).toContain("Extend offer");
+    await db.quote.update({ where: { id: quoteId }, data: { closedAt: new Date() } });
+    page = await list();
+    expect(page).toContain("Closed");
+    expect(page).not.toContain("Extend offer");
+  });
+
   it("'Book this room' for another agency's quote finds nothing", async () => {
     const { stayId } = await pickedQuote();
     const { bookFromQuoteAction } = await import("./(agent)/quotes/actions");

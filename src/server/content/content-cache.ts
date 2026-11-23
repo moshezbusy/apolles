@@ -99,3 +99,29 @@ export async function getContent(
   }
   return result;
 }
+
+const CACHE_ONLY_MAX = 250;
+
+// Content from the cache ONLY: never a request to the supplier. For the public client page of a
+// quote, where anyone holding a link could otherwise make Apolles call the supplier on every
+// page load. Whatever its age (a photo's address stays good for a long time); a damaged row is
+// left out, and so is a hotel that is not in the cache (the page shows it without a photo).
+export async function getCachedContent(ids: string[]): Promise<Map<string, PropertyContent>> {
+  const unique = [...new Set(ids)].slice(0, CACHE_ONLY_MAX);
+  const result = new Map<string, PropertyContent>();
+  if (unique.length === 0) return result;
+  const rows = await db.propertyContentCache.findMany({ where: { propertyId: { in: unique } } });
+  for (const row of rows) {
+    const parsed = contentShape.safeParse(row.data);
+    if (parsed.success) result.set(row.propertyId, parsed.data);
+  }
+  return result;
+}
+
+// Removes cached hotel content fetched before `olderThan` (the daily cleanup job calls it), so
+// the cache does not keep content of hotels nobody has looked at for a long time. Content that
+// is needed again is simply fetched again. Returns how many rows were removed.
+export async function pruneContentCache(olderThan: Date): Promise<number> {
+  const result = await db.propertyContentCache.deleteMany({ where: { fetchedAt: { lt: olderThan } } });
+  return result.count;
+}

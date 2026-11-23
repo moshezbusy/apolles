@@ -42,8 +42,8 @@ describe("dailyCleanup", () => {
     expect((await db.job.findMany({ orderBy: { id: "asc" } })).map((j) => j.id)).toEqual(["done-new", "email-failed-old", "email-old", "failed-new", "queued-old"]);
   });
 
-  it("deletes hotel content cached more than 7 days ago", async () => {
-    await db.propertyContentCache.createMany({ data: [{ propertyId: "old", data: {}, fetchedAt: days(-8) }, { propertyId: "new", data: {}, fetchedAt: days(-6) }] });
+  it("deletes hotel content cached more than 30 days ago", async () => {
+    await db.propertyContentCache.createMany({ data: [{ propertyId: "old", data: {}, fetchedAt: days(-31) }, { propertyId: "new", data: {}, fetchedAt: days(-29) }] });
     expect(await dailyCleanup(NOW)).toMatchObject({ contentCache: 1 });
     expect((await db.propertyContentCache.findMany()).map((r) => r.propertyId)).toEqual(["new"]);
   });
@@ -55,7 +55,7 @@ describe("dailyCleanup", () => {
   });
 
   it("one part that fails does not stop the others; the run then fails with the names of the failed parts", async () => {
-    await db.propertyContentCache.create({ data: { propertyId: "old", data: {}, fetchedAt: days(-8) } });
+    await db.propertyContentCache.create({ data: { propertyId: "old", data: {}, fetchedAt: days(-31) } });
     const spy = vi.spyOn(db.session, "findMany").mockRejectedValueOnce(new Error("db hiccup"));
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(dailyCleanup(NOW)).rejects.toThrow("Daily cleanup: these parts failed: sessions");

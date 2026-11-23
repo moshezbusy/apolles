@@ -54,6 +54,22 @@ describe("ExpediaBooking", () => {
     });
   });
 
+  it("a long book token with ~ and %2F is sent exactly as given; one that could leave the query value is refused before sending", async () => {
+    const token = `C~${"Oj46Zz8xJDEdCRdBQ1dGXlNDDVZX".repeat(60)}~a.b%2Fc==`;
+    fetchMock.mockResolvedValue(json(201, fixture("book.response.json")));
+    await expedia.book({ bookToken: token, affiliateReferenceId: "APL-ABCD2345", lead, rooms }, {});
+    expect(String(fetchMock.mock.calls[0]![0])).toBe(`https://test.ean.com/v3/itineraries?token=${token}`);
+    // A refusal never carries the token in its message.
+    fetchMock.mockResolvedValueOnce(json(400, fixture("book.error-400-invalid-address.json")));
+    const refusal = await expedia.book({ bookToken: token, affiliateReferenceId: "APL-ABCD2345", lead, rooms }, {}).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(SupplierRequestRejected);
+    expect(String(refusal)).not.toContain("Oj46");
+    for (const bad of ["a&b=c", "a#b", "a b", "a/b", "a?b", "", "a".repeat(4097)]) {
+      await expect(expedia.book({ bookToken: bad, affiliateReferenceId: "APL-ABCD2345", lead, rooms }, {})).rejects.toBeInstanceOf(SupplierNotSent);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("special requests go to the hotel in the room's special_request (not guaranteed)", async () => {
     fetchMock.mockResolvedValue(json(201, fixture("book.response.json")));
     await expedia.book({ bookToken: "tok-bk1", affiliateReferenceId: "APL-ABCD2345", lead, rooms, specialRequest: "Late check-out. High floor." }, {});

@@ -8,7 +8,7 @@ import { credit } from "@/server/wallet/ledger";
 // The migration that makes the ledger append-only in the database itself. The test database is
 // built with `prisma db push` (no raw SQL), so the trigger is installed here, inside a
 // transaction that is always rolled back: the other tests' database is left as it was.
-const MIGRATION = fileURLToPath(new URL("../../../prisma/migrations/20261123100100_ledger_append_only/migration.sql", import.meta.url));
+const MIGRATION = fileURLToPath(new URL("../../../prisma/migrations/20261123150100_ledger_append_only/migration.sql", import.meta.url));
 
 function statements(): string[] {
   const sql = readFileSync(MIGRATION, "utf8")

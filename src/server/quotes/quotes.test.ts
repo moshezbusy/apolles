@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createClient } from "@/server/clients";
 import { db } from "@/server/db";
 import {
+  CLIENT_CHANGE,
   addFromSearch,
   addStay,
+  closeQuote,
   createQuote,
   getQuote,
   listQuotes,
@@ -221,12 +223,49 @@ describe("editing hotels, rooms and destinations", () => {
     expect(quoteNumbers(quote)).toEqual({ options: 1, lowestSell: 110_000, profitMin: 10_000, profitMax: 10_000 });
   });
 
-  it("client cancellation date: earlier or equal only, never in the past", async () => {
+  it("a selling price of 0 is refused; a price below the net is saved only with the agent's explicit yes", async () => {
     const quoteId = await quoteWithRoom();
     const roomId = (await getQuote(agencyA, quoteId))?.stays[0]?.hotels[0]?.rooms[0]?.id ?? "";
-    expect((await setClientCancelDate(agentA, agencyA, roomId, "2027-04-02", NOW)).ok).toBe(true);
+    const stored = async () => (await getQuote(agencyA, quoteId))?.stays[0]?.hotels[0]?.rooms[0]?.sellMinor;
+    for (const zero of ["0", "0.00", "000"]) expect(await setRoomPrice(agentA, agencyA, roomId, zero)).toMatchObject({ ok: false, error: expect.stringContaining("cannot be 0") });
+    // The net is 1,000.00: "100" is a slipped digit until the agent says it is meant.
+    expect(await setRoomPrice(agentA, agencyA, roomId, "100")).toMatchObject({ ok: false, confirm: "belowNet", error: expect.stringContaining("below your net price (USD 1,000.00)") });
+    expect(await stored()).toBeNull();
+    expect(await setRoomPrice(agentA, agencyA, roomId, "999.99", { confirmBelowNet: true })).toEqual({ ok: true, id: quoteId });
+    expect(await stored()).toBe(99_999);
+    // The net itself, or more, needs no confirmation.
+    expect((await setRoomPrice(agentA, agencyA, roomId, "1000")).ok).toBe(true);
+  });
+
+  it("client cancellation date: after today and at least one day before the supplier's deadline", async () => {
+    const quoteId = await quoteWithRoom();
+    const roomId = (await getQuote(agencyA, quoteId))?.stays[0]?.hotels[0]?.rooms[0]?.id ?? "";
+    // The supplier's last free day is Apr 2: the client is shown Apr 1 at the latest.
+    expect((await setClientCancelDate(agentA, agencyA, roomId, "2027-04-01", NOW)).ok).toBe(true);
+    expect((await setClientCancelDate(agentA, agencyA, roomId, "2027-03-15", NOW)).ok).toBe(true);
+    expect((await setClientCancelDate(agentA, agencyA, roomId, "2027-04-02", NOW)).ok).toBe(false);
     expect((await setClientCancelDate(agentA, agencyA, roomId, "2027-04-03", NOW)).ok).toBe(false);
     expect((await setClientCancelDate(agentA, agencyA, roomId, "2027-02-28", NOW)).ok).toBe(false);
+    // Today is over already (NOW is Mar 1).
+    expect((await setClientCancelDate(agentA, agencyA, roomId, "2027-03-01", NOW)).ok).toBe(false);
+    expect((await getQuote(agencyA, quoteId))?.stays[0]?.hotels[0]?.rooms[0]?.clientCancelUntil).toBe("2027-03-15");
+  });
+
+  it("a refundable rate keeps the supplier's own flag whatever its dates; the client is shown no free cancellation that is not ahead", async () => {
+    const snapshotId = await search(agencyA, agentA);
+    // rA: refundable, last free day Apr 2. Added on Apr 2: the day before it (Apr 1) has passed.
+    const late = new Date("2027-04-02T10:00:00.000Z");
+    await db.searchSnapshot.update({ where: { id: snapshotId }, data: { expiresAt: new Date(late.getTime() + 60_000) } });
+    // rC: refundable with no charge listed at all.
+    const noDates = { ...offer("p1", "rC", 90_000), cancelPenalties: [] };
+    await db.searchHotel.updateMany({ where: { snapshotId, propertyId: "p1" }, data: { offers: [offer("p1", "rA", 100_000), noDates] as never } });
+    const made = await addFromSearch(agentA, agencyA, rate(snapshotId), late);
+    if (!made.ok) throw new Error(made.error);
+    await addFromSearch(agentA, agencyA, rate(snapshotId, made.id, "p1", "rC"), late);
+    const rooms = (await getQuote(agencyA, made.id))?.stays[0]?.hotels[0]?.rooms ?? [];
+    // Before: both were stored as non-refundable, and could be matched to a truly non-refundable rate.
+    expect(rooms[0]).toMatchObject({ refundable: true, freeCancelUntil: "2027-04-02", clientCancelUntil: null });
+    expect(rooms[1]).toMatchObject({ refundable: true, freeCancelUntil: null, clientCancelUntil: null });
   });
 
   it("move, pick and remove hotels; remove rooms and destinations; nothing works across agencies", async () => {
@@ -280,10 +319,19 @@ describe("listQuotes", () => {
     const mine = all.quotes.find((q) => q.id === quoteId);
     expect(mine).toMatchObject({ title: "Mexico Honeymoon", destinations: ["Cancun, Quintana Roo, Mexico"], stays: 1, hotels: 1, rooms: 1, firstCheckin: "2027-04-10", lastCheckout: "2027-04-12", client: { firstName: "Daniel" } });
 
+    // The agency's own running number: its first quote is Q-1, whatever other agencies made.
     const number = mine?.number ?? 0;
+    expect(number).toBe(1);
+    expect(all.quotes.map((x) => x.number).sort()).toEqual([1, 2]);
+    expect((await listQuotes(agencyB, {})).quotes.map((x) => x.number)).toEqual([1]);
     for (const q of ["honeymoon", `Q-${number}`, String(number), "levy", "quintana"]) {
       expect((await listQuotes(agencyA, { q })).quotes.map((x) => x.id)).toEqual([quoteId]);
     }
+    // A row from before the per-agency number shows (and is found by) the internal one.
+    const legacy = await db.quote.update({ where: { id: quoteId }, data: { agencyNumber: null } });
+    expect((await getQuote(agencyA, quoteId))?.number).toBe(legacy.number);
+    expect((await listQuotes(agencyA, { q: `Q-${legacy.number}` })).quotes.map((x) => x.id)).toContain(quoteId);
+    await db.quote.update({ where: { id: quoteId }, data: { agencyNumber: 1 } });
     expect((await listQuotes(agencyA, { tab: "draft" })).quotes).toHaveLength(2);
     expect((await listQuotes(agencyA, { tab: "sent" })).quotes).toHaveLength(0);
     const theirs = await db.quote.findFirstOrThrow({ where: { agencyId: agencyB } });
@@ -312,6 +360,33 @@ describe("booked quotes and the quote list for Add to quote", () => {
       expect(result.ok).toBe(false);
     }
     expect((await getQuote(agencyA, quoteId))?.stays[0]?.hotels[0]?.rooms).toHaveLength(1);
+  });
+
+  it("two quotes made at the same moment get two numbers", async () => {
+    const made = await Promise.all(Array.from({ length: 6 }, () => createQuote(agentA, agencyA)));
+    const numbers = await Promise.all(made.map(async (m) => (m.ok ? (await getQuote(agencyA, m.id))?.number : 0)));
+    expect([...numbers].sort()).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it("changing the client asks first, and a closed quote is not offered for 'Add to quote'", async () => {
+    const quoteId = await quoteWithRoom();
+    const first = await createClient(agentA, agencyA, { firstName: "Daniel", lastName: "Levy", phone: "+972501234567", email: "", nationality: "IL", notes: "" });
+    const second = await createClient(agentA, agencyA, { firstName: "Noa", lastName: "Bar", phone: "+972507654321", email: "", nationality: "IL", notes: "" });
+    if (!first.ok || !second.ok) throw new Error("setup");
+    // The first client needs no confirmation (nothing can be lost yet).
+    expect(await updateQuoteSettings(agentA, agencyA, quoteId, { ...SETTINGS, clientId: first.id })).toEqual({ ok: true, id: quoteId });
+    // Another client, or no client, does.
+    expect(await updateQuoteSettings(agentA, agencyA, quoteId, { ...SETTINGS, clientId: second.id })).toEqual({ ok: false, error: CLIENT_CHANGE, confirm: "clientChange" });
+    expect(await updateQuoteSettings(agentA, agencyA, quoteId, { ...SETTINGS, clientId: "" })).toMatchObject({ ok: false, confirm: "clientChange" });
+    expect((await getQuote(agencyA, quoteId))?.client?.id).toBe(first.id);
+    expect(await updateQuoteSettings(agentA, agencyA, quoteId, { ...SETTINGS, clientId: second.id, confirmClientChange: true })).toEqual({ ok: true, id: quoteId, clientChanged: true });
+    expect((await getQuote(agencyA, quoteId))?.client?.id).toBe(second.id);
+
+    expect((await openQuotes(agencyA)).map((q) => q.id)).toContain(quoteId);
+    await closeQuote(agentA, agencyA, quoteId);
+    expect((await openQuotes(agencyA, quoteId)).map((q) => q.id)).not.toContain(quoteId);
+    expect(await addFromSearch(agentA, agencyA, rate(await search(agencyA, agentA), quoteId, "p2"), NOW)).toMatchObject({ ok: false, error: expect.stringContaining("closed") });
+    expect(await updateQuoteSettings(agentA, agencyA, quoteId, SETTINGS)).toMatchObject({ ok: false, error: expect.stringContaining("closed") });
   });
 
   it("two quick Move up clicks are applied one after the other (no two hotels share a position)", async () => {
