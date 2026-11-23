@@ -13,6 +13,7 @@ import type { RateOffer } from '../src/core/types.js';
 const fixture = (n: string) => readFileSync(new URL(`./fixtures/ota/${n}`, import.meta.url), 'utf8');
 
 function make(responses: string[], profile = omnibeesProfile) {
+  const dropped: string[] = [];
   const sent: { url: string; body: string; headers: Record<string, string> }[] = [];
   let i = 0;
   const fetchImpl = (async (url: string, init: RequestInit) => {
@@ -29,8 +30,9 @@ function make(responses: string[], profile = omnibeesProfile) {
     transport: new HttpTransport({ supplierId: 'omnibees', fetchImpl, audit }),
     secrets: new StaticSecretProvider({ U: 'apolles-user', P: 'topsecret' }),
     vault: new InMemoryCardVault({ tok_1: { brandCode: 'VI', number: '4111111111111111', expiry: '1228', cvc: '737', holderName: 'APOLLES LTD' } }),
+    log: (m) => dropped.push(m),
   });
-  return { adapter, sent, audit };
+  return { adapter, sent, audit, dropped };
 }
 
 const searchReq = {
@@ -58,12 +60,32 @@ describe('OTA adapter', () => {
     expect(flex.total).toEqual({ minor: 200000, currency: 'USD' });
     expect(flex.rooms[0]!.roomName).toBe('Junior Suite Ocean View');
     expect(flex.cancellation.refundable).toBe(true);
-    expect(flex.cancellation.penalties[0]).toEqual({ from: '2027-02-26T00:00:00.000Z', amount: { minor: 50000, currency: 'USD' } });
+    // "3 days before arrival", hotel time zone unknown: counted from the earliest moment 1 March can start anywhere (UTC+14).
+    expect(flex.cancellation.penalties[0]).toEqual({ from: '2027-02-25T10:00:00.000Z', amount: { minor: 50000, currency: 'USD' } });
     expect(flex.cancellation.text).toContain('Free cancellation');
 
     const nr = offers.find((o) => o.ratePlanCode === 'AI-NR')!;
     expect(nr.total).toEqual({ minor: 170000, currency: 'USD' });
     expect(nr.cancellation.refundable).toBe(false);
+  });
+
+  it('one unreadable amount or date drops that one offer, with a logged reason, not the whole search', async () => {
+    const badAmount = fixture('avail-rs.xml').replace('AmountAfterTax="170000" DecimalPlaces="2"', 'AmountAfterTax="17e4" DecimalPlaces="2"');
+    const a = make([badAmount]);
+    expect((await a.adapter.search(searchReq, { requestId: 'r' })).map((o) => o.ratePlanCode)).toEqual(['AI-FLEX']);
+    expect(a.dropped.join('\n')).toMatch(/omnibees.*PLAYA-123.*offer dropped/i);
+
+    const badDate = fixture('avail-rs.xml').replace('<Deadline OffsetTimeUnit="Day" OffsetUnitMultiplier="3" OffsetDropTime="BeforeArrival"/>', '<Deadline AbsoluteDeadline="tomorrow-ish"/>');
+    const b = make([badDate]);
+    expect((await b.adapter.search(searchReq, { requestId: 'r' })).map((o) => o.ratePlanCode)).toEqual(['AI-NR']);
+    expect(b.dropped).toHaveLength(1);
+  });
+
+  it('an absolute deadline without a time zone is shown at its earliest possible moment', async () => {
+    const xml = (deadline: string) => fixture('avail-rs.xml').replace('<Deadline OffsetTimeUnit="Day" OffsetUnitMultiplier="3" OffsetDropTime="BeforeArrival"/>', `<Deadline AbsoluteDeadline="${deadline}"/>`);
+    const from = async (deadline: string) => (await make([xml(deadline)]).adapter.search(searchReq, { requestId: 'r' })).find((o) => o.ratePlanCode === 'AI-FLEX')!.cancellation.penalties[0]!.from;
+    expect(await from('2027-02-26T18:00:00')).toBe('2027-02-25T10:00:00.000Z');
+    expect(await from('2027-02-26T18:00:00-05:00')).toBe('2027-02-26T23:00:00.000Z');
   });
 
   it('password never reaches the audit log', async () => {

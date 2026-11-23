@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { SupplierError, type SupplierErrorCode } from '../../core/errors.js';
-import { currencyExponent, moneyFromDecimal, type Money } from '../../core/money.js';
+import { conservativeDeadline } from '../../core/dates.js';
+import { moneyFromDecimal, type Money } from '../../core/money.js';
 import type {
   BookingLookup,
   CallContext,
@@ -36,6 +37,15 @@ export interface HotelbedsAdapterConfig {
   secrets: SecretProvider;
   /** Clock, for the signature (tests). */
   now?: () => Date;
+  /**
+   * More than one room per booking. OFF by default: how Hotelbeds wants
+   * several identical rooms in one occupancy line (totals vs per room, pax
+   * ages, roomId) was never checked against the live API. Turn on only
+   * after a live test booking with two rooms proved the format right.
+   */
+  allowUnverifiedMultiRoom?: boolean;
+  /** Where "offer dropped" reasons go. Default: console.warn. */
+  log?: (msg: string) => void;
 }
 
 const TIMEOUTS = { search: 20_000, checkRate: 20_000, book: 60_000, detail: 20_000, cancel: 60_000 };
@@ -108,14 +118,7 @@ interface FlatRate { room: HbRoom; rate: HbRate }
 export class HotelbedsAdapter implements SupplierAdapter {
   readonly id: string;
   readonly environment: Environment;
-  readonly capabilities: SupplierCapabilities = {
-    multiRoom: true,
-    maxHotelsPerSearch: 100,
-    nativeCheckRate: true,
-    lookupByClientReference: true,
-    cancel: true,
-    reconcileAfterMs: 30_000,
-  };
+  readonly capabilities: SupplierCapabilities;
 
   constructor(private readonly cfg: HotelbedsAdapterConfig) {
     if (cfg.environment === 'production' && !cfg.certified) {
@@ -123,11 +126,31 @@ export class HotelbedsAdapter implements SupplierAdapter {
     }
     this.id = cfg.id;
     this.environment = cfg.environment;
+    this.capabilities = {
+      multiRoom: cfg.allowUnverifiedMultiRoom === true,
+      maxHotelsPerSearch: 100,
+      nativeCheckRate: true,
+      lookupByClientReference: true,
+      cancel: true,
+      reconcileAfterMs: 30_000,
+    };
+  }
+
+  /** Refuse multi-room requests before anything is sent (see allowUnverifiedMultiRoom). */
+  private requireSingleRoom(rooms: number, operation: string): void {
+    if (rooms > 1 && !this.capabilities.multiRoom) {
+      throw new SupplierError(
+        this.id,
+        'VALIDATION',
+        `${operation}: more than one room per booking is not enabled for Hotelbeds yet (the multi-room format is not verified live). Book each room separately.`,
+      );
+    }
   }
 
   // ------------------------------------------------------------- search
 
   async search(req: SupplierSearchRequest, ctx: CallContext): Promise<SupplierOffer[]> {
+    this.requireSingleRoom(req.rooms.length, 'search');
     const codes = req.supplierHotelCodes.map((c) => Number(c)).filter((n) => Number.isInteger(n) && n > 0);
     if (!codes.length) return [];
     const groups = groupRooms(req.rooms);
@@ -146,6 +169,7 @@ export class HotelbedsAdapter implements SupplierAdapter {
   // ---------------------------------------------------------- checkRate
 
   async checkRate(offer: RateOffer, ctx: CallContext): Promise<SupplierQuote> {
+    this.requireSingleRoom(offer.occupancy.length, 'checkRate');
     const lines = readLines(offer, this.id);
     const res = await this.call<{ hotel?: HbHotel; error?: HbError }>(
       'checkRate', 'POST', '/checkrates', { rooms: lines.map((l) => ({ rateKey: l.rateKey })) }, TIMEOUTS.checkRate, ctx, true,
@@ -175,6 +199,7 @@ export class HotelbedsAdapter implements SupplierAdapter {
     if (req.offer.paymentModel === 'PAY_AT_HOTEL') {
       throw new SupplierError(this.id, 'VALIDATION', 'book: pay-at-hotel rates are not enabled for Hotelbeds');
     }
+    this.requireSingleRoom(Math.max(req.guests.length, req.offer.occupancy?.length ?? 0), 'book');
     if (req.clientReference.length > HB_CLIENT_REF_MAX) {
       throw new SupplierError(this.id, 'VALIDATION', `book: clientReference longer than ${HB_CLIENT_REF_MAX} chars (Hotelbeds limit)`);
     }
@@ -261,7 +286,7 @@ export class HotelbedsAdapter implements SupplierAdapter {
     return {
       cancelled,
       cancellationRef: b.cancellationReference ?? b.reference,
-      fee: feeRaw !== undefined && currency ? hbMoney(feeRaw, currency) : undefined,
+      fee: feeRaw !== undefined && currency ? tryMoney(feeRaw, currency) : undefined,
       message: b.status,
     };
   }
@@ -294,16 +319,25 @@ export class HotelbedsAdapter implements SupplierAdapter {
     return out;
   }
 
-  private buildOffer(h: HbHotel, groups: Group[], picked: FlatRate[], _nights: number): SupplierOffer | undefined {
+  /**
+   * One offer from one or more rates. An amount or date we cannot read
+   * drops this one offer and logs why; the other offers of the search stay.
+   */
+  private buildOffer(h: HbHotel, groups: Group[], picked: FlatRate[], nights: number): SupplierOffer | undefined {
+    try {
+      return this.buildOfferStrict(h, groups, picked, nights);
+    } catch (err) {
+      const log = this.cfg.log ?? ((m: string) => console.warn(m));
+      log(`[${this.id}] hotel ${String(h.code)}: offer dropped: ${err instanceof Error ? err.message : String(err)}`);
+      return undefined;
+    }
+  }
+
+  private buildOfferStrict(h: HbHotel, groups: Group[], picked: FlatRate[], _nights: number): SupplierOffer | undefined {
     const currency = h.currency?.toUpperCase();
     if (h.code === undefined || !currency) return undefined;
     if (picked.some((p) => !p.rate.rateKey || p.rate.net === undefined)) return undefined;
-    let total: Money;
-    try {
-      total = { minor: picked.reduce((s, p) => s + hbMoney(p.rate.net!, currency).minor, 0), currency };
-    } catch {
-      return undefined;
-    }
+    const total: Money = { minor: picked.reduce((s, p) => s + hbMoney(p.rate.net!, currency).minor, 0), currency };
     const first = picked[0]!.rate;
     const refundable = picked.every((p) => !isNrf(p.rate));
     const penalties = mergePenalties(picked.map((p) => p.rate), currency);
@@ -363,7 +397,8 @@ export class HotelbedsAdapter implements SupplierAdapter {
     return {
       status: mapped,
       supplierBookingRef: b.reference,
-      total: totalRaw !== undefined && currency ? hbMoney(totalRaw, currency.toUpperCase()) : undefined,
+      // The status is what matters here. A total we cannot read must not turn a made booking into an error.
+      total: totalRaw !== undefined && currency ? tryMoney(totalRaw, currency.toUpperCase()) : undefined,
       message: b.status,
     };
   }
@@ -425,15 +460,22 @@ export function signature(apiKey: string, secret: string, unixSeconds: number): 
   return createHash('sha256').update(`${apiKey}${secret}${unixSeconds}`).digest('hex');
 }
 
-/** Hotelbeds amounts: decimal strings (sometimes numbers). Exact when possible, else round half-up. */
+/**
+ * Hotelbeds amounts: decimal strings (sometimes numbers), now and then with
+ * more decimals than the currency has. Parsed digit by digit and rounded
+ * half-up on the digits; no float math. Negative amounts, exponent notation
+ * and anything else unreadable throw.
+ */
 export function hbMoney(value: string | number, currency: string): Money {
+  if (typeof value !== 'string' && typeof value !== 'number') throw new Error(`Invalid Hotelbeds amount: ${String(value)}`);
+  return moneyFromDecimal(value, currency, { round: 'half-up' });
+}
+
+function tryMoney(value: string | number, currency: string): Money | undefined {
   try {
-    return moneyFromDecimal(value, currency);
+    return hbMoney(value, currency);
   } catch {
-    const exp = currencyExponent(currency);
-    const n = Number(value);
-    if (!Number.isFinite(n)) throw new Error(`Invalid Hotelbeds amount: ${String(value)}`);
-    return { minor: Math.round((n + Number.EPSILON) * 10 ** exp), currency: currency.toUpperCase() };
+    return undefined;
   }
 }
 
@@ -485,10 +527,16 @@ function isNrf(r: HbRate): boolean {
  * of every rate's charge in force at that moment.
  */
 function mergePenalties(rates: HbRate[], currency: string): CancellationPenalty[] {
+  // A policy line we cannot read (date or amount) throws: silently leaving
+  // it out would make the offer look more refundable than it is.
   const perRate = rates.map((r) =>
     (r.cancellationPolicies ?? [])
-      .map((p) => ({ from: isoUtc(p.from), amount: p.amount === undefined ? undefined : hbMoney(p.amount, currency) }))
-      .filter((p): p is { from: string; amount: Money } => !!p.from && !!p.amount)
+      .map((p) => {
+        const from = conservativeDeadline(p.from);
+        if (!from) throw new Error(`unreadable cancellation date "${String(p.from)}"`);
+        if (p.amount === undefined) throw new Error('cancellation policy without an amount');
+        return { from, amount: hbMoney(p.amount, currency) };
+      })
       .sort((a, b) => a.from.localeCompare(b.from)),
   );
   const moments = [...new Set(perRate.flat().map((p) => p.from))].sort();
@@ -512,12 +560,6 @@ function readLines(offer: Pick<RateOffer, 'supplierData'>, id: string): Line[] {
     /* fall through */
   }
   throw new SupplierError(id, 'VALIDATION', 'offer has no Hotelbeds rateKey');
-}
-
-function isoUtc(s: string | undefined): string | undefined {
-  if (!s) return undefined;
-  const t = Date.parse(s);
-  return Number.isNaN(t) ? undefined : new Date(t).toISOString();
 }
 
 function isoDay(d: Date): string {

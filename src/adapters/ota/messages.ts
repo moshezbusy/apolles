@@ -1,3 +1,4 @@
+import { conservativeDeadline, earliestStartOfLocalDay } from '../../core/dates.js';
 import { moneyFromDecimal, type Money } from '../../core/money.js';
 import type { SupplierBookingResult, SupplierCancelResult, SupplierOffer, SupplierSearchRequest } from '../../core/supplier.js';
 import type { BoardCode, CancellationPenalty, CancellationPolicy, Guest, Holder, Occupancy } from '../../core/types.js';
@@ -77,6 +78,8 @@ export function parseAvailRS(
   profile: OtaVendorProfile,
   rs: XmlNode,
   req: { checkIn: string; checkOut: string; rooms: Occupancy[] },
+  /** Told when one offer is left out because an amount or date in it cannot be read. */
+  onDrop: (hotelCode: string, reason: string) => void = () => undefined,
 ): SupplierOffer[] {
   const offers: SupplierOffer[] = [];
   const nights = Math.round((Date.parse(req.checkOut) - Date.parse(req.checkIn)) / 86_400_000);
@@ -107,44 +110,49 @@ export function parseAvailRS(
     }
 
     for (const [key, group] of groups) {
-      const [ratePlanCode = '', roomTypeCode = ''] = key.split('|');
-      if (!ratePlanCode || !roomTypeCode) continue;
-      const perRoom = assignRooms(group, req.rooms.length);
-      if (!perRoom) continue;
+      // One unreadable amount or date drops this one offer, not the whole answer.
+      try {
+        const [ratePlanCode = '', roomTypeCode = ''] = key.split('|');
+        if (!ratePlanCode || !roomTypeCode) continue;
+        const perRoom = assignRooms(group, req.rooms.length);
+        if (!perRoom) continue;
 
-      const totals = perRoom.map((rr) => rateTotal(rr));
-      if (totals.some((t) => !t)) continue;
-      const currency = totals[0]!.money.currency;
-      if (totals.some((t) => t!.money.currency !== currency)) continue;
-      const total: Money = { minor: totals.reduce((s, t) => s + t!.money.minor, 0), currency };
-      const taxesIncluded = totals.every((t) => t!.afterTax);
+        const totals = perRoom.map((rr) => rateTotal(rr));
+        if (totals.some((t) => !t)) continue;
+        const currency = totals[0]!.money.currency;
+        if (totals.some((t) => t!.money.currency !== currency)) continue;
+        const total: Money = { minor: totals.reduce((s, t) => s + t!.money.minor, 0), currency };
+        const taxesIncluded = totals.every((t) => t!.afterTax);
 
-      const plan = plans.get(ratePlanCode);
-      const meals = child(plan, 'MealsIncluded');
-      const boardRaw = attr(meals, 'MealPlanCodes') ?? attr(meals, 'MealPlanIndicator');
-      offers.push({
-        supplierHotelCode: hotelCode,
-        ratePlanCode,
-        ratePlanName: attr(plan, 'RatePlanName'),
-        rooms: perRoom.map((_, i) => ({
-          occupancyIndex: i,
-          supplierRoomCode: roomTypeCode,
-          roomName: roomNames.get(roomTypeCode) ?? roomTypeCode,
-        })),
-        board: boardFromMeals(meals),
-        boardRaw,
-        total,
-        taxesIncluded,
-        paymentModel: paymentModel(plan, profile),
-        cancellation: parseCancelPenalties(path(plan, 'CancelPenalties', 'CancelPenalty'), total, nights, req.checkIn),
-        remarks: path(plan, 'RatePlanDescription', 'Text').map((t) => text(t)).filter((t): t is string => !!t),
-        supplierData: {
-          roomTypeCode,
+        const plan = plans.get(ratePlanCode);
+        const meals = child(plan, 'MealsIncluded');
+        const boardRaw = attr(meals, 'MealPlanCodes') ?? attr(meals, 'MealPlanIndicator');
+        offers.push({
+          supplierHotelCode: hotelCode,
           ratePlanCode,
-          ...(attr(stay, 'RPH') ? { roomStayRPH: attr(stay, 'RPH')! } : {}),
-          ...(attr(group[0], 'BookingCode') ? { bookingCode: attr(group[0], 'BookingCode')! } : {}),
-        },
-      });
+          ratePlanName: attr(plan, 'RatePlanName'),
+          rooms: perRoom.map((_, i) => ({
+            occupancyIndex: i,
+            supplierRoomCode: roomTypeCode,
+            roomName: roomNames.get(roomTypeCode) ?? roomTypeCode,
+          })),
+          board: boardFromMeals(meals),
+          boardRaw,
+          total,
+          taxesIncluded,
+          paymentModel: paymentModel(plan, profile),
+          cancellation: parseCancelPenalties(path(plan, 'CancelPenalties', 'CancelPenalty'), total, nights, req.checkIn),
+          remarks: path(plan, 'RatePlanDescription', 'Text').map((t) => text(t)).filter((t): t is string => !!t),
+          supplierData: {
+            roomTypeCode,
+            ratePlanCode,
+            ...(attr(stay, 'RPH') ? { roomStayRPH: attr(stay, 'RPH')! } : {}),
+            ...(attr(group[0], 'BookingCode') ? { bookingCode: attr(group[0], 'BookingCode')! } : {}),
+          },
+        });
+      } catch (err) {
+        onDrop(hotelCode, err instanceof Error ? err.message : String(err));
+      }
     }
   }
   return offers;
@@ -194,6 +202,14 @@ export function otaAmount(value: string, decimalPlaces: string | undefined, curr
     }
   }
   return moneyFromDecimal(value, currency);
+}
+
+function tryAmount(value: string, decimalPlaces: string | undefined, currency: string): Money | undefined {
+  try {
+    return otaAmount(value, decimalPlaces, currency);
+  } catch {
+    return undefined;
+  }
 }
 
 /** OTA Meal Plan Type (MPT) code list -> our board. */
@@ -252,8 +268,8 @@ export function parseCancelPenalties(
       const pct = attr(ap, 'Percent');
       const n = attr(ap, 'NmbrOfNights');
       if (a) amount = otaAmount(a, attr(ap, 'DecimalPlaces'), attr(ap, 'CurrencyCode') ?? total.currency);
-      else if (pct) amount = { minor: Math.round((total.minor * Number(pct)) / 100), currency: total.currency };
-      else if (n && nights > 0) amount = { minor: Math.round((total.minor / nights) * Math.min(Number(n), nights)), currency: total.currency };
+      else if (pct) amount = { minor: Math.round((total.minor * nonNegative(pct, 'penalty percent')) / 100), currency: total.currency };
+      else if (n && nights > 0) amount = { minor: Math.round((total.minor / nights) * Math.min(nonNegative(n, 'penalty nights'), nights)), currency: total.currency };
     }
     if (!refundable && !from) {
       penalties.push({ from: new Date(0).toISOString(), amount: amount ?? total });
@@ -265,21 +281,35 @@ export function parseCancelPenalties(
   return { refundable, penalties, text: texts.join(' ') || undefined };
 }
 
-/** Absolute deadline, or an offset like "3 days before arrival". */
+function nonNegative(raw: string, what: string): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) throw new Error(`unreadable ${what} "${raw}"`);
+  return n;
+}
+
+/**
+ * Absolute deadline, or an offset like "3 days before arrival". The hotel's
+ * time zone is not known here, so both are placed at the earliest moment
+ * they could mean (see core/dates.ts): never later than the real deadline.
+ */
 function deadline(d: XmlNode | undefined, checkIn: string): string | undefined {
   if (!d) return undefined;
   const abs = attr(d, 'AbsoluteDeadline');
   if (abs) {
-    const t = Date.parse(/[zZ]|[+-]\d\d:\d\d$/.test(abs) ? abs : `${abs}Z`);
-    return Number.isNaN(t) ? undefined : new Date(t).toISOString();
+    const at = conservativeDeadline(abs);
+    // Dropping a deadline we cannot read would make the offer look more refundable than it is.
+    if (!at) throw new Error(`unreadable cancellation deadline "${abs}"`);
+    return at;
   }
   const unit = attr(d, 'OffsetTimeUnit');
   const mult = Number(attr(d, 'OffsetUnitMultiplier') ?? '0');
   if (!unit || !Number.isFinite(mult)) return undefined;
   const ms = unit.toLowerCase().startsWith('hour') ? mult * 3_600_000 : unit.toLowerCase().startsWith('day') ? mult * 86_400_000 : NaN;
   if (Number.isNaN(ms)) return undefined;
-  // Hotel local time is unknown here; arrival is taken as 00:00 UTC (conservative for most destinations).
-  return new Date(Date.parse(`${checkIn}T00:00:00Z`) - ms).toISOString();
+  // "Arrival" = the earliest moment the check-in day can start anywhere (00:00 at UTC+14).
+  const arrival = earliestStartOfLocalDay(checkIn);
+  if (!arrival) throw new Error(`unreadable check-in date "${checkIn}"`);
+  return new Date(Date.parse(arrival) - ms).toISOString();
 }
 
 // -------------------------------------------------------------- reservation
@@ -400,7 +430,8 @@ export function parseHotelReservation(profile: OtaVendorProfile, res: XmlNode, c
   const totalNode = child(child(res, 'ResGlobalInfo'), 'Total');
   const amount = attr(totalNode, 'AmountAfterTax') ?? attr(totalNode, 'AmountBeforeTax');
   const currency = attr(totalNode, 'CurrencyCode');
-  const total = amount && currency ? otaAmount(amount, attr(totalNode, 'DecimalPlaces'), currency) : undefined;
+  // The status is what matters here. A total we cannot read must not turn a made booking into an error.
+  const total = amount && currency ? tryAmount(amount, attr(totalNode, 'DecimalPlaces'), currency) : undefined;
 
   return { status, supplierBookingRef, hotelConfirmationNumber, total, message: statusRaw || undefined };
 }
@@ -450,7 +481,7 @@ export function parseCancelRS(rs: XmlNode, fallbackCurrency?: string): SupplierC
   const rule = path(info, 'CancelRules', 'CancelRule')[0];
   const amt = attr(rule, 'Amount');
   const feeCurrency = attr(rule, 'CurrencyCode') ?? fallbackCurrency;
-  const fee = amt && feeCurrency ? otaAmount(amt, attr(rule, 'DecimalPlaces'), feeCurrency) : undefined;
+  const fee = amt && feeCurrency ? tryAmount(amt, attr(rule, 'DecimalPlaces'), feeCurrency) : undefined;
   const cancelled = CANCELLED.has(status) || (status === '' && child(rs, 'Success') !== undefined);
   return { cancelled, cancellationRef: ref, fee, message: status || undefined };
 }

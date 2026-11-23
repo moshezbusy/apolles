@@ -28,7 +28,8 @@ const AVAIL_RS = {
 
 const NOW = new Date('2026-11-17T10:00:00Z');
 
-function make(responses: { status?: number; body: unknown }[]) {
+function make(responses: { status?: number; body: unknown }[], opts: { multiRoom?: boolean } = {}) {
+  const dropped: string[] = [];
   const sent: { url: string; method: string; headers: Record<string, string>; body?: Record<string, unknown> }[] = [];
   let i = 0;
   const fetchImpl = (async (url: string, init: RequestInit) => {
@@ -41,8 +42,9 @@ function make(responses: { status?: number; body: unknown }[]) {
     id: 'hotelbeds', baseUrl: 'https://api.test.hotelbeds.com/hotel-api/1.0', environment: 'test', certified: false,
     transport: new HttpTransport({ supplierId: 'hotelbeds', fetchImpl, audit, baseDelayMs: 1, maxAttempts: 1 }),
     secretNames: { apiKey: 'K', secret: 'S' }, secrets: new StaticSecretProvider({ K: 'key123', S: 'sec456' }), now: () => NOW,
+    allowUnverifiedMultiRoom: opts.multiRoom, log: (m) => dropped.push(m),
   });
-  return { adapter, sent, audit };
+  return { adapter, sent, audit, dropped };
 }
 
 const search = {
@@ -93,8 +95,44 @@ describe('Hotelbeds adapter', () => {
     expect(bb!.cancellation.refundable).toBe(true);
   });
 
+  it('more than one room is refused until the occupancy format is verified live', async () => {
+    const { adapter, sent } = make([{ body: AVAIL_RS }]);
+    expect(adapter.capabilities.multiRoom).toBe(false);
+    const two = [{ adults: 2, childrenAges: [] }, { adults: 2, childrenAges: [] }];
+    const err = (await adapter.search({ ...search, rooms: two }, { requestId: 'r' }).catch((e) => e)) as SupplierError;
+    expect(err.code).toBe('VALIDATION');
+    expect(err.message).toMatch(/one room/i);
+    const bookErr = (await adapter.book({ ...bookReq, offer: { ...(offer as object), occupancy: two } as never, guests: [bookReq.guests[0]!, bookReq.guests[0]!] }, { requestId: 'r' }).catch((e) => e)) as SupplierError;
+    expect(bookErr.code).toBe('VALIDATION');
+    expect(sent).toHaveLength(0); // nothing reached Hotelbeds
+  });
+
+  it('one unreadable amount or date drops that one offer, with a logged reason, not the whole search', async () => {
+    const rates = [
+      RATE_RO,
+      { ...RATE_BB, rateKey: 'BAD-NET', net: 'abc' },
+      { ...RATE_BB, rateKey: 'NEGATIVE', net: '-360.50' },
+      { ...RATE_BB, rateKey: 'EXPONENT', net: '3.6e2' },
+      { ...RATE_BB, rateKey: 'BAD-DATE', cancellationPolicies: [{ amount: '120.17', from: 'next tuesday' }] },
+      { ...RATE_BB, rateKey: 'BAD-FEE', cancellationPolicies: [{ amount: 'lots', from: '2027-02-25T23:59:00+01:00' }] },
+      RATE_BB,
+    ];
+    const { adapter, dropped } = make([{ body: { hotels: { hotels: [{ code: 1067, currency: 'EUR', rooms: [{ code: 'DBL.ST', name: 'DOUBLE STANDARD', rates }] }] } } }]);
+    const offers = await adapter.search(search, { requestId: 'r' });
+    expect(offers.map((o) => o.ratePlanCode)).toEqual([RATE_RO.rateKey, RATE_BB.rateKey]);
+    expect(dropped).toHaveLength(5);
+    expect(dropped.join('\n')).toMatch(/hotelbeds.*1067.*offer dropped/i);
+  });
+
+  it('a cancellation deadline without a time zone is shown at its earliest possible moment', async () => {
+    const rate = { ...RATE_BB, cancellationPolicies: [{ amount: '120.17', from: '2027-02-25T23:59:00' }] };
+    const { adapter } = make([{ body: { hotels: { hotels: [{ code: 1067, currency: 'EUR', rooms: [{ code: 'DBL.ST', rates: [rate] }] }] } } }]);
+    const [o] = await adapter.search(search, { requestId: 'r' });
+    expect(o!.cancellation.penalties[0]!.from).toBe('2027-02-24T10:00:00.000Z');
+  });
+
   it('children go as CH paxes with ages; identical rooms are grouped', async () => {
-    const { adapter, sent } = make([{ body: { hotels: { total: 0 } } }]);
+    const { adapter, sent } = make([{ body: { hotels: { total: 0 } } }], { multiRoom: true });
     const r = await adapter.search({
       ...search, rooms: [{ adults: 2, childrenAges: [7] }, { adults: 2, childrenAges: [7] }, { adults: 1, childrenAges: [] }],
     }, { requestId: 'r' });
@@ -112,7 +150,7 @@ describe('Hotelbeds adapter', () => {
     const { adapter } = make([{ body: { hotels: { hotels: [{ code: 1067, currency: 'EUR', rooms: [
       { code: 'SGL', name: 'Single', rates: [single] },
       { code: 'DBL', name: 'Double', rates: [dbl, dblRo] },
-    ] }] } } }]);
+    ] }] } } }], { multiRoom: true });
     const offers = await adapter.search({ ...search, rooms: [{ adults: 2, childrenAges: [] }, { adults: 1, childrenAges: [] }] }, { requestId: 'r' });
     expect(offers).toHaveLength(1);
     const o = offers[0]!;
@@ -182,6 +220,13 @@ describe('Hotelbeds adapter', () => {
       tolerance: 0,
       remark: 'High floor',
     });
+  });
+
+  it('a total we cannot read does not turn a made booking into an error', async () => {
+    const { adapter } = make([{ body: { booking: { reference: '102-7', status: 'CONFIRMED', totalNet: 'n/a', currency: 'EUR', hotel: { rooms: [{ status: 'CONFIRMED' }] } } } }]);
+    const r = await adapter.book(bookReq, { requestId: 'r' });
+    expect(r).toMatchObject({ status: 'CONFIRMED', supplierBookingRef: '102-7' });
+    expect(r.total).toBeUndefined();
   });
 
   it('Book: 4xx with error = definite failure; 5xx / empty = outcome unknown', async () => {
@@ -257,7 +302,11 @@ describe('Hotelbeds adapter', () => {
   it('helpers', () => {
     expect(hbMoney('412.50', 'EUR')).toEqual({ minor: 41250, currency: 'EUR' });
     expect(hbMoney(412.5, 'EUR')).toEqual({ minor: 41250, currency: 'EUR' });
-    expect(hbMoney('10.555', 'EUR')).toEqual({ minor: 1056, currency: 'EUR' });
+    expect(hbMoney('10.555', 'EUR')).toEqual({ minor: 1056, currency: 'EUR' }); // rounded on the digits, no float
+    expect(() => hbMoney('abc', 'EUR')).toThrow();
+    expect(() => hbMoney('-1.00', 'EUR')).toThrow();
+    expect(() => hbMoney('1e3', 'EUR')).toThrow();
+    expect(() => hbMoney(Number.NaN, 'EUR')).toThrow();
     expect(groupRooms([{ adults: 2, childrenAges: [9, 4] }, { adults: 2, childrenAges: [4, 9] }]).map((g) => g.indexes)).toEqual([[0, 1]]);
   });
 });

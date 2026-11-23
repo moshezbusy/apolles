@@ -44,6 +44,7 @@ const PREBOOK_RS = {
 };
 
 function make(responses: unknown[]) {
+  const dropped: string[] = [];
   const sent: { url: string; body: Record<string, unknown> }[] = [];
   let i = 0;
   const fetchImpl = (async (url: string, init: RequestInit) => {
@@ -58,9 +59,9 @@ function make(responses: unknown[]) {
   const adapter = new TboAdapter({
     id: 'tbo', baseUrl: 'https://api.tbotechnology.in/TBOHolidays_HotelAPI', environment: 'test', certified: false,
     transport: new HttpTransport({ supplierId: 'tbo', fetchImpl, audit, baseDelayMs: 1 }),
-    agencyEmail: 'ops@agency.example', agencyPhone: '+972 3-000-0000',
+    agencyEmail: 'ops@agency.example', agencyPhone: '+972 3-000-0000', log: (m) => dropped.push(m),
   });
-  return { adapter, sent, audit };
+  return { adapter, sent, audit, dropped };
 }
 
 const search = {
@@ -113,7 +114,8 @@ describe('TBO adapter', () => {
     expect(sent[0]!.body).toEqual({ BookingCode: '1435427!TB!2!TB!a5419e54', PaymentMode: 'Limit' });
     expect(q.available).toBe(true);
     expect(q.offer!.board).toBe('BB');
-    expect(q.offer!.cancellation.penalties).toEqual([{ from: '2027-05-12T00:00:00.000Z', amount: { minor: 1710, currency: 'USD' } }]);
+    // "12-05-2027 00:00:00" has no time zone: shown at the earliest moment 12 May can start anywhere (UTC+14).
+    expect(q.offer!.cancellation.penalties).toEqual([{ from: '2027-05-11T10:00:00.000Z', amount: { minor: 1710, currency: 'USD' } }]);
     expect(q.offer!.remarks).toContain('Check-in hour 14:00');
   });
 
@@ -121,6 +123,28 @@ describe('TBO adapter', () => {
     const { adapter } = make([{ Status: { Code: 207, Description: 'Given rate is not Available' } }]);
     const q = await adapter.checkRate({ supplierData: { bookingCode: 'x' }, occupancy: [], checkIn: '2027-01-01', checkOut: '2027-01-02' } as never, { requestId: 'r' });
     expect(q.available).toBe(false);
+  });
+
+  it('one unreadable amount or date drops that one room rate, with a logged reason, not the whole search', async () => {
+    const good = SEARCH_RS.HotelResult[0]!.Rooms[0]!;
+    const rs = {
+      Status: { Code: 200 },
+      HotelResult: [{
+        HotelCode: '1120548', Currency: 'USD',
+        Rooms: [
+          { ...good, BookingCode: 'NEGATIVE', TotalFare: -305.75 },
+          { ...good, BookingCode: 'HUGE', TotalFare: 1e21 },
+          { ...good, BookingCode: 'BAD-DATE', IsRefundable: true, CancelPolicies: [{ FromDate: '31-02-2027 00:00:00', ChargeType: 'Percentage', CancellationCharge: 100 }] },
+          { ...good, BookingCode: 'BAD-SUPPLEMENT', Supplements: [[{ Type: 'AtProperty', Price: -20, Currency: 'AED' }]] },
+          { ...good, BookingCode: 'GOOD' },
+        ],
+      }],
+    };
+    const { adapter, dropped } = make([rs]);
+    const offers = await adapter.search(search, { requestId: 'r' });
+    expect(offers.map((o) => o.ratePlanCode)).toEqual(['GOOD']);
+    expect(dropped).toHaveLength(4);
+    expect(dropped.join('\n')).toMatch(/tbo.*1120548.*offer dropped/i);
   });
 
   const bookReq = {
@@ -180,6 +204,13 @@ describe('TBO adapter', () => {
     expect(await detail(undefined)).toBe('PENDING');
   });
 
+  it('BookingDetail with a total we cannot read still reports the status', async () => {
+    const { adapter } = make([{ Status: { Code: 200 }, BookingDetail: { BookingStatus: 'Confirmed', ConfirmationNumber: 'YOSUR8', Rooms: [{ Currency: 'USD', TotalFare: -1 }] } }]);
+    const r = await adapter.getBooking({ clientReference: 'APL-BK-7788' }, { requestId: 'r' });
+    expect(r).toMatchObject({ status: 'CONFIRMED', supplierBookingRef: 'YOSUR8' });
+    expect(r!.total).toBeUndefined();
+  });
+
   it('Cancel', async () => {
     const { adapter } = make([{ Status: { Code: 200, Description: 'Cancelled' }, ConfirmationNumber: 'FL1IMA' }]);
     expect(await adapter.cancel({ clientReference: 'x', supplierBookingRef: 'FL1IMA' }, { requestId: 'r' })).toMatchObject({ cancelled: true, cancellationRef: 'FL1IMA' });
@@ -193,7 +224,13 @@ describe('TBO adapter', () => {
   });
 
   it('helpers', () => {
-    expect(tboDate('12-05-2027 00:00:00')).toBe('2027-05-12T00:00:00.000Z');
+    expect(tboDate('12-05-2027 00:00:00')).toBe('2027-05-11T10:00:00.000Z');
+    expect(tboDate('12-05-2027 18:00:00')).toBe('2027-05-11T10:00:00.000Z');
+    expect(tboDate('31-02-2027 00:00:00')).toBeUndefined();
+    expect(tboDate('2027-05-12T00:00:00+03:00')).toBe('2027-05-11T21:00:00.000Z');
+    expect(() => amount(-1, 'USD')).toThrow();
+    expect(() => amount(Number.NaN, 'USD')).toThrow();
+    expect(amount(2.675, 'USD')).toEqual({ minor: 268, currency: 'USD' }); // float math gave 267
     expect(amount(1391.794, 'USD')).toEqual({ minor: 139179, currency: 'USD' });
     expect(amount(17.1, 'USD')).toEqual({ minor: 1710, currency: 'USD' });
     expect(amount(0.285, 'USD')).toEqual({ minor: 29, currency: 'USD' });

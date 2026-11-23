@@ -1,5 +1,6 @@
 import { SupplierError, type SupplierErrorCode } from '../../core/errors.js';
-import { currencyExponent, type Money } from '../../core/money.js';
+import { conservativeDeadline, earliestStartOfLocalDay } from '../../core/dates.js';
+import { moneyFromDecimal, type Money } from '../../core/money.js';
 import type {
   BookingLookup,
   CallContext,
@@ -37,6 +38,8 @@ export interface TboAdapterConfig {
   /** Used when the guest has no email/phone (TBO requires both). */
   agencyEmail: string;
   agencyPhone: string;
+  /** Where "offer dropped" reasons go. Default: console.warn. */
+  log?: (msg: string) => void;
 }
 
 const STATUS = {
@@ -219,7 +222,8 @@ export class TboAdapter implements SupplierAdapter {
     const status: SupplierBookingResult['status'] = BOOKING_STATUS[statusRaw] ?? 'PENDING';
     const rooms = (d['Rooms'] as { TotalFare?: number; Currency?: string }[] | undefined) ?? [];
     const currency = rooms[0]?.Currency;
-    const total = currency ? sumAmounts(rooms.map((r) => r.TotalFare ?? 0), currency) : undefined;
+    // The status is what matters here. A total we cannot read must not turn the lookup into an error.
+    const total = currency ? trySum(rooms.map((r) => r.TotalFare ?? 0), currency) : undefined;
     return {
       status,
       supplierBookingRef: str(d['ConfirmationNumber']),
@@ -242,7 +246,18 @@ export class TboAdapter implements SupplierAdapter {
 
   // ------------------------------------------------------------------ mapping
 
+  /** An amount or date we cannot read drops this one room rate and logs why; the rest of the search stays. */
   private toOffer(h: TboHotelResult, r: TboRoom, roomCount: number, checkIn: string, nights: number): SupplierOffer | undefined {
+    try {
+      return this.toOfferStrict(h, r, roomCount, checkIn, nights);
+    } catch (err) {
+      const log = this.cfg.log ?? ((m: string) => console.warn(m));
+      log(`[${this.id}] hotel ${String(h.HotelCode)}: offer dropped: ${err instanceof Error ? err.message : String(err)}`);
+      return undefined;
+    }
+  }
+
+  private toOfferStrict(h: TboHotelResult, r: TboRoom, roomCount: number, checkIn: string, nights: number): SupplierOffer | undefined {
     if (!h.HotelCode || !h.Currency || !r.BookingCode || typeof r.TotalFare !== 'number') return undefined;
     const currency = h.Currency.toUpperCase();
     const total = amount(r.TotalFare, currency);
@@ -323,27 +338,34 @@ export class TboAdapter implements SupplierAdapter {
 
 // --------------------------------------------------------------------- helpers
 
-/** TBO returns JSON numbers that can carry more decimals than the currency; round half-up to the minor unit. */
+/**
+ * TBO returns JSON numbers that can carry more decimals than the currency.
+ * The number is read through its decimal text and rounded half-up on the
+ * digits (no float math). Negative, NaN and huge values throw.
+ */
 export function amount(value: number, currency: string): Money {
-  const exp = currencyExponent(currency);
-  const minor = Math.round((value + Number.EPSILON) * 10 ** exp);
-  return { minor, currency };
+  if (typeof value !== 'number') throw new Error(`Invalid TBO amount: ${String(value)}`);
+  return moneyFromDecimal(value, currency, { round: 'half-up' });
 }
 
-function sumAmounts(values: number[], currency: string): Money {
-  return { minor: values.reduce((s, v) => s + amount(v, currency).minor, 0), currency };
+function trySum(values: number[], currency: string): Money | undefined {
+  try {
+    return { minor: values.reduce((s, v) => s + amount(v, currency).minor, 0), currency: currency.toUpperCase() };
+  } catch {
+    return undefined;
+  }
 }
 
-/** TBO FromDate: "dd-MM-yyyy HH:mm:ss" (hotel local time, taken as UTC). */
+/**
+ * TBO FromDate: "dd-MM-yyyy HH:mm:ss", hotel local time with no time zone.
+ * Shown at the earliest moment that day can start anywhere (see
+ * core/dates.ts), so the deadline is never later than the real one.
+ */
 export function tboDate(s: string | undefined): string | undefined {
   if (!s) return undefined;
-  const m = /^(\d{2})-(\d{2})-(\d{4})(?:[ T](\d{2}):(\d{2}):(\d{2}))?$/.exec(s.trim());
-  if (m) {
-    const [, dd, mm, yyyy, hh = '00', mi = '00', ss = '00'] = m;
-    return new Date(`${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}Z`).toISOString();
-  }
-  const t = Date.parse(s);
-  return Number.isNaN(t) ? undefined : new Date(t).toISOString();
+  const m = /^(\d{2})-(\d{2})-(\d{4})(?:[ T]\d{2}:\d{2}:\d{2})?$/.exec(s.trim());
+  if (m) return earliestStartOfLocalDay(`${m[3]}-${m[2]}-${m[1]}`);
+  return conservativeDeadline(s);
 }
 
 function cancelPolicy(r: TboRoom, total: Money, nights: number, _checkIn: string): CancellationPolicy {
@@ -351,7 +373,10 @@ function cancelPolicy(r: TboRoom, total: Money, nights: number, _checkIn: string
   const texts: string[] = [];
   for (const p of r.CancelPolicies ?? []) {
     const from = tboDate(p.FromDate);
+    // Leaving out a policy line we cannot read would make the offer look more refundable than it is.
+    if (!from) throw new Error(`unreadable cancellation date "${String(p.FromDate)}"`);
     const charge = p.CancellationCharge ?? 0;
+    if (typeof charge !== 'number' || !Number.isFinite(charge) || charge < 0) throw new Error(`unreadable cancellation charge "${String(charge)}"`);
     const type = (p.ChargeType ?? '').toLowerCase();
     let amt: Money | undefined;
     if (type === 'fixed') amt = amount(charge, total.currency);

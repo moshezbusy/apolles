@@ -43,6 +43,8 @@ export interface OtaAdapterConfig {
   transport: HttpTransport;
   secrets: SecretProvider;
   vault: CardVault;
+  /** Where "offer dropped" reasons go. Default: console.warn. */
+  log?: (msg: string) => void;
 }
 
 /**
@@ -82,7 +84,7 @@ export class OtaAdapter implements SupplierAdapter {
       if (errors.every((e) => e.code && this.profile.noAvailabilityErrorCodes.includes(e.code))) return [];
       throw this.errorFrom(errors, 'search');
     }
-    return parseAvailRS(this.profile, rs, req);
+    return parseAvailRS(this.profile, rs, req, this.onDrop);
   }
 
   /** OTA has no universal re-check message: re-run availability for this one hotel + rate plan. */
@@ -102,7 +104,7 @@ export class OtaAdapter implements SupplierAdapter {
       throw this.errorFrom(errors, 'checkRate');
     }
     const roomCodes = offer.rooms.map((r) => r.supplierRoomCode).join(',');
-    const match = parseAvailRS(this.profile, rs, req).find(
+    const match = parseAvailRS(this.profile, rs, req, this.onDrop).find(
       (o) =>
         o.supplierHotelCode === offer.supplierHotelCode &&
         o.ratePlanCode === offer.ratePlanCode &&
@@ -181,6 +183,11 @@ export class OtaAdapter implements SupplierAdapter {
   }
 
   // ---------------------------------------------------------------- plumbing
+
+  private readonly onDrop = (hotelCode: string, reason: string): void => {
+    const log = this.cfg.log ?? ((m: string) => console.warn(m));
+    log(`[${this.id}] hotel ${hotelCode}: offer dropped: ${reason}`);
+  };
 
   private async call(
     op: OtaOperation,
