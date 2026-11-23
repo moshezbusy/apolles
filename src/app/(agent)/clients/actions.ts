@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAgent } from "@/server/auth/guards";
-import { addCompanion, createClient, removeCompanion, updateClient } from "@/server/clients";
+import { addCompanion, createClient, findSimilarClient, removeCompanion, updateClient } from "@/server/clients";
 import type { ClientFormState } from "./form-state";
 
 // Client actions (screen 18). Each one checks the agent session itself and passes the agencyId
@@ -32,6 +32,19 @@ function clientFields(formData: FormData) {
 export async function createClientAction(_previous: ClientFormState, formData: FormData): Promise<ClientFormState> {
   const { userId, agencyId } = await requireAgent();
   const values = clientFields(formData);
+  // The same person twice: warn once, with a link to the card that exists. Saving again (the form
+  // then sends confirmDuplicate) adds the new card anyway.
+  if (formData.get("confirmDuplicate") !== "1") {
+    const same = await findSimilarClient(agencyId, values);
+    if (same) {
+      return {
+        status: "error",
+        message: `${same.firstName} ${same.lastName} already has this email or phone. Open that client, or choose Save client again to add a new one.`,
+        values,
+        duplicate: { id: same.id, name: `${same.firstName} ${same.lastName}` },
+      };
+    }
+  }
   const result = await createClient(userId, agencyId, values);
   if (!result.ok) return { status: "error", message: CLIENT_ERROR, values };
   revalidatePath("/clients");

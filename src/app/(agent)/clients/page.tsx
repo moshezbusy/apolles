@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { initials } from "@/components/Header";
-import { btnPrimary, btnSecondary, card, cell, emptyState, input, link, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
+import { btnPrimary, btnSecondary, card, cell, emptyState, input, pageTitle, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { countryName, countryOptions } from "@/lib/countries";
 import { PHONE_NEEDS_COUNTRY_CODE, toE164Digits } from "@/lib/phone";
 import { getAgencyProfile } from "@/server/agency-profile";
 import { requireAgent } from "@/server/auth/guards";
-import { getClient, listClients, type ClientDetail } from "@/server/clients";
+import { CLIENT_PAGE_SIZE, clientBookings, getClient, listClients, type ClientBooking, type ClientDetail } from "@/server/clients";
+import { BookingStatusPill } from "../bookings/status-pill";
+import { shortDate } from "../search/parts";
+import { RemoveCompanion } from "./remove-companion";
 import { quoteCode } from "@/server/quotes/quotes";
 import { createQuoteAction } from "../quotes/actions";
 import { StatusPill } from "../quotes/parts";
@@ -31,32 +34,40 @@ function travelerLine(c: { relation: string; childAge: number | null }): string 
 }
 
 // Screen 18: the agency's clients. The list is on the left; the open client (or the add / edit
-// form) on the right. Everything is read for the signed-in agent's own agency only.
+// form) on the right. On a phone the open client or the form comes first, above the list, and
+// every link to it lands on it (#client), so the agent sees what they opened. Everything is read
+// for the signed-in agent's own agency only.
 export default async function ClientsPage({ searchParams }: { searchParams: SearchParams }) {
   const { agencyId } = await requireAgent();
   const params = await searchParams;
   const q = one(params.q).slice(0, 100);
-  const cursor = one(params.cursor);
+  const shownParam = Number(one(params.shown));
+  const shown = Number.isInteger(shownParam) ? Math.min(Math.max(CLIENT_PAGE_SIZE, shownParam), 500) : CLIENT_PAGE_SIZE;
   const adding = one(params.new) === "1";
   const editing = one(params.edit) === "1";
+  // Something the agent opened (not the first client shown by default): first on a phone.
+  const opened = adding || editing || one(params.id) !== "";
 
   const [page, profile] = await Promise.all([
-    listClients(agencyId, { q, ...(cursor ? { cursor } : {}) }),
+    listClients(agencyId, { q, take: shown }),
     getAgencyProfile(agencyId),
   ]);
   const openId = one(params.id) || page.clients[0]?.id || "";
   const open = openId && !adding ? await getClient(agencyId, openId) : null;
+  const bookings = open ? await clientBookings(agencyId, open) : [];
 
-  // Links keep the search and the page the agent is on (a "cursor" value replaces it).
-  const hrefFor = (values: { id?: string; cursor?: string; extra?: string }) => {
+  // Links keep the search and how many clients are shown. A link that opens a client or a form
+  // lands on it (#client).
+  const hrefFor = (values: { id?: string; shown?: number; extra?: string }) => {
     const p = new URLSearchParams();
     if (q) p.set("q", q);
-    const pageCursor = values.cursor ?? cursor;
-    if (pageCursor) p.set("cursor", pageCursor);
+    const count = values.shown ?? shown;
+    if (count > CLIENT_PAGE_SIZE) p.set("shown", String(count));
     if (values.id) p.set("id", values.id);
     if (values.extra) p.set(values.extra, "1");
     const s = p.toString();
-    return s ? "/clients?" + s : "/clients";
+    const hash = values.id || values.extra ? "#client" : "";
+    return (s ? "/clients?" + s : "/clients") + hash;
   };
   const countries = countryOptions();
   const total = page.total;
@@ -130,16 +141,16 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
               </table>
             </div>
           )}
-          {page.nextCursor ? (
+          {page.nextCursor && shown < 500 ? (
             <p className="mt-4">
-              <Link href={hrefFor({ cursor: page.nextCursor })} className={btnSecondary}>
+              <Link href={hrefFor({ shown: shown + CLIENT_PAGE_SIZE })} scroll={false} className={btnSecondary}>
                 Load more
               </Link>
             </p>
           ) : null}
         </div>
 
-        <aside aria-label="Client" className={`${card} p-5`}>
+        <aside id="client" aria-label="Client" className={`${card} scroll-mt-24 p-5 ${opened ? "max-lg:order-first" : ""}`}>
           {adding ? (
             <>
               <h2 className="mb-4 text-base font-bold text-ink">Add client</h2>
@@ -169,7 +180,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
               />
             </>
           ) : open ? (
-            <ClientPanel client={open} editHref={hrefFor({ id: open.id, extra: "edit" })} country={profile?.country ?? ""} />
+            <ClientPanel client={open} bookings={bookings} editHref={hrefFor({ id: open.id, extra: "edit" })} country={profile?.country ?? ""} />
           ) : (
             <p className="text-sm text-muted">Choose a client to see their details.</p>
           )}
@@ -180,7 +191,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
 }
 
 // `country`: the agency's country, whose calling code a number typed the local way gets.
-function ClientPanel({ client, editHref, country }: { client: ClientDetail; editHref: string; country: string }) {
+function ClientPanel({ client, bookings, editHref, country }: { client: ClientDetail; bookings: ClientBooking[]; editHref: string; country: string }) {
   const name = `${client.firstName} ${client.lastName}`;
   // The stored number is never rewritten; the agent is told when no WhatsApp link can be made from it.
   const phoneHint = toE164Digits(client.phone, country) ? null : PHONE_NEEDS_COUNTRY_CODE;
@@ -199,12 +210,18 @@ function ClientPanel({ client, editHref, country }: { client: ClientDetail; edit
         </Link>
       </div>
 
-      <form action={createQuoteAction}>
-        <input type="hidden" name="clientId" value={client.id} />
-        <button type="submit" className={`${btnPrimary} w-full`} title="Opens a new quote with this client already chosen">
-          New quote
-        </button>
-      </form>
+      <div className="flex flex-col gap-2">
+        <form action={createQuoteAction}>
+          <input type="hidden" name="clientId" value={client.id} />
+          <button type="submit" className={`${btnPrimary} w-full`} title="Opens a new quote with this client already chosen">
+            New quote
+          </button>
+        </form>
+        <Link href="/search" className={`${btnSecondary} w-full`}>
+          Search hotels for this client
+        </Link>
+        <p className="text-xs text-muted">On the guest details page, choose {name} under Choose from clients: the names and contact are filled in.</p>
+      </div>
 
       <section className="border-t border-line pt-4">
         <h3 className="mb-2 text-sm font-bold text-ink">Details</h3>
@@ -250,12 +267,7 @@ function ClientPanel({ client, editHref, country }: { client: ClientDetail; edit
               </strong>
               <span className="flex items-center gap-3 text-muted">
                 {travelerLine(c)}
-                <form action={removeCompanionAction}>
-                  <input type="hidden" name="companionId" value={c.id} />
-                  <button type="submit" className={link} aria-label={`Remove ${c.firstName} ${c.lastName}`}>
-                    Remove
-                  </button>
-                </form>
+                <RemoveCompanion action={removeCompanionAction} companionId={c.id} name={`${c.firstName} ${c.lastName}`} />
               </span>
             </li>
           ))}
@@ -263,6 +275,29 @@ function ClientPanel({ client, editHref, country }: { client: ClientDetail; edit
         {/* key: a new client gets a fresh form, never the last client's message or typed values. */}
         <CompanionForm key={client.id} action={addCompanionAction} clientId={client.id} />
         <p className="mt-2 text-xs text-muted">Check children&apos;s ages for each trip.</p>
+      </section>
+
+      <section className="border-t border-line pt-4">
+        <h3 className="mb-2 text-sm font-bold text-ink">Bookings</h3>
+        {bookings.length === 0 ? (
+          <p className="text-[13px] text-muted">No bookings yet. Bookings from this client&apos;s quotes, or with this client&apos;s email as the lead guest, show here.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {bookings.map((b) => (
+              <li key={b.id}>
+                <Link href={`/bookings/${b.id}`} className="flex items-center justify-between gap-3 rounded-[10px] border border-line px-3 py-2 hover:border-[#bcd0c6]">
+                  <span className="min-w-0">
+                    <strong className="block truncate text-[13px] text-ink">{b.hotelName}</strong>
+                    <span className="text-xs text-muted">
+                      <span className="font-mono">{b.reference}</span> · {shortDate(b.checkin)} to {shortDate(b.checkout)}
+                    </span>
+                  </span>
+                  <BookingStatusPill status={b.status} />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="border-t border-line pt-4">

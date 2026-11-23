@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Prisma } from "@/generated/prisma/client";
+import { type BookingStatus, Prisma } from "@/generated/prisma/client";
 import { isCountryCode } from "@/lib/countries";
 import { audit } from "@/server/audit";
 import { db } from "@/server/db";
@@ -98,11 +98,15 @@ export type ClientRow = {
 
 export type ClientPage = { clients: ClientRow[]; total: number; nextCursor: string | null };
 
-// Newest change first, 50 per page. The cursor is the last client's id.
+const MAX_CLIENTS_SHOWN = 500;
+
+// Newest change first, 50 per page. The cursor is the last client's id. `take`: how many from
+// the top ("Load more" shows the next 50 below the ones already shown), at most 500.
 export async function listClients(
   agencyId: string,
-  options: { q?: string | undefined; cursor?: string | undefined },
+  options: { q?: string | undefined; cursor?: string | undefined; take?: number | undefined },
 ): Promise<ClientPage> {
+  const size = Math.min(Math.max(1, Math.trunc(options.take ?? CLIENT_PAGE_SIZE) || CLIENT_PAGE_SIZE), MAX_CLIENTS_SHOWN);
   const where = searchWhere(agencyId, options.q ?? "");
   // The cursor must be one of the agency's own clients; any other id starts from the first page.
   const cursor = options.cursor
@@ -112,7 +116,7 @@ export async function listClients(
     db.client.findMany({
       where,
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-      take: CLIENT_PAGE_SIZE + 1,
+      take: size + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: {
         id: true,
@@ -127,11 +131,11 @@ export async function listClients(
     }),
     db.client.count({ where }),
   ]);
-  const page = rows.slice(0, CLIENT_PAGE_SIZE);
+  const page = rows.slice(0, size);
   return {
     clients: page.map(({ _count, ...row }) => ({ ...row, travelers: 1 + _count.companions, quotes: _count.quotes })),
     total,
-    nextCursor: rows.length > CLIENT_PAGE_SIZE ? (page.at(-1)?.id ?? null) : null,
+    nextCursor: rows.length > size ? (page.at(-1)?.id ?? null) : null,
   };
 }
 
@@ -329,7 +333,7 @@ export async function clientOptions(agencyId: string): Promise<{ id: string; fir
   });
 }
 
-export type ClientBooking = { id: string; reference: string; status: string; hotelName: string; checkin: string; checkout: string };
+export type ClientBooking = { id: string; reference: string; status: BookingStatus; hotelName: string; checkin: string; checkout: string };
 
 // Which of the agency's bookings are this client's: made from one of the client's quotes, or
 // with the client's email as the lead guest's (a booking has no client field of its own).
