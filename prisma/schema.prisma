@@ -162,6 +162,8 @@ model User {
   recoveryCodes        TotpRecoveryCode[]
   changeRequests       ChangeRequest[]     @relation("ChangeRequestAuthor")
   doneChangeRequests   ChangeRequest[]     @relation("ChangeRequestDoneBy")
+  hotelMapsCreated     SupplierHotelMap[]  @relation("SupplierHotelMapCreatedBy")
+  hotelMapsApproved    SupplierHotelMap[]  @relation("SupplierHotelMapApprovedBy")
 
   @@index([agencyId])
 }
@@ -327,6 +329,8 @@ model Property {
   catalogSeenRunId String
   updatedAt        DateTime @updatedAt
 
+  hotelMaps        SupplierHotelMap[]
+
   // Hotel-name search in the search box uses a GIN index on the words of the name of searchable
   // hotels ("property_name_words"), added in the migration's raw SQL.
   @@index([active, expediaCollect, rank])
@@ -441,6 +445,9 @@ model SearchRate {
   totalMinor      Int
   currency        String
   feesAtProperty  Boolean // something is paid at the hotel on top of the total (BP4)
+  // Which supplier the rate is from ("expedia": the main supplier, also the fake; "hotelbeds").
+  // Never shown to agents. "expedia" on rows from before the second supplier.
+  supplier        String?        @default("expedia")
   snapshot        SearchSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
 
   @@id([snapshotId, propertyId, rateIndex])
@@ -547,6 +554,10 @@ model Booking {
   // Personal data: server-only, blanked when a draft expires.
   agentIp                   String?
   agentUserAgent            String?
+  // The supplier the booking is made with: every later step (price check, book, checks, cancel)
+  // goes to it. "expedia" is the main supplier (Expedia, or the fake in its place); "hotelbeds"
+  // goes through the supplier layer. Never shown to agents or clients. "expedia" on older rows.
+  supplier                  String?       @default("expedia")
 
   agency    Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   user      User           @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -895,4 +906,39 @@ model ChangeRequest {
   @@index([createdAt, id])
   @@index([bookingId, createdAt])
   @@index([agencyId, createdAt])
+}
+
+enum SupplierHotelMapStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+}
+
+// "This property is this supplier-layer hotel" (owner decision 2026-11-23: Hotelbeds through the
+// supplier layer, hotel mapping only from a list an admin approved). Only APPROVED links are
+// searched with the second supplier; a proposed or rejected one never is. Changed only on
+// /admin/hotel-mapping (src/server/admin/hotel-mapping.ts), each change with an audit row.
+// layerHotelId is the layer's own hotel id (a key of its config/mappings/hotelbeds.json).
+model SupplierHotelMap {
+  id           String                 @id @default(cuid())
+  propertyId   String
+  supplier     String                 @default("hotelbeds")
+  layerHotelId String
+  status       SupplierHotelMapStatus @default(PROPOSED)
+  note         String                 @default("")
+  createdById  String
+  approvedById String? // the admin who approved it (null unless APPROVED)
+  approvedAt   DateTime?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  createdBy  User     @relation("SupplierHotelMapCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy User?    @relation("SupplierHotelMapApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+
+  // One link per property and one per layer hotel, for each supplier.
+  @@unique([supplier, propertyId])
+  @@unique([supplier, layerHotelId])
+  @@index([supplier, status, propertyId])
+  @@index([createdAt, id])
 }

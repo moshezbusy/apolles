@@ -2,18 +2,26 @@ import { ExpediaAdapter } from "./expedia/adapter";
 import { ExpediaBooking } from "./expedia/booking";
 import { ExpediaContentSource } from "./expedia/content";
 import { FakeContentSource, FakeSupplierAdapter } from "./fake";
-import type { BookingSupplier, ContentSource, SupplierAdapter } from "./types";
+import { HotelbedsLayer } from "./hotelbeds-layer/adapter";
+import { readSupplierList } from "./hotelbeds-layer/config";
+import { MultiSupplierAdapter } from "./multi";
+import type { BookingSupplier, ContentSource, SupplierAdapter, SupplierId } from "./types";
 
 // The one place that picks the supplier. Expedia always, except SUPPLIER_MODE=fake (made-up
 // hotels and rates). The fake is allowed on a developer's machine, in the browser tests, and
 // on staging as a labelled demo until Expedia's test keys arrive. It is never allowed with
 // APP_ENV=production, nor in a production build that is not staging. A wrong setting stops
 // the request at once.
+// A second supplier (owner decision 2026-11-23): SUPPLIERS="expedia,hotelbeds" (or
+// "fake,hotelbeds") adds Hotelbeds through the supplier layer to every search. Unset, nothing
+// changes. SUPPLIERS may also name the main supplier; it must then agree with SUPPLIER_MODE.
 
 function fakeRequested(): boolean {
   const mode = process.env.SUPPLIER_MODE ?? "";
-  if (mode === "" || mode === "expedia") return false;
-  if (mode !== "fake") throw new Error(`Unknown SUPPLIER_MODE "${mode}"`);
+  if (mode !== "" && mode !== "expedia" && mode !== "fake") throw new Error(`Unknown SUPPLIER_MODE "${mode}"`);
+  const { main } = readSupplierList(process.env);
+  if (main && mode !== "" && mode !== main) throw new Error("SUPPLIER_MODE and SUPPLIERS name different main suppliers");
+  if ((main ?? (mode || "expedia")) !== "fake") return false;
   const appEnv = process.env.APP_ENV ?? "";
   if (appEnv === "production" || (process.env.NODE_ENV === "production" && appEnv !== "staging")) {
     throw new Error("The fake supplier is only for development, tests and the staging demo");
@@ -21,12 +29,21 @@ function fakeRequested(): boolean {
   return true;
 }
 
-export function supplierAdapter(): SupplierAdapter {
-  return fakeRequested() ? new FakeSupplierAdapter() : new ExpediaAdapter();
+// Hotelbeds (through the supplier layer) searched next to the main supplier.
+export function secondSupplierEnabled(): boolean {
+  return readSupplierList(process.env).hotelbeds;
 }
 
-// Price check and booking together (the booking service needs both from the same supplier).
-export function bookingSupplier(): SupplierAdapter & BookingSupplier {
+export function supplierAdapter(): SupplierAdapter {
+  const main = fakeRequested() ? new FakeSupplierAdapter() : new ExpediaAdapter();
+  return secondSupplierEnabled() ? new MultiSupplierAdapter(main, new HotelbedsLayer()) : main;
+}
+
+// Price check and booking together (the booking service needs both from the same supplier):
+// the booking's own supplier. A Hotelbeds booking always goes to the supplier layer, also when
+// SUPPLIERS no longer names it, so bookings made before still finish, cancel and get checked.
+export function bookingSupplier(supplier: SupplierId = "expedia"): SupplierAdapter & BookingSupplier {
+  if (supplier === "hotelbeds") return new HotelbedsLayer();
   if (fakeRequested()) return new FakeSupplierAdapter();
   const shop = new ExpediaAdapter();
   const booking = new ExpediaBooking();

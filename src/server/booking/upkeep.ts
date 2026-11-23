@@ -3,8 +3,8 @@ import { db } from "@/server/db";
 import { lockQuoteOfBooking, syncQuoteOfBooking } from "@/server/quotes/quote-booking";
 import { bookingSupplier } from "@/server/supplier";
 import { SupplierError } from "@/server/supplier/expedia/client";
-import type { BookingSupplier, RetrievedItinerary, SupplierAdapter } from "@/server/supplier/types";
-import { RESTORE_WATCH_MS, flagForAdmin, queueEmail, reconcile, roomsOf, scheduleReconcile, supplierRoomFor, supplierView } from "./service";
+import type { BookingSupplier, RetrievedItinerary, SupplierAdapter, SupplierId } from "@/server/supplier/types";
+import { RESTORE_WATCH_MS, flagForAdmin, queueEmail, reconcile, roomsOf, scheduleReconcile, supplierIdOf, supplierRoomFor, supplierView } from "./service";
 import { BookingStateConflict, transition } from "./states";
 
 // The upkeep of bookings, run by scheduled jobs (src/server/jobs/schedule.ts). None of it
@@ -15,7 +15,8 @@ import { BookingStateConflict, transition } from "./states";
 //   expireOldDrafts           daily: drafts nobody booked expire, and their personal details go.
 
 type Supplier = SupplierAdapter & BookingSupplier;
-type Deps = { supplier?: Supplier; now?: Date };
+// supplierFor: each booking's own supplier by its id (tests); supplier: one for every booking.
+type Deps = { supplier?: Supplier; supplierFor?: (supplier: SupplierId) => Supplier; now?: Date };
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -67,16 +68,27 @@ export type SupplierCheckResult = { checked: number; cancelled: number; flagged:
 //   Only some rooms, or the booking is not found there → flagged for an admin, nothing else.
 //   A cancellation of the agent's own that was put back less than a day ago → the watch in
 //                                 reconcile finishes it properly (with its refund).
-// A booking that cannot be read is counted and skipped; five in a row stop the run with an
-// error (the supplier is down: the job is tried again and goes on where it stopped).
+// Each booking is read at its own supplier. A booking that cannot be read is counted and
+// skipped; five in a row at one supplier mean that supplier is down: its other bookings are not
+// asked in this run (the other supplier's still are), and the run then ends with an error (the
+// job is tried again and goes on where it stopped).
 export async function checkConfirmedAtSupplier(scope: SupplierCheckScope, deps: Deps = {}): Promise<SupplierCheckResult> {
   const now = deps.now ?? new Date();
-  const supplier = deps.supplier ?? bookingSupplier();
+  const suppliers = new Map<SupplierId, Supplier>();
+  const supplierOf = (id: SupplierId): Supplier => {
+    let found = suppliers.get(id);
+    if (!found) {
+      found = deps.supplierFor?.(id) ?? deps.supplier ?? bookingSupplier(id);
+      suppliers.set(id, found);
+    }
+    return found;
+  };
   const today = now.toISOString().slice(0, 10);
   const last = new Date(now.getTime() + (scope === "eve" ? 1 : CHECK_WINDOW_DAYS) * DAY_MS).toISOString().slice(0, 10);
   const readBefore = new Date(now.getTime() - CHECK_AGAIN_AFTER_MS);
   const result: SupplierCheckResult = { checked: 0, cancelled: 0, flagged: 0, unread: 0 };
-  let failuresInARow = 0;
+  const failuresInARow = new Map<SupplierId, number>();
+  const down = new Set<SupplierId>();
   let cursor: string | undefined;
   for (;;) {
     const batch: Booking[] = await db.booking.findMany({
@@ -86,17 +98,21 @@ export async function checkConfirmedAtSupplier(scope: SupplierCheckScope, deps: 
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
     for (const booking of batch) {
+      const id = supplierIdOf(booking);
+      if (down.has(id)) continue;
+      const supplier = supplierOf(id);
       let itinerary: RetrievedItinerary | null;
       try {
         itinerary = await supplierView(booking, supplier);
       } catch (error) {
         if (!(error instanceof SupplierError)) throw error;
         result.unread += 1;
-        failuresInARow += 1;
-        if (failuresInARow >= CHECK_MAX_FAILURES_IN_A_ROW) throw new Error(`The supplier is not answering: the check of confirmed bookings stopped after ${CHECK_MAX_FAILURES_IN_A_ROW} failures in a row`);
+        const failures = (failuresInARow.get(id) ?? 0) + 1;
+        failuresInARow.set(id, failures);
+        if (failures >= CHECK_MAX_FAILURES_IN_A_ROW) down.add(id);
         continue;
       }
-      failuresInARow = 0;
+      failuresInARow.set(id, 0);
       result.checked += 1;
       await db.booking.updateMany({ where: { id: booking.id }, data: { supplierCheckedAt: now } });
       const outcome = await settleChecked(booking, itinerary, supplier, now);
@@ -106,6 +122,7 @@ export async function checkConfirmedAtSupplier(scope: SupplierCheckScope, deps: 
     if (batch.length < CHECK_BATCH) break;
     cursor = batch[batch.length - 1]!.id;
   }
+  if (down.size > 0) throw new Error(`The supplier is not answering: the check of confirmed bookings stopped after ${CHECK_MAX_FAILURES_IN_A_ROW} failures in a row`);
   console.info(`supplier check (${scope}): ${result.checked} read, ${result.cancelled} cancelled by the supplier, ${result.flagged} flagged, ${result.unread} not readable`);
   return result;
 }
@@ -122,7 +139,7 @@ async function settleChecked(booking: Booking, itinerary: RetrievedItinerary | n
   if (cancelledThere.length === 0) return "ok";
   // The agent's own cancellation, put back less than a day ago: it went through late.
   if (booking.cancelRestoredAt && now.getTime() - booking.cancelRestoredAt.getTime() <= RESTORE_WATCH_MS) {
-    await reconcile(booking.id, { supplier, now });
+    await reconcile(booking.id, { supplier, now }); // the booking's own supplier
     return "ok";
   }
   if (cancelledThere.length < active.length || active.length < rooms.length) {

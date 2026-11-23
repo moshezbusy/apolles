@@ -87,6 +87,27 @@ describe("startupProblems", () => {
     expect(startupProblems({ ...STAGING, TOTP_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64") })).toEqual([]);
   });
 
+  it("the second supplier: the supplier layer settings are needed once SUPPLIERS names hotelbeds, on staging and in production", () => {
+    const layer = { SUPPLIERS: "fake,hotelbeds", SUPPLIER_LAYER_URL: "http://apolles-suppliers:8080", SUPPLIER_LAYER_API_KEY: "k".repeat(32) };
+    expect(startupProblems({ ...STAGING, ...layer })).toEqual([]);
+    expect(startupProblems({ ...STAGING, SUPPLIERS: "fake,hotelbeds" }).join(" ")).toMatch(/SUPPLIER_LAYER_URL.*SUPPLIER_LAYER_API_KEY/);
+    expect(startupProblems({ ...STAGING, ...layer, SUPPLIER_LAYER_URL: "ftp://x" })[0]).toContain("SUPPLIER_LAYER_URL");
+    expect(startupProblems({ ...STAGING, SUPPLIERS: "tbo" })[0]).toContain("SUPPLIERS");
+    expect(startupProblems({ ...PRODUCTION, ...layer, SUPPLIERS: "expedia,hotelbeds" })).toEqual([]);
+    expect(startupProblems({ ...PRODUCTION, ...layer })[0]).toContain('SUPPLIERS must not name "fake"');
+  });
+
+  it("the temporary currency conversion starts on staging only: production refuses to start with it", () => {
+    const fx = { HOTELBEDS_FX_CURRENCY: "EUR", HOTELBEDS_FX_TO_USD: "1.0850", HOTELBEDS_FX_MARGIN_PERCENT: "2" };
+    expect(startupProblems({ ...STAGING, ...fx })).toEqual([]);
+    expect(startupProblems({ ...STAGING, ...fx, HOTELBEDS_FX_TO_USD: "1,08" })[0]).toContain("HOTELBEDS_FX_TO_USD");
+    for (const one of Object.keys(fx)) {
+      const problems = startupProblems({ ...PRODUCTION, [one]: fx[one as keyof typeof fx] });
+      expect(problems, one).toHaveLength(1);
+      expect(problems[0]).toContain("staging-only");
+    }
+  });
+
   it("lists every problem at once and never prints a value", () => {
     const problems = startupProblems({ ...PRODUCTION, SUPPLIER_MODE: "fake", EMAIL_PROVIDER: "console", APP_URL: "", ADMIN_ALERT_EMAIL: "bad-value-here" });
     expect(problems).toHaveLength(4);

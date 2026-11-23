@@ -6,8 +6,9 @@ beats fast and wrong. The owner (Moshe) is not a programmer: explain decisions i
 
 ## 0. Owner decisions (locked — change only if the owner says so in chat)
 
-- **One supplier: Expedia Rapid API.** No TBO, no other supplier, no hotel mapping. Keep the
-  supplier behind one adapter interface, but build and test only the Expedia adapter.
+- **Suppliers: Expedia Rapid API and Hotelbeds** (owner decision 2026-11-23). Hotelbeds only
+  through the supplier layer service, never directly. Hotel mapping only from a list an admin
+  approved. No other supplier. Each supplier stays behind the one adapter interface.
 - **Two user types only: Admin and Agent.** No other roles, no client accounts, no sub-users.
 - **Scope = the approved spec** in `docs/specs/approved/`. Nothing outside it gets built.
   If something seems missing, ask; do not add it. The old plan in `_bmad-output/` and `_bmad/`
