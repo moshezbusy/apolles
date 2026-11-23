@@ -146,6 +146,37 @@ describe("search service", () => {
     expect(await db.searchSnapshot.count({ where: { agencyId: "A" } })).toBe(50);
   });
 
+  it("an assistant search keeps its own cap and never deletes the agent's searches", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    for (let i = 0; i < 50; i++) {
+      await db.searchSnapshot.create({
+        data: { agencyId: "A", userId: "u1", query: {}, candidateIds: [], createdAt: new Date(NOW.getTime() - (100 - i) * 1000), expiresAt: NOW },
+      });
+    }
+    for (let i = 0; i < 25; i++) {
+      await db.rateLimitBucket.deleteMany({ where: { key: "ai-search:agency:A" } }); // the cap is under test, not the rate
+      await startSearch(ctx(), input, { adapter, now: new Date(NOW.getTime() + i * 1000), source: "AI" });
+    }
+    expect(await db.searchSnapshot.count({ where: { agencyId: "A", source: "WEB" } })).toBe(50);
+    expect(await db.searchSnapshot.count({ where: { agencyId: "A", source: "AI" } })).toBe(20);
+  });
+
+  it("assistant searches use their own rate bucket", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    // 10 assistant searches already made this minute (seedRateLimit covers the next window too).
+    await seedRateLimit("ai-search:agency:A", 10, 60_000);
+    await expect(startSearch(ctx(), input, { adapter, now: NOW, source: "AI" })).rejects.toBeInstanceOf(SearchRateLimited);
+    // The agent's own 30 a minute are untouched; the 31st is the web limit.
+    for (let i = 0; i < 30; i++) await startSearch(ctx(), input, { adapter, now: NOW });
+    await expect(startSearch(ctx(), input, { adapter, now: NOW })).rejects.toBeInstanceOf(SearchRateLimited);
+    // And one below the assistant limit still works.
+    await db.rateLimitBucket.deleteMany({ where: { key: "ai-search:agency:A" } });
+    await seedRateLimit("ai-search:agency:A", 9, 60_000);
+    await expect(startSearch(ctx(), input, { adapter, now: NOW, source: "AI" })).resolves.toMatchObject({ snapshotId: expect.any(String) });
+  });
+
   it("stored offers are checked when read back; a damaged row gives nothing instead of a broken page", async () => {
     await hotels(1);
     const { adapter } = fakeAdapter(everyone);
@@ -389,6 +420,33 @@ describe("search service", () => {
     const none = async () => new Map();
     for (let i = 0; i < 120; i++) await getHotelOffers("A", snapshotId, "1", NOW, { content: none });
     await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none })).rejects.toBeInstanceOf(SearchRateLimited);
+  });
+
+  // F11 (plan 11): an assistant's rate lookups have their own, smaller bucket, so they never use
+  // up the agency's hotel pages on the website (nor the other way round).
+  it("an assistant's rate lookups have their own bucket (60 a minute), apart from the website's hotel pages", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const none = async () => new Map();
+    await seedRateLimit("hotel:agency:A", 120, 60_000);
+    await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none })).rejects.toBeInstanceOf(SearchRateLimited);
+    expect(await getHotelOffers("A", snapshotId, "1", NOW, { content: none, source: "AI" })).not.toBeNull();
+    await db.rateLimitBucket.deleteMany({ where: { key: "ai-hotel:agency:A" } });
+    await seedRateLimit("ai-hotel:agency:A", 60, 60_000);
+    await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none, source: "AI" })).rejects.toBeInstanceOf(SearchRateLimited);
+    await db.rateLimitBucket.deleteMany({ where: { key: "hotel:agency:A" } });
+    expect(await getHotelOffers("A", snapshotId, "1", NOW, { content: none })).not.toBeNull();
+  });
+
+  it("an assistant's 60th rate lookup in a minute passes, its 61st is refused", async () => {
+    await hotels(1);
+    const { adapter } = fakeAdapter(everyone);
+    const { snapshotId } = await startSearch(ctx(), input, { adapter, now: NOW });
+    const none = async () => new Map();
+    await seedRateLimit("ai-hotel:agency:A", 59, 60_000);
+    expect(await getHotelOffers("A", snapshotId, "1", NOW, { content: none, source: "AI" })).not.toBeNull();
+    await expect(getHotelOffers("A", snapshotId, "1", NOW, { content: none, source: "AI" })).rejects.toBeInstanceOf(SearchRateLimited);
   });
 
   it("findOffer returns one rate of the agency's own search, never another agency's or an expired one", async () => {

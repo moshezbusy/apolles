@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getClientIp } from "@/server/client-ip";
+import { bareIp, getClientIp } from "@/server/client-ip";
 
 function h(fields: Record<string, string>): Headers {
   return new Headers(fields);
@@ -88,5 +88,20 @@ describe("getClientIp", () => {
       if (previous === undefined) delete process.env.TRUSTED_PROXY_HOPS;
       else process.env.TRUSTED_PROXY_HOPS = previous;
     }
+  });
+});
+
+describe("bareIp", () => {
+  it("accepts exactly one IPv4 or IPv6 literal (IPv6 lower-cased), nothing else", () => {
+    expect(bareIp("203.0.113.7")).toBe("203.0.113.7");
+    expect(bareIp("2001:DB8::1")).toBe("2001:db8::1");
+    expect(bareIp("::ffff:172.18.0.3")).toBe("::ffff:172.18.0.3");
+    for (const bad of [null, undefined, "", "unknown", " 203.0.113.7", "203.0.113.7:80", "[2001:db8::1]", "fe80::1%eth0", "1.2.3.4, 5.6.7.8", "01.2.3.4", "x".repeat(300)]) {
+      expect(bareIp(bad), String(bad)).toBeNull();
+    }
+  });
+
+  it("a zone id is never taken from X-Forwarded-For either", () => {
+    expect(getClientIp(h({ "x-forwarded-for": "fe80::1%eth0" }), undefined)).toBe("unknown");
   });
 });

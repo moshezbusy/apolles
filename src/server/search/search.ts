@@ -28,9 +28,15 @@ const HOTEL_RATE_LIMIT = { limit: 120, windowMs: 60_000 }; // hotel pages, per a
 const DEFAULT_TAKE = 20;
 const MAX_TAKE = 50;
 const MAX_SNAPSHOTS_PER_AGENCY = 50; // older searches are removed, so one agency cannot fill the database
+// An AI assistant's searches have their own, smaller limits (plan 11): a separate rate bucket and a
+// separate cap, so an assistant can never use up the agent's own searches or push them out.
+const AI_SEARCH_RATE_LIMIT = { limit: 10, windowMs: 60_000 }; // per agency
+const AI_HOTEL_RATE_LIMIT = { limit: 60, windowMs: 60_000 }; // an assistant's rate lookups, per agency
+const MAX_AI_SNAPSHOTS_PER_AGENCY = 20;
 
 export type SearchContext = { agencyId: string; userId: string; supplierContext: SupplierContext };
 type Deps = { adapter?: SupplierAdapter; now?: Date; content?: typeof getContent };
+export type SearchSource = "WEB" | "AI";
 
 export type HotelCard = {
   propertyId: string;
@@ -170,8 +176,10 @@ function readOffers(raw: unknown, rooms: Occupancy[]): Offer[] | null {
   return offers.data.every((offer) => pricedForRooms(offer, rooms)) ? offers.data : null;
 }
 
-async function rateLimit(agencyId: string): Promise<void> {
-  const { allowed } = await hitRateLimit(`search:agency:${agencyId}`, SEARCH_RATE_LIMIT.limit, SEARCH_RATE_LIMIT.windowMs);
+async function rateLimit(agencyId: string, source: SearchSource = "WEB"): Promise<void> {
+  const ai = source === "AI";
+  const { limit, windowMs } = ai ? AI_SEARCH_RATE_LIMIT : SEARCH_RATE_LIMIT;
+  const { allowed } = await hitRateLimit(`${ai ? "ai-search" : "search"}:agency:${agencyId}`, limit, windowMs);
   if (!allowed) throw new SearchRateLimited("Too many searches. Wait a minute and try again.");
 }
 
@@ -272,13 +280,18 @@ async function prefetchContent(snapshotId: string, content: typeof getContent, n
   }
 }
 
-export async function startSearch(ctx: SearchContext, rawInput: unknown, deps: Deps = {}): Promise<{ snapshotId: string }> {
+export async function startSearch(
+  ctx: SearchContext,
+  rawInput: unknown,
+  deps: Deps & { source?: SearchSource } = {},
+): Promise<{ snapshotId: string }> {
+  const source = deps.source ?? "WEB";
   const now = deps.now ?? new Date();
   const parsed = searchInputSchema(now).safeParse(rawInput);
   if (!parsed.success) throw new SearchInputInvalid("Check the destination, dates and guests.");
   const input: SearchInput = parsed.data;
   checkRooms(input.rooms);
-  await rateLimit(ctx.agencyId);
+  await rateLimit(ctx.agencyId, source);
 
   const [agency, destination] = await Promise.all([
     db.agency.findUnique({ where: { id: ctx.agencyId }, select: { country: true } }),
@@ -294,7 +307,7 @@ export async function startSearch(ctx: SearchContext, rawInput: unknown, deps: D
     ORDER BY p."rank" ASC NULLS LAST, p."id" ASC
     LIMIT ${MAX_CANDIDATES}`;
 
-  return createSnapshot(ctx, { ...input, countryCode: agency.country }, candidates.map((c) => c.id), now, deps);
+  return createSnapshot(ctx, { ...input, countryCode: agency.country }, candidates.map((c) => c.id), now, deps, source);
 }
 
 // Plan 5d, "Book this room" on a quote: a search of the one hotel the quote names, for the quote's
@@ -328,12 +341,14 @@ async function createSnapshot(
   candidateIds: string[],
   now: Date,
   deps: Deps,
+  source: SearchSource = "WEB",
 ): Promise<{ snapshotId: string }> {
   const candidates = candidateIds.map((id) => ({ id }));
   const snapshot = await db.searchSnapshot.create({
     data: {
       agencyId: ctx.agencyId,
       userId: ctx.userId,
+      source,
       query,
       candidateIds: candidates.map((c) => c.id),
       createdAt: now,
@@ -341,12 +356,12 @@ async function createSnapshot(
     },
   });
   const older = await db.searchSnapshot.findMany({
-    where: { agencyId: ctx.agencyId },
+    where: { agencyId: ctx.agencyId, source },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    skip: MAX_SNAPSHOTS_PER_AGENCY,
+    skip: source === "AI" ? MAX_AI_SNAPSHOTS_PER_AGENCY : MAX_SNAPSHOTS_PER_AGENCY,
     select: { id: true },
   });
-  if (older.length > 0) await db.searchSnapshot.deleteMany({ where: { agencyId: ctx.agencyId, id: { in: older.map((o) => o.id) } } });
+  if (older.length > 0) await db.searchSnapshot.deleteMany({ where: { agencyId: ctx.agencyId, source, id: { in: older.map((o) => o.id) } } });
   if (candidates.length > 0) {
     await fetchBatch({ ...snapshot, query, rooms: query.rooms }, ctx.supplierContext, deps.adapter ?? supplierAdapter());
     await prefetchContent(snapshot.id, deps.content ?? getContent, now);
@@ -537,10 +552,16 @@ export async function getHotelOffers(
   snapshotId: string,
   propertyId: string,
   now: Date = new Date(),
-  deps: { content?: typeof getContent } = {},
+  deps: { content?: typeof getContent; source?: SearchSource } = {},
 ): Promise<{ offers: Offer[]; content: PropertyContent | null; hotel: { name: string; city: string; starRating: string | null } } | null> {
-  const { allowed } = await hitRateLimit(`hotel:agency:${agencyId}`, HOTEL_RATE_LIMIT.limit, HOTEL_RATE_LIMIT.windowMs);
-  if (!allowed) throw new SearchRateLimited("Too many hotel pages opened. Wait a minute and try again.");
+  // An assistant's rate lookups have their own, smaller bucket (plan 11), so they never use up
+  // the agency's hotel pages on the website. The website's default is unchanged.
+  const ai = deps.source === "AI";
+  const { limit, windowMs } = ai ? AI_HOTEL_RATE_LIMIT : HOTEL_RATE_LIMIT;
+  const { allowed } = await hitRateLimit(`${ai ? "ai-hotel" : "hotel"}:agency:${agencyId}`, limit, windowMs);
+  if (!allowed) {
+    throw new SearchRateLimited(ai ? "Too many rate lookups. Wait a minute and try again." : "Too many hotel pages opened. Wait a minute and try again.");
+  }
   const snapshot = await ownSnapshot(agencyId, snapshotId);
   if (!snapshot || snapshot.expiresAt <= now) return null;
   if (typeof propertyId !== "string" || propertyId.length > 64) return null;

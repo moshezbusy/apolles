@@ -6,6 +6,7 @@ import {
   getSession,
   type SessionContext,
 } from "@/server/auth/session";
+import { safeReturnTo } from "@/server/auth/return-to";
 
 async function currentSession(): Promise<SessionContext | null> {
   const rawToken = (await cookies()).get(SESSION_COOKIE)?.value;
@@ -20,15 +21,36 @@ async function signInPath(): Promise<string> {
   return (await cookies()).get(SESSION_COOKIE)?.value ? "/login?expired=1" : "/login";
 }
 
+// Adds `next` (only a path safeReturnTo accepts) so the sign-in comes back to that page.
+function withNext(path: string, returnTo: string | undefined): string {
+  const next = safeReturnTo(returnTo);
+  if (next === null) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}next=${encodeURIComponent(next)}`;
+}
+
 // For every agent page and server action. The agencyId comes only from the session,
 // never from the request. Anyone else (no session, expired, suspended, admin) goes to /login.
-export async function requireAgent(): Promise<{ userId: string; agencyId: string }> {
+// `sessionId` lets the AI assistants tab tie a connect window to this browser's session.
+// `returnTo` (plan 11): the page to come back to after sign-in and the email code; an admin
+// is not sent back (no admin may connect an assistant).
+export async function requireAgent(
+  opts: { returnTo?: string } = {},
+): Promise<{ userId: string; agencyId: string; sessionId: string }> {
   const session = await currentSession();
-  if (!session) redirect(await signInPath());
+  if (!session) redirect(withNext(await signInPath(), opts.returnTo));
   if (session.user.role !== "AGENT" || !session.agency) redirect("/login");
   // Plan 8e: a new device must enter the email sign-in code first.
-  if (!session.emailVerifiedAt) redirect("/login/verify");
-  return { userId: session.user.id, agencyId: session.agency.id };
+  if (!session.emailVerifiedAt) redirect(withNext("/login/verify", opts.returnTo));
+  return { userId: session.user.id, agencyId: session.agency.id, sessionId: session.sessionId };
+}
+
+// Only for a layout that must not redirect (the (link) group: a layout gets no searchParams, so
+// it could not send the agent back to the page after sign-in). The same checks as requireAgent,
+// but null instead of a redirect. Never an access check: each page calls requireAgent itself.
+export async function currentAgent(): Promise<{ userId: string; agencyId: string; sessionId: string } | null> {
+  const session = await currentSession();
+  if (!session || session.user.role !== "AGENT" || !session.agency || !session.emailVerifiedAt) return null;
+  return { userId: session.user.id, agencyId: session.agency.id, sessionId: session.sessionId };
 }
 
 // Only for /login/verify and its actions: an agent session still waiting for its sign-in code.

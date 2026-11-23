@@ -325,3 +325,122 @@ docker compose -p apolles-staging exec apolles-staging node --disable-warning=MO
 ```
 
 No password is ever written in code.
+
+## 7. AI search connector (MCP)
+
+**What it is.** An agent can connect Claude to Apolles and ask it to search hotels in plain
+words. It is **search only**: the assistant cannot book, cancel or see balances, and it only
+sees what that agent could see on the search page. The connector is a small extra container,
+`apolles-staging-mcp` (same image, 128 MB, no database and no Expedia keys). It reaches the
+app only through the app's internal AI API, as `apolles-staging:3000` on the shared Docker
+network `n8n_default`. It is **not** on the database network (`apolles_staging_net`): it faces
+the internet, so it must have no way to the database.
+
+The connector only starts with the compose profile `ai`. A plain `docker compose up` (and the
+automatic update of section 5) leaves it out, so staging keeps updating while the settings below
+are not there yet.
+
+**The switch.** `AI_SEARCH_ENABLED` in `deploy/staging/.env`. It is **off unless the value is
+exactly `true`**. Owner decision: it stays off on production until Expedia has answered. To
+test on staging, add `AI_SEARCH_ENABLED=true`.
+
+`APP_URL` must also be set in `deploy/staging/.env` (it already is, for the app; the connector
+now needs it too, as its login server address, and does not start without it).
+
+Add these three lines to `deploy/staging/.env` (they are also listed, without values, in
+`.env.example`), then recreate the containers:
+
+```sh
+AI_SEARCH_ENABLED=true
+MCP_PUBLIC_URL=https://mcp-staging.<domain>
+AI_MCP_SERVICE_KEY=<run: openssl rand -base64 48>
+```
+
+- `MCP_PUBLIC_URL` is the connector's own public address: a new subdomain, `https`, no path.
+- `AI_MCP_SERVICE_KEY` is the secret the connector uses to talk to the app. Generate it on the
+  server with `openssl rand -base64 48`, paste it into `.env`, and never print or share it.
+  It must be at least 32 characters: with a shorter one the connector does not start and the
+  app refuses every connector call.
+  The app container and the connector container both get it from `.env`. The connector gets
+  nothing else from that file, only `MCP_PUBLIC_URL`, `AI_MCP_SERVICE_KEY` and `APP_URL`
+  (passed on as `APP_PUBLIC_URL`). A test (`src/server/ai/compose.test.ts`) fails if the
+  database or Expedia settings ever reach it.
+
+Once the three lines are in `.env`, start everything with the `ai` profile:
+
+```sh
+cd /home/moshezbusy/apolles-staging/deploy/staging
+docker compose -p apolles-staging --profile ai up -d --build
+docker compose -p apolles-staging logs --tail 50 apolles-staging-mcp
+```
+
+The log should end with `Apolles MCP server listening on port 8080.` If a setting is missing
+or wrong, it says `Refusing to start:` and names the variable (never its value), and the
+container keeps restarting until it is fixed. The other containers are not affected.
+
+The automatic update (section 5) runs a plain `up`, so it does **not** update the connector:
+after an update it keeps running the old version. Run the `--profile ai` command above again
+to update it, or add the line `COMPOSE_PROFILES=ai` to `deploy/staging/.env` (only once the
+three lines above are there): then every `up`, including the automatic one, includes it.
+
+**Caddy.** Two edits to the Caddyfile (back it up and edit in place, as in section 2):
+
+1. A new site block for the subdomain. It follows the staging block in section 2, with the
+   same `header_up` line:
+
+   ```caddy
+   mcp-staging.<domain> {
+   	import cf_only
+   	header {
+   		Strict-Transport-Security "max-age=31536000"
+   		X-Content-Type-Options "nosniff"
+   		Referrer-Policy "no-referrer"
+   		X-Robots-Tag "noindex, nofollow"
+   		-Server
+   	}
+   	reverse_proxy apolles-staging-mcp:8080 {
+   		header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+   	}
+   }
+   ```
+
+   The `header_up` line hands the connector the assistant's real IP, as in section 4. The
+   connector passes it on to the app, so its limits count each caller on its own: without the
+   line, every caller would look like one of a few Cloudflare addresses and share one limit.
+
+2. In the existing `staging.apolles.com` block, **before** its `reverse_proxy`, hide the
+   app's internal AI API, so it can never be reached from the internet:
+
+   ```caddy
+   	@aiapi path /api/ai/*
+   	respond @aiapi 404
+   ```
+
+   The app also refuses that API (404) for any request that names the public address
+   `staging.apolles.com`, which every request through Caddy does. So the API stays closed to the
+   internet even if this rule is missing or a path trick gets past it; keep the rule anyway, as
+   a second layer.
+
+Validate and reload as in section 2. The new subdomain needs a proxied (orange-cloud) DNS record
+in Cloudflare. Claude connects from Anthropic's addresses, `160.79.104.0/21` and
+`153.61.208.0/20`: do not block them in a firewall.
+
+**How to test.**
+
+1. Log in to staging as an agent, open **Settings**, then the AI assistants tab, and click **Connect assistant**. It shows a connection link, valid for 10 minutes.
+2. In Claude: Settings, Connectors, **Add custom connector**. Use the address
+   `<MCP_PUBLIC_URL>/mcp` (for example `https://mcp-staging.<domain>/mcp`).
+3. Click **Connect**. Use the same browser where you clicked Connect assistant. If Apolles
+   asks you to sign in, sign in, then click Connect assistant again and repeat. Approve. Then
+   ask Claude to search for hotels, for example "hotels in Paris, 2 adults, 10 to 12 December".
+
+**ChatGPT (optional test).** In ChatGPT: Settings, Connectors (called Apps in some versions),
+add a custom connector, use the same address `<MCP_PUBLIC_URL>/mcp`, choose OAuth as the
+sign-in, then approve in Apolles as above. Full MCP connectors need ChatGPT Business or
+Enterprise; on Pro only read actions work, which is all the connector has (search only). These
+facts come from search summaries, not from the real screens: confirm them on the real screen.
+
+**How to revoke.** The agent clicks revoke next to the assistant in the same Settings tab (it then shows
+"Assistant disconnected."). To stop everything at once, remove `AI_SEARCH_ENABLED`
+from `.env` (or set it to anything but `true`) and recreate the containers (with
+`--profile ai`, as above): every connector call is then refused. Changing `AI_MCP_SERVICE_KEY` cuts the connector off from the app.

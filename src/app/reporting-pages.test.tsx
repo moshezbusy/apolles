@@ -33,7 +33,7 @@ beforeEach(async () => {
   }
   await booking("A", "APL-AAAA0001", { sellMarkupType: "PERCENT", sellMarkupValue: 1000 });
   await booking("B", "APL-BBBB0001", { chargedMinor: 777_700, totalMinor: 777_700 });
-  vi.mocked(requireAgent).mockResolvedValue({ userId: "u-A", agencyId: "A" });
+  vi.mocked(requireAgent).mockResolvedValue({ userId: "u-A", agencyId: "A", sessionId: "session-1" });
 });
 
 describe("reporting (19)", () => {

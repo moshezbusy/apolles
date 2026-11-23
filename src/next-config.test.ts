@@ -44,6 +44,18 @@ describe("next.config headers", () => {
     expect(headersFor(await rules(), "/admin/2fa/setup")).toEqual({ "Cache-Control": "no-store" });
   });
 
+  // The authorize page and token answers carry codes and tokens (plan 11). same-origin, not
+  // no-referrer: with no-referrer a browser sends `Origin: null` on the consent form's native
+  // POST (no JavaScript), and Next refuses the server action as cross-site (F3). same-origin
+  // still sends no Referer to any other site.
+  it("/oauth/* is never cached, sends no Referer to other sites and is not indexed", async () => {
+    expect(headersFor(await rules(), "/oauth/:path*")).toEqual({
+      "Cache-Control": "no-store",
+      "Referrer-Policy": "same-origin",
+      "X-Robots-Tag": "noindex",
+    });
+  });
+
   // The staging container runs the self-contained server that `next build` writes to
   // .next/standalone (deploy/staging, Dockerfile).
   it("builds the standalone server used by the container image", () => {

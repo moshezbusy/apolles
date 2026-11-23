@@ -22,7 +22,7 @@ vi.mock("next/headers", () => ({
 vi.mock("@/server/auth/guards", () => ({ requireAgent: vi.fn() }));
 
 function signInAs(agencyId: string): void {
-  vi.mocked(requireAgent).mockResolvedValue({ userId: "user-1", agencyId });
+  vi.mocked(requireAgent).mockResolvedValue({ userId: "user-1", agencyId, sessionId: "session-1" });
 }
 
 function isoDaysFromNow(days: number): string {

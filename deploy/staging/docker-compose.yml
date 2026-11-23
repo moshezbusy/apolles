@@ -85,6 +85,45 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # The AI search connector (plan 11): a small MCP server that lets Claude search hotels for an
+  # agent. Same image, no database and no supplier keys: it has NO env file on purpose, and only
+  # the five settings below. Compose fills the ${...} values from ./.env on the server, so no
+  # other value of that file enters this container. It talks to the app only through the app's
+  # internal AI API (on n8n_default as apolles-staging:3000, never through Caddy).
+  #
+  # It starts only with the "ai" profile (README section 7):
+  #   docker compose -p apolles-staging --profile ai up -d
+  # A plain `up` (and auto-update.sh) skips it, so staging keeps updating before its settings
+  # exist. The values use ${VAR:-} on purpose: ${VAR:?} would stop every `up`, profile or not.
+  # The server itself refuses to start when one of them is missing or too short.
+  apolles-staging-mcp:
+    image: apolles-staging-app
+    profiles: ["ai"]
+    restart: unless-stopped
+    init: true
+    mem_limit: 128m
+    environment:
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-}
+      APOLLES_INTERNAL_URL: http://apolles-staging:3000
+      AI_MCP_SERVICE_KEY: ${AI_MCP_SERVICE_KEY:-}
+      APP_PUBLIC_URL: ${APP_URL:-}
+      PORT: "8080"
+    entrypoint: ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--import", "./prisma/ts-loader.mjs", "src/mcp/server.ts"]
+    depends_on:
+      apolles-staging:
+        condition: service_started
+    networks:
+      # Only the shared proxy network: Caddy reaches it as apolles-staging-mcp:8080 and it
+      # reaches the app as apolles-staging:3000. Never apolles_staging_net: the internet-facing
+      # connector must have no network path to the database.
+      - n8n_default
+    # No published ports: traffic comes only through Caddy.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   apolles_staging_db:
 

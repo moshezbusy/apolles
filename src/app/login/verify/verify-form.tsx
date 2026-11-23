@@ -4,7 +4,15 @@ import { useActionState } from "react";
 import { alertError, alertSuccess, btnPrimary, codeInput, label } from "@/components/ui";
 import type { VerifyState } from "./actions";
 
-export function VerifyForm({ verify, resend }: { verify: (p: VerifyState, f: FormData) => Promise<VerifyState>; resend: () => Promise<VerifyState> }) {
+export function VerifyForm({
+  verify,
+  resend,
+  next = null,
+}: {
+  verify: (p: VerifyState, f: FormData) => Promise<VerifyState>;
+  resend: () => Promise<VerifyState>;
+  next?: string | null;
+}) {
   const [state, formAction, pending] = useActionState<VerifyState, FormData>(verify, null);
   const [resent, resendAction, resending] = useActionState<VerifyState>(resend, null);
   const message = state ?? resent;
@@ -20,6 +28,7 @@ export function VerifyForm({ verify, resend }: { verify: (p: VerifyState, f: For
         </p>
       ) : null}
       <form action={formAction} className="flex flex-col gap-3.5" noValidate>
+        {next ? <input type="hidden" name="next" value={next} /> : null}
         <label className={label}>
           6-digit code
           <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required className={codeInput} />

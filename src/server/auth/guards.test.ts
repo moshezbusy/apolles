@@ -4,7 +4,7 @@ import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import { SESSION_COOKIE, createSession } from "@/server/auth/session";
-import { requireAgentPendingCode, requireAdmin, requireAdminPendingTotp, requireAgent } from "@/server/auth/guards";
+import { currentAgent, requireAgentPendingCode, requireAdmin, requireAdminPendingTotp, requireAgent } from "@/server/auth/guards";
 
 const cookieJar = new Map<string, string>();
 
@@ -68,9 +68,10 @@ describe("auth guards", () => {
     await expect(requireAgentPendingCode()).rejects.toThrow("NEXT_REDIRECT:/search");
   });
 
-    it("requireAgent with a valid agent session → userId and agencyId", async () => {
+    it("requireAgent with a valid agent session → userId, agencyId and this session's id", async () => {
     const { agent, agency } = await agentSession();
-    expect(await requireAgent()).toEqual({ userId: agent.id, agencyId: agency.id });
+    const { id: sessionId } = await db.session.findFirstOrThrow({ where: { userId: agent.id } });
+    expect(await requireAgent()).toEqual({ userId: agent.id, agencyId: agency.id, sessionId });
   });
 
   it("requireAgent with no cookie redirects to /login", async () => {
@@ -97,6 +98,20 @@ describe("auth guards", () => {
     const { agency } = await agentSession();
     await db.agency.update({ where: { id: agency.id }, data: { status: "SUSPENDED" } });
     await expect(requireAgent()).rejects.toThrow("NEXT_REDIRECT:/login");
+  });
+
+  it("currentAgent: the same agent requireAgent passes, null (never a redirect) for anyone else", async () => {
+    expect(await currentAgent()).toBeNull(); // no cookie
+    const { agent, agency } = await agentSession();
+    const { id: sessionId } = await db.session.findFirstOrThrow({ where: { userId: agent.id } });
+    expect(await currentAgent()).toEqual({ userId: agent.id, agencyId: agency.id, sessionId });
+    cookieJar.set(SESSION_COOKIE, await createSession(agent.id, { verified: false }));
+    expect(await currentAgent()).toBeNull(); // waiting for the email code
+    cookieJar.set(SESSION_COOKIE, await createSession(agent.id, { verified: true }));
+    await db.agency.update({ where: { id: agency.id }, data: { status: "SUSPENDED" } });
+    expect(await currentAgent()).toBeNull();
+    await adminSession({ confirmed: true, verified: true });
+    expect(await currentAgent()).toBeNull();
   });
 
   it("requireAdmin with a TOTP-verified admin session → userId", async () => {

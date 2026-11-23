@@ -2,6 +2,8 @@ import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import { notifyAdminLockout } from "@/server/auth/notifications";
 import { destroyUserSessions } from "@/server/auth/session";
+import { audit } from "@/server/audit";
+import { revokeUserConnections } from "@/server/ai/tokens";
 import {
   LOCK_DURATION_MS,
   MAX_FAILED_LOGINS,
@@ -94,10 +96,21 @@ async function healStuckSlots(userId: string, now: Date): Promise<void> {
           OR "attemptReservedAt" < ${DB_NOW} - ${STUCK_RESERVATION_MS}::int * interval '1 millisecond')
       RETURNING email`;
     const row = rows[0];
-    if (row) await destroyUserSessions(userId, tx);
+    if (row) await endUserAccess(userId, tx);
     return row;
   });
   if (healed) await alertLockout({ id: userId, email: healed.email }, lockedUntil);
+}
+
+// A lock that ends the user's sessions also ends their AI assistant connections (plan 11), in
+// the same transaction as the lock. The user is the actor of the audit row: the lock follows
+// their own failed attempts.
+async function endUserAccess(userId: string, tx: Prisma.TransactionClient): Promise<void> {
+  await destroyUserSessions(userId, tx);
+  const revoked = await revokeUserConnections(userId, "lockout", tx);
+  if (revoked > 0) {
+    await audit(userId, "ai.revoke_all", "User", userId, undefined, { reason: "lockout", connections: revoked }, tx);
+  }
 }
 
 // The lock is already saved; a mail problem must not undo or hide it.
@@ -131,7 +144,7 @@ export async function recordFailedAttempt(
         data: { lockedUntil, failedLogins: 0 },
       });
       if (result.count === 1 && options.endSessionsOnLock) {
-        await destroyUserSessions(user.id, tx);
+        await endUserAccess(user.id, tx);
       }
       return result.count === 1;
     });

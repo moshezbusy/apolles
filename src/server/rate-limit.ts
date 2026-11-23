@@ -92,6 +92,17 @@ export async function hitRateLimit(
   return { allowed: row.count <= limit, retryAfterMs: Math.max(0, Math.ceil(row.retryAfterMs)) };
 }
 
+// How many hits `key` has in the current window of `windowMs` (database clock), without counting
+// one: for limits that count only failures but must refuse before the next attempt is checked.
+// Use the same windowMs as the hits. 0 when there is no bucket yet; creates nothing.
+export async function peekRateLimit(key: string, windowMs: number): Promise<number> {
+  assertValid(key, 1, windowMs);
+  const rows = await db.$queryRaw<{ count: number }[]>`
+    SELECT "count" FROM "RateLimitBucket"
+    WHERE "key" = ${key} AND "windowStart" = ${windowStartSql(windowMs)}`;
+  return rows[0]?.count ?? 0;
+}
+
 // Best effort: an error here must not fail the request that triggered it (the count above is
 // already saved). The key is not logged (it holds an IP).
 async function pruneOldBuckets(): Promise<void> {

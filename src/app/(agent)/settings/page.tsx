@@ -6,12 +6,15 @@ import { btnSecondary, card, link, pageTitle } from "@/components/ui";
 import { countryOptions } from "@/lib/countries";
 import { formatUsd } from "@/lib/money";
 import { LOGO_MAX_BYTES, LOGO_RULE_COPY, getAgencyProfile } from "@/server/agency-profile";
+import { aiSearchEnabled, mcpResource } from "@/server/ai/config";
+import { listConnections } from "@/server/ai/tokens";
 import { requireAgent } from "@/server/auth/guards";
 import { getBankDetails } from "@/server/bank-details";
 import { getQuoteSettings } from "@/server/quote-settings";
 import { getAccount } from "@/server/users";
 import { getBalance } from "@/server/wallet/ledger";
-import { changePasswordAction, removeLogoAction, updateBrandingAction, updateDefaultsAction, updateProfileAction, uploadLogoAction } from "./actions";
+import { AiTab } from "./ai-tab";
+import { changePasswordAction, connectAssistantAction, revokeAssistantAction, removeLogoAction, updateBrandingAction, updateDefaultsAction, updateProfileAction, uploadLogoAction } from "./actions";
 import { LogoForm } from "./logo-form";
 import { ProfileForm } from "./profile-form";
 import { BrandingForm, ChangePasswordForm, DefaultsForm } from "./quote-forms";
@@ -24,10 +27,15 @@ const TABS = [
   { id: "preferences", label: "Preferences" },
   { id: "balance", label: "Balance & top-ups" },
   { id: "account", label: "Account" },
+  { id: "ai", label: "AI assistants" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-type SearchParams = Promise<{ tab?: string | string[] }>;
+type SearchParams = Promise<{ tab?: string | string[]; connect?: string | string[]; revoked?: string | string[]; cursor?: string | string[] }>;
+
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 // Agency settings (mockup 20): profile, quote branding, preferences, balance and account, one tab
 // at a time (?tab=). Everything is read and written for the signed-in agent's own agency only.
@@ -35,15 +43,19 @@ type SearchParams = Promise<{ tab?: string | string[] }>;
 // limit (not in phase 1) and ILS prices on quotes (USD only, owner 17.11.2026).
 export default async function AgencySettingsPage({ searchParams }: { searchParams?: SearchParams } = {}) {
   const { userId, agencyId } = await requireAgent();
-  const raw = (await searchParams)?.tab;
-  const tab: Tab = TABS.find((t) => t.id === (Array.isArray(raw) ? raw[0] : raw))?.id ?? "profile";
+  const params = await searchParams;
+  // The AI assistants tab exists only while the connector is switched on.
+  const tabs = TABS.filter((t) => t.id !== "ai" || aiSearchEnabled());
+  const tab: Tab = tabs.find((t) => t.id === first(params?.tab))?.id ?? "profile";
   const profile = await getAgencyProfile(agencyId);
   if (!profile) throw new Error("Agency not found for the signed-in agent");
   // Only what the open tab shows is read.
-  const [settings, account, balance] = await Promise.all([
+  const cursor = first(params?.cursor);
+  const [settings, account, balance, assistants] = await Promise.all([
     tab === "branding" || tab === "preferences" ? getQuoteSettings(agencyId) : null,
     tab === "branding" || tab === "account" ? getAccount(userId, agencyId) : null,
     tab === "balance" ? getBalance(agencyId) : null,
+    tab === "ai" ? listAssistants(agencyId, cursor) : null,
   ]);
 
   return (
@@ -51,10 +63,10 @@ export default async function AgencySettingsPage({ searchParams }: { searchParam
       <div className="mx-auto flex w-[min(1260px,calc(100%-40px))] flex-col gap-6 pb-16 pt-8">
         <div>
           <h1 className={pageTitle}>Agency settings</h1>
-          <p className="mt-1 text-[13px] text-muted">Agency profile, quote branding, preferences, balance and account.</p>
+          <p className="mt-1 text-[13px] text-muted">Agency profile, quote branding, preferences, balance and account{aiSearchEnabled() ? ", and AI assistants" : ""}.</p>
         </div>
         <nav aria-label="Settings" className="flex flex-wrap gap-1 border-b border-line">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <Link
               key={t.id}
               href={t.id === "profile" ? "/settings" : `/settings?tab=${t.id}`}
@@ -70,9 +82,31 @@ export default async function AgencySettingsPage({ searchParams }: { searchParam
         {tab === "preferences" && settings ? <PreferencesTab settings={settings} /> : null}
         {tab === "balance" && balance ? <BalanceTab balance={balance} reference={profile.bankReference} /> : null}
         {tab === "account" && account ? <AccountTab account={account} /> : null}
+        {tab === "ai" && assistants ? (
+          <AiTab
+            connections={assistants.connections}
+            nextCursor={assistants.nextCursor}
+            connectUrl={first(params?.connect) === "1" ? mcpResource() : null}
+            revoked={first(params?.revoked) === "1"}
+            connectAction={connectAssistantAction}
+            revokeAction={revokeAssistantAction}
+          />
+        ) : null}
       </div>
     </main>
   );
+}
+
+// A cursor comes from the URL: anything that is not one of this agency's connections shows the first page.
+async function listAssistants(agencyId: string, cursor: string | undefined) {
+  if (cursor && /^[a-z0-9]{1,64}$/.test(cursor)) {
+    try {
+      return await listConnections(agencyId, cursor);
+    } catch {
+      // fall through to the first page
+    }
+  }
+  return listConnections(agencyId);
 }
 
 type Profile = NonNullable<Awaited<ReturnType<typeof getAgencyProfile>>>;

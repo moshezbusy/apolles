@@ -136,6 +136,43 @@ describe("password tokens", () => {
     expect(token.usedAt).not.toBeNull();
   });
 
+  it("setting a new password revokes the user's assistant connections", async () => {
+    const agent = await createAgent();
+    const other = await createUser({ email: "other@example.com", name: "Other", role: "AGENT", agencyId: agent.agencyId! });
+    const client = await db.aiClient.create({ data: { name: "Claude", redirectUris: [] } });
+    const open = (userId: string) =>
+      db.aiConnection.create({
+        data: {
+          userId,
+          agencyId: agent.agencyId!,
+          clientId: client.id,
+          scope: "search:read",
+          resource: "https://mcp.example.test/mcp",
+          tokens: {
+            create: {
+              accessHash: `a-${userId}`,
+              refreshHash: `r-${userId}`,
+              accessExpiresAt: new Date(Date.now() + 3600_000),
+              refreshExpiresAt: new Date(Date.now() + 86_400_000),
+            },
+          },
+        },
+      });
+    const mine = await open(agent.id);
+    const theirs = await open(other.id);
+    const raw = await issuePasswordToken(agent.id, "RESET");
+
+    expect(await consumePasswordToken(raw, NEW)).toBe("OK");
+
+    const revoked = await db.aiConnection.findUniqueOrThrow({ where: { id: mine.id } });
+    expect(revoked.revokedAt).not.toBeNull();
+    expect(revoked.revokedReason).toBe("password_set");
+    expect(await db.aiToken.count({ where: { connectionId: mine.id } })).toBe(0);
+    expect((await db.aiConnection.findUniqueOrThrow({ where: { id: theirs.id } })).revokedAt).toBeNull();
+    const row = await db.auditLog.findFirstOrThrow({ where: { action: "ai.revoke_all" } });
+    expect(row).toMatchObject({ actorUserId: agent.id, targetType: "User", targetId: agent.id });
+  });
+
   it("admin: consume OK sets the password and ends sessions, but keeps the lockout (R36)", async () => {
     const admin = await createUser({
       email: "admin@example.com",
