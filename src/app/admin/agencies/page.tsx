@@ -1,22 +1,27 @@
 import type { Metadata } from "next";
+import type { AccountStatus } from "@/generated/prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { btnPrimary, cellWide, emptyState, link, pageTitle, pillDot, pillGreen, pillRed, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
+import { btnPrimary, cellWide, emptyState, input, label, link, pageTitle, pillDot, pillGreen, pillRed, table, tableWrap, tbody, td, th, thead, tr } from "@/components/ui";
 import { formatUsd } from "@/lib/money";
 import { listAgencies } from "@/server/admin/agencies";
 import { requireAdmin } from "@/server/auth/guards";
 
 export const metadata: Metadata = { title: "Agencies · Apolles", robots: { index: false, follow: false } };
 
-type SearchParams = Promise<{ cursor?: string | string[] }>;
+type SearchParams = Promise<{ cursor?: string | string[]; q?: string | string[]; status?: string | string[] }>;
 
+// Search by the agency's name or email (or its agent's), and filter by status.
 export default async function AgenciesPage({ searchParams }: { searchParams: SearchParams }) {
   await requireAdmin();
-  const { cursor } = await searchParams;
+  const { cursor, q: rawQ, status: rawStatus } = await searchParams;
+  const q = typeof rawQ === "string" ? rawQ.slice(0, 100) : "";
+  const status: AccountStatus | undefined = rawStatus === "ACTIVE" || rawStatus === "SUSPENDED" ? rawStatus : undefined;
+  const filters: { q?: string; status?: AccountStatus } = { ...(q ? { q } : {}), ...(status ? { status } : {}) };
 
   let page;
   try {
-    page = await listAgencies(typeof cursor === "string" && cursor ? cursor : undefined);
+    page = await listAgencies(typeof cursor === "string" && cursor ? cursor : undefined, undefined, filters);
   } catch (error) {
     if (error instanceof Error && error.message === "Invalid cursor") redirect("/admin/agencies");
     throw error;
@@ -35,8 +40,26 @@ export default async function AgenciesPage({ searchParams }: { searchParams: Sea
           </Link>
         </div>
 
+        <form method="get" action="/admin/agencies" className="mb-5 grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_200px_auto]">
+          <label className={label}>
+            Search
+            <input type="search" name="q" defaultValue={q} maxLength={100} placeholder="Agency name or email" className={input} />
+          </label>
+          <label className={label}>
+            Status
+            <select name="status" defaultValue={status ?? ""} className={input}>
+              <option value="">All</option>
+              <option value="ACTIVE">Active</option>
+              <option value="SUSPENDED">Suspended</option>
+            </select>
+          </label>
+          <button type="submit" className={btnPrimary}>
+            Search agencies
+          </button>
+        </form>
+
         {page.agencies.length === 0 ? (
-          <p className={emptyState}>No agencies yet.</p>
+          <p className={emptyState}>{q || status ? "No agencies match this search." : "No agencies yet."}</p>
         ) : (
           <div className={tableWrap}>
             <table className={table}>
@@ -77,6 +100,9 @@ export default async function AgenciesPage({ searchParams }: { searchParams: Sea
                         <Link href={`/admin/agencies/${agency.id}/wallet`} className={`mr-4 ${link}`}>
                           Wallet
                         </Link>
+                        <Link href={`/admin/bookings?agency=${encodeURIComponent(agency.id)}`} className={`mr-4 ${link}`}>
+                          Bookings
+                        </Link>
                         <Link
                           href={`/admin/agencies/${agency.id}/confirm?status=${next}`}
                           className={agency.status === "ACTIVE" ? "text-sm font-semibold text-[#9b3b2e] hover:underline" : link}
@@ -94,7 +120,7 @@ export default async function AgenciesPage({ searchParams }: { searchParams: Sea
 
         {page.nextCursor ? (
           <Link
-            href={`/admin/agencies?cursor=${encodeURIComponent(page.nextCursor)}`}
+            href={`/admin/agencies?${new URLSearchParams({ ...filters, cursor: page.nextCursor })}`}
             className={`mt-4 inline-block ${link}`}
           >
             Load more

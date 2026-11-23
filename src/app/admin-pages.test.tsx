@@ -2,9 +2,12 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AdminHeader } from "@/components/AdminHeader";
 import { TopupForm, afterSubmit, topUpConfirmText } from "@/app/admin/agencies/[id]/wallet/wallet-forms";
+
+// The section layouts read the header counters for a signed-in admin (none here).
+vi.mock("@/server/admin/header", () => ({ countsForAdminHeader: async () => null }));
 
 const SIGN_OUT_FORM = /<form(?=[^>]*method="post")(?=[^>]*action="\/logout")[^>]*>\s*<button[^>]*type="submit"[^>]*>Sign out<\/button>\s*<\/form>/;
 
@@ -31,6 +34,14 @@ describe("AdminHeader", () => {
     expect(html).toMatch(SIGN_OUT_FORM);
   });
 
+  it("shows the counters it is given (never a zero), with words for screen readers", () => {
+    const html = renderToStaticMarkup(<AdminHeader counts={{ applications: 2, attention: 0, changeRequests: 5 }} />);
+    expect(html).toMatch(/Applications<span[^>]*>2<span class="sr-only"> waiting<\/span><\/span>/);
+    expect(html).toMatch(/Change requests<span[^>]*>5<span class="sr-only"> open<\/span><\/span>/);
+    expect(html).not.toContain("need attention");
+    for (const href of ["/admin/audit", "/admin/security", "/admin/change-requests?status=OPEN"]) expect(html).toContain(`href="${href}"`);
+  });
+
   it("has a Menu for phones (below md) with the four sections and Sign out; the tabs show from md up", () => {
     const html = renderToStaticMarkup(<AdminHeader active="bookings" />);
     const phoneMenu = /<details[^>]*data-menu="nav"[^>]*>\s*<summary[^>]*aria-label="Menu"[\s\S]*?<\/details>/.exec(html)?.[0] ?? "";
@@ -45,7 +56,7 @@ describe("AdminHeader", () => {
 describe("admin pages", () => {
   it("the agencies layout shows the admin header above the page", async () => {
     const { default: AgenciesLayout } = await import("./admin/agencies/layout");
-    const html = renderToStaticMarkup(<AgenciesLayout>{<p>page body</p>}</AgenciesLayout>);
+    const html = renderToStaticMarkup(await AgenciesLayout({ children: <p>page body</p> }));
     expect(html).toMatch(SIGN_OUT_FORM);
     expect(html.indexOf("Apolles Admin")).toBeLessThan(html.indexOf("<p>page body</p>"));
   });
@@ -54,7 +65,7 @@ describe("admin pages", () => {
   // it: /admin only redirects, and the 2fa pages have their own Sign out form (tested in
   // admin-2fa.test.tsx) because a half-signed-in admin must not see the admin menu.
   it("every admin page is under a console section with the header layout, apart from /admin and the 2fa pages", () => {
-    const sections = ["agencies/", "applications/", "bookings/", "supplier-log/"];
+    const sections = ["agencies/", "applications/", "bookings/", "supplier-log/", "audit/", "change-requests/", "security/"];
     const outside = adminPages().filter((page) => !sections.some((section) => page.startsWith(section)));
     expect(outside.sort()).toEqual(["2fa/page.tsx", "2fa/setup/page.tsx", "page.tsx"]);
     expect(adminPages().filter((page) => page.startsWith("agencies/")).length).toBeGreaterThanOrEqual(4);
