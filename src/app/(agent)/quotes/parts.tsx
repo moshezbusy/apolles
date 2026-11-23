@@ -44,3 +44,15 @@ export function QuotePill({ status, closed, expired, partlyBooked }: { status: Q
     </span>
   );
 }
+
+// "New selection" (or "New message": the client wrote without choosing) until the agent opens
+// the quote.
+export function NewsBadge({ news }: { news: QuoteListItem["news"] }) {
+  if (!news) return null;
+  return (
+    <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[#fff6dc] px-2.5 py-0.5 text-[11px] font-bold text-[#8a6a10]">
+      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+      {news === "selection" ? "New selection" : "New message"}
+    </span>
+  );
+}

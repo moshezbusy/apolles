@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { alertError, alertInfo, alertSuccess, btnPrimary, btnSecondary, inputUnsized } from "@/components/ui";
+import type { EmailPreview } from "@/server/quotes/sharing";
 import type { SendState } from "../actions";
 import { useQuoteDirty } from "./dirty";
 
@@ -10,6 +11,13 @@ const WHATSAPP_START = "https://wa.me/";
 
 type Action = (quoteId: string, confirmNetPrice?: boolean) => Promise<SendState>;
 type Kind = "whatsapp" | "email" | "copy";
+type Shown = Extract<EmailPreview, { ok: true }>;
+
+const CONFIRM_LABEL: Record<Kind, { plain: string; anyway: string }> = {
+  whatsapp: { plain: "Open WhatsApp", anyway: "Open WhatsApp anyway" },
+  email: { plain: "Send email", anyway: "Send email anyway" },
+  copy: { plain: "Copy client link", anyway: "Copy link anyway" },
+};
 
 // "Send quote" (mockup 15): WhatsApp opens the agent's own WhatsApp with the message and the link
 // ready (Apolles sends nothing there); Email is sent by Apolles in the agency's name; Copy link
@@ -17,6 +25,9 @@ type Kind = "whatsapp" | "email" | "copy";
 // All of them read the SAVED quote: while the settings form above holds unsaved changes they are
 // off. A quote that would show the client the agency's cost price (no markup saved) is sent only
 // after the agent says so here.
+// Before anything goes out, a dialog (mockup 15) shows what to check (`checks`: no client, no
+// profit, dates or free cancellation passed, prices to refresh) with "Send anyway"; for email it
+// also shows the recipient, the subject, the message and the link exactly as they will be sent.
 export function SendPanel({
   quoteId,
   shareUrl,
@@ -24,6 +35,7 @@ export function SendPanel({
   hasEmail,
   phoneHint,
   closed,
+  checks = [],
   actions,
 }: {
   quoteId: string;
@@ -33,7 +45,8 @@ export function SendPanel({
   // Set when the client's number cannot be made into a WhatsApp link (no country code).
   phoneHint: string | null;
   closed: boolean;
-  actions: { copy: Action; whatsapp: Action; email: Action; renew: Action };
+  checks?: string[];
+  actions: { copy: Action; whatsapp: Action; email: Action; renew: Action; preview: (quoteId: string) => Promise<EmailPreview> };
 }) {
   const { dirty } = useQuoteDirty();
   const [url, setUrl] = useState(shareUrl);
@@ -49,6 +62,40 @@ export function SendPanel({
   const [atCost, setAtCost] = useState<Kind | null>(null);
   const [pending, start] = useTransition();
   const off = pending || dirty || closed;
+  // The dialog before a send: which send, and for email what will be sent.
+  const [dialog, setDialog] = useState<{ kind: Kind; email: Shown | null; error: string | null } | null>(null);
+  useEffect(() => {
+    if (!dialog) return;
+    const close = (e: KeyboardEvent) => e.key === "Escape" && setDialog(null);
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [dialog]);
+
+  function ask(kind: Kind) {
+    setState(null);
+    if (kind !== "email") {
+      if (checks.length === 0) return run(kind);
+      setDialog({ kind, email: null, error: null });
+      return;
+    }
+    setDialog({ kind, email: null, error: null });
+    start(async () => {
+      const result = await actions.preview(quoteId);
+      if (!result.ok) {
+        setDialog({ kind, email: null, error: result.error });
+        return;
+      }
+      setUrl(result.url);
+      setDialog({ kind, email: result, error: null });
+    });
+  }
+
+  function run(kind: Kind) {
+    setDialog(null);
+    if (kind === "whatsapp") whatsapp();
+    else if (kind === "email") email();
+    else copy();
+  }
 
   // false: the server asked for the cost-price yes (shown with its own button).
   function refused(kind: Kind, result: SendState): result is Extract<SendState, { ok: false }> {
@@ -130,13 +177,13 @@ export function SendPanel({
       ) : null}
       {closed ? <p className={alertInfo}>This quote is closed. Choose Reopen quote to send it again.</p> : null}
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => whatsapp()} disabled={off || !hasClient || !!phoneHint} className={btnPrimary} title={hasClient ? "" : "Choose the client first"}>
+        <button type="button" onClick={() => ask("whatsapp")} disabled={off || !hasClient || !!phoneHint} className={btnPrimary} title={hasClient ? "" : "Choose the client first"}>
           Send on WhatsApp
         </button>
-        <button type="button" onClick={() => email()} disabled={off || !hasEmail} className={btnSecondary} title={hasEmail ? "" : "The client has no email"}>
+        <button type="button" onClick={() => ask("email")} disabled={off || !hasEmail} className={btnSecondary} title={hasEmail ? "" : "The client has no email"}>
           Send by email
         </button>
-        <button type="button" onClick={() => copy()} disabled={off} className={btnSecondary}>
+        <button type="button" onClick={() => ask("copy")} disabled={off} className={btnSecondary}>
           Copy client link
         </button>
         {dirty ? (
@@ -149,6 +196,11 @@ export function SendPanel({
           </Link>
         )}
       </div>
+      {pending && !dialog ? (
+        <p role="status" className="text-xs text-muted">
+          Sending…
+        </p>
+      ) : null}
       {phoneHint ? <p className="text-xs font-semibold text-[#8a6a10]">{phoneHint}</p> : null}
       {url ? (
         <div className="flex gap-2">
@@ -174,6 +226,110 @@ export function SendPanel({
         </div>
       ) : null}
       <p className="text-xs text-muted">Copying the link, opening WhatsApp or sending the email marks the quote as sent and starts the offer&apos;s validity again.</p>
+      {dialog ? (
+        <SendDialog
+          kind={dialog.kind}
+          email={dialog.email}
+          error={dialog.error}
+          checks={checks}
+          pending={pending}
+          onCancel={() => setDialog(null)}
+          onSend={() => run(dialog.kind)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function SendDialog({
+  kind,
+  email,
+  error,
+  checks,
+  pending,
+  onCancel,
+  onSend,
+}: {
+  kind: Kind;
+  email: Shown | null;
+  error: string | null;
+  checks: string[];
+  pending: boolean;
+  onCancel: () => void;
+  onSend: () => void;
+}) {
+  const field = "text-xs font-semibold text-[#37413d]";
+  const loading = kind === "email" && !email && !error;
+  const label = CONFIRM_LABEL[kind];
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-[#13201b]/40 p-4" onClick={(e) => e.target === e.currentTarget && onCancel()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="send-dialog-title" className="flex max-h-[90vh] w-[min(560px,100%)] flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_24px_60px_rgba(19,47,39,0.25)]">
+        <div className="flex items-start justify-between gap-3 border-b border-line p-4">
+          <div>
+            <h3 id="send-dialog-title" className="text-base font-bold text-ink">
+              {kind === "email" ? "Send by email" : kind === "whatsapp" ? "Send on WhatsApp" : "Copy client link"}
+            </h3>
+            <p className="text-xs text-muted">{kind === "email" ? "This is the email the client gets." : "Check these before you send."}</p>
+          </div>
+          <button type="button" onClick={onCancel} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-lg border border-line text-[#4d5a54] hover:text-ink">
+            ×
+          </button>
+        </div>
+        <div className="flex flex-col gap-3 overflow-y-auto p-4 text-[13px]">
+          {checks.length > 0 ? (
+            <div className={alertInfo}>
+              <strong className="block">Check before sending</strong>
+              <ul className="mt-1 list-disc pl-5">
+                {checks.map((c) => (
+                  <li key={c}>{c}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {error ? (
+            <p role="alert" className={alertError}>
+              {error}
+            </p>
+          ) : null}
+          {loading ? <p role="status" className="text-muted">Preparing the email…</p> : null}
+          {email ? (
+            <dl className="flex flex-col gap-2.5">
+              <div>
+                <dt className={field}>To</dt>
+                <dd className="break-all text-ink">{email.to}</dd>
+              </div>
+              <div>
+                <dt className={field}>From</dt>
+                <dd className="text-ink">
+                  {email.fromName}
+                  {email.replyTo ? <span className="text-muted"> · replies go to {email.replyTo}</span> : null}
+                </dd>
+              </div>
+              <div>
+                <dt className={field}>Subject</dt>
+                <dd className="text-ink">{email.subject}</dd>
+              </div>
+              <div>
+                <dt className={field}>Message</dt>
+                <dd className="whitespace-pre-line rounded-lg bg-[#f6f4ef] p-3 text-ink">{email.text}</dd>
+              </div>
+              <div>
+                <dt className={field}>Client link</dt>
+                <dd className="break-all text-ink">{email.url}</dd>
+              </div>
+              <p className="text-xs text-muted">To change the message, edit Message to client above and save.</p>
+            </dl>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-line p-4">
+          <button type="button" onClick={onCancel} className={btnSecondary}>
+            Cancel
+          </button>
+          <button type="button" onClick={onSend} disabled={pending || loading || !!error} className={btnPrimary} autoFocus>
+            {checks.length > 0 ? label.anyway : label.plain}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
