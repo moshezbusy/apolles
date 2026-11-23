@@ -99,7 +99,7 @@ function toSafeNumber(value: bigint | number | string): number {
 
 // Locks the agency row for the rest of the transaction. Writes for one agency happen one at a
 // time, and every read after the lock sees what earlier writers committed.
-async function lockAgency(tx: Tx, agencyId: string): Promise<void> {
+export async function lockAgency(tx: Tx, agencyId: string): Promise<void> {
   const locked = await tx.$queryRaw<{ id: string }[]>`
     SELECT id FROM "Agency" WHERE id = ${agencyId} FOR UPDATE`;
   if (locked.length === 0) throw new AgencyNotFound();

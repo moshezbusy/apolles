@@ -6,7 +6,7 @@ import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
 import { audit } from "@/server/audit";
 import { credit, getBalance, placeHold } from "@/server/wallet/ledger";
-import { IdempotencyKeyConflict, InsufficientFunds, TopupRefConflict } from "@/server/wallet/errors";
+import { IdempotencyKeyConflict, InsufficientFunds, PossibleDuplicate, TopupRefConflict } from "@/server/wallet/errors";
 import {
   confirmBankTopup,
   getAgencyWallet,
@@ -167,7 +167,7 @@ describe("admin money actions", () => {
       expect(await db.auditLog.count()).toBe(0);
       // A real bank reference, even one that mentions APL, still works.
       await expect(topup({ bankTransferRef: "TRX-APL-0001" })).resolves.toMatchObject({ alreadyRecorded: false });
-      await expect(topup({ bankTransferRef: "FT2611080001" })).resolves.toMatchObject({ alreadyRecorded: false });
+      await expect(topup({ bankTransferRef: "FT2611080001", receivedOn: "2026-11-02" })).resolves.toMatchObject({ alreadyRecorded: false });
       expect(await db.ledgerEntry.count()).toBe(2);
     });
 
@@ -326,6 +326,77 @@ describe("admin money actions", () => {
       await expect(adjust({ amountCents: 300, idempotencyKey: key })).rejects.toBeInstanceOf(
         IdempotencyKeyConflict,
       );
+    });
+  });
+
+  // A second entry that looks like one just recorded is stopped once: the admin confirms again
+  // to record it anyway. (The form's key is new on every page render, so it cannot tell.)
+  describe("a look-alike entry needs a second confirmation", () => {
+    const payout = (overrides: Partial<Parameters<typeof recordPayout>[1]> = {}) =>
+      recordPayout(adminId, { agencyId, amountCents: 2500, note: "Payout to the agency's bank", idempotencyKey: randomUUID(), ...overrides });
+    const adjust = (overrides: Partial<Parameters<typeof recordAdjustment>[1]> = {}) =>
+      recordAdjustment(adminId, { agencyId, amountCents: -1250, reason: "Bank fee correction", idempotencyKey: randomUUID(), ...overrides });
+
+    it("a payout of the same amount within 10 minutes: refused with what was found, nothing written; confirmed again: recorded", async () => {
+      await fund(100000);
+      const first = await payout();
+      const again = payout({ note: "Typed again after a slow page" });
+      await expect(again).rejects.toBeInstanceOf(PossibleDuplicate);
+      await expect(again).rejects.toMatchObject({ existing: { id: first.entry.id, amountCents: -2500, type: "PAYOUT" } });
+      expect(await db.ledgerEntry.count({ where: { type: "PAYOUT" } })).toBe(1);
+      expect(await db.auditLog.count({ where: { action: "wallet.payout" } })).toBe(1);
+      const forced = await payout({ confirmDuplicate: true });
+      expect(forced.alreadyRecorded).toBe(false);
+      expect(await db.ledgerEntry.count({ where: { type: "PAYOUT" } })).toBe(2);
+      expect(await db.auditLog.count({ where: { action: "wallet.payout" } })).toBe(2);
+      expect((await getBalance(agencyId)).balanceCents).toBe(95000);
+    });
+
+    it("the same form posted twice (the same key) is still the one entry, never a duplicate warning", async () => {
+      await fund(100000);
+      const key = randomUUID();
+      const first = await payout({ idempotencyKey: key });
+      const repeat = await payout({ idempotencyKey: key });
+      expect(repeat).toMatchObject({ alreadyRecorded: true, entry: { id: first.entry.id } });
+    });
+
+    it("another amount, another kind, another agency or an entry older than 10 minutes is not a look-alike", async () => {
+      await fund(100000);
+      const other = await makeAgency("Other", "APL-0002");
+      await credit({ agencyId: other, type: "TOPUP_BANK", amountCents: 100000, reason: "seed", idempotencyKey: "seed-other" });
+      await payout();
+      expect((await payout({ amountCents: 2501 })).alreadyRecorded).toBe(false);
+      expect((await adjust({ amountCents: -2500 })).alreadyRecorded).toBe(false); // an adjustment, not a payout
+      expect((await payout({ agencyId: other })).alreadyRecorded).toBe(false);
+      // Older than 10 minutes (the test database has no append-only trigger: see the migration).
+      await db.ledgerEntry.updateMany({ where: { agencyId, type: "PAYOUT" }, data: { createdAt: new Date(Date.now() - 11 * 60_000) } });
+      expect((await payout()).alreadyRecorded).toBe(false);
+    });
+
+    it("an adjustment of the same signed amount within 10 minutes is stopped; the opposite sign is not", async () => {
+      await fund(100000);
+      await adjust();
+      await expect(adjust({ reason: "The same correction again" })).rejects.toBeInstanceOf(PossibleDuplicate);
+      expect((await adjust({ amountCents: 1250, reason: "Undo the correction" })).alreadyRecorded).toBe(false);
+      expect((await adjust({ confirmDuplicate: true })).alreadyRecorded).toBe(false);
+      expect(await db.ledgerEntry.count({ where: { type: "ADJUSTMENT" } })).toBe(3);
+    });
+
+    it("a top-up with the same amount and the same received date under another reference is stopped, whenever it was recorded", async () => {
+      const first = await topup();
+      await db.ledgerEntry.updateMany({ where: { id: first.entry.id }, data: { createdAt: new Date(Date.now() - 3 * 86_400_000) } });
+      const again = topup({ bankTransferRef: "TRX-1OO1" }); // the same transfer, its reference typed differently
+      await expect(again).rejects.toBeInstanceOf(PossibleDuplicate);
+      await expect(again).rejects.toMatchObject({ existing: { id: first.entry.id } });
+      expect(await db.ledgerEntry.count()).toBe(1);
+      // Another date or another amount is another transfer.
+      expect((await topup({ bankTransferRef: "TRX-2", receivedOn: "2026-11-02" })).alreadyRecorded).toBe(false);
+      expect((await topup({ bankTransferRef: "TRX-3", amountCents: 100001 })).alreadyRecorded).toBe(false);
+      // The same reference again is the usual "already recorded".
+      expect((await topup()).alreadyRecorded).toBe(true);
+      // Confirmed again: recorded, with its email job.
+      expect((await topup({ bankTransferRef: "TRX-1OO1", confirmDuplicate: true })).alreadyRecorded).toBe(false);
+      expect(await db.ledgerEntry.count({ where: { type: "TOPUP_BANK" } })).toBe(4);
     });
   });
 

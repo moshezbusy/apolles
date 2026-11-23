@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z, ZodError } from "zod";
+import { formatDmy } from "@/components/date-picker/calendar";
 import { formatUsd, parseUsdToCents } from "@/lib/money";
 import { requireAdmin } from "@/server/auth/guards";
 import {
@@ -14,6 +15,7 @@ import {
   AgencyNotFound,
   IdempotencyKeyConflict,
   InsufficientFunds,
+  PossibleDuplicate,
   TopupRefConflict,
 } from "@/server/wallet/errors";
 import type { WalletFormState } from "./form-state";
@@ -36,18 +38,27 @@ const FORM_USED = "This form was already used for a different entry. Reload the 
 
 const agencyId = z.string().min(1).max(100);
 const shortText = z.string().max(1000);
+// "1" only from the second confirm, after the form showed the look-alike warning.
+const confirmDuplicate = z.literal("1").nullable();
 
 const topupFields = z
-  .object({ agencyId, amount: shortText, bankTransferRef: shortText, receivedOn: shortText })
+  .object({ agencyId, amount: shortText, bankTransferRef: shortText, receivedOn: shortText, confirmDuplicate })
   .strict();
 const payoutFields = z
-  .object({ agencyId, amount: shortText, note: shortText, idempotencyKey: z.uuid() })
+  .object({ agencyId, amount: shortText, note: shortText, idempotencyKey: z.uuid(), confirmDuplicate })
   .strict();
 const adjustFields = z
-  .object({ agencyId, amount: shortText, reason: shortText, idempotencyKey: z.uuid() })
+  .object({ agencyId, amount: shortText, reason: shortText, idempotencyKey: z.uuid(), confirmDuplicate })
   .strict();
 
 const error = (message: string): WalletFormState => ({ status: "error", message });
+
+// A look-alike of an entry already recorded: nothing was written. The form shows this on its
+// confirm step; confirming again sends confirmDuplicate and records the entry anyway.
+function duplicateState(caught: PossibleDuplicate, what: "a payout" | "an adjustment"): WalletFormState {
+  const at = `${caught.existing.createdAt.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  return { status: "duplicate", message: `This looks like a duplicate: ${what} of ${formatUsd(what === "a payout" ? Math.abs(caught.existing.amountCents) : caught.existing.amountCents)} was recorded for this agency at ${at}. Confirm again to record it anyway.` };
+}
 
 // Known outcomes become a message; anything else is a real failure and is rethrown.
 function toState(caught: unknown, invalidMessage: string): WalletFormState {
@@ -71,6 +82,7 @@ export async function confirmTopupAction(
     amount: formData.get("amount"),
     bankTransferRef: formData.get("bankTransferRef"),
     receivedOn: formData.get("receivedOn"),
+    confirmDuplicate: formData.get("confirmDuplicate"),
   });
   if (!fields.success) return error(TOPUP_INVALID);
   const amountCents = parseUsdToCents(fields.data.amount);
@@ -82,12 +94,19 @@ export async function confirmTopupAction(
       amountCents,
       bankTransferRef: fields.data.bankTransferRef,
       receivedOn: fields.data.receivedOn,
+      confirmDuplicate: fields.data.confirmDuplicate === "1",
     });
     if (alreadyRecorded) {
       return { status: "info", message: "This bank transfer was already recorded. Nothing was added." };
     }
     return { status: "success", message: `Top-up of ${formatUsd(amountCents)} recorded.` };
   } catch (caught) {
+    if (caught instanceof PossibleDuplicate) {
+      return {
+        status: "duplicate",
+        message: `This looks like a duplicate: a top-up of ${formatUsd(amountCents)} received on ${formatDmy(fields.data.receivedOn)} is already recorded for this agency (${caught.existing.reason}). Confirm again to record it anyway.`,
+      };
+    }
     // The agency's own APL- reference typed as the bank's: say exactly that (M2).
     if (caught instanceof ZodError && caught.issues.some((i) => i.message === AGENCY_REF_AS_TRANSFER_REF)) {
       return error(AGENCY_REF_AS_TRANSFER_REF);
@@ -109,6 +128,7 @@ export async function recordPayoutAction(
     amount: formData.get("amount"),
     note: formData.get("note"),
     idempotencyKey: formData.get("idempotencyKey"),
+    confirmDuplicate: formData.get("confirmDuplicate"),
   });
   if (!fields.success) return error(PAYOUT_INVALID);
   const amountCents = parseUsdToCents(fields.data.amount);
@@ -120,12 +140,14 @@ export async function recordPayoutAction(
       amountCents,
       note: fields.data.note,
       idempotencyKey: fields.data.idempotencyKey,
+      confirmDuplicate: fields.data.confirmDuplicate === "1",
     });
     if (alreadyRecorded) {
       return { status: "info", message: "This payout was already recorded. Nothing was changed." };
     }
     return { status: "success", message: `Payout of ${formatUsd(amountCents)} recorded.` };
   } catch (caught) {
+    if (caught instanceof PossibleDuplicate) return duplicateState(caught, "a payout");
     return toState(caught, PAYOUT_INVALID);
   } finally {
     revalidatePath(WALLET_PAGE, "page");
@@ -143,6 +165,7 @@ export async function recordAdjustmentAction(
     amount: formData.get("amount"),
     reason: formData.get("reason"),
     idempotencyKey: formData.get("idempotencyKey"),
+    confirmDuplicate: formData.get("confirmDuplicate"),
   });
   if (!fields.success) return error(ADJUST_INVALID);
   const amountCents = parseUsdToCents(fields.data.amount, { allowNegative: true });
@@ -154,12 +177,14 @@ export async function recordAdjustmentAction(
       amountCents,
       reason: fields.data.reason,
       idempotencyKey: fields.data.idempotencyKey,
+      confirmDuplicate: fields.data.confirmDuplicate === "1",
     });
     if (alreadyRecorded) {
       return { status: "info", message: "This adjustment was already recorded. Nothing was changed." };
     }
     return { status: "success", message: `Adjustment of ${formatUsd(amountCents)} recorded.` };
   } catch (caught) {
+    if (caught instanceof PossibleDuplicate) return duplicateState(caught, "an adjustment");
     return toState(caught, ADJUST_INVALID);
   } finally {
     revalidatePath(WALLET_PAGE, "page");

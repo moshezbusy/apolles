@@ -105,6 +105,35 @@ describe("wallet server actions", () => {
     expect(row.actorUserId).toBe(admin.id);
   });
 
+  it("a look-alike payout, adjustment or top-up asks to confirm again, writes nothing, and is recorded on the second confirm", async () => {
+    await signInAdmin();
+    await credit({ agencyId, type: "TOPUP_BANK", amountCents: 100000, reason: "seed", idempotencyKey: "seed" });
+    expect((await recordPayoutAction(null, payoutForm()))?.status).toBe("success");
+    const payout = await recordPayoutAction(null, payoutForm());
+    expect(payout?.status).toBe("duplicate");
+    expect(payout?.message).toMatch(/^This looks like a duplicate: a payout of USD 25\.00 was recorded for this agency at \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC\. Confirm again to record it anyway\.$/);
+    expect(await db.ledgerEntry.count({ where: { type: "PAYOUT" } })).toBe(1);
+    expect((await recordPayoutAction(null, payoutForm({ confirmDuplicate: "1" })))?.status).toBe("success");
+    expect(await db.ledgerEntry.count({ where: { type: "PAYOUT" } })).toBe(2);
+
+    expect((await recordAdjustmentAction(null, adjustForm()))?.status).toBe("success");
+    const adjustment = await recordAdjustmentAction(null, adjustForm());
+    expect(adjustment).toMatchObject({ status: "duplicate", message: expect.stringMatching(/an adjustment of -USD 12\.50 was recorded for this agency at .* UTC\. Confirm again to record it anyway\.$/) });
+    expect(await db.ledgerEntry.count({ where: { type: "ADJUSTMENT" } })).toBe(1);
+    expect((await recordAdjustmentAction(null, adjustForm({ confirmDuplicate: "1" })))?.status).toBe("success");
+
+    expect((await confirmTopupAction(null, topupForm()))?.status).toBe("success");
+    const topup = await confirmTopupAction(null, topupForm({ bankTransferRef: "TRX-ONE" }));
+    expect(topup).toEqual({
+      status: "duplicate",
+      message: "This looks like a duplicate: a top-up of USD 1,000.00 received on 01/11/2026 is already recorded for this agency (Bank transfer TRX-1 received 2026-11-01). Confirm again to record it anyway.",
+    });
+    expect(await db.ledgerEntry.count({ where: { type: "TOPUP_BANK" } })).toBe(2); // the seed and the first
+    expect((await confirmTopupAction(null, topupForm({ bankTransferRef: "TRX-ONE", confirmDuplicate: "1" })))?.status).toBe("success");
+    // Anything but "1" does not count as a confirmation.
+    expect((await recordPayoutAction(null, payoutForm({ confirmDuplicate: "yes" })))?.status).toBe("error");
+  });
+
   it("top-up: same ref with a different amount → the TopupRefConflict message", async () => {
     await signInAdmin();
     await confirmTopupAction(null, topupForm());
