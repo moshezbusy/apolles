@@ -15,6 +15,7 @@ const TABS = [
   { key: "bookings", label: "Bookings", href: "/admin/bookings", count: "attention", countLabel: "need attention" },
   { key: "change-requests", label: "Change requests", href: "/admin/change-requests?status=OPEN", count: "changeRequests", countLabel: "open" },
   { key: "supplier-log", label: "Supplier log", href: "/admin/supplier-log" },
+  { key: "hotel-mapping", label: "Hotel mapping", href: "/admin/hotel-mapping" },
   { key: "audit", label: "Action log", href: "/admin/audit" },
   { key: "security", label: "Security", href: "/admin/security" },
 ] as const satisfies readonly { key: string; label: string; href: string; count?: keyof AdminHeaderCounts; countLabel?: string }[];
