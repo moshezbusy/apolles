@@ -7,7 +7,7 @@ import { hitRateLimit } from "@/server/rate-limit";
 import { SupplierError, SupplierRequestRejected } from "@/server/supplier/expedia/client";
 import { multiRoomAllowed, supplierAdapter } from "@/server/supplier";
 import { feesAtProperty } from "@/server/supplier/price";
-import type { Image, Occupancy, Offer, PropertyContent, SupplierAdapter, SupplierContext } from "@/server/supplier/types";
+import { type Image, type Occupancy, type Offer, type PropertyContent, SUPPLIER_IDS, type SupplierAdapter, type SupplierContext } from "@/server/supplier/types";
 import type { Money } from "@/lib/supplier-money";
 import { SEVERAL_ROOMS_UNAVAILABLE, SearchInputInvalid, SearchRateLimited, SearchUnavailable } from "./errors";
 import { hotelDestination } from "./destinations";
@@ -61,7 +61,8 @@ export type HotelCard = {
   best: { offer: CardOffer; otherRates: number } | null;
 };
 
-export type CardOffer = Omit<Offer, "bedGroups"> & { bedGroups: { id: string; description: string }[] };
+// Without the supplier too: which supplier a rate comes from is never shown to agents or clients.
+export type CardOffer = Omit<Offer, "bedGroups" | "supplier"> & { bedGroups: { id: string; description: string }[] };
 
 export type ListOptions = {
   sort: "recommended" | "price_asc" | "price_desc" | "stars_desc";
@@ -160,9 +161,11 @@ const offerSchema: z.ZodType<Offer> = z
     price: priceSchema,
     // Plan 10: a search stored before rooms were counted is one room at the offer's price.
     roomPrices: z.array(priceSchema).min(1).max(8).optional(),
+    // A second supplier (2026-11-23): absent on the main supplier's offers and on older searches.
+    supplier: z.enum(SUPPLIER_IDS).optional(),
   })
   .strict()
-  .transform(({ roomPrices, ...offer }) => ({ ...offer, roomPrices: roomPrices ?? [offer.price] }));
+  .transform(({ roomPrices, supplier, ...offer }) => ({ ...offer, roomPrices: roomPrices ?? [offer.price], ...(supplier ? { supplier } : {}) }));
 const storedOffers = z.array(offerSchema).min(1);
 
 // Plan 10: an offer is priced for every room of its search, one price per room, and the rooms'
@@ -299,6 +302,7 @@ async function storeBatch(snapshot: BatchSnapshot, batch: string[], supplierCont
         totalMinor: offer.price.total.minor,
         currency: offer.price.total.currency,
         feesAtProperty: feesAtProperty(offer.price).due,
+        supplier: offer.supplier ?? "expedia",
       };
     }),
   );
@@ -581,8 +585,10 @@ export async function listResults(
     const offers = rooms ? readOffers(offersById.get(row.propertyId), rooms) : null;
     const offer = offers?.[row.rateIndex];
     if (!offers || !offer || offer.bedGroups.length === 0) return null;
+    const shown: Partial<Offer> = { ...offer };
+    delete shown.supplier; // never sent to the page
     return {
-      offer: { ...offer, bedGroups: offer.bedGroups.map((b) => ({ id: b.id, description: b.description })) },
+      offer: { ...(shown as Omit<Offer, "supplier">), bedGroups: offer.bedGroups.map((b) => ({ id: b.id, description: b.description })) },
       // Every other rate of the hotel, as its page lists them (that page has its own filters).
       otherRates: offers.length - 1,
     };

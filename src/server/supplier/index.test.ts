@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ExpediaAdapter } from "./expedia/adapter";
 import { ExpediaContentSource } from "./expedia/content";
 import { FakeContentSource, FakeSupplierAdapter } from "./fake";
-import { contentSource, isDemoSupplier, supplierAdapter } from "./index";
+import { HotelbedsLayer } from "./hotelbeds-layer/adapter";
+import { bookingSupplier, contentSource, isDemoSupplier, supplierAdapter } from "./index";
+import { MultiSupplierAdapter } from "./multi";
 import type { SupplierAdapter } from "./types";
 
 const fake = (): SupplierAdapter => new FakeSupplierAdapter();
@@ -49,6 +51,34 @@ describe("supplier factory", () => {
   it("an unknown mode is refused", () => {
     vi.stubEnv("SUPPLIER_MODE", "tbo");
     expect(() => supplierAdapter()).toThrow(/SUPPLIER_MODE/);
+  });
+
+  it("SUPPLIERS adds Hotelbeds to the search; unset, nothing changes; a Hotelbeds booking always goes to the supplier layer", () => {
+    vi.stubEnv("SUPPLIER_MODE", "");
+    vi.stubEnv("SUPPLIERS", "");
+    expect(supplierAdapter()).toBeInstanceOf(ExpediaAdapter);
+    expect(bookingSupplier("hotelbeds")).toBeInstanceOf(HotelbedsLayer); // a booking made before still finishes
+    vi.stubEnv("SUPPLIERS", "expedia,hotelbeds");
+    expect(supplierAdapter()).toBeInstanceOf(MultiSupplierAdapter);
+    expect(bookingSupplier()).not.toBeInstanceOf(HotelbedsLayer);
+    expect(bookingSupplier("expedia")).not.toBeInstanceOf(HotelbedsLayer);
+    vi.stubEnv("SUPPLIERS", "fake,hotelbeds");
+    vi.stubEnv("APP_ENV", "staging");
+    vi.stubEnv("NODE_ENV", "production");
+    expect(supplierAdapter()).toBeInstanceOf(MultiSupplierAdapter);
+    expect(bookingSupplier()).toBeInstanceOf(FakeSupplierAdapter);
+    expect(isDemoSupplier()).toBe(true);
+    vi.stubEnv("APP_ENV", "production");
+    expect(() => supplierAdapter()).toThrow(/fake supplier/);
+  });
+
+  it("SUPPLIERS and SUPPLIER_MODE must agree on the main supplier, and SUPPLIERS must read", () => {
+    vi.stubEnv("SUPPLIER_MODE", "fake");
+    vi.stubEnv("SUPPLIERS", "expedia,hotelbeds");
+    expect(() => supplierAdapter()).toThrow(/different main suppliers/);
+    vi.stubEnv("SUPPLIER_MODE", "");
+    vi.stubEnv("SUPPLIERS", "hotelbeds");
+    expect(() => supplierAdapter()).toThrow(/SUPPLIERS/);
   });
 });
 

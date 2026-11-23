@@ -12,7 +12,7 @@ import { MAX_ROOMS } from "@/server/search/input";
 import { findOffer } from "@/server/search/search";
 import { bookingSupplier, multiRoomAllowed } from "@/server/supplier";
 import { SupplierAuthError, SupplierError, SupplierNotSent, SupplierRateLimited, SupplierRequestRejected } from "@/server/supplier/expedia/client";
-import type { BookingSupplier, CancelPenalty, PriceBreakdown, RetrievedItinerary, SupplierAdapter, SupplierContext, SupplierLinks } from "@/server/supplier/types";
+import type { BookingSupplier, CancelPenalty, PriceBreakdown, RetrievedItinerary, SupplierAdapter, SupplierContext, SupplierId, SupplierLinks } from "@/server/supplier/types";
 import { audit } from "@/server/audit";
 import { captureHold, credit, creditInTx, getBalance, placeHoldInTx, releaseHold, withLedgerTransaction } from "@/server/wallet/ledger";
 import { HoldNotOpen, InsufficientFunds } from "@/server/wallet/errors";
@@ -41,7 +41,8 @@ import { BookingStateConflict, transition } from "./states";
 
 export type BookingContext = { agencyId: string; userId: string; supplierContext: SupplierContext };
 type Supplier = SupplierAdapter & BookingSupplier;
-type Deps = { supplier?: Supplier; now?: Date };
+// supplierFor: the supplier of a booking by its supplier id (tests); supplier: one for every booking.
+type Deps = { supplier?: Supplier; supplierFor?: (supplier: SupplierId) => Supplier; now?: Date };
 
 // `fields`: where the input was wrong ("rooms.0.guests.1.givenName", "leadEmail", ...), so the
 // form can mark those fields; empty when the message is about the whole form.
@@ -176,8 +177,15 @@ export const draftInputSchema = z
   .strict();
 export type DraftInput = z.infer<typeof draftInputSchema>;
 
-function supplierOf(deps: Deps): Supplier {
-  return deps.supplier ?? bookingSupplier();
+// Every step of a booking goes to the booking's own supplier (owner decision 2026-11-23: a
+// second supplier). Anything but "hotelbeds" is the main supplier, as on rows made before.
+export function supplierIdOf(booking: Pick<Booking, "supplier">): SupplierId {
+  return booking.supplier === "hotelbeds" ? "hotelbeds" : "expedia";
+}
+
+function supplierOf(deps: Deps, booking: Pick<Booking, "supplier">): Supplier {
+  const id = supplierIdOf(booking);
+  return deps.supplierFor?.(id) ?? deps.supplier ?? bookingSupplier(id);
 }
 
 // The agent's IP address and browser, kept on the booking when it is entered, booked or
@@ -309,6 +317,7 @@ export async function createDraft(ctx: BookingContext, rawInput: unknown, deps: 
     freeCancelEndsAt: freeCancelEnds(offer),
     nonrefundableDateRanges: offer.nonrefundableDateRanges as unknown as Prisma.InputJsonValue,
     priceCheckToken: bedGroup.priceCheckToken,
+    supplier: offer.supplier ?? "expedia",
     ...agentOf(ctx.supplierContext),
   };
   const roomRows = rooms.map((occupancy, index) => {
@@ -371,7 +380,7 @@ export async function prepareReview(ctx: BookingContext, bookingId: string, deps
   }
   let result;
   try {
-    result = await supplierOf(deps).priceCheck(
+    result = await supplierOf(deps, booking).priceCheck(
       {
         propertyId: booking.propertyId,
         roomId: booking.roomId,
@@ -462,9 +471,10 @@ export async function book(
   deps: Deps = {},
 ): Promise<BookOutcome> {
   const now = deps.now ?? new Date();
-  // Which supplier, before anything is held: a wrong setting stops here with nothing written.
-  const supplier = supplierOf(deps);
   const booking = await ownBooking(ctx.agencyId, bookingId);
+  // Which supplier (the booking's own), before anything is held: a wrong setting stops here with
+  // nothing written.
+  const supplier = supplierOf(deps, booking);
   if (booking.status !== "DRAFT") return { kind: "already", bookingId: booking.id };
   if (!confirm.acceptedTerms) return { kind: "review_again", message: "Accept the terms and conditions to book." };
   if (!booking.bookToken || !booking.priceCheckedAt || now.getTime() - booking.priceCheckedAt.getTime() > PRICE_CHECK_VALID_MS) {
@@ -520,7 +530,13 @@ export async function book(
         bookToken: booking.bookToken,
         affiliateReferenceId: booking.reference,
         lead: { givenName: booking.leadGivenName, familyName: booking.leadFamilyName, email: booking.leadEmail, phone: { countryCode, number } },
-        rooms: rooms.map((room) => ({ givenName: room.givenName, familyName: room.familyName })),
+        // Each room's main guest; for the supplier layer also every guest with the room's
+        // occupancy (it needs them all; Expedia takes the main guest only).
+        rooms: rooms.map((room) => ({
+          givenName: room.givenName,
+          familyName: room.familyName,
+          ...(supplierIdOf(booking) === "hotelbeds" ? { guests: guestNames(room.guests), adults: room.adults, childAges: room.childAges } : {}),
+        })),
         ...(booking.specialRequest ? { specialRequest: booking.specialRequest } : {}),
       },
       ctx.supplierContext,
@@ -594,6 +610,11 @@ async function settlePending(
       confirmedReason,
     );
     await fillRoomsFromSupplier(booking.id, deps, found);
+    // Booked, and the supplier asks for a person to look (the supplier layer's review reason:
+    // e.g. its final price is not the approved one). The booking stays confirmed.
+    if (found.reviewNeeded && (await db.$transaction((tx) => flagForAdmin(tx, booking.id, "The supplier confirmed the booking with a note that needs a review: check it at the supplier")))) {
+      console.error(`booking ${booking.reference}: confirmed with a supplier review note, needs an admin`);
+    }
     return "confirmed";
   }
   if (oneRoom && sameRooms && found.rooms[0]?.status === "cancelled") {
@@ -606,6 +627,13 @@ async function settlePending(
     console.error(`booking ${booking.reference}: not booked at the supplier as expected, needs an admin`);
   }
   return "wait";
+}
+
+// A room's stored guests as names, in their order (adults first, then children).
+const storedGuests = z.array(z.object({ givenName: z.string(), familyName: z.string() }));
+function guestNames(guests: unknown): { givenName: string; familyName: string }[] {
+  const parsed = storedGuests.safeParse(guests);
+  return parsed.success ? parsed.data.map((guest) => ({ givenName: guest.givenName, familyName: guest.familyName })) : [];
 }
 
 function sameName(a: string | null, b: string): boolean {
@@ -626,7 +654,7 @@ export async function fillRoomsFromSupplier(bookingId: string, deps: Deps = {}, 
     const rooms = await roomsOf(booking);
     const unfilled = rooms.filter((room) => room.supplierRoomId === null);
     if (unfilled.length === 0) return;
-    const itinerary = known ?? (await supplierView(booking, supplierOf(deps)));
+    const itinerary = known ?? (await supplierView(booking, supplierOf(deps, booking)));
     if (!itinerary) return; // not found yet: the safety-net job tries again
     const sameCount = itinerary.rooms.length === rooms.length;
     const oneRoom = sameCount && rooms.length === 1;
@@ -727,7 +755,7 @@ export async function reconcile(bookingId: string, deps: Deps = {}): Promise<"co
   const now = deps.now ?? new Date();
   const booking = await db.booking.findUnique({ where: { id: bookingId } });
   if (!booking) return "nothing";
-  const supplier = supplierOf(deps);
+  const supplier = supplierOf(deps, booking);
   const context = supplierContextOf(booking);
   const attempt = booking.reconcileAttempts + 1;
   // Looks again later, and never stops: a few minutes apart at first, then (an admin is told,
@@ -1206,7 +1234,7 @@ export async function cancel(ctx: BookingContext, bookingId: string, confirm: { 
   const quote = cancelQuote(booking, rooms, now);
   if (!quote.allowed) return notDone("not_allowed", quote.code);
   if (quote.chargeMinor !== confirm.expectedChargeMinor) return notDone("not_allowed", "charge_changed");
-  const supplier = supplierOf(deps);
+  const supplier = supplierOf(deps, booking);
 
   // Every room's own cancel link before anything is sent: a booking is never part-cancelled for
   // want of a link, and a link is never guessed.
