@@ -6,15 +6,17 @@ import { alertError, alertInfo, btnPrimary, btnSecondary, card, emptyState, inpu
 import { formatMinor } from "@/lib/supplier-money";
 import { requireAgent } from "@/server/auth/guards";
 import { minorToUsdText, parseListOptions, priceProblem } from "@/server/search/list-options";
-import { listResults, searchSummary, type ListOptions } from "@/server/search/search";
-import { startSearchAction } from "../actions";
-import { dateRange } from "../dates";
+import { listResults, offerRef, searchSummary, type ListOptions } from "@/server/search/search";
+import { searchAgainAction, startSearchAction } from "../actions";
+import { searchDateRange } from "../dates";
 import { HotelPhoto, Stars, formValuesOf, shortDate, stayText } from "../parts";
 import { SearchForm } from "../search-form";
 import { loadMoreAction } from "./actions";
 import { FiltersPanel, SortSelect } from "./filters-panel";
+import { keptParams, resultsHref } from "../kept-params";
 import { quoteParam } from "../quote-param";
 import { cancellationLabel } from "../../_components/rate-text";
+import { SubmitButton } from "../../_components/submit-button";
 import { addToQuoteAction } from "../../quotes/actions";
 import { AddToQuote } from "../../quotes/add-to-quote";
 import { QUOTES_ONE_ROOM, openQuotes, quoteCode } from "@/server/quotes/quotes";
@@ -46,6 +48,40 @@ function filterParams(o: ListOptions): URLSearchParams {
   return p;
 }
 
+const PAGE_SIZE = 20;
+
+// What went wrong on "Load more hotels" (?notice=) or on "Search again" (?again=), in plain words.
+const LOAD_MORE_NOTICE: Record<string, string> = {
+  unavailable: "More hotels could not be loaded right now. Try again in a few minutes.",
+  limited: "Too many searches. Wait a minute and load more hotels again.",
+  rejected: "More hotels could not be loaded for these dates and guests. Check the dates and guests and search again.",
+};
+const SEARCH_AGAIN_NOTICE: Record<string, string> = {
+  input: "This search cannot be run again as it is. Check the destination, dates and guests above, then search.",
+  limited: "Too many searches. Wait a minute and search again.",
+  unavailable: "Hotel search is unavailable right now. Try again in a few minutes.",
+};
+
+// Only a known code gives a message; anything else in the URL gives none.
+function noticeText(texts: Record<string, string>, value: string | string[] | undefined): string | null {
+  const code = (Array.isArray(value) ? value[0] : value) ?? "";
+  return Object.hasOwn(texts, code) ? (texts[code] ?? null) : null;
+}
+
+// "Load more hotels": the next 250 hotels of the destination. The form carries the page's own
+// query (filters, sort, page, quote), so the agent comes back to the same view.
+function LoadMore({ snapshotId, back }: { snapshotId: string; back: string }) {
+  return (
+    <form action={loadMoreAction}>
+      <input type="hidden" name="snapshotId" value={snapshotId} />
+      <input type="hidden" name="back" value={back} />
+      <SubmitButton className={btnSecondary} pendingText="Loading more hotels…">
+        Load more hotels
+      </SubmitButton>
+    </form>
+  );
+}
+
 function priceField(minor: number | undefined): string {
   return minor === undefined ? "" : minorToUsdText(minor);
 }
@@ -53,8 +89,8 @@ function priceField(minor: number | undefined): string {
 // The rate behind the card's price, as on the hotel page: "Book this room" opens guest details and
 // "Add to quote" adds it; the server reads the room and the price from the search (plan 8d-3).
 // A search of several rooms cannot go into a quote (plan 10): the card says so instead.
-function CardRoom({ best, href }: { best: NonNullable<HotelCard["best"]>; href: string }) {
-  const cancel = cancellationLabel(best.offer);
+function CardRoom({ best, href, now }: { best: NonNullable<HotelCard["best"]>; href: string; now: Date }) {
+  const cancel = cancellationLabel(best.offer, now);
   return (
     <>
       <p className="text-[13px] text-ink">
@@ -91,7 +127,7 @@ function CardActions({
       <form id={formId} method="get" action="/book/new">
         <input type="hidden" name="s" value={snapshotId} />
         <input type="hidden" name="p" value={offer.propertyId} />
-        <input type="hidden" name="r" value={offer.rateId} />
+        <input type="hidden" name="r" value={offerRef(offer)} />
         {offer.bedGroups.length === 1 ? (
           <input type="hidden" name="b" value={offer.bedGroups[0]!.id} />
         ) : (
@@ -122,7 +158,7 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
   const now = new Date();
   const summary = await searchSummary(agencyId, id, now);
   if (!summary) notFound();
-  const { minDate, maxDate } = dateRange(now);
+  const { minDate, maxDate } = searchDateRange(now);
   const options = parseListOptions(query);
   const priceMessage = priceProblem(query);
   const result = await listResults(agencyId, id, options, now);
@@ -131,18 +167,20 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
   // Plan 5b: the quote this search adds to ("+ Add hotel" on a quote) stays on every link.
   const quoteId = quoteParam(query.quote);
   if (quoteId) kept.set("quote", quoteId);
-  const pageHref = (cursor: string | null) => {
-    const p = new URLSearchParams(kept);
-    if (cursor) p.set("cursor", cursor);
-    const qs = p.toString();
-    return `/search/${id}${qs ? `?${qs}` : ""}`;
-  };
+  const pageHref = (cursor: string | null) => resultsHref(id, kept, cursor ? { cursor } : {});
   const skip = Number(options.cursor ?? 0);
-  const previous = skip > 0 ? String(Math.max(0, skip - 20)) : null;
-  // The hotel link keeps the filters and this page of results, for "Back to hotels".
+  const previous = skip > 0 ? String(Math.max(0, skip - PAGE_SIZE)) : null;
+  // The hotel link keeps the filters and this page of results, for "Back to hotels". "Load more
+  // hotels" carries the same, so it comes back to this view.
   const back = new URLSearchParams(kept);
   if (options.cursor) back.set("cursor", options.cursor);
   const backTo = back.toString();
+  const filtered = filterParams({ ...options, sort: "recommended" }).toString() !== "";
+  // Only the first hotels of a large destination are asked for at once (250 at a time): the page
+  // says so, and "Load more hotels" asks for the next ones.
+  const partOf = result.hasMoreFromSupplier ? `the first ${result.loaded.toLocaleString("en-US")} of ${result.candidates.toLocaleString("en-US")} hotels in this destination` : null;
+  const loadNotice = noticeText(LOAD_MORE_NOTICE, query.notice);
+  const againNotice = noticeText(SEARCH_AGAIN_NOTICE, query.again);
   // Plan 5b: "Add to quote" lists the agency's open quotes; one opened from a quote is preselected.
   const severalRooms = summary.rooms.length > 1;
   const quotes = summary.expired || severalRooms ? [] : (await openQuotes(agencyId, quoteId)).map((q) => ({ id: q.id, label: `${quoteCode(q.number)} · ${q.title || "Untitled quote"}` }));
@@ -154,17 +192,29 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
       </section>
 
       {summary.expired ? (
-        <div role="alert" className={`${alertInfo} mt-5 flex flex-wrap items-center justify-between gap-3`}>
-          <span>These results expired (prices are kept for 30 minutes). Search again for current prices.</span>
-          <Link href="/search" className={btnSecondary}>
-            Search again
-          </Link>
-        </div>
+        <>
+          {againNotice ? (
+            <p role="alert" className={`${alertError} mt-5`}>
+              {againNotice}
+            </p>
+          ) : null}
+          <div role="alert" className={`${alertInfo} mt-5 flex flex-wrap items-center justify-between gap-3`}>
+            <span>These results expired (prices are kept for 30 minutes). Search again for current prices.</span>
+            {/* One click runs the same search again (destination, dates and guests as stored). */}
+            <form action={searchAgainAction}>
+              <input type="hidden" name="snapshotId" value={id} />
+              {quoteId ? <input type="hidden" name="quote" value={quoteId} /> : null}
+              <SubmitButton className={btnSecondary} pendingText="Searching…">
+                Search again
+              </SubmitButton>
+            </form>
+          </div>
+        </>
       ) : (
         <>
-          {query.notice === "unavailable" ? (
+          {loadNotice ? (
             <p role="alert" className={`${alertError} mt-5`}>
-              More hotels could not be loaded right now. Try again in a few minutes.
+              {loadNotice}
             </p>
           ) : null}
           <p className="mt-5 text-[15px] text-ink" aria-live="polite">
@@ -174,6 +224,7 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
             <span className="text-muted">
               for {summary.destinationLabel}, {shortDate(summary.checkin)} to {shortDate(summary.checkout)} · {stayText(summary)}
             </span>
+            {partOf ? <span className="block text-[13px] text-muted">Showing {partOf}. Use &quot;Load more hotels&quot; under the list for the rest.</span> : null}
           </p>
 
           <div className="mt-4 grid gap-5 lg:grid-cols-[250px_1fr]">
@@ -182,6 +233,8 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
             <aside className={`${card} h-fit p-4 max-lg:mt-2`}>
               <h2 className="text-base font-bold text-ink">Filters</h2>
               <form method="get" action={`/search/${id}`} className="mt-3 flex flex-col gap-4">
+                {/* The quote this search adds to stays through "Apply filters" and a sort change. */}
+                {quoteId ? <input type="hidden" name="quote" value={quoteId} /> : null}
                 <label className={label}>
                   Sort by
                   <SortSelect defaultValue={options.sort} className={input}>
@@ -228,7 +281,7 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                 <button type="submit" className={btnPrimary}>
                   Apply filters
                 </button>
-                <Link href={`/search/${id}`} className={link}>
+                <Link href={resultsHref(id, keptParams(quoteId ? { quote: quoteId } : {}))} className={link}>
                   Clear filters
                 </Link>
               </form>
@@ -238,9 +291,20 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
 
             <section aria-label="Hotels" className="flex flex-col gap-4">
               {result.hotels.length === 0 ? (
-                <p className={emptyState}>
-                  {result.total === 0 && kept.toString() === "" ? "No hotels are available for these dates. Try other dates." : "No hotels match these filters."}
-                </p>
+                partOf ? (
+                  // Nothing here yet, but the rest of the destination was not asked for: say so
+                  // and offer the next hotels right here (a hotel-name filter often lands here).
+                  <div className={`${emptyState} flex flex-wrap items-center justify-between gap-3`}>
+                    <span>
+                      {filtered ? `No hotel matches these filters among ${partOf}.` : `None of ${partOf} has rooms for these dates.`} Load more hotels to look in the rest.
+                    </span>
+                    <LoadMore snapshotId={id} back={backTo} />
+                  </div>
+                ) : (
+                  <p className={emptyState}>
+                    {result.total === 0 && !filtered ? "No hotels are available for these dates. Try other dates." : "No hotels match these filters. Change or clear the filters."}
+                  </p>
+                )
               ) : (
                 result.hotels.map((hotel) => {
                   const href = `/search/${id}/hotels/${encodeURIComponent(hotel.propertyId)}${backTo ? `?${backTo}` : ""}`;
@@ -260,11 +324,11 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                         {hotel.refundableAvailable ? (
                           <p>
                             <span className="inline-block rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand">
-                              {hotel.best && !cancellationLabel(hotel.best.offer).refundable ? "Free cancellation on other rooms" : "Free cancellation available"}
+                              {hotel.best && !cancellationLabel(hotel.best.offer, now).refundable ? "Free cancellation on other rooms" : "Free cancellation available"}
                             </span>
                           </p>
                         ) : null}
-                        {hotel.best ? <CardRoom best={hotel.best} href={href} /> : null}
+                        {hotel.best ? <CardRoom best={hotel.best} href={href} now={now} /> : null}
                       </div>
                       <div className="flex flex-col items-end justify-center gap-1 border-t border-line pt-3 text-right sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
                         <span className="text-xs text-muted">from</span>
@@ -294,18 +358,19 @@ export default async function ResultsPage({ params, searchParams }: { params: Pa
                 ) : (
                   <span />
                 )}
-                {result.nextCursor ? (
-                  <Link href={pageHref(result.nextCursor)} className={btnSecondary}>
-                    Next →
-                  </Link>
-                ) : result.hasMoreFromSupplier ? (
-                  <form action={loadMoreAction}>
-                    <input type="hidden" name="snapshotId" value={id} />
-                    <button type="submit" className={btnSecondary}>
-                      Load more hotels
-                    </button>
-                  </form>
+                {result.hotels.length > 0 ? (
+                  <span className="text-[13px] text-muted">
+                    {skip + 1}-{skip + result.hotels.length} of {result.total}
+                  </span>
                 ) : null}
+                <span className="flex flex-wrap items-center gap-3">
+                  {result.hasMoreFromSupplier && result.hotels.length > 0 ? <LoadMore snapshotId={id} back={backTo} /> : null}
+                  {result.nextCursor ? (
+                    <Link href={pageHref(result.nextCursor)} className={btnSecondary}>
+                      Next →
+                    </Link>
+                  ) : null}
+                </span>
               </nav>
             </section>
           </div>

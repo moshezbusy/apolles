@@ -9,7 +9,7 @@ import { recentSearches } from "@/server/search/recent";
 import { multiRoomAllowed } from "@/server/supplier";
 import { clearRecentAction, startSearchAction } from "./actions";
 import { SearchForm } from "./search-form";
-import { dateRange, defaultSearchValues } from "./dates";
+import { defaultSearchValues, searchDateRange } from "./dates";
 import { guestsText } from "./parts";
 import { quoteParam } from "./quote-param";
 
@@ -27,7 +27,7 @@ function one(v: string | string[] | undefined): string {
 export default async function SearchPage({ searchParams }: { searchParams: SearchParams }) {
   const { agencyId, userId } = await requireAgent();
   const now = new Date();
-  const { minDate, maxDate } = dateRange(now);
+  const { minDate, maxDate } = searchDateRange(now);
   const params = await searchParams;
   const values = defaultSearchValues(now);
 
@@ -38,8 +38,10 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
     values.rooms = [{ adults: String(quote.adults), childAges: quote.childAges.map(String) }];
   }
   const [recent, selected] = await Promise.all([recentSearches({ agencyId, userId }), quote ? null : listQuotes(agencyId, { tab: "selected" })]);
-  // "Search again" (?again=<id>): the agent's own recent search; dates already past fall back.
+  // "Search again" (?again=<id>): the agent's own recent search. Dates already past cannot be
+  // searched: the form starts with new default dates, and says so instead of swapping them quietly.
   const again = recent.find((r) => r.id === one(params.again));
+  let datesPassed = false;
   if (again && !quote) {
     values.destinationId = again.destinationId;
     values.destinationLabel = again.destinationName;
@@ -47,6 +49,8 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
     if (again.checkin >= minDate) {
       values.checkin = again.checkin;
       values.checkout = again.checkout;
+    } else {
+      datesPassed = true;
     }
   }
   if (stay) {
@@ -68,6 +72,11 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
       {quote ? (
         <p className={`${alertInfo} mt-4`}>
           Adding hotels to {quoteCode(quote.number)} {quote.title ? `· ${quote.title}` : ""}. Choose a room, then &quot;Add to quote&quot;.
+        </p>
+      ) : null}
+      {datesPassed ? (
+        <p role="status" className={`${alertInfo} mt-4`}>
+          Those dates have passed. Pick new dates.
         </p>
       ) : null}
       <section className={`${card} mt-6 p-5`}>

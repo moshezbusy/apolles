@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import { ExpediaAdapter, SupplierResponseInvalid, occupancyKey } from "./adapter";
+import { SupplierError, SupplierRequestRejected } from "./client";
+import { isLinkToken, rawQueryValue } from "./parse";
+
+// A token like Rapid's real ones: long, with "~", "=", "." and percent-encoded bytes.
+const LONG_TOKEN = `C~${"Oj46Zz8xJDEdCRdBQ1dGXlNDDVZX".repeat(60)}~a.b_c-d%2F%2Bx%3D==`;
 
 function fixture(name: string): unknown {
   return JSON.parse(readFileSync(fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url)), "utf8"));
@@ -254,6 +259,43 @@ describe("ExpediaAdapter", () => {
     });
   });
 
+  describe("link tokens", () => {
+    type Availability = { rooms: { rates: { bed_groups: Record<string, { links: { price_check: { href: string } } }> }[] }[] }[];
+
+    it("keeps the price-check token exactly as written in the link (long, with ~ and %2F)", async () => {
+      const body = fixture("availability.usd.json") as Availability;
+      const group = Object.values(body[0]!.rooms[0]!.rates[0]!.bed_groups)[0]!;
+      group.links.price_check.href = `/v3/properties/19248/rooms/abc123/rates/abc123?token=${LONG_TOKEN}`;
+      fetchMock.mockResolvedValue(json(200, body));
+      const [property] = await adapter.searchAvailability(query, context);
+      expect(property!.offers[0]!.bedGroups[0]!.priceCheckToken).toBe(LONG_TOKEN);
+    });
+
+    it("a rate whose token could not be sent back is dropped and named in the supplier log", async () => {
+      const body = fixture("availability.usd.json") as Availability;
+      const offersBefore = body[0]!.rooms.flatMap((room) => room.rates).length;
+      const group = Object.values(body[0]!.rooms[0]!.rates[0]!.bed_groups)[0]!;
+      group.links.price_check.href = "/v3/properties/19248/rooms/abc123/rates/abc123?token=a b";
+      fetchMock.mockResolvedValue(json(200, body));
+      const result = await adapter.searchAvailability(query, context);
+      expect(result.flatMap((p) => p.offers).length).toBeLessThan(offersBefore);
+      const row = await db.supplierCallLog.findFirstOrThrow();
+      expect(row.unknownFields).toContain("invalid:[].rooms[].rates[].bed_groups.links.price_check.href");
+    });
+
+    it("isLinkToken and rawQueryValue", () => {
+      expect(isLinkToken(LONG_TOKEN)).toBe(true);
+      expect(isLinkToken("XFleAkNUU1YKACg5HcAtdVw8SQVUPUApTAF0CAApdBg==")).toBe(true); // the spec's example
+      expect(isLinkToken("fake-demo-paris-1-1-king~2027-04-10~2")).toBe(true);
+      expect(isLinkToken("a".repeat(4096))).toBe(true);
+      expect(isLinkToken(undefined)).toBe(false);
+      expect(rawQueryValue("/v3/x?a=1&token=ab%2Fc==&z=2#frag", "token")).toBe("ab%2Fc==");
+      expect(rawQueryValue("/v3/x?a=1", "token")).toBeNull();
+      expect(rawQueryValue("/v3/x", "token")).toBeNull();
+      expect(rawQueryValue("/v3/x?token", "token")).toBe("");
+    });
+  });
+
   describe("priceCheck", () => {
     const ref = { propertyId: "19248", roomId: "abc123", rateId: "abc123", token: "tok-a1", occupancies: [{ adults: 2, childAges: [] }] };
 
@@ -273,10 +315,57 @@ describe("ExpediaAdapter", () => {
     it.each([
       ["roomId", { roomId: ".." }],
       ["rateId", { rateId: "a/b" }],
-      ["token", { token: "x y" }],
-    ])("refuses an unsafe %s before calling Expedia", async (_label, patch) => {
-      await expect(adapter.priceCheck({ ...ref, ...patch }, context)).rejects.toThrow();
+      ["token with a space", { token: "x y" }],
+      ["token with &", { token: "a&b=c" }],
+      ["token with #", { token: "a#b" }],
+      ["token with ?", { token: "a?b" }],
+      ["token with /", { token: "a/b" }],
+      ["token with a line break", { token: "a\nb" }],
+      ["token with a lone %", { token: "a%zz" }],
+      ["token that is not ASCII", { token: "tok\u00e9" }],
+      ["empty token", { token: "" }],
+      ["token over 4 KB", { token: "a".repeat(4097) }],
+    ])("refuses an unsafe %s before calling Expedia, as a supplier rejection (never a plain error)", async (_label, patch) => {
+      const failure = await adapter.priceCheck({ ...ref, ...patch }, context).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(SupplierRequestRejected);
+      expect(failure).toBeInstanceOf(SupplierError);
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("a long real-looking token (with ~ and %2F) is accepted and sent back byte for byte", async () => {
+      expect(LONG_TOKEN.length).toBeGreaterThan(1_500);
+      fetchMock.mockResolvedValue(json(200, fixture("price-check.usd-available.json")));
+      const result = await adapter.priceCheck({ ...ref, token: LONG_TOKEN }, context);
+      expect(result.status).toBe("available");
+      expect(String(fetchMock.mock.calls[0]![0])).toBe(`https://test.ean.com/v3/properties/19248/rooms/abc123/rates/abc123?token=${LONG_TOKEN}`);
+      // The supplier log never keeps the token.
+      const row = await db.supplierCallLog.findFirstOrThrow();
+      expect(row.path).not.toContain("Oj46");
+      expect(row.path).toContain("masked");
+    });
+
+    it("an error of the price check never carries the token", async () => {
+      fetchMock.mockResolvedValue(json(400, { type: "invalid_input" }));
+      const failure = await adapter.priceCheck({ ...ref, token: LONG_TOKEN }, context).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(SupplierRequestRejected);
+      expect(String(failure)).not.toContain("Oj46");
+      expect(String(failure)).not.toContain("token");
+    });
+
+    it("the book token is the book link's token as written, not decoded", async () => {
+      const answer = fixture("price-check.usd-available.json") as { links: { book: { href: string } } };
+      answer.links.book.href = `/v3/itineraries?token=${LONG_TOKEN}`;
+      fetchMock.mockResolvedValue(json(200, answer));
+      const result = await adapter.priceCheck(ref, context);
+      if (result.status === "sold_out") throw new Error("unexpected");
+      expect(result.bookToken).toBe(LONG_TOKEN);
+    });
+
+    it("a book link whose token cannot be sent back is a broken answer, not a sold-out room", async () => {
+      const answer = fixture("price-check.usd-available.json") as { links: { book: { href: string } } };
+      answer.links.book.href = "/v3/itineraries?token=a b";
+      fetchMock.mockResolvedValue(json(200, answer));
+      await expect(adapter.priceCheck(ref, context)).rejects.toBeInstanceOf(SupplierResponseInvalid);
     });
 
     it("maps price_changed and sold_out", async () => {

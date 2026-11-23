@@ -320,12 +320,15 @@ model Property {
 
 // One run of a content sync job (catalog, regions, inactive), for auditing and for "since".
 model ContentSyncRun {
-  id         String            @id @default(cuid())
-  kind       String
-  status     ContentSyncStatus @default(RUNNING)
-  startedAt  DateTime          @default(now())
-  finishedAt DateTime?
-  counts     Json?
+  id          String            @id @default(cuid())
+  kind        String
+  status      ContentSyncStatus @default(RUNNING)
+  startedAt   DateTime          @default(now())
+  finishedAt  DateTime?
+  counts      Json?
+  // The last sign of life of a RUNNING run (sync-run.ts): a run with none for 10 minutes is a
+  // dead worker's, and the next try takes over. Null on runs from before this column.
+  heartbeatAt DateTime?
 
   @@index([kind, status, startedAt])
 }
@@ -384,6 +387,7 @@ model SearchSnapshot {
   rates        SearchRate[]
 
   @@index([agencyId, createdAt])
+  @@index([userId, createdAt])
   @@index([expiresAt])
 }
 
@@ -410,15 +414,19 @@ model SearchHotel {
 // free cancellation, price) match one rate on all of them, and the card shows the cheapest
 // matching rate, so a hotel's "from" price is always a rate the agent can actually pick.
 model SearchRate {
-  snapshotId     String
-  propertyId     String
-  rateIndex      Int // position in SearchHotel.offers
-  roomName       String // lowercased, for the room-name filter
-  refundable     Boolean
-  totalMinor     Int
-  currency       String
-  feesAtProperty Boolean // something is paid at the hotel on top of the total (BP4)
-  snapshot       SearchSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  snapshotId      String
+  propertyId      String
+  rateIndex       Int // position in SearchHotel.offers
+  roomName        String // lowercased, for the room-name filter
+  refundable      Boolean // free cancellation when the search ran (src/lib/cancellation.ts)
+  // When free cancellation ends (the first charge starts); null: none promised. The results
+  // filter and the "free cancellation" badge compare it with the clock, so a deadline that
+  // passes while the results are open stops counting. Null on rows from before this column.
+  freeCancelUntil DateTime?
+  totalMinor      Int
+  currency        String
+  feesAtProperty  Boolean // something is paid at the hotel on top of the total (BP4)
+  snapshot        SearchSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
 
   @@id([snapshotId, propertyId, rateIndex])
   @@index([snapshotId, totalMinor])

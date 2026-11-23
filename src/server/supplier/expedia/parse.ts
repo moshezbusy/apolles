@@ -44,3 +44,31 @@ export function check<T>(
   }
   return result.data;
 }
+
+// ---------- link tokens ----------
+// A Rapid link ("/v3/properties/1/rooms/2/rates/3?token=…") carries a token that must go back
+// exactly as given. Real tokens are long and not only letters and digits: the spec's own example
+// ends in "==", and they may hold "~", "." or percent-encoded bytes ("%2F"). So the token is
+// kept as it is written in the href (never decoded and encoded again) and sent back byte for
+// byte. What is accepted: the characters a query value can hold without ending it (unreserved,
+// "=", a few harmless sub-delimiters, and well-formed %XX), up to 4 KB. What is refused: "&" and
+// "#" (they would end the value), "?", "/", spaces, control characters, a lone "%", anything
+// that is not ASCII.
+export const MAX_LINK_TOKEN_LENGTH = 4096;
+const LINK_TOKEN = /^(?:[A-Za-z0-9._~=+:,;*!$@-]|%[0-9A-Fa-f]{2})+$/;
+
+export function isLinkToken(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 1 && value.length <= MAX_LINK_TOKEN_LENGTH && LINK_TOKEN.test(value);
+}
+
+// One parameter of an href's query, exactly as written (not decoded). null when it is not there.
+export function rawQueryValue(href: string, name: string): string | null {
+  const at = href.indexOf("?");
+  if (at === -1) return null;
+  const query = href.slice(at + 1).split("#", 1)[0] ?? "";
+  for (const part of query.split("&")) {
+    const eq = part.indexOf("=");
+    if ((eq === -1 ? part : part.slice(0, eq)) === name) return eq === -1 ? "" : part.slice(eq + 1);
+  }
+  return null;
+}

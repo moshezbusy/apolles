@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
+import { SupplierTimeout } from "@/server/supplier/expedia/client";
 import type { ContentSource } from "@/server/supplier/types";
 import { syncInactive } from "./inactive-sync";
 
@@ -28,6 +29,29 @@ describe("syncInactive", () => {
     expect((await db.property.findUniqueOrThrow({ where: { id: "3" } })).active).toBe(true);
     expect(await db.propertyContentCache.count()).toBe(1);
     expect(inactiveSince.mock.calls[0]![0]).toEqual({ since: "2027-02-28" });
+  });
+
+  it("a page that times out is asked for again; with the demo supplier the sync does nothing", async () => {
+    await hotel("1");
+    let calls = 0;
+    const inactiveSince = vi.fn(async () => {
+      if (++calls === 1) throw new SupplierTimeout("timed out");
+      return { propertyIds: ["1"], next: null };
+    });
+    const sleep = vi.fn(async () => undefined);
+    expect(await syncInactive(NOW, { source: { inactiveSince } as unknown as ContentSource, sleep })).toEqual({ deactivated: 1 });
+    expect(sleep).toHaveBeenCalledTimes(1);
+
+    vi.stubEnv("SUPPLIER_MODE", "fake");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const runs = await db.contentSyncRun.count();
+      expect(await syncInactive(NOW)).toEqual({ deactivated: 0 });
+      expect(await db.contentSyncRun.count()).toBe(runs);
+    } finally {
+      info.mockRestore();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("starts from the start of the last successful run", async () => {

@@ -6,3 +6,12 @@
 b09a491ebd57af87592d5907e0708c0f1363261c:test/server.test.ts:generic-api-key:7
 # Branch claude/demo-access-button: the list of letters used to build a random demo password.
 729a5aa0ae5f04ca6d1a6bae275c61d637b584e9:src/server/content/demo-seed.ts:generic-api-key:77
+
+# Owner decision 2026-11-23 (docs/decisions/2026-11-23-gitleaks-false-alarms.md): four more
+# made-up keys used only inside unit tests. They blocked every pull request in the repository.
+# Branch claude/brave-goldberg-v7adee (supplier layer): a made-up API key in a shutdown test.
+8f0b0532faff4e87efb34e15817496524c9c5a08:test/shutdown.test.ts:generic-api-key:7
+# Branch claude/modest-keller-uv6ayh (search connector, PR 44): made-up service keys and a made-up token in tests.
+0d9b7a9fa7347f179c2f4c56cf5abb73ab3aea36:src/server/ai/tokens.test.ts:generic-api-key:112
+b69712a1ff83c56a0eb5defa574661205b697ad8:src/server/ai/tokens.test.ts:generic-api-key:110
+b38369c5008e5d93b07de1b5b5456ae04c3845db:src/mcp/server.test.ts:generic-api-key:16

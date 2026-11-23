@@ -3,7 +3,7 @@ import { db } from "@/server/db";
 import { resetTestDb } from "@/test/db";
 import { SupplierTimeout } from "@/server/supplier/expedia/client";
 import type { ContentSource, PropertyContent } from "@/server/supplier/types";
-import { getContent } from "./content-cache";
+import { getContent, pruneContentCache } from "./content-cache";
 
 const NOW = new Date("2027-03-01T10:00:00.000Z");
 const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000);
@@ -91,5 +91,18 @@ describe("getContent", () => {
     const map = await getContent(["1"], NOW, { source: s });
     expect(map.get("1")?.name).toBe("Hotel 1");
     expect(s.propertyContent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("pruneContentCache", () => {
+  beforeEach(async () => {
+    await resetTestDb();
+  });
+
+  it("removes content fetched before the given moment and keeps the rest", async () => {
+    await db.propertyContentCache.create({ data: { propertyId: "old", data: content("old"), fetchedAt: hoursAgo(31 * 24) } });
+    await db.propertyContentCache.create({ data: { propertyId: "new", data: content("new"), fetchedAt: hoursAgo(2) } });
+    expect(await pruneContentCache(hoursAgo(30 * 24))).toBe(1);
+    expect((await db.propertyContentCache.findMany()).map((row) => row.propertyId)).toEqual(["new"]);
   });
 });

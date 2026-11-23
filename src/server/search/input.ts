@@ -1,10 +1,17 @@
 import { z } from "zod";
 
 // What an agent searches by (spec section 3, row 4), with Rapid's limits: check-in from today
-// to 365 days ahead (UTC), 1 to 28 nights, 1 to 8 rooms (plan 10; Rapid: "Up to 8 rooms may be
+// to 365 days ahead, 1 to 28 nights, 1 to 8 rooms (plan 10; Rapid: "Up to 8 rooms may be
 // requested or booked at once"), and in each room 1 to 8 adults and up to 6 children aged 0-17.
 // There is no nationality: Rapid takes only the point of sale (the agency's country, TR2).
 // Whether more than one room is allowed at all is the search service's check (multiRoomAllowed).
+//
+// "Today" is not one date: while it is still the 1st in Honolulu it is already the 2nd in Tokyo,
+// and the server's clock is UTC. So a check-in is accepted when it is today in ANY time zone on
+// earth, which means: not before yesterday in UTC (time zones run from UTC-12 to UTC+14, so the
+// local date is never more than one day behind the UTC date). An agent in the Americas in the
+// evening can then search for tonight. A date that is already over at the hotel is refused by
+// the supplier, and the search says "Check the dates and guests and search again" (search.ts).
 
 const MAX_DAYS_AHEAD = 365;
 const MAX_NIGHTS = 28;
@@ -37,7 +44,7 @@ export function searchInputSchema(now: Date) {
       const checkin = Date.parse(`${value.checkin}T00:00:00.000Z`);
       const checkout = Date.parse(`${value.checkout}T00:00:00.000Z`);
       const nights = (checkout - checkin) / DAY_MS;
-      if (checkin < today || checkin > today + MAX_DAYS_AHEAD * DAY_MS) ctx.addIssue({ code: "custom", message: "check-in out of range", path: ["checkin"] });
+      if (checkin < today - DAY_MS || checkin > today + MAX_DAYS_AHEAD * DAY_MS) ctx.addIssue({ code: "custom", message: "check-in out of range", path: ["checkin"] });
       if (!(nights >= 1 && nights <= MAX_NIGHTS)) ctx.addIssue({ code: "custom", message: "1 to 28 nights", path: ["checkout"] });
     });
 }

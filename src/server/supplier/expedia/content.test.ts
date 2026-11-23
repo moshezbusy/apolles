@@ -110,6 +110,10 @@ describe("ExpediaContentSource", () => {
       const url = new URL(String(fetchMock.mock.calls[0]![0]));
       expect(url.searchParams.getAll("property_id")).toEqual(["12345", "67890"]);
       expect(Object.fromEntries(url.searchParams)).toMatchObject({ language: "en-US", supply_source: "expedia" });
+      // Only the parts the pages show are asked for (Rapid's include), not the full content.
+      expect(url.searchParams.getAll("include")).toEqual([
+        "name", "address", "ratings", "location", "checkin", "checkout", "fees", "policies", "descriptions", "onsite_payments", "images", "amenities", "rooms",
+      ]);
 
       const p = result.find((c) => c.propertyId === "12345")!;
       expect(p.name).toEqual(expect.any(String));
