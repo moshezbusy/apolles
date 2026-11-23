@@ -178,6 +178,16 @@ describe("voucher PDF", () => {
     }
   });
 
+  it("free cancellation: the one wording in hotel time, and no promise when the rate names no deadline", async () => {
+    await seed();
+    // 2027-04-07 is still ahead: the first charge's own hotel time.
+    expect(pdfText(await renderVoucher("A", "bk1")).replace(/\s+/g, " ")).toContain("Free cancellation until Wed, Apr 7, 2027, 00:00 hotel time.");
+    await db.booking.update({ where: { id: "bk1" }, data: { cancelPenalties: [] } });
+    const text = pdfText(await renderVoucher("A", "bk1")).replace(/\s+/g, " ");
+    expect(text).not.toContain("Free cancellation");
+    expect(text).toContain("Cancellation charges may apply.");
+  });
+
   it("only for the agency's own confirmed booking", async () => {
     await seed("PENDING_CONFIRMATION");
     await expect(renderVoucher("A", "bk1")).rejects.toBeInstanceOf(VoucherNotAvailable);

@@ -4,6 +4,8 @@ import { validateImage } from "@/lib/image-info";
 import { formatMinor } from "@/lib/supplier-money";
 import { toBlocks } from "@/lib/supplier-text";
 import { withPdfTimeout } from "@/server/booking/pdf-safety";
+import { hasNoCancelDeadline } from "@/lib/cancellation";
+import { freeCancelText } from "./free-cancel";
 import { db } from "@/server/db";
 import { contentShape } from "@/server/content/content-cache";
 import type { CancelPenalty, PriceBreakdown, PropertyContent } from "@/server/supplier/types";
@@ -187,7 +189,13 @@ export async function renderVoucher(agencyId: string, bookingId: string): Promis
   if (!b.refundable) line("Non-refundable: this booking cannot be cancelled or changed without paying the full amount.");
   for (const p of penalties) line(penaltyLine(p));
   for (const r of b.nonrefundableDateRanges as unknown as { start: string; end: string }[]) line(`Non-refundable for stay dates ${r.start} to ${r.end}.`);
-  if (b.refundable && penalties.length === 0) line("Free cancellation before check-in.");
+  // The one free-cancellation wording (free-cancel.ts); a refundable rate with no charge listed
+  // names no deadline, so nothing is promised.
+  const free = freeCancelText(b, new Date());
+  if (free) line(`${free}.`);
+  else if (hasNoCancelDeadline({ refundable: b.refundable, cancelPenalties: penalties, nonrefundableDateRanges: b.nonrefundableDateRanges as unknown[] })) {
+    line("No free cancellation deadline was given for this rate. Cancellation charges may apply.");
+  }
   line("Times are the hotel's local time. To cancel or change, contact the travel agency above.", { muted: true });
 
   doc.end();
