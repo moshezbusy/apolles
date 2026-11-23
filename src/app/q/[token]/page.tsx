@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { getClientIp } from "@/server/client-ip";
 import { clientPageAllowed, clientQuote, clientQuoteMeta } from "@/server/quotes/sharing";
-import { Busy, Proposal, proposalPhotos } from "./proposal";
+import { Busy, Proposal, proposalContent } from "./proposal";
 
 type Params = Promise<{ token: string }>;
 
@@ -33,5 +33,5 @@ export default async function ClientQuotePage({ params }: { params: Params }) {
   if (!(await clientPageAllowed(getClientIp(await headers())))) return <Busy />;
   const data = await clientQuote(token);
   if (!data) notFound();
-  return <Proposal quote={data.view} token={token} logoSrc={`/q/${token}/logo`} photos={await proposalPhotos(data, "cache")} />;
+  return <Proposal quote={data.view} token={token} logoSrc={`/q/${token}/logo`} content={await proposalContent(data, "cache")} />;
 }
