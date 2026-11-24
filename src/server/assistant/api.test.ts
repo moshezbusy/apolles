@@ -83,7 +83,8 @@ describe("assistant search API", () => {
     const rows = await db.auditLog.findMany({ where: { action: "assistant.search_hotels" } });
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ actorUserId: who.userId, targetType: "AssistantConnection", targetId: who.connectionId });
-    expect(JSON.stringify(rows[0])).not.toContain(who.token);
+    const row = rows[0];
+    expect(JSON.stringify(row)).not.toContain(who.token);
 
     const rates = await handleAssistantTool("get_hotel_rates", call("get_hotel_rates", { searchId: body.data.searchId, hotelId: "1" }, { authorization: `Bearer ${who.token}` }), deps);
     expect(rates.status).toBe(200);
@@ -92,7 +93,8 @@ describe("assistant search API", () => {
 
   it("refuses without a token, with a session cookie only, with a bad or revoked token (401 + where to sign in)", async () => {
     const who = await connected();
-    const cookie = `${SESSION_COOKIE}=${await createSession(who.userId, { verified: true })}`;
+    const sessionToken = await createSession(who.userId, { verified: true });
+    const cookie = `${SESSION_COOKIE}=${sessionToken}`;
     for (const headers of [{}, { cookie }, { authorization: "Bearer aplat_wrong" }, { authorization: who.token }, { authorization: `Basic ${who.token}` }]) {
       const response = await handleAssistantTool("search_hotels", call("search_hotels", stay, headers), deps);
       expect(response.status, JSON.stringify(headers)).toBe(401);
