@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { AuthShell } from "@/components/AuthShell";
 import { btnPrimary, btnSecondary, link } from "@/components/ui";
 import { getAgencyProfile } from "@/server/agency-profile";
-import { readAuthRequest } from "@/server/assistant/oauth";
+import { BROWSER_COOKIE, readAuthRequest } from "@/server/assistant/oauth";
 import { requireAgent } from "@/server/auth/guards";
 import { getAccount } from "@/server/users";
 import { allowAssistantAction, cancelAssistantAction } from "./actions";
@@ -17,11 +18,12 @@ export const metadata: Metadata = { title: "Connect an AI assistant · Apolles",
 export default async function ConsentPage({ params }: { params: Promise<{ id: string }> }) {
   const { userId, agencyId } = await requireAgent();
   const { id } = await params;
-  const [request, account, agency] = await Promise.all([readAuthRequest(id), getAccount(userId, agencyId), getAgencyProfile(agencyId)]);
+  const nonce = (await cookies()).get(BROWSER_COOKIE)?.value;
+  const [request, account, agency] = await Promise.all([readAuthRequest(id, nonce), getAccount(userId, agencyId), getAgencyProfile(agencyId)]);
 
   if (!request) {
     return (
-      <AuthShell eyebrow="AI assistants" title="This link has expired" subtitle="Start connecting again from Claude or ChatGPT. The link works for 10 minutes.">
+      <AuthShell eyebrow="AI assistants" title="This link has expired" subtitle="Start connecting again from Claude or ChatGPT, in this browser. The link works for 10 minutes.">
         <Link href="/settings?tab=assistants" className={link}>
           Back to AI assistants
         </Link>
@@ -55,7 +57,9 @@ export default async function ConsentPage({ params }: { params: Promise<{ id: st
           </ul>
         </div>
       </div>
-      <p className="mt-4 text-[12.5px] text-muted">You can disconnect it any time in Agency settings, AI assistants.</p>
+      <p className="mt-4 text-[12.5px] text-muted">
+        Continue only if you started this yourself, from your own {request.clientName}. You can disconnect it any time in Agency settings, AI assistants.
+      </p>
       <div className="mt-5 flex flex-wrap gap-2">
         <form action={allowAssistantAction}>
           <input type="hidden" name="request" value={request.id} />

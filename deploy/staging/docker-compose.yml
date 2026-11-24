@@ -118,10 +118,12 @@ services:
     read_only: true
     environment:
       APP_ENV: staging
-      # The same values the app has (compose reads them from the settings file next to this one
-      # and stops if one is missing). Nothing else from that file reaches this container.
-      APP_URL: ${APP_URL:?set APP_URL in the staging settings file}
-      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:?set MCP_PUBLIC_URL in the staging settings file}
+      # The same values the app has, read from the settings file next to this one. Nothing else
+      # from that file reaches this container. Empty is allowed here so that compose (and every
+      # staging update) keeps working while the connector is off; the connector itself refuses
+      # to start without a valid address.
+      APP_URL: ${APP_URL:-}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-}
       APP_INTERNAL_URL: http://apolles-staging:3000
     entrypoint: ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--import", "./prisma/ts-loader.mjs", "src/mcp-server.ts"]
     depends_on:

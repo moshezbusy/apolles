@@ -433,6 +433,9 @@ It stays off until all the steps below are done. Search only: the connector has 
    docker compose -p apolles-staging --profile assistants up -d apolles-staging-mcp
    ```
 
+   The automatic update (section 5) does not restart the connector: after an update that
+   changes it, run the same command again, so it runs the new code.
+
 5. **Check**: `https://mcp-staging.apolles.com/.well-known/oauth-protected-resource/mcp` shows
    the connector's details, and `https://staging.apolles.com/api/assistant/check` gives 404.
    Then, as an agent: Agency settings, AI assistants, copy the address into Claude (Settings,

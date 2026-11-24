@@ -27,7 +27,7 @@ async function connectedAgent() {
   );
   // A sign-in the agent approved that the assistant has not finished yet goes too.
   await db.assistantAuthRequest.create({
-    data: { id: "r".repeat(32), clientId: client.id, redirectUri: "https://claude.ai/api/mcp/auth_callback", codeChallenge: "c".repeat(43), resource: RESOURCE, userId: user.id, agencyId: agency.id, expiresAt: new Date(Date.now() + 60_000) },
+    data: { id: "r".repeat(32), clientId: client.id, redirectUri: "https://claude.ai/api/mcp/auth_callback", codeChallenge: "c".repeat(43), browserHash: "h", resource: RESOURCE, userId: user.id, agencyId: agency.id, expiresAt: new Date(Date.now() + 60_000) },
   });
   expect(await verifyAccessToken(accessToken)).not.toBeNull();
   const admin = await createUser({ email: "admin@example.com", name: "Admin", role: "ADMIN" });

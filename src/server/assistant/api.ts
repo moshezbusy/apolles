@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { audit } from "@/server/audit";
+import { readLimitedText } from "@/server/http-body";
 import { hitRateLimit } from "@/server/rate-limit";
 import { assistantConfig } from "./config";
 import { verifyAccessToken } from "./connections";
@@ -40,10 +41,8 @@ function bearer(request: Request): string | null {
 }
 
 async function readBody(request: Request): Promise<{ ok: true; value: unknown } | { ok: false; status: number }> {
-  const declared = Number(request.headers.get("content-length") ?? "0");
-  if (declared > MAX_BODY_BYTES) return { ok: false, status: 413 };
-  const text = await request.text();
-  if (Buffer.byteLength(text) > MAX_BODY_BYTES) return { ok: false, status: 413 };
+  const text = await readLimitedText(request, MAX_BODY_BYTES);
+  if (text === null) return { ok: false, status: 413 };
   try {
     return { ok: true, value: JSON.parse(text) as unknown };
   } catch {
@@ -78,7 +77,10 @@ export async function handleAssistantTool(tool: string, request: Request, deps: 
   const connection = await hitRateLimit(`assistant:connection:${who.connectionId}`, PER_CONNECTION.limit, PER_CONNECTION.windowMs);
   const agency = connection.allowed ? await hitRateLimit(`assistant:agency:${who.agencyId}`, PER_AGENCY.limit, PER_AGENCY.windowMs) : null;
   if (!connection.allowed || !agency?.allowed) {
-    await record("rate_limited");
+    // Only the first refusal of the minute is logged: an assistant stuck in a loop does not fill
+    // the audit log.
+    const firstRefusal = !connection.allowed ? connection.count === PER_CONNECTION.limit + 1 : agency?.count === PER_AGENCY.limit + 1;
+    if (firstRefusal) await record("rate_limited");
     return json(429, { ok: false, code: "rate_limited", message: "Too many searches. Wait a minute and try again." });
   }
 

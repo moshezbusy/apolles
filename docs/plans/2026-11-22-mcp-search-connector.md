@@ -86,13 +86,24 @@ Owner approved the plan above in chat. What was built, and where it differs:
 - Only Claude's and ChatGPT's redirect addresses can register. The name on the consent page comes
   from that address. Access token 1 hour, refresh token 30 days with rotation; a reused refresh
   token or code revokes the connection.
+- The sign-in is tied to the browser that opened it (a short-lived cookie set by `/oauth/authorize`):
+  a consent link forwarded to another agent does nothing. Approval and code exchange lock the
+  agency and agent rows first, so they cannot slip past a suspension, password change or lockout
+  running at the same moment.
+- Registration and token calls come from Claude's and ChatGPT's servers, so their per-network
+  limits are only high ceilings; token calls are limited per client (one per connection).
+- Request bodies are capped before they are read (8 KB OAuth, 16 KB assistant API).
+- Daily cleanup removes ended sign-ins, registrations that never connected (after 7 days) and
+  connections that ended more than 30 days ago (their history stays in the audit log).
 - **Destination by name**: `search_hotels` takes a destination name (or an id from
   `otherDestinations`), since an assistant does not know Apolles destination ids.
-- **Revocation**: agency suspension, password change, lockout (agent's email code or admin TOTP),
-  and Revoke in Agency settings, AI assistants. Each token check also refuses a suspended agent or
+- **Revocation**: agency suspension, password change, lockout (agent's email code or admin TOTP;
+  the password-step pause does not lock the account and does not revoke), and Revoke in Agency
+  settings, AI assistants. Each token check also refuses a suspended agent or
   agency and a locked-out agent.
 - **Limits and audit**: per connection 60 calls a minute, per agency 300, on top of the search
-  service's own per-user limits. One audit row per call (`assistant.search_hotels`,
+  service's own per-user limits. One audit row per call (over the limit: the first refusal of the
+  minute only) (`assistant.search_hotels`,
   `assistant.get_hotel_rates`), plus `assistant.authorize`, `assistant.connect`, `assistant.revoke`.
 - **Off by default**: everything answers 404 until `MCP_PUBLIC_URL` is set
   (deploy/staging/README.md, section 7).

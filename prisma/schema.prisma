@@ -980,6 +980,7 @@ model AssistantAuthRequest {
   codeExpiresAt DateTime?
   usedAt        DateTime?
   connectionId  String? // the connection the code gave: revoked if the code is used again
+  browserHash   String // the browser that opened the sign-in (cookie): only it can approve
   expiresAt     DateTime
   createdAt     DateTime  @default(now())
 
@@ -988,6 +989,7 @@ model AssistantAuthRequest {
 
   @@index([expiresAt])
   @@index([userId])
+  @@index([agencyId])
 }
 
 // A connected assistant: one agent, one assistant, scope "search:read" only. The access token

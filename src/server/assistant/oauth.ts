@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import type { Prisma } from "@/generated/prisma/client";
 import { audit } from "@/server/audit";
 import { hashToken } from "@/server/auth/token";
 import { db } from "@/server/db";
@@ -25,9 +26,14 @@ import { createConnection, refreshConnection, revokeConnectionById } from "./con
 const REQUEST_TTL_MS = 10 * 60 * 1000; // the agent may need to sign in (email code) on the way
 const CODE_TTL_MS = 2 * 60 * 1000;
 const MAX_REDIRECTS = 5;
-const REGISTER_LIMIT = { limit: 20, windowMs: 60 * 60 * 1000 }; // per network
-const AUTHORIZE_LIMIT = { limit: 60, windowMs: 60 * 60 * 1000 }; // per network
-const TOKEN_LIMIT = { limit: 120, windowMs: 60 * 60 * 1000 }; // per network
+// Registration and the token endpoint are called by Claude's and ChatGPT's servers, so a limit per
+// network is a limit per assistant vendor, shared by every agent: it is only a high ceiling. The
+// real limit for tokens is per client (one client per connection). The sign-in page is opened in
+// the agent's own browser, so that one is limited per network.
+const REGISTER_LIMIT = { limit: 2_000, windowMs: 60 * 60 * 1000 }; // per network (ceiling)
+const AUTHORIZE_LIMIT = { limit: 60, windowMs: 60 * 60 * 1000 }; // per network (the agent's browser)
+const TOKEN_LIMIT = { limit: 20_000, windowMs: 60 * 60 * 1000 }; // per network (ceiling)
+const TOKEN_CLIENT_LIMIT = { limit: 60, windowMs: 60 * 60 * 1000 }; // per client
 
 type Assistant = "Claude" | "ChatGPT";
 
@@ -80,18 +86,15 @@ export function authorizationServerMetadata(): Record<string, unknown> | null {
 // ---------- dynamic client registration (RFC 7591) ----------
 
 // Clients send many optional metadata fields (client_uri, logo_uri, software_id, ...). They are
-// read for nothing and not stored: only the fields below are used, and those are checked strictly.
-const registration = z.object({
-  redirect_uris: z.array(z.string().max(300)).min(1).max(MAX_REDIRECTS),
-  token_endpoint_auth_method: z.literal("none").optional(),
-  grant_types: z.array(z.enum(["authorization_code", "refresh_token"])).max(2).optional(),
-  response_types: z.array(z.literal("code")).max(1).optional(),
-  client_name: z.string().max(200).optional(),
-});
+// read for nothing and not stored. Only the redirect addresses are used, and they are checked
+// strictly. What the client asks for its token method and grants is answered, not obeyed (RFC 7591
+// lets the server choose): every client here is public (PKCE, no secret), with code and refresh.
+const registration = z.object({ redirect_uris: z.array(z.string().max(300)).min(1).max(MAX_REDIRECTS) });
 
 export async function registerClient(raw: unknown, ip: string): Promise<JsonResult> {
   if (!assistantConfig()) return oauthError(404, "not_found");
   if (await limited("register", ip, REGISTER_LIMIT)) return oauthError(429, "slow_down", "Too many registrations. Try again later.");
+  // Unused registrations are removed by the daily cleanup (unusedClientsWhere).
   const parsed = registration.safeParse(raw);
   if (!parsed.success) return oauthError(400, "invalid_client_metadata");
   const uris = [...new Set(parsed.data.redirect_uris)];
@@ -118,7 +121,7 @@ export async function registerClient(raw: unknown, ip: string): Promise<JsonResu
 // ---------- authorization ----------
 
 export type AuthorizeResult =
-  | { kind: "consent"; requestId: string } // open /oauth/consent/<id>
+  | { kind: "consent"; requestId: string; browserNonce: string } // open /oauth/consent/<id>, set the browser cookie
   | { kind: "redirect"; location: string } // an error, sent back to the assistant
   | { kind: "error_page"; message: string }; // cannot send anything back safely
 
@@ -164,9 +167,13 @@ export async function startAuthorization(params: URLSearchParams, ip: string): P
   if (resource === null || (resource !== undefined && resource !== config.resource)) return back("invalid_target");
 
   const id = randomBytes(24).toString("base64url");
+  // Ties the sign-in to the browser that opened it (a cookie set by the authorize route): a consent
+  // link forwarded to another agent, or opened in another browser, does not work.
+  const browserNonce = randomBytes(24).toString("base64url");
   await db.assistantAuthRequest.create({
     data: {
       id,
+      browserHash: hashToken(browserNonce),
       clientId: client.id,
       redirectUri: target,
       state: typeof state === "string" ? state : null,
@@ -175,16 +182,29 @@ export async function startAuthorization(params: URLSearchParams, ip: string): P
       expiresAt: new Date(Date.now() + REQUEST_TTL_MS),
     },
   });
-  return { kind: "consent", requestId: id };
+  return { kind: "consent", requestId: id, browserNonce };
 }
 
 const REQUEST_ID = /^[A-Za-z0-9_-]{32}$/;
 
+// The cookie the authorize route sets, holding the browser nonce (see startAuthorization).
+export const BROWSER_COOKIE = "__Host-apl_oauth";
+export const BROWSER_COOKIE_MAX_AGE_SECONDS = REQUEST_TTL_MS / 1000;
+
+const NONCE = /^[A-Za-z0-9_-]{32}$/;
+
+// The pending sign-in only for the browser that started it, unexpired and not approved yet.
+function pending(id: string, browserNonce: unknown, now: Date) {
+  if (typeof id !== "string" || !REQUEST_ID.test(id) || typeof browserNonce !== "string" || !NONCE.test(browserNonce)) return null;
+  return { id, browserHash: hashToken(browserNonce), userId: null, expiresAt: { gt: now } };
+}
+
 // What the consent page shows: which assistant, and the host the agent will be sent back to.
-export async function readAuthRequest(id: string, now: Date = new Date()): Promise<{ id: string; clientName: string; redirectHost: string } | null> {
-  if (typeof id !== "string" || !REQUEST_ID.test(id)) return null;
+export async function readAuthRequest(id: string, browserNonce: unknown, now: Date = new Date()): Promise<{ id: string; clientName: string; redirectHost: string } | null> {
+  const where = pending(id, browserNonce, now);
+  if (!where) return null;
   const row = await db.assistantAuthRequest.findFirst({
-    where: { id, userId: null, expiresAt: { gt: now } },
+    where,
     select: { id: true, redirectUri: true, client: { select: { name: true } } },
   });
   return row ? { id: row.id, clientName: row.client.name, redirectHost: new URL(row.redirectUri).host } : null;
@@ -192,13 +212,17 @@ export async function readAuthRequest(id: string, now: Date = new Date()): Promi
 
 // The agent clicked Allow. One conditional update claims the request for this agent, so it can be
 // approved once. Returns where to send the browser (code, state, iss), or null.
-export async function approveAuthRequest(who: { userId: string; agencyId: string }, id: string, now: Date = new Date()): Promise<string | null> {
+export async function approveAuthRequest(who: { userId: string; agencyId: string }, id: string, browserNonce: unknown, now: Date = new Date()): Promise<string | null> {
   const config = assistantConfig();
-  if (!config || typeof id !== "string" || !REQUEST_ID.test(id)) return null;
+  const where = pending(id, browserNonce, now);
+  if (!config || !where) return null;
   const code = randomBytes(32).toString("base64url");
   return db.$transaction(async (tx) => {
+    // The agency, then the agent, first (see lockAccount): an approval never slips past a
+    // suspension, password change or lockout running at the same moment.
+    await lockAccount(tx, who.agencyId, who.userId);
     const claimed = await tx.assistantAuthRequest.updateManyAndReturn({
-      where: { id, userId: null, expiresAt: { gt: now } },
+      where,
       data: { userId: who.userId, agencyId: who.agencyId, codeHash: hashToken(code), codeExpiresAt: new Date(now.getTime() + CODE_TTL_MS) },
       select: { redirectUri: true, state: true, client: { select: { name: true } } },
     });
@@ -210,13 +234,23 @@ export async function approveAuthRequest(who: { userId: string; agencyId: string
 }
 
 // The agent clicked Cancel: the assistant is told access_denied.
-export async function denyAuthRequest(id: string, now: Date = new Date()): Promise<string | null> {
+export async function denyAuthRequest(id: string, browserNonce: unknown, now: Date = new Date()): Promise<string | null> {
   const config = assistantConfig();
-  if (!config || typeof id !== "string" || !REQUEST_ID.test(id)) return null;
-  const where = { id, userId: null, expiresAt: { gt: now } };
+  const where = pending(id, browserNonce, now);
+  if (!config || !where) return null;
   const row = await db.assistantAuthRequest.findFirst({ where, select: { redirectUri: true, state: true } });
   if (!row || (await db.assistantAuthRequest.deleteMany({ where })).count !== 1) return null;
   return withParams(row.redirectUri, { error: "access_denied", state: row.state, iss: config.issuer });
+}
+
+// Row locks on the agency (shared) and the agent (exclusive), taken before anything else in the
+// approve and code exchange transactions. Suspension locks the agency row, password change and
+// lockout the user row, and each revokes assistants inside that lock: so a connection is either
+// made before them (and revoked by them) or after (and then refused: the account is checked again,
+// and the sign-in was deleted).
+async function lockAccount(tx: Prisma.TransactionClient, agencyId: string, userId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "Agency" WHERE id = ${agencyId} FOR SHARE`;
+  await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
 }
 
 // ---------- token endpoint ----------
@@ -240,7 +274,8 @@ export async function exchangeToken(form: URLSearchParams, ip: string, now: Date
   const grant = field("grant_type");
   const clientId = field("client_id");
   if (grant !== "authorization_code" && grant !== "refresh_token") return oauthError(400, "unsupported_grant_type");
-  if (!clientId) return oauthError(400, "invalid_request");
+  if (!clientId || clientId.length > 64) return oauthError(400, "invalid_request");
+  if (!(await hitRateLimit(`assistant-token:client:${clientId}`, TOKEN_CLIENT_LIMIT.limit, TOKEN_CLIENT_LIMIT.windowMs)).allowed) return oauthError(429, "slow_down");
 
   if (grant === "refresh_token") {
     const resource = form.get("resource");
@@ -258,7 +293,9 @@ export async function exchangeToken(form: URLSearchParams, ip: string, now: Date
   if (resource !== null && resource !== config.resource) return oauthError(400, "invalid_target");
   const codeHash = hashToken(code);
 
+  const owner = await db.assistantAuthRequest.findUnique({ where: { codeHash }, select: { userId: true, agencyId: true } });
   const result = await db.$transaction(async (tx) => {
+    if (owner?.userId && owner.agencyId) await lockAccount(tx, owner.agencyId, owner.userId);
     // Claim the code once (usedAt). A code seen again is a replay: its connection is revoked below.
     const claimed = await tx.assistantAuthRequest.updateManyAndReturn({
       where: { codeHash, usedAt: null },
@@ -305,8 +342,23 @@ function tokenBody(tokens: { accessToken: string; refreshToken: string; expiresI
   return { access_token: tokens.accessToken, token_type: "Bearer", expires_in: tokens.expiresInSeconds, refresh_token: tokens.refreshToken, scope: ASSISTANT_SCOPE };
 }
 
-// Daily cleanup: sign-ins that were never finished, or finished more than a day ago.
-export async function removeOldAuthRequests(now: Date = new Date()): Promise<number> {
-  const result = await db.assistantAuthRequest.deleteMany({ where: { expiresAt: { lt: new Date(now.getTime() - 24 * 60 * 60 * 1000) } } });
-  return result.count;
+// ---------- daily cleanup (src/server/jobs/cleanup.ts runs these in batches) ----------
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Sign-ins that were never finished, or finished, more than a day ago.
+export function oldAuthRequestsWhere(now: Date) {
+  return { expiresAt: { lt: new Date(now.getTime() - DAY_MS) } };
+}
+
+// Registrations a week old that never led to a connection (and have no sign-in under way).
+export function unusedClientsWhere(now: Date) {
+  return { createdAt: { lt: new Date(now.getTime() - 7 * DAY_MS) }, connections: { none: {} }, requests: { none: {} } };
+}
+
+// Connections revoked, or whose refresh token ran out, more than 30 days ago. The audit log keeps
+// their history (assistant.connect / assistant.revoke).
+export function endedConnectionsWhere(now: Date) {
+  const before = new Date(now.getTime() - 30 * DAY_MS);
+  return { OR: [{ revokedAt: { lt: before } }, { refreshExpiresAt: { lt: before } }] };
 }

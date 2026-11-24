@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { createUser } from "@/server/users";
 import { resetTestDb } from "@/test/db";
+import { seedRateLimit } from "@/test/rate-limit";
 import { ASSISTANT_SCOPE, assistantConfig } from "./config";
 import {
   approveAuthRequest,
@@ -55,7 +56,7 @@ async function approvedCode(who: { userId: string; agencyId: string }, clientId?
   const id = clientId ?? (await client());
   const started = await startAuthorization(authorizeParams(id), "203.0.113.5");
   if (started.kind !== "consent") throw new Error(`authorize failed: ${JSON.stringify(started)}`);
-  const approved = await approveAuthRequest(who, started.requestId);
+  const approved = await approveAuthRequest(who, started.requestId, started.browserNonce);
   if (!approved) throw new Error("approve failed");
   const code = new URL(approved).searchParams.get("code");
   if (!code) throw new Error("no code");
@@ -128,17 +129,21 @@ describe("assistant OAuth", () => {
       expect(await db.assistantClient.count()).toBe(0);
     });
 
-    it("refuses mixed assistants, a secret-based client and junk", async () => {
+    it("refuses mixed assistants and junk; a client asking for a secret is registered as public (PKCE)", async () => {
       expect((await registerClient({ redirect_uris: [CLAUDE, "https://chatgpt.com/connector_platform_oauth_redirect"] }, "203.0.113.5")).status).toBe(400);
-      expect((await registerClient({ redirect_uris: [CLAUDE], token_endpoint_auth_method: "client_secret_basic" }, "203.0.113.5")).status).toBe(400);
+      const secret = await registerClient({ redirect_uris: [CLAUDE], token_endpoint_auth_method: "client_secret_basic", grant_types: ["authorization_code", "client_credentials"] }, "203.0.113.5");
+      expect(secret.status).toBe(201);
+      expect(secret.body).toMatchObject({ token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"] });
+      expect(secret.body).not.toHaveProperty("client_secret");
       expect((await registerClient("not json", "203.0.113.5")).status).toBe(400);
       expect((await registerClient({ redirect_uris: [] }, "203.0.113.5")).status).toBe(400);
     });
 
-    it("is rate limited per network", async () => {
-      let last = 0;
-      for (let i = 0; i < 21; i++) last = (await registerClient({ redirect_uris: [CLAUDE] }, "198.51.100.7")).status;
-      expect(last).toBe(429);
+    it("has a high ceiling per network (the assistant's servers register for every agent)", async () => {
+      for (let i = 0; i < 25; i++) expect((await registerClient({ redirect_uris: [CLAUDE] }, "198.51.100.7")).status).toBe(201);
+      await db.rateLimitBucket.deleteMany({ where: { key: "assistant-register:ip:198.51.100.7" } });
+      await seedRateLimit("assistant-register:ip:198.51.100.7", 2_000, 60 * 60 * 1000);
+      expect((await registerClient({ redirect_uris: [CLAUDE] }, "198.51.100.7")).status).toBe(429);
     });
 
     it("is off while the connector is not set up", async () => {
@@ -193,21 +198,36 @@ describe("assistant OAuth", () => {
       const id = await client();
       const started = await startAuthorization(authorizeParams(id), "203.0.113.5");
       if (started.kind !== "consent") throw new Error("expected consent");
-      expect(await approveAuthRequest(who, started.requestId)).not.toBeNull();
-      expect(await approveAuthRequest(who, started.requestId)).toBeNull();
+      expect(await approveAuthRequest(who, started.requestId, started.browserNonce)).not.toBeNull();
+      expect(await approveAuthRequest(who, started.requestId, started.browserNonce)).toBeNull();
 
       const again = await startAuthorization(authorizeParams(id), "203.0.113.5");
       if (again.kind !== "consent") throw new Error("expected consent");
       await db.assistantAuthRequest.update({ where: { id: again.requestId }, data: { expiresAt: new Date(Date.now() - 1000) } });
-      expect(await approveAuthRequest(who, again.requestId)).toBeNull();
-      expect(await readAuthRequest(again.requestId)).toBeNull();
+      expect(await approveAuthRequest(who, again.requestId, again.browserNonce)).toBeNull();
+      expect(await readAuthRequest(again.requestId, again.browserNonce)).toBeNull();
+    });
+
+    it("only the browser that opened the sign-in can see or approve it (a forwarded link does nothing)", async () => {
+      const who = await agent();
+      const id = await client();
+      const started = await startAuthorization(authorizeParams(id), "203.0.113.5");
+      if (started.kind !== "consent") throw new Error("expected consent");
+      const otherBrowser = "z".repeat(32);
+      expect(await readAuthRequest(started.requestId, otherBrowser)).toBeNull();
+      expect(await readAuthRequest(started.requestId, undefined)).toBeNull();
+      expect(await approveAuthRequest(who, started.requestId, otherBrowser)).toBeNull();
+      expect(await approveAuthRequest(who, started.requestId, undefined)).toBeNull();
+      expect(await denyAuthRequest(started.requestId, otherBrowser)).toBeNull();
+      expect(await db.assistantAuthRequest.count({ where: { userId: null } })).toBe(1);
+      expect(await approveAuthRequest(who, started.requestId, started.browserNonce)).not.toBeNull();
     });
 
     it("deny sends access_denied back and removes the request", async () => {
       const id = await client();
       const started = await startAuthorization(authorizeParams(id), "203.0.113.5");
       if (started.kind !== "consent") throw new Error("expected consent");
-      const location = await denyAuthRequest(started.requestId);
+      const location = await denyAuthRequest(started.requestId, started.browserNonce);
       expect(new URL(location ?? "x:").searchParams.get("error")).toBe("access_denied");
       expect(await db.assistantAuthRequest.count()).toBe(0);
     });
@@ -216,7 +236,7 @@ describe("assistant OAuth", () => {
       const id = await client();
       const started = await startAuthorization(authorizeParams(id), "203.0.113.5");
       if (started.kind !== "consent") throw new Error("expected consent");
-      expect(await readAuthRequest(started.requestId)).toEqual({ id: started.requestId, clientName: "Claude", redirectHost: "claude.ai" });
+      expect(await readAuthRequest(started.requestId, started.browserNonce)).toEqual({ id: started.requestId, clientName: "Claude", redirectHost: "claude.ai" });
     });
   });
 
@@ -297,6 +317,17 @@ describe("assistant OAuth", () => {
       expect(replay.body.error).toBe("invalid_grant");
       expect(await verifyAccessToken(access2)).toBeNull();
       expect((await db.assistantConnection.findFirstOrThrow()).revokedReason).toBe("refresh_reuse");
+    });
+
+    it("token requests are limited per client, so one busy connection never blocks the others", async () => {
+      const who = await agent();
+      const mine = await connect(who);
+      const other = await connect(who);
+      await db.rateLimitBucket.deleteMany({ where: { key: `assistant-token:client:${mine.clientId}` } });
+      await seedRateLimit(`assistant-token:client:${mine.clientId}`, 60, 60 * 60 * 1000);
+      const refresh = (c: { refresh: string; clientId: string }) => exchangeToken(tokenForm({ grant_type: "refresh_token", refresh_token: c.refresh, client_id: c.clientId }), "203.0.113.5");
+      expect((await refresh(mine)).status).toBe(429);
+      expect((await refresh(other)).status).toBe(200);
     });
 
     it("refresh refuses another client, an unknown token and an unknown grant", async () => {

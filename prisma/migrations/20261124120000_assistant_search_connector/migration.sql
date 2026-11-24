@@ -24,6 +24,7 @@ CREATE TABLE "AssistantAuthRequest" (
     "codeExpiresAt" TIMESTAMP(3),
     "usedAt" TIMESTAMP(3),
     "connectionId" TEXT,
+    "browserHash" TEXT NOT NULL,
     "expiresAt" TIMESTAMP(3) NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -63,6 +64,9 @@ CREATE INDEX "AssistantAuthRequest_expiresAt_idx" ON "AssistantAuthRequest"("exp
 
 -- CreateIndex
 CREATE INDEX "AssistantAuthRequest_userId_idx" ON "AssistantAuthRequest"("userId");
+
+-- CreateIndex
+CREATE INDEX "AssistantAuthRequest_agencyId_idx" ON "AssistantAuthRequest"("agencyId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "AssistantConnection_accessTokenHash_key" ON "AssistantConnection"("accessTokenHash");
