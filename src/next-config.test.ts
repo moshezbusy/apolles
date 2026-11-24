@@ -84,4 +84,18 @@ describe("next.config headers", () => {
   it("builds the standalone server used by the container image", () => {
     expect(nextConfig.output).toBe("standalone");
   });
+
+  it("AI assistant consent: forms may lead back to Claude or ChatGPT only, nothing is cached, no Referer", async () => {
+    const all = await rules();
+    const consent = headersFor(all, "/oauth/consent/:path*");
+    expect(consent["Content-Security-Policy"]?.split(";").map((part) => part.trim())).toEqual([
+      "frame-ancestors 'none'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self' https://claude.ai https://claude.com https://chatgpt.com",
+    ]);
+    expect(consent["Cache-Control"]).toBe("no-store");
+    expect(consent["Referrer-Policy"]).toBe("no-referrer");
+    expect(headersFor(all, "/oauth/:path*")["Cache-Control"]).toBe("no-store");
+  });
 });

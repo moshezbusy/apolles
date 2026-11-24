@@ -7,6 +7,7 @@ import { sendEmail, type EmailMessage } from "@/server/email/port";
 import { normalizeEmail } from "@/server/users";
 import { hashPassword } from "@/server/auth/password";
 import { destroyUserSessions } from "@/server/auth/session";
+import { revokeUserAssistants } from "@/server/assistant/connections";
 import { clearPasswordFailures } from "@/server/auth/lockout";
 import { forgetDevices } from "@/server/auth/signin-code";
 import { MAX_RAW_TOKEN_LENGTH, generateRawToken, hashToken } from "@/server/auth/token";
@@ -170,6 +171,8 @@ export async function consumePasswordToken(
       data: { usedAt: now },
     });
     await destroyUserSessions(userId, tx);
+    // And every connected AI assistant (plan 2026-11-22-mcp-search-connector).
+    await revokeUserAssistants(userId, "password_changed", tx);
     // Plan 8e: every device is forgotten too; the next sign-in asks for an email code.
     await forgetDevices(userId, tx);
     // The row says that a password was set or changed and how; never the password or the link.

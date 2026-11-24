@@ -63,4 +63,29 @@ describe("dailyCleanup", () => {
     log.mockRestore();
     expect(await db.propertyContentCache.count()).toBe(0);
   });
+
+  it("deletes ended AI assistant sign-ins, unused registrations and long-ended connections", async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const redirect = ["https://claude.ai/api/mcp/auth_callback"];
+    await db.assistantClient.create({ data: { id: "apc_c", name: "Claude", redirectUris: redirect, createdAt: new Date(NOW.getTime() - 30 * DAY) } });
+    await db.assistantClient.create({ data: { id: "apc_unused_old", name: "Claude", redirectUris: redirect, createdAt: new Date(NOW.getTime() - 8 * DAY) } });
+    await db.assistantClient.create({ data: { id: "apc_unused_new", name: "Claude", redirectUris: redirect, createdAt: new Date(NOW.getTime() - DAY) } });
+    const base = { clientId: "apc_c", redirectUri: redirect[0]!, codeChallenge: "c".repeat(43), browserHash: "h", resource: "https://mcp.test/mcp" };
+    await db.assistantAuthRequest.create({ data: { ...base, id: "old", expiresAt: new Date(NOW.getTime() - 25 * 60 * 60 * 1000) } });
+    await db.assistantAuthRequest.create({ data: { ...base, id: "new", expiresAt: new Date(NOW.getTime() - 60_000) } });
+    const agency = await db.agency.create({ data: { name: "A", country: "IL", bankReference: "APL-CLEAN" } });
+    const user = await db.user.create({ data: { email: "clean@example.com", name: "A", role: "AGENT", agencyId: agency.id } });
+    const conn = (id: string, extra: object) =>
+      db.assistantConnection.create({
+        data: { id, agencyId: agency.id, userId: user.id, clientId: "apc_c", clientName: "Claude", scope: "search:read", resource: "https://mcp.test/mcp", accessTokenHash: `a-${id}`, accessExpiresAt: NOW, refreshTokenHash: `r-${id}`, refreshExpiresAt: new Date(NOW.getTime() + DAY), ...extra },
+      });
+    await conn("live", {});
+    await conn("revoked-long-ago", { revokedAt: new Date(NOW.getTime() - 31 * DAY) });
+    await conn("revoked-recently", { revokedAt: new Date(NOW.getTime() - DAY) });
+    await conn("expired-long-ago", { refreshExpiresAt: new Date(NOW.getTime() - 31 * DAY) });
+    expect(await dailyCleanup(NOW)).toMatchObject({ assistant: 4 });
+    expect((await db.assistantAuthRequest.findMany()).map((r) => r.id)).toEqual(["new"]);
+    expect((await db.assistantConnection.findMany({ orderBy: { id: "asc" } })).map((r) => r.id)).toEqual(["live", "revoked-recently"]);
+    expect((await db.assistantClient.findMany({ orderBy: { id: "asc" } })).map((r) => r.id)).toEqual(["apc_c", "apc_unused_new"]);
+  });
 });

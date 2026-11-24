@@ -102,6 +102,45 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # The AI assistant connector, search only (plan 2026-11-22-mcp-search-connector; README section 7).
+  # Same image, separate process: what Claude and ChatGPT connect to. Off until started with
+  # `--profile assistants`. It gets NO env_file on purpose: no database address, no supplier keys,
+  # no secrets (it refuses to start if one is present). It reaches the app inside the server only.
+  apolles-staging-mcp:
+    image: apolles-staging-app
+    profiles: ["assistants"]
+    restart: unless-stopped
+    init: true
+    mem_limit: 128m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    environment:
+      APP_ENV: staging
+      # The same values the app has, read from the settings file next to this one. Nothing else
+      # from that file reaches this container. Empty is allowed here so that compose (and every
+      # staging update) keeps working while the connector is off; the connector itself refuses
+      # to start without a valid address.
+      APP_URL: ${APP_URL:-}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-}
+      APP_INTERNAL_URL: http://apolles-staging:3000
+    entrypoint: ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--import", "./prisma/ts-loader.mjs", "src/mcp-server.ts"]
+    depends_on:
+      apolles-staging:
+        condition: service_started
+    networks:
+      # The app, over the internal network. The database is on it too, but the connector has no
+      # address or password for it.
+      - apolles_staging_net
+      # The shared Caddy reaches the connector as apolles-staging-mcp:3100.
+      - n8n_default
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   apolles_staging_db:
 
