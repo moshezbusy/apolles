@@ -4,6 +4,7 @@ import { db } from "@/server/db";
 import { ipBucket } from "@/server/client-ip";
 import { notifyAdminLockout } from "@/server/auth/notifications";
 import { destroyUserSessions } from "@/server/auth/session";
+import { revokeUserAssistants } from "@/server/assistant/connections";
 import { hitRateLimit, refundRateLimit } from "@/server/rate-limit";
 import { normalizeEmail } from "@/server/users";
 import {
@@ -237,7 +238,10 @@ async function healStuckSlots(userId: string, now: Date): Promise<void> {
           OR "attemptReservedAt" < ${DB_NOW} - ${STUCK_RESERVATION_MS}::int * interval '1 millisecond')
       RETURNING email`;
     const row = rows[0];
-    if (row) await destroyUserSessions(userId, tx);
+    if (row) {
+      await destroyUserSessions(userId, tx);
+      await revokeUserAssistants(userId, "locked_out", tx);
+    }
     return row;
   });
   if (healed) await alertLockout({ id: userId, email: healed.email }, lockedUntil);
@@ -264,6 +268,9 @@ export async function recordFailedAttempt(
       if (result.count === 1 && options.endSessionsOnLock) {
         await destroyUserSessions(user.id, tx);
       }
+      // Owner decision (2026-11-22): a lockout also revokes every connected AI assistant, for good
+      // (the agent connects it again after signing in). Sessions follow endSessionsOnLock above.
+      if (result.count === 1) await revokeUserAssistants(user.id, "locked_out", tx);
       return result.count === 1;
     });
     if (locked) {

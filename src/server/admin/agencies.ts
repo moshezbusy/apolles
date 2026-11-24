@@ -4,6 +4,7 @@ import { Prisma } from "@/generated/prisma/client";
 import type { AccountStatus } from "@/generated/prisma/enums";
 import { db } from "@/server/db";
 import { audit } from "@/server/audit";
+import { revokeAgencyAssistants } from "@/server/assistant/connections";
 import { sendSetPasswordEmail } from "@/server/auth/password-tokens";
 import { hitRateLimit } from "@/server/rate-limit";
 import { createUser, normalizeEmail } from "@/server/users";
@@ -139,7 +140,8 @@ export async function createAgency(
 
 // Suspends or reactivates an agency. The agency row is locked, so "before" is the real
 // previous status. Same status again: nothing is written and no audit row is added.
-// Suspending also ends every session of the agency's users, in the same transaction.
+// Suspending also ends every session of the agency's users, and revokes their AI assistants,
+// in the same transaction.
 export async function setAgencyStatus(
   actor: string,
   agencyId: string,
@@ -158,6 +160,8 @@ export async function setAgencyStatus(
       await tx.session.deleteMany({ where: { user: { agencyId } } });
       // Plan 8e: and every remembered device, so a reactivation asks for a sign-in code again.
       await tx.trustedDevice.deleteMany({ where: { user: { agencyId } } });
+      // And every connected AI assistant, for good: a reactivation does not reconnect them.
+      await revokeAgencyAssistants(agencyId, actor, tx);
     }
     await audit(
       actor,

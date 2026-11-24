@@ -76,6 +76,29 @@ const nextConfig: NextConfig = {
         source: "/admin/2fa/setup",
         headers: [{ key: "Cache-Control", value: "no-store" }],
       },
+      // Connecting an AI assistant (plan 2026-11-22-mcp-search-connector). The consent page's
+      // "Allow" sends the browser back to Claude or ChatGPT, so its forms may lead there and
+      // nowhere else (the rest of the CSP stays as above). No cache keeps these pages or answers,
+      // and the address (it names the sign-in) is never sent on in a Referer header.
+      {
+        source: "/oauth/consent/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self' https://claude.ai https://claude.com https://chatgpt.com",
+          },
+          { key: "Cache-Control", value: "no-store" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+        ],
+      },
+      {
+        source: "/oauth/:path*",
+        headers: [
+          { key: "Cache-Control", value: "no-store" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+        ],
+      },
     ];
   },
   turbopack: {

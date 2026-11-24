@@ -63,4 +63,13 @@ describe("dailyCleanup", () => {
     log.mockRestore();
     expect(await db.propertyContentCache.count()).toBe(0);
   });
+
+  it("deletes AI assistant sign-ins that ended more than a day ago", async () => {
+    await db.assistantClient.create({ data: { id: "apc_c", name: "Claude", redirectUris: ["https://claude.ai/api/mcp/auth_callback"] } });
+    const base = { clientId: "apc_c", redirectUri: "https://claude.ai/api/mcp/auth_callback", codeChallenge: "c".repeat(43), resource: "https://mcp.test/mcp" };
+    await db.assistantAuthRequest.create({ data: { ...base, id: "old", expiresAt: new Date(NOW.getTime() - 25 * 60 * 60 * 1000) } });
+    await db.assistantAuthRequest.create({ data: { ...base, id: "new", expiresAt: new Date(NOW.getTime() - 60_000) } });
+    expect(await dailyCleanup(NOW)).toMatchObject({ assistantSignIns: 1 });
+    expect((await db.assistantAuthRequest.findMany()).map((r) => r.id)).toEqual(["new"]);
+  });
 });

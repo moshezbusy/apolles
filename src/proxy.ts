@@ -21,5 +21,7 @@ export const config = {
     "/balance/:path*",
     "/reporting/:path*",
     "/settings/:path*",
+    // Connecting an AI assistant: a signed-out agent comes back to the consent page after sign-in.
+    "/oauth/consent/:path*",
   ],
 };

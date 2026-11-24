@@ -1,3 +1,4 @@
+import { removeOldAuthRequests } from "@/server/assistant/oauth";
 import { expireOldDrafts } from "@/server/booking/upkeep";
 import { db } from "@/server/db";
 import { EMAIL_KINDS } from "./kinds";
@@ -9,6 +10,7 @@ import { EMAIL_KINDS } from "./kinds";
 //   jobs            finished jobs after 30 days, failed ones after 90. An email job is kept: its
 //                   key is what stops the same email from being sent a second time.
 //   contentCache    hotel content fetched more than 30 days ago.
+//   assistantSignIns AI assistant sign-ins (OAuth) that ended more than a day ago.
 // Every delete works in batches of at most 1,000 rows, at most 50 batches a run; what is left
 // goes with the next day's run. One part that fails does not stop the others; the run then
 // fails as a whole, so the job is tried again and the failure is logged.
@@ -33,7 +35,7 @@ async function deleteInBatches(batchSize: number, find: (take: number) => Promis
   return deleted;
 }
 
-export type CleanupCounts = { drafts: number; sessions: number; passwordTokens: number; trustedDevices: number; jobs: number; contentCache: number };
+export type CleanupCounts = { drafts: number; sessions: number; passwordTokens: number; trustedDevices: number; jobs: number; contentCache: number; assistantSignIns: number };
 
 export async function dailyCleanup(now: Date = new Date(), opts: { batchSize?: number } = {}): Promise<CleanupCounts> {
   const size = opts.batchSize ?? BATCH_SIZE;
@@ -60,8 +62,9 @@ export async function dailyCleanup(now: Date = new Date(), opts: { batchSize?: n
         async (take) => (await db.propertyContentCache.findMany({ where: oldContent, select: { propertyId: true }, take })).map((r) => r.propertyId),
         (ids) => db.propertyContentCache.deleteMany({ where: { propertyId: { in: ids }, ...oldContent } }),
       ),
+    assistantSignIns: () => removeOldAuthRequests(now),
   };
-  const counts: CleanupCounts = { drafts: 0, sessions: 0, passwordTokens: 0, trustedDevices: 0, jobs: 0, contentCache: 0 };
+  const counts: CleanupCounts = { drafts: 0, sessions: 0, passwordTokens: 0, trustedDevices: 0, jobs: 0, contentCache: 0, assistantSignIns: 0 };
   const failed: string[] = [];
   for (const name of Object.keys(parts) as (keyof CleanupCounts)[]) {
     try {

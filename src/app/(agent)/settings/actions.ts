@@ -11,6 +11,7 @@ import {
 } from "@/server/agency-profile";
 import { headers } from "next/headers";
 import { requireAgent } from "@/server/auth/guards";
+import { revokeConnection } from "@/server/assistant/connections";
 import { requestResetWithinLimits } from "@/server/auth/password-tokens";
 import { getClientIp } from "@/server/client-ip";
 import { updateQuoteBranding, updateQuoteDefaults } from "@/server/quote-settings";
@@ -109,4 +110,12 @@ export async function changePasswordAction(): Promise<SettingsFormState> {
   const account = await getAccount(userId, agencyId);
   if (account) await requestResetWithinLimits(account.email, getClientIp(await headers()));
   return { status: "success", message: "We emailed you a link to set a new password. It works for 1 hour." };
+}
+
+// "AI assistants", Revoke: only the agent's own connection (agency and user from the session).
+export async function revokeAssistantAction(formData: FormData): Promise<void> {
+  const { userId, agencyId } = await requireAgent();
+  const id = formData.get("connection");
+  if (typeof id === "string") await revokeConnection({ userId, agencyId }, id.slice(0, 64));
+  revalidatePath("/settings");
 }

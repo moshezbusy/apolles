@@ -59,15 +59,16 @@ model Agency {
   lowBalanceAlerted       Boolean       @default(false)
   createdAt               DateTime      @default(now())
 
-  users          User[]
-  ledgerEntries  LedgerEntry[]
-  logo           AgencyLogo?
-  bookings       Booking[]
-  clients        Client[]
-  quotes         Quote[]
-  application    AgencyApplication?
-  recentSearches RecentSearch[]
-  changeRequests ChangeRequest[]
+  users                User[]
+  ledgerEntries        LedgerEntry[]
+  logo                 AgencyLogo?
+  bookings             Booking[]
+  clients              Client[]
+  quotes               Quote[]
+  application          AgencyApplication?
+  recentSearches       RecentSearch[]
+  changeRequests       ChangeRequest[]
+  assistantConnections AssistantConnection[]
 
   @@index([createdAt, id])
   @@index([status, createdAt, id]) // admin agencies list, filtered by status
@@ -148,7 +149,7 @@ model User {
   status            AccountStatus @default(ACTIVE)
   createdAt         DateTime      @default(now())
 
-  agency               Agency?             @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  agency               Agency?                @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   sessions             Session[]
   passwordTokens       PasswordToken[]
   ledgerEntries        LedgerEntry[]
@@ -160,10 +161,12 @@ model User {
   recentSearches       RecentSearch[]
   trustedDevices       TrustedDevice[]
   recoveryCodes        TotpRecoveryCode[]
-  changeRequests       ChangeRequest[]     @relation("ChangeRequestAuthor")
-  doneChangeRequests   ChangeRequest[]     @relation("ChangeRequestDoneBy")
-  hotelMapsCreated     SupplierHotelMap[]  @relation("SupplierHotelMapCreatedBy")
-  hotelMapsApproved    SupplierHotelMap[]  @relation("SupplierHotelMapApprovedBy")
+  changeRequests       ChangeRequest[]        @relation("ChangeRequestAuthor")
+  doneChangeRequests   ChangeRequest[]        @relation("ChangeRequestDoneBy")
+  hotelMapsCreated     SupplierHotelMap[]     @relation("SupplierHotelMapCreatedBy")
+  hotelMapsApproved    SupplierHotelMap[]     @relation("SupplierHotelMapApprovedBy")
+  assistantConnections AssistantConnection[]
+  assistantRequests    AssistantAuthRequest[]
 
   @@index([agencyId])
 }
@@ -329,7 +332,7 @@ model Property {
   catalogSeenRunId String
   updatedAt        DateTime @updatedAt
 
-  hotelMaps        SupplierHotelMap[]
+  hotelMaps SupplierHotelMap[]
 
   // Hotel-name search in the search box uses a GIN index on the words of the name of searchable
   // hotels ("property_name_words"), added in the migration's raw SQL.
@@ -526,21 +529,21 @@ model Booking {
 
   // The quote and destination this booking was made from (plan 5d). When every destination with
   // a client pick has a confirmed booking, the quote is booked.
-  quoteId              String?
-  quoteStayId          String?
+  quoteId                   String?
+  quoteStayId               String?
   // The agency's own selling price, for its reports only (plan 6): never charged, never on the
   // voucher. A markup on the charged total, as on quotes (percent in basis points, fixed in cents).
-  sellMarkupType       MarkupType?
-  sellMarkupValue      Int?
+  sellMarkupType            MarkupType?
+  sellMarkupValue           Int?
   // A booking made from a quote: the price the client was quoted, in cents. When set it is the
   // sale in reports (profit = this price minus the charge), whatever the net became since.
-  sellMinor            Int?
+  sellMinor                 Int?
   // Requests sent to the hotel with the booking (not guaranteed; plan 8b). No personal details.
-  specialRequest       String      @default("")
+  specialRequest            String      @default("")
   // When free cancellation ends (the first charge starts), and when the 72-hour reminder went
   // out (email #14, plan 8c).
-  freeCancelEndsAt     DateTime?
-  freeCancelReminderAt DateTime?
+  freeCancelEndsAt          DateTime?
+  freeCancelReminderAt      DateTime?
   // A cancellation the supplier did not confirm put the booking back to CONFIRMED at this time,
   // with this charge quoted to the agent. The supplier is checked for 24 hours after it: if the
   // cancellation went through late after all, it is finished with that charge.
@@ -557,14 +560,14 @@ model Booking {
   // The supplier the booking is made with: every later step (price check, book, checks, cancel)
   // goes to it. "expedia" is the main supplier (Expedia, or the fake in its place); "hotelbeds"
   // goes through the supplier layer. Never shown to agents or clients. "expedia" on older rows.
-  supplier                  String?       @default("expedia")
+  supplier                  String?     @default("expedia")
 
-  agency    Agency         @relation(fields: [agencyId], references: [id], onDelete: Restrict)
-  user      User           @relation(fields: [userId], references: [id], onDelete: Restrict)
-  quote     Quote?         @relation(fields: [quoteId], references: [id], onDelete: SetNull)
-  quoteStay QuoteStay?     @relation(fields: [quoteStayId], references: [id], onDelete: SetNull)
-  events    BookingEvent[]
-  rooms     BookingRoom[]
+  agency         Agency          @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  quote          Quote?          @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  quoteStay      QuoteStay?      @relation(fields: [quoteStayId], references: [id], onDelete: SetNull)
+  events         BookingEvent[]
+  rooms          BookingRoom[]
   // "Request a change" (src/server/change-requests.ts).
   changeRequests ChangeRequest[]
 
@@ -941,4 +944,78 @@ model SupplierHotelMap {
   @@unique([supplier, layerHotelId])
   @@index([supplier, status, propertyId])
   @@index([createdAt, id])
+}
+
+// ---------------------------------------------------------------------------------------------
+// AI assistants, search only (plan 2026-11-22-mcp-search-connector). An agent connects Claude or
+// ChatGPT with OAuth; the assistant gets a token that can only search (scope "search:read"). Only
+// SHA-256 hashes of codes and tokens are stored. src/server/assistant/* is the only reader.
+
+// A client that registered itself (OAuth dynamic client registration). Only the redirect addresses
+// of Claude and ChatGPT are accepted; the name shown to the agent comes from that address.
+model AssistantClient {
+  id           String   @id // the client_id, random
+  name         String // "Claude" or "ChatGPT", from the redirect address (never the client's own text)
+  redirectUris String[]
+  createdAt    DateTime @default(now())
+
+  requests    AssistantAuthRequest[]
+  connections AssistantConnection[]
+
+  @@index([createdAt])
+}
+
+// One sign-in to connect an assistant: made when the assistant opens the sign-in, approved by the
+// agent on the consent page (userId, agencyId and the one-time code are set then), used once.
+model AssistantAuthRequest {
+  id            String    @id // random, in the consent page address
+  clientId      String
+  redirectUri   String
+  state         String?
+  codeChallenge String // PKCE S256
+  resource      String // the connector address the token is for
+  userId        String?
+  agencyId      String?
+  codeHash      String?   @unique
+  codeExpiresAt DateTime?
+  usedAt        DateTime?
+  connectionId  String? // the connection the code gave: revoked if the code is used again
+  expiresAt     DateTime
+  createdAt     DateTime  @default(now())
+
+  client AssistantClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([userId])
+}
+
+// A connected assistant: one agent, one assistant, scope "search:read" only. The access token
+// lasts an hour, the refresh token 30 days; each refresh gives both new values (the old refresh
+// token, if used again, revokes the connection). revokedAt set: nothing works any more.
+model AssistantConnection {
+  id                  String    @id @default(cuid())
+  agencyId            String
+  userId              String
+  clientId            String
+  clientName          String
+  scope               String
+  resource            String
+  accessTokenHash     String    @unique
+  accessExpiresAt     DateTime
+  refreshTokenHash    String    @unique
+  previousRefreshHash String?   @unique
+  refreshExpiresAt    DateTime
+  createdAt           DateTime  @default(now())
+  lastUsedAt          DateTime?
+  revokedAt           DateTime?
+  revokedReason       String?
+
+  agency Agency          @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client AssistantClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([agencyId, revokedAt])
+  @@index([clientId])
 }
