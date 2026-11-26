@@ -393,54 +393,49 @@ No password is ever written in code.
 ## 7. AI assistants connector (search only)
 
 Agents can search hotels from Claude or ChatGPT (plan `docs/plans/2026-11-22-mcp-search-connector.md`).
-It stays off until all the steps below are done. Search only: the connector has two tools
-(`search_hotels`, `get_hotel_rates`) and no way to book, cancel, issue vouchers or read the balance.
+Search only: the connector has two tools (`search_hotels`, `get_hotel_rates`) and no way to book,
+cancel, issue vouchers or read the balance.
 
-1. **DNS**: in Cloudflare, add a proxied (orange-cloud) record for the connector, e.g.
-   `mcp-staging.apolles.com`, like the other sites.
-2. **Staging settings file** (section 1.2): add `MCP_PUBLIC_URL=https://mcp-staging.apolles.com/mcp`.
-   The app reads it (OAuth sign-in on, "AI assistants" tab on), and compose hands it to the
-   connector. Restart the app afterwards.
-3. **Caddy**: add a block for the connector, and close the internal assistant API on the app's
-   site. Edit the Caddyfile in place, as in section 2:
+**Status: on in staging since 2026-11-26** (set up by an agent, approved by the owner in chat).
+Agents paste `https://staging.apolles.com/mcp` into Claude or ChatGPT. No extra DNS record: the
+connector shares the staging address, and Caddy sends `/mcp` to it.
+
+What is in place on the server:
+
+1. **Pinned compose** (`/opt/apolles-staging-deploy/docker-compose.yml`, backup next to it):
+   - the app's `environment` has `MCP_PUBLIC_URL: https://staging.apolles.com/mcp`;
+   - the service `apolles-staging-mcp` is as in this folder's compose file, with its values written
+     in (`APP_URL: https://staging.apolles.com`, the same `MCP_PUBLIC_URL`, `NODE_ENV: production`).
+     It has no env file, so no database address and no keys.
+2. **Pinned auto-update** (`/opt/apolles-staging-deploy/auto-update.sh`): runs compose with
+   `--profile assistants`, so the connector follows every update together with the app.
+3. **Caddy**, in the `staging.apolles.com` block, before the app's `reverse_proxy` (backup
+   `Caddyfile.bak-<date>`):
 
    ```caddy
-   mcp-staging.apolles.com {
-   	import cf_only
-   	header {
-   		Strict-Transport-Security "max-age=31536000"
-   		X-Content-Type-Options "nosniff"
-   		X-Robots-Tag "noindex, nofollow"
-   		-Server
+   	handle /api/assistant/* {
+   		respond 404
    	}
-   	reverse_proxy apolles-staging-mcp:3100
-   }
+   	@assistant_mcp path /mcp /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/*
+   	handle @assistant_mcp {
+   		reverse_proxy apolles-staging-mcp:3100
+   	}
+   	handle {
+   		reverse_proxy apolles-staging:3000 {
+   			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+   		}
+   	}
    ```
 
-   In the existing `staging.apolles.com` block, add these two lines before `reverse_proxy`, so
-   the assistant API answers only the connector inside the server, never the internet:
+Check:
+- `https://staging.apolles.com/.well-known/oauth-protected-resource/mcp` shows the connector's details.
+- `https://staging.apolles.com/api/assistant/check` gives 404.
+- A POST to `https://staging.apolles.com/mcp` without a token gives 401 with `WWW-Authenticate`.
 
-   ```caddy
-   	@assistant_api path /api/assistant/*
-   	respond @assistant_api 404
-   ```
+To switch it off: remove `MCP_PUBLIC_URL` from the app's `environment` in the pinned compose and run
+the update again. Every assistant token then stops working at once, and the OAuth endpoints answer
+404. An agent disconnects their own assistant with Revoke; suspending an agency, a password change
+and a lockout disconnect it too.
 
-   Validate and reload Caddy (section 2, step 3).
-4. **Pinned copy**: copy the reviewed `docker-compose.yml` to `/opt/apolles-staging-deploy/`
-   (section 5.1), then start the connector:
-
-   ```sh
-   docker compose -p apolles-staging --profile assistants up -d apolles-staging-mcp
-   ```
-
-   The automatic update (section 5) does not restart the connector: after an update that
-   changes it, run the same command again, so it runs the new code.
-
-5. **Check**: `https://mcp-staging.apolles.com/.well-known/oauth-protected-resource/mcp` shows
-   the connector's details, and `https://staging.apolles.com/api/assistant/check` gives 404.
-   Then, as an agent: Agency settings, AI assistants, copy the address into Claude (Settings,
-   Connectors, Add custom connector) or ChatGPT (developer mode, add a connector) and sign in.
-
-To switch it off: stop the container and empty `MCP_PUBLIC_URL` (every assistant token stops
-working at once). An agent disconnects their own assistant with Revoke; suspending an agency,
-a password change and a lockout disconnect it too.
+A separate address (e.g. `mcp-staging.apolles.com`) also works. Set `MCP_PUBLIC_URL` to it, give it
+its own Caddy site block with `reverse_proxy apolles-staging-mcp:3100`, and add a proxied DNS record.
